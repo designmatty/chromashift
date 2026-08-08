@@ -1,9 +1,11 @@
 # ChromaShift
 
-ChromaShift is a Windows 11 display profile manager. Phase 0 is complete: the
-repository contains a diagnostics Electron shell, a narrow Electron-to-.NET
-protocol, event-driven foreground detection, display/capability discovery, and
-baseline-safe Windows, NVIDIA, and AMD provider spikes.
+ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestone 1 are
+complete: the repository contains a diagnostics Electron shell, a narrow
+Electron-to-.NET protocol, event-driven foreground detection,
+display/capability discovery, baseline-safe Windows, NVIDIA, and AMD provider
+spikes, plus a tested TypeScript core for profiles, persistence, application
+matching, and activation precedence.
 
 ## Prerequisites
 
@@ -34,6 +36,8 @@ npm run typecheck
 npm run native:run
 ```
 
-See `docs/display-research.md` for the verified hardware matrix and constraints.
-AMD writes are implemented against official ADLX but remain unverified because
-the test machine has no AMD-driven display. No polished profile UI is included.
+See `docs/display-research.md` for the verified hardware matrix and constraints,
+and `docs/core-domain.md` for the profile and activation contracts. AMD writes
+are implemented against official ADLX but remain unverified because the test
+machine has no AMD-driven display. The core is not connected to automatic native
+activation yet, and no polished profile UI is included.
