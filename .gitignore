@@ -41,6 +41,10 @@ build/Release
 node_modules/
 jspm_packages/
 
+# .NET build output
+**/bin/
+**/obj/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 

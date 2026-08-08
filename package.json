@@ -1,0 +1,30 @@
+{
+  "name": "chromashift",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.11.1",
+    "npm": ">=11.6.2"
+  },
+  "packageManager": "npm@11.6.2",
+  "scripts": {
+    "dev": "npm run build --workspace @chromashift/native-client && npm run native:build && npm run dev --workspace @chromashift/desktop",
+    "build": "npm run build --workspace @chromashift/native-client && npm run build --workspace @chromashift/desktop && npm run native:build",
+    "test": "npm run test --workspaces --if-present && npm run native:test",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "native:build": "dotnet build native/DisplayService/DisplayService.csproj",
+    "native:test": "dotnet test native/DisplayService.Tests/DisplayService.Tests.csproj && npm run native:build && npm run test:native --workspace @chromashift/native-client",
+    "native:run": "dotnet run --project native/DisplayService/DisplayService.csproj"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "typescript-eslint": "8.66.0"
+  }
+}
