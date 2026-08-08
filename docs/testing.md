@@ -12,11 +12,15 @@ npm run test
 npm run build
 ```
 
-`npm run test` runs protocol unit tests, six pure gamma-transform tests, builds
-the native helper, and runs a real Electron-client-to-helper lifecycle test. The
-integration test verifies readiness, foreground resolution, multi-display stable
-IDs, primary display detection, capability resolution, explicit unknown-command
-errors, restore-aware shutdown, and ADLX availability on the current machine.
+`npm run test` runs the core-domain and protocol unit tests, six pure
+gamma-transform tests, builds the native helper, and runs a real
+Electron-client-to-helper lifecycle test. Core coverage includes schema bounds,
+optional overrides, path and filename matching, disabled profiles, activation
+precedence and rapid transitions, duplicate suppression, JSON persistence, and
+schema migration. The integration test verifies readiness, foreground
+resolution, multi-display stable IDs, primary display detection, capability
+resolution, explicit unknown-command errors, restore-aware shutdown, and ADLX
+availability on the current machine.
 
 ## Phase 0 hardware record (2026-08-08)
 

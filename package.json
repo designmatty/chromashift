@@ -13,8 +13,8 @@
   },
   "packageManager": "npm@11.6.2",
   "scripts": {
-    "dev": "npm run build --workspace @chromashift/native-client && npm run native:build && npm run dev --workspace @chromashift/desktop",
-    "build": "npm run build --workspace @chromashift/native-client && npm run build --workspace @chromashift/desktop && npm run native:build",
+    "dev": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run native:build && npm run dev --workspace @chromashift/desktop",
+    "build": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run build --workspace @chromashift/desktop && npm run native:build",
     "test": "npm run test --workspaces --if-present && npm run native:test",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",

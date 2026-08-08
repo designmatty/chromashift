@@ -1,9 +1,10 @@
-# Phase 0 architecture
+# Architecture
 
 ```text
 React diagnostics renderer
   -> sandboxed preload
   -> Electron main
+       -> @chromashift/core (profiles, matching, activation, persistence)
   -> typed NativeClient
   -> NDJSON over child stdin/stdout
   -> DisplayService.exe
@@ -28,6 +29,12 @@ captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
 
-Phase 0 intentionally contains only a diagnostics shell. Profiles, persistence,
-matching, activation precedence, tray behavior, and polished controls remain in
-later milestones.
+`@chromashift/core` owns the vendor-neutral product model introduced in Phase 1.
+It validates versioned JSON configuration, matches foreground applications, and
+resolves manual/foreground/default/baseline precedence without importing
+Electron or the native client. A storage port leaves the app-data filesystem
+adapter in Electron main. See `core-domain.md` for the exact contracts.
+
+The Electron diagnostics shell does not invoke this domain layer yet. Connecting
+foreground events and activation decisions to native display writes is
+Milestone 2; tray behavior and polished controls remain later milestones.
