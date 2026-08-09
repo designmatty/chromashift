@@ -1,12 +1,18 @@
 {
   "name": "@chromashift/desktop",
   "version": "0.0.0",
+  "description": "Automatic Windows display color profiles",
+  "productName": "ChromaShift",
+  "author": "ChromaShift",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "install-electron --no && electron-vite dev",
     "build": "electron-vite build",
+    "package:dir": "electron-builder --win dir --x64 --publish never",
+    "package:win": "electron-builder --win nsis --x64 --publish never",
+    "smoke:package": "node scripts/package-smoke.mjs",
     "test": "vitest run src/main",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
@@ -22,6 +28,7 @@
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "43.3.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",
     "vite": "7.3.6",

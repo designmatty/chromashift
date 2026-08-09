@@ -124,7 +124,8 @@ async function waitForUi(debuggerClient) {
     const evaluation = await debuggerClient.send('Runtime.evaluate', {
       expression: `({
         body: document.body.innerText,
-        bridgeReady: typeof window.chromaShift?.getNativeStatus === 'function',
+        bridgeReady: typeof window.chromaShift?.getNativeStatus === 'function' &&
+          typeof window.chromaShift?.requestExit === 'function',
         documentReady: document.readyState,
         title: document.title
       })`,
@@ -229,9 +230,11 @@ try {
 } finally {
   if (debuggerClient !== undefined) {
     try {
-      await debuggerClient.send('Browser.close', {}, 1_000)
+      await debuggerClient.send('Runtime.evaluate', {
+        expression: 'void window.chromaShift.requestExit()'
+      }, 1_000)
     } catch {
-      // Browser.close tears down the debugging socket before acknowledging on some Electron versions.
+      // Restore-safe exit can tear down the debugging socket before acknowledging.
     }
     debuggerClient.close()
   }
@@ -242,7 +245,12 @@ try {
     electron.kill()
     smokeFailure ??= error
   }
-  await rm(userDataDirectory, { recursive: true, force: true })
+  await rm(userDataDirectory, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 250
+  })
 }
 
 if (smokeFailure !== undefined) throw smokeFailure

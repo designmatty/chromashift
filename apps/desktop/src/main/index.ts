@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
-import { existsSync } from 'node:fs'
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { join, resolve } from 'node:path'
-import { JsonProfileRepository } from '@chromashift/core'
+import { pathToFileURL } from 'node:url'
+import { JsonProfileRepository, type ProfileRepository } from '@chromashift/core'
 import {
   NativeClient,
   foregroundApplicationChangedDataSchema,
@@ -12,8 +12,13 @@ import {
 } from '@chromashift/native-client'
 import { ActivationCoordinator } from './activation-coordinator.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
+import { resolveDisplayServicePath } from './display-service-path.js'
+import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { ShutdownCoordinator } from './shutdown-coordinator.js'
 import { describeError, JsonConsoleLogger } from './structured-logger.js'
+import { TrayController } from './tray-controller.js'
+import { WindowController } from './window-controller.js'
 
 type AutomaticActivationStatus =
   | {
@@ -36,32 +41,54 @@ type NativeStatus =
   | { state: 'error'; message: string }
   | { state: 'starting' }
 
+let mainWindow: BrowserWindow | undefined
 let nativeClient: NativeClient | undefined
+let profileRepository: ProfileRepository | undefined
 let automaticActivation: AutomaticActivationController | undefined
+let trayController: TrayController | undefined
+let shutdownCoordinator: ShutdownCoordinator | undefined
 let nativeStatus: NativeStatus = { state: 'starting' }
 let lastForegroundEvent: ForegroundApplication | null = null
-let shutdownStarted = false
 const logger = new JsonConsoleLogger()
+const windowController = new WindowController(
+  () => mainWindow,
+  () => createWindow(),
+  () => shutdownCoordinator?.exiting === true
+)
 
-function resolveServicePath(): string {
-  const configured = process.env['CHROMASHIFT_DISPLAY_SERVICE_PATH']
-  const candidates = [
-    configured,
-    resolve(app.getAppPath(), '..', '..', 'native', 'DisplayService', 'bin', 'Debug', 'net10.0-windows', 'DisplayService.exe'),
-    resolve(process.cwd(), 'native', 'DisplayService', 'bin', 'Debug', 'net10.0-windows', 'DisplayService.exe')
-  ].filter((candidate): candidate is string => candidate !== undefined)
-  const executable = candidates.find(existsSync)
-  if (executable === undefined) {
-    throw new Error(`DisplayService executable not found. Checked: ${candidates.join(', ')}`)
+function servicePath(): string {
+  return resolveDisplayServicePath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    cwd: process.cwd(),
+    configuredPath: process.env['CHROMASHIFT_DISPLAY_SERVICE_PATH']
+  })
+}
+
+function trayIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : resolve(app.getAppPath(), 'build', 'icon.png')
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+  const senderUrl = event.senderFrame?.url
+  if (senderUrl === undefined) throw new Error('Renderer IPC sender is unavailable.')
+  const developmentUrl = process.env['ELECTRON_RENDERER_URL']
+  if (developmentUrl !== undefined) {
+    if (new URL(senderUrl).origin === new URL(developmentUrl).origin) return
+  } else if (senderUrl === pathToFileURL(join(__dirname, '../renderer/index.html')).toString()) {
+    return
   }
-  return executable
+  throw new Error(`Renderer IPC sender is not trusted: ${senderUrl}`)
 }
 
 async function startNativeService(): Promise<void> {
+  const configurationPath = join(app.getPath('userData'), 'profiles.json')
   try {
-    nativeClient = new NativeClient({ executablePath: resolveServicePath() })
-    const configurationPath = join(app.getPath('userData'), 'profiles.json')
-    const profileRepository = new JsonProfileRepository(
+    nativeClient = new NativeClient({ executablePath: servicePath() })
+    profileRepository = new JsonProfileRepository(
       new AppDataProfileConfigurationStorage(configurationPath)
     )
     const coordinator = new ActivationCoordinator(profileRepository, nativeClient, logger)
@@ -92,9 +119,11 @@ async function startNativeService(): Promise<void> {
           ...describeError(error)
         })
       })
-      nativeStatus = {
-        state: 'error',
-        message: `DisplayService exited (code=${String(code)}, signal=${String(signal)})`
+      if (shutdownCoordinator?.exiting !== true) {
+        nativeStatus = {
+          state: 'error',
+          message: `DisplayService exited (code=${String(code)}, signal=${String(signal)})`
+        }
       }
     })
     const info = await nativeClient.start()
@@ -121,7 +150,14 @@ async function startNativeService(): Promise<void> {
       currentApplication,
       lastForegroundEvent,
       displays,
-      capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)]))),
+      capabilityReports: Object.fromEntries(
+        await Promise.all(
+          displays.map(async (display) => [
+            display.id,
+            await nativeClient!.getDisplayCapabilityReport(display.id)
+          ])
+        )
+      ),
       automaticActivation: automaticActivationStatus
     }
   } catch (error) {
@@ -132,7 +168,7 @@ async function startNativeService(): Promise<void> {
   }
 }
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 820,
     height: 580,
@@ -144,8 +180,19 @@ function createWindow(): void {
       sandbox: true
     }
   })
+  mainWindow = window
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`Preload script failed: ${preloadPath}`, error)
+  })
+  window.on('close', (event) => {
+    const wasExiting = shutdownCoordinator?.exiting === true
+    windowController.handleClose(event, window)
+    if (!wasExiting) {
+      logger.write({ level: 'information', eventName: 'MainWindowHiddenToTray' })
+    }
+  })
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = undefined
   })
   window.once('ready-to-show', () => window.show())
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -153,9 +200,42 @@ function createWindow(): void {
   } else {
     void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return window
 }
 
-ipcMain.handle('diagnostics:get-native-status', async (): Promise<NativeStatus> => {
+function openWindow(): void {
+  windowController.open()
+}
+
+function configureDesktopLifecycle(): Promise<void> {
+  if (nativeClient === undefined || automaticActivation === undefined || profileRepository === undefined) {
+    return Promise.resolve()
+  }
+
+  shutdownCoordinator = new ShutdownCoordinator(
+    automaticActivation,
+    nativeClient,
+    app,
+    {
+      show: openWindow,
+      showError: (title, message) => dialog.showErrorBox(title, message)
+    },
+    logger
+  )
+  const trayMenu = new ElectronTrayMenu(trayIconPath(), openWindow)
+  trayController = new TrayController(
+    profileRepository,
+    automaticActivation,
+    { open: openWindow },
+    shutdownCoordinator,
+    trayMenu,
+    logger
+  )
+  return trayController.start()
+}
+
+ipcMain.handle('diagnostics:get-native-status', async (event): Promise<NativeStatus> => {
+  assertTrustedRenderer(event)
   if (nativeClient?.running) {
     try {
       const displays = await nativeClient.getDisplays()
@@ -172,7 +252,14 @@ ipcMain.handle('diagnostics:get-native-status', async (): Promise<NativeStatus> 
         currentApplication: await nativeClient.getForegroundApplication(),
         lastForegroundEvent,
         displays,
-        capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)]))),
+        capabilityReports: Object.fromEntries(
+          await Promise.all(
+            displays.map(async (display) => [
+              display.id,
+              await nativeClient!.getDisplayCapabilityReport(display.id)
+            ])
+          )
+        ),
         automaticActivation: automaticActivationStatus
       }
     } catch (error) {
@@ -185,26 +272,27 @@ ipcMain.handle('diagnostics:get-native-status', async (): Promise<NativeStatus> 
   return nativeStatus
 })
 
+ipcMain.handle('application:request-exit', async (event): Promise<boolean> => {
+  assertTrustedRenderer(event)
+  if (shutdownCoordinator === undefined) return false
+  return shutdownCoordinator.request('application')
+})
+
 void app.whenReady().then(async () => {
   await startNativeService()
   createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  await configureDesktopLifecycle()
+  app.on('activate', openWindow)
 })
 
-app.on('window-all-closed', () => app.quit())
+app.on('window-all-closed', () => {
+  // Closing the diagnostics window hides it; the tray keeps activation alive.
+})
 
 app.on('before-quit', (event) => {
-  if (shutdownStarted || nativeClient === undefined) return
+  if (shutdownCoordinator === undefined || shutdownCoordinator.state === 'complete') return
   event.preventDefault()
-  shutdownStarted = true
-  const activationIdle = automaticActivation?.waitForIdle() ?? Promise.resolve()
-  void activationIdle
-    .then(() => nativeClient?.stop())
-    .then(() => app.exit())
-    .catch((error: unknown) => {
-      shutdownStarted = false
-      console.error('DisplayService could not restore the baseline; ChromaShift will remain open', error)
-    })
+  void shutdownCoordinator.request('application')
 })
+
+app.on('will-quit', () => trayController?.dispose())

@@ -1719,8 +1719,9 @@ Current status on 2026-08-08:
 - Phase 0 — complete
 - Milestone 1 — complete
 - Milestone 2 — complete
-- Milestone 3 — next
-- Milestones 4–5 — pending
+- Milestone 3 — complete
+- Milestone 4 — next
+- Milestone 5 — pending
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -1867,14 +1868,14 @@ Implement in these slices:
 
 # Milestone 3 — Tray and packaging foundation
 
-### Slice 3.1 — Tray read model and lifecycle
+### Slice 3.1 — Tray read model and lifecycle (completed)
 
 - current profile
 - open
 - exit
 - close-to-tray behavior without terminating automatic activation
 
-### Slice 3.2 — Tray activation controls
+### Slice 3.2 — Tray activation controls (completed)
 
 - profile selection
 - automatic mode
@@ -1882,13 +1883,13 @@ Implement in these slices:
 - baseline reset
 - menu refresh when profiles or activation state change
 
-### Slice 3.3 — Restore-safe shutdown
+### Slice 3.3 — Restore-safe shutdown (completed)
 
 - normal exit requests native restore and waits for confirmation
 - restore failure keeps the application alive with an actionable error
 - tray exit and main-window exit use the same shutdown coordinator
 
-### Slice 3.4 — Windows packaging foundation
+### Slice 3.4 — Windows packaging foundation (completed)
 
 Adapt the useful Electron Builder patterns from the reviewed starter rather than
 adopting the starter itself.
@@ -2252,12 +2253,12 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0, Milestone 1, and Milestone 2 are complete. Work on **Milestone 3, one
+Phase 0 and Milestones 1–3 are complete. Work on **Milestone 4, one
 numbered slice at a time**, unless the user explicitly changes priority.
 
-The next slice is **Slice 3.1 — Tray read model and lifecycle**.
+The next slice is **Slice 4.1 — UI foundation**.
 
-Do not start product-UI work while completing Milestone 3.
+Do not begin visual polish before the Milestone 4 functional UI exists.
 
 ## Completed Phase 0 deliverables
 

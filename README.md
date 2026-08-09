@@ -1,11 +1,11 @@
 # ChromaShift
 
-ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestones 1–2
+ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestones 1–3
 are complete: the repository contains a diagnostics Electron shell, a narrow
 Electron-to-.NET protocol, event-driven foreground detection,
 display/capability discovery, baseline-safe Windows, NVIDIA, and AMD provider
-spikes, plus a tested TypeScript core for profiles, persistence, application
-matching, and activation precedence.
+spikes, a tested TypeScript core for profiles and activation, tray controls,
+restore-safe shutdown, and a Windows packaging foundation.
 
 ## Prerequisites
 
@@ -34,29 +34,30 @@ npm run test
 npm run lint
 npm run typecheck
 npm run native:run
+npm run package:win
+npm run smoke:package
 ```
 
 See `docs/display-research.md` for the verified hardware matrix and constraints,
 and `docs/core-domain.md` for the profile and activation contracts. AMD writes
 are implemented against official ADLX but remain unverified because the test
-machine has no AMD-driven display. Automatic foreground activation is connected
-through Electron main; no tray or polished profile UI is included yet.
+machine has no AMD-driven display. Automatic foreground activation and manual
+tray controls are connected through Electron main. The diagnostics renderer is
+still intentionally unpolished until Milestone 4.
 
 ## Current roadmap
 
-Milestone 2 is complete:
+Milestone 3 is complete:
 
-1. typed native activation commands — complete
-2. Electron main-process composition and app-data persistence — complete
-3. a serialized foreground-activation coordinator — complete
-4. recovery, transition testing, and activation diagnostics — complete
+1. tray read model, lifecycle, and close-to-tray behavior — complete
+2. manual profiles, automatic mode, and baseline reset — complete
+3. shared restore-safe shutdown with actionable failure recovery — complete
+4. ASAR/NSIS packaging with the native service outside ASAR — complete
 
-Milestone 3 is next and adds the tray and a Windows packaging foundation.
-Packaging will use an adapted Electron Builder configuration and place
-`DisplayService.exe` plus its runtime files outside ASAR. Milestone 4 then
-introduces the functional profile UI, a shared validated renderer-to-main API,
-and only the Tailwind/shadcn/Radix components actually needed. Milestone 5
-covers resilience, packaged-app security, and the release hardware matrix.
+Milestone 4 is next and introduces the functional profile UI, centralized
+validated renderer-to-main contracts, and only the Tailwind/shadcn/Radix
+components actually needed. Milestone 5 covers resilience, packaged-app
+security, and the release hardware matrix.
 
 The repository will not be rebased onto a general Electron starter. See
 `AGENTS.md` for the reviewed starter-template decision and the authoritative
