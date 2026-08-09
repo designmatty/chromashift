@@ -76,18 +76,82 @@ Recommended supporting libraries:
 - Zustand for application state
 - Zod for runtime schema/config validation
 - Vitest for TypeScript tests
+- Electron Builder for Windows packaging when the packaging slice begins
 
 Avoid adding dependencies unless they provide clear value.
+
+Delay the product UI stack until Milestone 4. At that point, Tailwind CSS and
+selectively added shadcn/Radix components are acceptable for design tokens and
+accessible controls. Add only components the product uses and treat generated
+component source as application-owned code.
 
 Do not add React Router unless navigation complexity actually warrants it.
 
 Do not add TanStack Query unless asynchronous application state becomes complex enough to justify it.
+
+Do not add Framer Motion or another animation library until a concrete product
+interaction warrants its runtime and maintenance cost.
 
 Do not use pnpm, Yarn, Bun, or another JavaScript package manager unless explicitly requested.
 
 Use `package-lock.json` and commit it.
 
 Use standard npm workspaces for the monorepo.
+
+---
+
+# Starter-template decision
+
+The `guasam/electron-react-app` repository was reviewed at commit
+`b8d299327e7724e164a82d01c2af2ca07d57d171` on 2026-08-08.
+
+Decision:
+
+> Keep the existing ChromaShift repository and architecture. Treat the starter
+> as a reference and selectively port useful patterns; do not rebase, fork, or
+> restructure ChromaShift around it.
+
+ChromaShift already has the more important foundations:
+
+- npm workspaces
+- explicit Electron main/preload/renderer boundaries
+- a sandboxed renderer with a narrow preload API
+- a typed native client and versioned NDJSON protocol
+- a separate C# `DisplayService`
+- baseline capture and safe restoration
+- vendor-neutral domain packages and tests
+
+Patterns that may be adapted:
+
+- Electron Builder configuration for Windows NSIS packaging, icons, ASAR, and
+  artifact naming
+- Tailwind CSS design tokens and selectively generated shadcn/Radix controls
+- a React error boundary
+- a centralized Zod schema registry for renderer-to-main IPC
+- useful import aliases and formatting conventions
+
+Do not copy these starter defaults:
+
+- disabled Electron renderer sandboxing or `ELECTRON_DISABLE_SANDBOX`
+- its Conveyor IPC implementation as a replacement for ChromaShift's native
+  protocol or preload API
+- a frameless/custom title bar by default
+- a custom resource protocol without a concrete requirement and containment
+  tests
+- React Router, TanStack Query, Framer Motion, or other unused dependencies
+- the starter's package versions or lockfile without a fresh compatibility and
+  security review
+
+When implementing borrowed ideas:
+
+1. Reimplement the smallest useful pattern inside the existing workspace.
+2. Preserve ChromaShift's responsibility and security boundaries.
+3. Pin current, compatible dependencies and update `package-lock.json` through
+   npm.
+4. Run build, typecheck, tests, lint, and a dependency audit appropriate to the
+   changed package.
+5. Retain required MIT copyright and license notices if substantial source is
+   copied.
 
 ---
 
@@ -1003,6 +1067,21 @@ Keep `contextIsolation` enabled.
 
 Do not enable unrestricted Node integration in renderer windows.
 
+Keep renderer process sandboxing enabled in development and production. Do not
+set `sandbox: false` or use `ELECTRON_DISABLE_SANDBOX` to simplify preload code.
+
+Validate the sender and expected origin of privileged renderer-to-main IPC
+messages. Validate request arguments and returned data at runtime with shared
+Zod schemas as the renderer API grows.
+
+Use a restrictive Content Security Policy. Deny unexpected navigation and new
+windows. Pass only explicitly allowlisted `https:` URLs to
+`shell.openExternal`; never expose a generic renderer-controlled URL opener.
+
+Prefer the native Windows frame. A custom title bar requires a separate,
+explicit product decision with accessibility, keyboard, DPI, snap-layout, and
+window-state testing.
+
 ---
 
 # Persistence
@@ -1583,7 +1662,11 @@ rather than ambiguous checkmarks when appropriate.
 
 ---
 
-# Phase 0 exit criteria
+# Phase 0 exit criteria (completed)
+
+Phase 0 was completed and reviewed on 2026-08-08. The criteria remain here as
+the safety baseline for later work; do not repeat the spike unless a regression
+or new hardware question requires it.
 
 Do not proceed to polished product UI until we can reliably demonstrate:
 
@@ -1623,13 +1706,32 @@ with:
 - known failures
 - recommended production architecture
 
-Then stop.
-
-Do not begin visual polish until the technical findings have been reviewed.
+The stop gate was satisfied by the reviewed findings in
+`docs/display-research.md`. Do not regress those findings while implementing
+later milestones.
 
 ---
 
-# Milestone 1 — Core domain
+# Roadmap status and slice rules
+
+Current status on 2026-08-08:
+
+- Phase 0 — complete
+- Milestone 1 — complete
+- Milestone 2 — next
+- Milestones 3–5 — pending
+
+Implement the roadmap in the numbered slices below. A slice is complete only
+when its behavior is integrated, tested at the appropriate boundary, documented
+where needed, and passes the repository's relevant build, typecheck, lint, and
+test commands.
+
+Do not pull UI-foundation or packaging work into Milestone 2. Do not begin
+visual polish before the Milestone 4 functional UI exists.
+
+---
+
+# Milestone 1 — Core domain (completed)
 
 After Phase 0:
 
@@ -1647,7 +1749,33 @@ Build:
 - default profile behavior
 - tests
 
-No polished UI required.
+Completed slices:
+
+### Slice 1.1 — Profile model and validation
+
+- vendor-neutral profile, application-rule, and display-target schemas
+- optional color settings with normalized product values
+- strict versioned configuration validation
+
+### Slice 1.2 — Persistence and migration
+
+- repository CRUD and duplication
+- storage-port boundary
+- explicit schema migration and invalid-data failures
+
+### Slice 1.3 — Application matching
+
+- exact normalized path matching
+- filename fallback
+- disabled-profile and deterministic-precedence behavior
+
+### Slice 1.4 — Activation resolution
+
+- manual, foreground, default, and baseline precedence
+- duplicate-target suppression
+- transition reset behavior
+
+No polished UI was required for this milestone.
 
 ---
 
@@ -1682,33 +1810,120 @@ Game B focused
 
 Rapid alt-tab must not corrupt state.
 
+Implement in these slices:
+
+### Slice 2.1 — Native activation command surface
+
+- add validated `NativeClient` methods and schemas for state, baseline capture,
+  apply, per-display restore, and restore-all
+- preserve native error codes in a structured TypeScript error type
+- test requests, responses, unsolicited events, timeouts, and process exits
+
+### Slice 2.2 — Main-process composition and persistence
+
+- implement the app-data JSON storage adapter for `JsonProfileRepository`
+- load and validate configuration before enabling automatic activation
+- compose the repository, matcher, resolver, native client, and structured
+  logging in Electron main
+- keep product behavior out of `DisplayService`
+
+### Slice 2.3 — Serialized activation coordinator
+
+- consume foreground events in Electron main
+- select the intended profile and resolve per-display settings
+- serialize transitions so rapid focus changes cannot interleave display writes
+- suppress duplicate writes when the intended activation target has not changed
+- apply each profile from captured baseline rather than from the preceding
+  profile
+
+### Slice 2.4 — Automatic-transition recovery and verification
+
+- verify foreground, default, and baseline transitions
+- cover duplicate and rapid event sequences with deterministic tests
+- surface partial capability failures without crashing Electron
+- reset activation state after external restore or native-service restart
+- log why a profile matched, activated, failed, or was skipped
+
 ---
 
-# Milestone 3 — Tray
+# Milestone 3 — Tray and packaging foundation
 
-Implement:
+### Slice 3.1 — Tray read model and lifecycle
 
 - current profile
+- open
+- exit
+- close-to-tray behavior without terminating automatic activation
+
+### Slice 3.2 — Tray activation controls
+
 - profile selection
 - automatic mode
 - manual override
 - baseline reset
-- open
-- exit
+- menu refresh when profiles or activation state change
+
+### Slice 3.3 — Restore-safe shutdown
+
+- normal exit requests native restore and waits for confirmation
+- restore failure keeps the application alive with an actionable error
+- tray exit and main-window exit use the same shutdown coordinator
+
+### Slice 3.4 — Windows packaging foundation
+
+Adapt the useful Electron Builder patterns from the reviewed starter rather than
+adopting the starter itself.
+
+- configure Windows application identity, icons, NSIS artifacts, and ASAR
+- publish `DisplayService.exe` and all required runtime/native files as external
+  packaged resources
+- resolve the packaged sidecar from `process.resourcesPath`; retain explicit
+  development-path resolution separately
+- keep executable resources outside ASAR and verify their exact packaged paths
+- provide code-signing configuration hooks without committing certificates or
+  secrets
+- smoke-test unpacked and installed builds, including service launch, IPC,
+  baseline restoration, and uninstall/upgrade-safe data placement
 
 ---
 
 # Milestone 4 — Profile UI
 
-Build the React application for:
+### Slice 4.1 — UI foundation
+
+- add Tailwind CSS only when this slice begins
+- add only the shadcn/Radix components used by current screens
+- define ChromaShift design tokens and light/dark themes
+- add a React error boundary and accessible loading/error states
+- retain the native Windows frame unless a later reviewed decision changes it
+- do not add Router, Query, or animation libraries without demonstrated need
+
+### Slice 4.2 — Typed renderer-to-main product API
+
+- centralize request and response contracts in shared Zod schemas
+- validate IPC sender, arguments, and returned data
+- expose a narrow capability-oriented preload API rather than generic `invoke`
+- translate native and persistence failures into explicit user-facing results
+
+### Slice 4.3 — Profile management
 
 - profile list
 - create
 - edit
 - delete
+- duplicate
+
+### Slice 4.4 — Assignment workflows
+
 - display selection
 - application selection
+
+### Slice 4.5 — Capability-driven preview
+
 - live preview
+- unsupported/HDR-unsafe control explanations
+- confirmation timeout and automatic rollback
+- cancel restores the exact pre-preview state
 
 Focus on functionality before visual polish.
 
@@ -1716,10 +1931,9 @@ Focus on functionality before visual polish.
 
 # Milestone 5 — Hardening
 
-Test:
+### Slice 5.1 — Display and operating-system transitions
 
 - rapid alt-tab
-- process exits
 - sleep/wake
 - monitor reconnect
 - DisplayPort reconnect
@@ -1728,12 +1942,33 @@ Test:
 - refresh-rate changes
 - HDR toggles
 - NVIDIA driver reset
+- topology re-enumeration and stale-handle invalidation
+
+### Slice 5.2 — Process and restoration resilience
+
+- process exits
 - unsupported GPU
 - missing vendor SDK
 - native service crash
 - Electron crash
+- heartbeat/watchdog restoration
+- emergency restore shortcut
+
+### Slice 5.3 — Packaged application security and diagnostics
+
+- packaged sidecar launch and restoration paths
+- IPC sender validation and navigation/external-URL policy
+- dependency audit and current Electron security patch level
+- production Content Security Policy and Electron fuse review
+- structured logs sufficient to diagnose activation and restore failures
+
+### Slice 5.4 — Hardware matrix and release readiness
+
 - multi-monitor
 - mixed GPU configurations where possible
+- NVIDIA and AMD driver/version matrix
+- installed upgrade and uninstall behavior
+- code-signing and installer reputation readiness
 
 ---
 
@@ -1905,6 +2140,15 @@ When implementing:
 23. Do not convert the project to pnpm, Yarn, or Bun without explicit approval.
 24. Use mise only for reproducible tool/runtime version management where useful.
 25. Prefer root npm scripts for common developer workflows.
+26. Preserve renderer sandboxing and context isolation in development and production.
+27. Validate privileged renderer-to-main IPC senders as well as payloads.
+28. Allowlist protocols and destinations before opening external URLs.
+29. Keep the native Windows frame unless a custom title bar is explicitly reviewed.
+30. Do not copy a starter template's dependency set or lockfile wholesale.
+31. Add UI and packaging dependencies only in their assigned roadmap slices.
+32. Package `DisplayService` as an external resource, never inside ASAR.
+33. Test native launch and restoration from the actual packaged directory layout.
+34. Preserve applicable third-party copyright and license notices.
 
 ---
 
@@ -1987,13 +2231,19 @@ This kind of visibility is preferable to opaque abstractions.
 
 ---
 
-# First agent task
+# Current agent task
 
-Work on **Phase 0 only**.
+Phase 0 and Milestone 1 are complete. Work on **Milestone 2, one numbered slice
+at a time**, unless the user explicitly changes priority.
 
-Do not build the production UI.
+The next slice is **Slice 2.1 — Native activation command surface**.
 
-## Deliverables
+Do not start tray, packaging, or product-UI work while completing Milestone 2.
+
+## Completed Phase 0 deliverables
+
+The following list records the completed feasibility scope; it is historical
+context, not the current task:
 
 Scaffold the repository using **npm workspaces** and create:
 
@@ -2012,15 +2262,15 @@ Scaffold the repository using **npm workspaces** and create:
 13. baseline capture/restore
 14. diagnostic logging
 
-Create a basic developer diagnostics screen or CLI output sufficient to inspect results.
+A basic developer diagnostics screen or CLI output was created to inspect results.
 
-Do not spend time styling it.
+It intentionally remains unpolished.
 
 ---
 
-# Required Phase 0 report
+# Completed Phase 0 report
 
-Before moving on, write:
+The completed report is:
 
 ```text
 /docs/display-research.md
@@ -2089,4 +2339,5 @@ List concrete technical risks.
 
 State the recommended production implementation for each capability.
 
-Then stop and report the findings before continuing to the next milestone.
+This stop-and-review gate was satisfied on 2026-08-08. Use the recorded findings
+as constraints for Milestone 2 and later work.
