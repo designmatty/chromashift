@@ -3,6 +3,7 @@ import {
   automaticActivationMode,
   findMatchingProfile,
   type ActivationResolution,
+  type ActivationMode,
   type ColorProfile,
   type ForegroundApplication,
   type ProfileConfiguration,
@@ -65,8 +66,25 @@ export class ActivationCoordinator {
     private readonly logger: StructuredLogger
   ) {}
 
-  public activate(foregroundApplication: ForegroundApplication | null): Promise<ActivationOutcome> {
-    return this.#enqueue(() => this.#transition(foregroundApplication))
+  public activate(
+    foregroundApplication: ForegroundApplication | null,
+    mode: ActivationMode = automaticActivationMode
+  ): Promise<ActivationOutcome> {
+    return this.#enqueue(() => this.#transition(foregroundApplication, mode))
+  }
+
+  public restoreBaseline(): Promise<ActivationOutcome> {
+    return this.#enqueue(async () => {
+      const previousTarget = this.#resolver.currentTarget
+      const outcome = await this.#restoreBaseline({
+        target: { kind: 'baseline' },
+        reason: 'baseline',
+        changed: previousTarget?.kind !== 'baseline',
+        previousTarget
+      })
+      if (outcome.status === 'activated') this.#reset('externalRestore')
+      return outcome
+    })
   }
 
   public resetAfterExternalRestore(): Promise<void> {
@@ -86,7 +104,8 @@ export class ActivationCoordinator {
   }
 
   async #transition(
-    foregroundApplication: ForegroundApplication | null
+    foregroundApplication: ForegroundApplication | null,
+    mode: ActivationMode
   ): Promise<ActivationOutcome> {
     let configuration: ProfileConfiguration
     try {
@@ -106,7 +125,7 @@ export class ActivationCoordinator {
     const resolution = this.#resolver.resolve({
       configuration,
       foregroundApplication,
-      mode: automaticActivationMode
+      mode
     })
     this.#logResolution(configuration, resolution, foregroundApplication)
 

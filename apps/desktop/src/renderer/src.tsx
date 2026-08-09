@@ -7,6 +7,7 @@ declare global {
   interface Window {
     chromaShift: {
       getNativeStatus(): Promise<NativeStatus>
+      requestExit(): Promise<boolean>
     }
   }
 }

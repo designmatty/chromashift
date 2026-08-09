@@ -1,4 +1,11 @@
-import type { ForegroundApplication, ProfileRepository } from '@chromashift/core'
+import {
+  automaticActivationMode,
+  manualActivationMode,
+  type ActivationMode,
+  type ActivationTarget,
+  type ForegroundApplication,
+  type ProfileRepository
+} from '@chromashift/core'
 import {
   foregroundApplicationChangedDataSchema,
   type NativeEvent
@@ -11,8 +18,12 @@ import { describeError, type StructuredLogger } from './structured-logger.js'
 
 export class AutomaticActivationController {
   readonly #pendingApplications: Array<ForegroundApplication | null> = []
+  readonly #listeners = new Set<(state: ActivationControllerState) => void>()
   #enabled = false
   #starting = false
+  #currentApplication: ForegroundApplication | null = null
+  #mode: ActivationMode = automaticActivationMode
+  #currentTarget: ActivationTarget | null = null
 
   public constructor(
     private readonly repository: ProfileRepository,
@@ -22,6 +33,19 @@ export class AutomaticActivationController {
 
   public get enabled(): boolean {
     return this.#enabled
+  }
+
+  public get state(): ActivationControllerState {
+    return {
+      enabled: this.#enabled,
+      mode: { ...this.#mode },
+      currentTarget: this.#currentTarget === null ? null : { ...this.#currentTarget }
+    }
+  }
+
+  public subscribe(listener: (state: ActivationControllerState) => void): () => void {
+    this.#listeners.add(listener)
+    return () => this.#listeners.delete(listener)
   }
 
   public async start(
@@ -46,7 +70,8 @@ export class AutomaticActivationController {
       let applications = [currentApplication, ...this.#pendingApplications.splice(0)]
       while (applications.length > 0) {
         for (const application of applications) {
-          outcome = await this.coordinator.activate(application)
+          this.#currentApplication = application
+          outcome = await this.#activateCurrentApplication()
         }
         applications = this.#pendingApplications.splice(0)
       }
@@ -56,6 +81,7 @@ export class AutomaticActivationController {
         level: 'information',
         eventName: 'AutomaticActivationEnabled'
       })
+      this.#emitState()
       return outcome
     } catch (error) {
       this.#pendingApplications.length = 0
@@ -88,13 +114,56 @@ export class AutomaticActivationController {
       return Promise.resolve()
     }
 
-    return this.coordinator.activate(parsed.data.application)
+    this.#currentApplication = parsed.data.application
+    return this.#activateCurrentApplication()
+  }
+
+  public async selectManualProfile(profileId: string): Promise<ActivationOutcome> {
+    if (!this.#enabled) throw new Error('Profile activation is not available.')
+    const profile = await this.repository.findById(profileId)
+    if (profile === null) throw new Error(`Profile ${profileId} does not exist.`)
+    if (!profile.enabled) throw new Error(`Profile ${profile.name} is disabled.`)
+
+    this.#mode = manualActivationMode(profile.id)
+    this.logger.write({
+      level: 'information',
+      eventName: 'ManualProfileOverrideEnabled',
+      profileId: profile.id
+    })
+    this.#emitState()
+    return this.#activateCurrentApplication()
+  }
+
+  public async enableAutomatic(): Promise<ActivationOutcome> {
+    if (!this.#enabled) throw new Error('Automatic activation is not available.')
+    this.#mode = automaticActivationMode
+    this.logger.write({
+      level: 'information',
+      eventName: 'AutomaticActivationSelected'
+    })
+    this.#emitState()
+    return this.#activateCurrentApplication()
+  }
+
+  public async restoreBaseline(): Promise<ActivationOutcome> {
+    if (!this.#enabled) throw new Error('Display restoration is not available.')
+    const outcome = await this.coordinator.restoreBaseline()
+    this.#updateTarget(outcome)
+    this.logger.write({
+      level: outcome.status === 'activated' ? 'information' : 'error',
+      eventName: 'TrayBaselineResetCompleted',
+      status: outcome.status,
+      failures: outcome.failures
+    })
+    return outcome
   }
 
   public async handleNativeServiceExit(): Promise<void> {
     this.#enabled = false
     this.#pendingApplications.length = 0
+    this.#currentTarget = null
     await this.coordinator.resetAfterNativeServiceRestart()
+    this.#emitState()
   }
 
   public resetAfterExternalRestore(): Promise<void> {
@@ -104,4 +173,30 @@ export class AutomaticActivationController {
   public waitForIdle(): Promise<void> {
     return this.coordinator.waitForIdle()
   }
+
+  async #activateCurrentApplication(): Promise<ActivationOutcome> {
+    const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode)
+    this.#updateTarget(outcome)
+    return outcome
+  }
+
+  #updateTarget(outcome: ActivationOutcome): void {
+    this.#currentTarget =
+      (outcome.status === 'activated' || outcome.status === 'skipped') &&
+      outcome.resolution !== null
+        ? { ...outcome.resolution.target }
+        : null
+    this.#emitState()
+  }
+
+  #emitState(): void {
+    const state = this.state
+    for (const listener of this.#listeners) listener(state)
+  }
+}
+
+export interface ActivationControllerState {
+  enabled: boolean
+  mode: ActivationMode
+  currentTarget: ActivationTarget | null
 }

@@ -11,6 +11,8 @@ npm run typecheck
 npm run test
 npm run build
 npm run smoke:desktop
+npm run package:win
+npm run smoke:package
 ```
 
 `npm run test` runs the core-domain, desktop activation, protocol, and
@@ -35,14 +37,27 @@ configuration gating, startup event buffering, foreground/default/baseline
 transitions, duplicate suppression, stale-display restoration, serialized rapid
 events, baseline capture before every apply, partial capability/restore failures,
 retry behavior, and state reset after external restoration or native restart.
+Tray and lifecycle coverage verifies current-profile read models, enabled and
+disabled profile entries, activation-driven menu refresh, manual and automatic
+mode changes, explicit baseline reset, close-to-tray behavior, serialized
+restore-before-exit ordering, concurrent exit suppression, actionable restore
+failure handling, and retry.
 
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, rendered diagnostics, ready native service, and lack
 of renderer errors. It also verifies automatic activation is enabled with a
-fresh isolated user-data directory, closes Electron through the normal
+fresh isolated user-data directory, exits Electron through the shared
 restore-aware lifecycle, and writes a captured window image to
 `apps/desktop/out/smoke/desktop.png`.
+
+`npm run package:win` builds an x64 NSIS installer and unpacked directory after
+publishing a self-contained `DisplayService`. `npm run smoke:package` validates
+the exact external sidecar and ASAR layout, starts the helper directly, exercises
+NDJSON IPC, captures and restores a baseline, launches both unpacked and installed
+apps, and verifies install, in-place upgrade, restore-safe exit, uninstall, and
+profile-data survival. The smoke install uses isolated temporary install and
+user-data directories.
 
 ## Phase 0 hardware record (2026-08-08)
 

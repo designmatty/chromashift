@@ -53,7 +53,20 @@ continue; failed transitions reset deduplication so a later event can retry.
 External restoration and native-service exit also reset activation state.
 
 The diagnostics shell surfaces whether automation was enabled and the exact
-configuration path. Tray behavior and polished controls remain later milestones.
+configuration path. The system tray reads the same activation state, supports
+manual profile overrides, returns to automatic mode, and can restore baseline.
+Closing the window hides it without stopping activation. Tray Exit and other
+application quit requests share one shutdown coordinator, which waits for queued
+activation work and requires `service.shutdown` to confirm restoration before
+allowing Electron to exit. A restore failure reopens diagnostics and keeps the
+application and helper alive so Exit can be retried.
+
+Windows packages use ASAR for application code and a self-contained .NET publish
+under `resources/display-service`. Packaged resolution uses only
+`process.resourcesPath`; development resolution remains explicit and separate.
+Profile JSON stays in Electron's per-user application-data directory and the NSIS
+uninstaller is configured not to delete it. See `packaging.md` for commands,
+layout checks, smoke coverage, and signing hooks.
 
 ## Desktop foundation decision
 

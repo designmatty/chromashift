@@ -1,0 +1,42 @@
+appId: com.chromashift.desktop
+productName: ChromaShift
+copyright: Copyright © 2026 ChromaShift
+asar: true
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+extraResources:
+  - from: ../../native/DisplayService/bin/Release/net10.0-windows/win-x64/publish
+    to: display-service
+    filter:
+      - "**/*"
+      - "!**/*.pdb"
+  - from: build/icon.png
+    to: icon.png
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+  executableName: ChromaShift
+  artifactName: ChromaShift-${version}-${arch}-setup.${ext}
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ChromaShift
+  uninstallDisplayName: ChromaShift
+  deleteAppDataOnUninstall: false

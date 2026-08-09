@@ -22,10 +22,12 @@ export type NativeStatus =
 
 export interface ChromaShiftApi {
   getNativeStatus(): Promise<NativeStatus>
+  requestExit(): Promise<boolean>
 }
 
 const api: ChromaShiftApi = {
-  getNativeStatus: () => ipcRenderer.invoke('diagnostics:get-native-status') as Promise<NativeStatus>
+  getNativeStatus: () => ipcRenderer.invoke('diagnostics:get-native-status') as Promise<NativeStatus>,
+  requestExit: () => ipcRenderer.invoke('application:request-exit') as Promise<boolean>
 }
 
 contextBridge.exposeInMainWorld('chromaShift', api)
