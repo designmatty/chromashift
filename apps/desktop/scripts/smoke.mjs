@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { fileURLToPath } from 'node:url'
@@ -148,6 +149,7 @@ async function waitForExit(child) {
 }
 
 const debuggingPort = await reservePort()
+const userDataDirectory = await mkdtemp(join(tmpdir(), 'chromashift-smoke-'))
 const environment = { ...globalThis.process.env }
 delete environment.ELECTRON_RUN_AS_NODE
 
@@ -155,7 +157,11 @@ let standardOutput = ''
 let standardError = ''
 const electron = spawn(
   electronPath,
-  [`--remote-debugging-port=${debuggingPort}`, '.'],
+  [
+    `--remote-debugging-port=${debuggingPort}`,
+    `--user-data-dir=${userDataDirectory}`,
+    '.'
+  ],
   {
     cwd: desktopDirectory,
     env: environment,
@@ -195,6 +201,9 @@ try {
   if (!ui.body.includes('Status\nReady')) {
     throw new Error(`The native service was not ready:\n${ui.body}`)
   }
+  if (!ui.body.includes('Automatic activation\nEnabled')) {
+    throw new Error(`Automatic activation was not enabled:\n${ui.body}`)
+  }
   if (failures.length > 0) {
     throw new Error(`The renderer reported ${failures.length} error event(s): ${JSON.stringify(failures)}`)
   }
@@ -233,6 +242,7 @@ try {
     electron.kill()
     smokeFailure ??= error
   }
+  await rm(userDataDirectory, { recursive: true, force: true })
 }
 
 if (smokeFailure !== undefined) throw smokeFailure

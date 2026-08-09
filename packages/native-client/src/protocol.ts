@@ -2,6 +2,34 @@ import { z } from 'zod'
 
 export const PROTOCOL_VERSION = 1
 
+export const displayIdSchema = z.string().startsWith('display:')
+
+const normalizedColorValueSchema = z.number().finite().min(0).max(100)
+
+export const displaySettingsSchema = z
+  .object({
+    brightness: normalizedColorValueSchema.optional(),
+    contrast: normalizedColorValueSchema.optional(),
+    gamma: z.number().finite().min(0.5).max(2).optional(),
+    saturation: normalizedColorValueSchema.optional(),
+    hue: normalizedColorValueSchema.optional(),
+    colorTemperature: normalizedColorValueSchema.optional()
+  })
+  .strict()
+
+export const displayRequestSchema = z
+  .object({
+    displayId: displayIdSchema
+  })
+  .strict()
+
+export const displayApplyRequestSchema = z
+  .object({
+    displayId: displayIdSchema,
+    settings: displaySettingsSchema
+  })
+  .strict()
+
 export const nativeRequestSchema = z.object({
   id: z.string().min(1),
   command: z.string().min(1),
@@ -80,7 +108,7 @@ export const displayAdapterSchema = z.object({
 })
 
 export const displaySchema = z.object({
-  id: z.string().startsWith('display:'),
+  id: displayIdSchema,
   name: z.string().min(1),
   windowsDisplayName: z.string().min(1),
   monitorDevicePath: z.string().min(1),
@@ -144,9 +172,95 @@ export const nativeDisplayStateSchema = z.object({
 })
 
 export const displayCapabilitiesResultSchema = z.object({
-  displayId: z.string().startsWith('display:'),
+  displayId: displayIdSchema,
   capabilities: displayCapabilitiesSchema,
   nativeState: nativeDisplayStateSchema
+})
+
+const gammaRampChannelSchema = z
+  .array(z.number().int().min(0).max(65_535))
+  .length(256)
+
+export const gammaRampSchema = z.object({
+  red: gammaRampChannelSchema,
+  green: gammaRampChannelSchema,
+  blue: gammaRampChannelSchema
+})
+
+export const windowsDisplayStateSchema = z.object({
+  displayId: displayIdSchema,
+  provider: z.literal('windows'),
+  gammaRamp: gammaRampSchema,
+  gammaRampHash: z.string().min(1)
+})
+
+export const amdDisplayStateSchema = z.object({
+  displayId: displayIdSchema,
+  provider: z.literal('amd'),
+  gammaRampHash: z.string().min(1).optional(),
+  brightness: z.number().int().optional(),
+  contrast: z.number().int().optional(),
+  saturation: z.number().int().optional(),
+  hue: z.number().int().optional(),
+  colorTemperature: z.number().int().optional()
+})
+
+export const displayStateSchema = z.discriminatedUnion('provider', [
+  windowsDisplayStateSchema,
+  amdDisplayStateSchema
+])
+
+export const baselineCaptureResultSchema = z.object({
+  displayId: displayIdSchema,
+  state: z.enum(['captured', 'alreadyCaptured']),
+  gammaRampHash: z.string().min(1).optional(),
+  nvidiaSaturation: z.number().int().optional(),
+  nvidiaHue: z.number().int().optional(),
+  amdBrightness: z.number().int().optional(),
+  amdContrast: z.number().int().optional(),
+  amdSaturation: z.number().int().optional(),
+  amdHue: z.number().int().optional(),
+  amdColorTemperature: z.number().int().optional(),
+  amdGammaRampHash: z.string().min(1).optional()
+})
+
+export const displayApplyResultSchema = z.object({
+  displayId: displayIdSchema,
+  settings: displaySettingsSchema,
+  applied: z.object({
+    gammaRampHash: z.string().min(1).optional(),
+    brightness: z.number().int().optional(),
+    contrast: z.number().int().optional(),
+    saturation: z.number().int().optional(),
+    hue: z.number().int().optional(),
+    colorTemperature: z.number().int().optional()
+  })
+})
+
+const restoredDisplayResultSchema = z.object({
+  displayId: displayIdSchema,
+  restored: z.literal(true),
+  gammaRampHash: z.string().min(1).optional()
+})
+
+const unrestoredDisplayResultSchema = z
+  .object({
+    displayId: displayIdSchema,
+    restored: z.literal(false),
+    reason: z.string().min(1).optional(),
+    error: z.string().min(1).optional()
+  })
+  .refine((result) => result.reason !== undefined || result.error !== undefined, {
+    message: 'An unrestored display requires a reason or error.'
+  })
+
+export const displayRestoreResultSchema = z.discriminatedUnion('restored', [
+  restoredDisplayResultSchema,
+  unrestoredDisplayResultSchema
+])
+
+export const restoreAllResultSchema = z.object({
+  displays: z.array(displayRestoreResultSchema)
 })
 
 export type NativeRequest = z.infer<typeof nativeRequestSchema>
@@ -158,3 +272,10 @@ export type Display = z.infer<typeof displaySchema>
 export type Capability = z.infer<typeof capabilitySchema>
 export type DisplayCapabilities = z.infer<typeof displayCapabilitiesSchema>
 export type DisplayCapabilityReport = z.infer<typeof displayCapabilitiesResultSchema>
+export type DisplaySettings = z.infer<typeof displaySettingsSchema>
+export type GammaRamp = z.infer<typeof gammaRampSchema>
+export type DisplayState = z.infer<typeof displayStateSchema>
+export type BaselineCaptureResult = z.infer<typeof baselineCaptureResultSchema>
+export type DisplayApplyResult = z.infer<typeof displayApplyResultSchema>
+export type DisplayRestoreResult = z.infer<typeof displayRestoreResultSchema>
+export type RestoreAllResult = z.infer<typeof restoreAllResultSchema>

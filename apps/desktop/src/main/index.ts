@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { JsonProfileRepository } from '@chromashift/core'
 import {
   NativeClient,
   foregroundApplicationChangedDataSchema,
@@ -9,6 +10,18 @@ import {
   type DisplayCapabilityReport,
   type SystemInfo
 } from '@chromashift/native-client'
+import { ActivationCoordinator } from './activation-coordinator.js'
+import { AutomaticActivationController } from './automatic-activation-controller.js'
+import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { describeError, JsonConsoleLogger } from './structured-logger.js'
+
+type AutomaticActivationStatus =
+  | {
+      state: 'enabled'
+      configurationPath: string
+      initialOutcome: 'activated' | 'skipped' | 'partialFailure' | 'failed' | null
+    }
+  | { state: 'disabled'; configurationPath: string; message: string }
 
 type NativeStatus =
   | {
@@ -18,14 +31,17 @@ type NativeStatus =
       lastForegroundEvent: ForegroundApplication | null
       displays: Display[]
       capabilityReports: Record<string, DisplayCapabilityReport>
+      automaticActivation: AutomaticActivationStatus
     }
   | { state: 'error'; message: string }
   | { state: 'starting' }
 
 let nativeClient: NativeClient | undefined
+let automaticActivation: AutomaticActivationController | undefined
 let nativeStatus: NativeStatus = { state: 'starting' }
 let lastForegroundEvent: ForegroundApplication | null = null
 let shutdownStarted = false
+const logger = new JsonConsoleLogger()
 
 function resolveServicePath(): string {
   const configured = process.env['CHROMASHIFT_DISPLAY_SERVICE_PATH']
@@ -44,13 +60,38 @@ function resolveServicePath(): string {
 async function startNativeService(): Promise<void> {
   try {
     nativeClient = new NativeClient({ executablePath: resolveServicePath() })
+    const configurationPath = join(app.getPath('userData'), 'profiles.json')
+    const profileRepository = new JsonProfileRepository(
+      new AppDataProfileConfigurationStorage(configurationPath)
+    )
+    const coordinator = new ActivationCoordinator(profileRepository, nativeClient, logger)
+    automaticActivation = new AutomaticActivationController(
+      profileRepository,
+      coordinator,
+      logger
+    )
     nativeClient.on('diagnostic', (message) => console.error(`[DisplayService] ${message}`))
     nativeClient.on('event', (event) => {
-      if (event.event !== 'foregroundApplicationChanged') return
-      const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
-      if (parsed.success) lastForegroundEvent = parsed.data.application
+      if (event.event === 'foregroundApplicationChanged') {
+        const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
+        if (parsed.success) lastForegroundEvent = parsed.data.application
+      }
+      void automaticActivation?.handleNativeEvent(event).catch((error: unknown) => {
+        logger.write({
+          level: 'error',
+          eventName: 'AutomaticActivationEventFailed',
+          ...describeError(error)
+        })
+      })
     })
     nativeClient.on('exit', (code, signal) => {
+      void automaticActivation?.handleNativeServiceExit().catch((error: unknown) => {
+        logger.write({
+          level: 'error',
+          eventName: 'ActivationStateResetFailed',
+          ...describeError(error)
+        })
+      })
       nativeStatus = {
         state: 'error',
         message: `DisplayService exited (code=${String(code)}, signal=${String(signal)})`
@@ -58,13 +99,30 @@ async function startNativeService(): Promise<void> {
     })
     const info = await nativeClient.start()
     const displays = await nativeClient.getDisplays()
+    const currentApplication = await nativeClient.getForegroundApplication()
+    let automaticActivationStatus: AutomaticActivationStatus
+    try {
+      const initialOutcome = await automaticActivation.start(currentApplication)
+      automaticActivationStatus = {
+        state: 'enabled',
+        configurationPath,
+        initialOutcome: initialOutcome?.status ?? null
+      }
+    } catch (error) {
+      automaticActivationStatus = {
+        state: 'disabled',
+        configurationPath,
+        message: describeError(error).message
+      }
+    }
     nativeStatus = {
       state: 'ready',
       info,
-      currentApplication: await nativeClient.getForegroundApplication(),
+      currentApplication,
       lastForegroundEvent,
       displays,
-      capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)])))
+      capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)]))),
+      automaticActivation: automaticActivationStatus
     }
   } catch (error) {
     nativeStatus = {
@@ -101,13 +159,21 @@ ipcMain.handle('diagnostics:get-native-status', async (): Promise<NativeStatus> 
   if (nativeClient?.running) {
     try {
       const displays = await nativeClient.getDisplays()
+      const automaticActivationStatus = nativeStatus.state === 'ready'
+        ? nativeStatus.automaticActivation
+        : {
+            state: 'disabled' as const,
+            configurationPath: join(app.getPath('userData'), 'profiles.json'),
+            message: 'Automatic activation status is unavailable.'
+          }
       nativeStatus = {
         state: 'ready',
         info: await nativeClient.getSystemInfo(),
         currentApplication: await nativeClient.getForegroundApplication(),
         lastForegroundEvent,
         displays,
-        capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)])))
+        capabilityReports: Object.fromEntries(await Promise.all(displays.map(async (display) => [display.id, await nativeClient!.getDisplayCapabilityReport(display.id)]))),
+        automaticActivation: automaticActivationStatus
       }
     } catch (error) {
       nativeStatus = {
@@ -133,8 +199,9 @@ app.on('before-quit', (event) => {
   if (shutdownStarted || nativeClient === undefined) return
   event.preventDefault()
   shutdownStarted = true
-  void nativeClient
-    .stop()
+  const activationIdle = automaticActivation?.waitForIdle() ?? Promise.resolve()
+  void activationIdle
+    .then(() => nativeClient?.stop())
     .then(() => app.exit())
     .catch((error: unknown) => {
       shutdownStarted = false

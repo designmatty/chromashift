@@ -1718,8 +1718,9 @@ Current status on 2026-08-08:
 
 - Phase 0 — complete
 - Milestone 1 — complete
-- Milestone 2 — next
-- Milestones 3–5 — pending
+- Milestone 2 — complete
+- Milestone 3 — next
+- Milestones 4–5 — pending
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -1728,6 +1729,24 @@ test commands.
 
 Do not pull UI-foundation or packaging work into Milestone 2. Do not begin
 visual polish before the Milestone 4 functional UI exists.
+
+---
+
+# Milestone delivery workflow
+
+When a full numbered milestone is complete and its functionality has passed the
+repository's required validation:
+
+1. confirm the intended milestone changes and exclude unrelated work
+2. commit the completed work on a branch
+3. push the branch and create a pull request
+4. confirm required pull-request checks pass
+5. merge the pull request into `main`
+6. verify the merged result on `main`
+
+Do not treat an individual slice as a completed milestone unless the user
+explicitly asks for slice-level delivery. Never merge work with failing required
+validation.
 
 ---
 
@@ -1812,14 +1831,14 @@ Rapid alt-tab must not corrupt state.
 
 Implement in these slices:
 
-### Slice 2.1 — Native activation command surface
+### Slice 2.1 — Native activation command surface (completed)
 
 - add validated `NativeClient` methods and schemas for state, baseline capture,
   apply, per-display restore, and restore-all
 - preserve native error codes in a structured TypeScript error type
 - test requests, responses, unsolicited events, timeouts, and process exits
 
-### Slice 2.2 — Main-process composition and persistence
+### Slice 2.2 — Main-process composition and persistence (completed)
 
 - implement the app-data JSON storage adapter for `JsonProfileRepository`
 - load and validate configuration before enabling automatic activation
@@ -1827,7 +1846,7 @@ Implement in these slices:
   logging in Electron main
 - keep product behavior out of `DisplayService`
 
-### Slice 2.3 — Serialized activation coordinator
+### Slice 2.3 — Serialized activation coordinator (completed)
 
 - consume foreground events in Electron main
 - select the intended profile and resolve per-display settings
@@ -1836,7 +1855,7 @@ Implement in these slices:
 - apply each profile from captured baseline rather than from the preceding
   profile
 
-### Slice 2.4 — Automatic-transition recovery and verification
+### Slice 2.4 — Automatic-transition recovery and verification (completed)
 
 - verify foreground, default, and baseline transitions
 - cover duplicate and rapid event sequences with deterministic tests
@@ -2233,12 +2252,12 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestone 1 are complete. Work on **Milestone 2, one numbered slice
-at a time**, unless the user explicitly changes priority.
+Phase 0, Milestone 1, and Milestone 2 are complete. Work on **Milestone 3, one
+numbered slice at a time**, unless the user explicitly changes priority.
 
-The next slice is **Slice 2.1 — Native activation command surface**.
+The next slice is **Slice 3.1 — Tray read model and lifecycle**.
 
-Do not start tray, packaging, or product-UI work while completing Milestone 2.
+Do not start product-UI work while completing Milestone 3.
 
 ## Completed Phase 0 deliverables
 

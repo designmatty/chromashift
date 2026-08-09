@@ -74,3 +74,21 @@ not performed in the native helper.
 Native failures are returned as errors and logged to stderr; they do not crash
 Electron. Unsupported controls are explicit capability results and never silent
 no-ops.
+
+## TypeScript client surface
+
+`@chromashift/native-client` runtime-validates command arguments and successful
+results for the activation path. Its typed methods are:
+
+| Method | Native command |
+|---|---|
+| `getDisplayState(displayId)` | `display.state` |
+| `captureBaseline(displayId)` | `baseline.capture` |
+| `applyDisplaySettings(displayId, settings)` | `display.apply` |
+| `restoreDisplay(displayId)` | `display.restore` |
+| `restoreAllBaselines()` | `baseline.restoreAll` |
+
+Invalid product settings are rejected before a request is written. Malformed
+success results are rejected at the client boundary. Native error responses are
+raised as `NativeServiceError`, which retains `code`, `command`, `requestId`,
+and the original native message for structured recovery and logging.

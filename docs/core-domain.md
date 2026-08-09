@@ -1,8 +1,8 @@
 # Core domain
 
 Phase 1 lives in `packages/core` and has no dependency on Electron, Node APIs,
-or GPU vendors. It contains product decisions that will be connected to the
-native client during Milestone 2.
+or GPU vendors. It contains the product decisions connected to the native client
+by Electron main during Milestone 2.
 
 ## Profile configuration
 
@@ -72,6 +72,6 @@ the desired target differs from the current target, allowing the integration
 layer to avoid duplicate display writes. `reset()` invalidates that state after
 an external baseline restore or native-service restart.
 
-The resolver is synchronous and processes foreground events in arrival order.
-It does not call the native service; applying and restoring display state belong
-to Milestone 2.
+The resolver remains synchronous and does not call the native service. Electron
+main's Milestone 2 activation coordinator now serializes events around it and
+performs baseline-aware native apply and restore operations.
