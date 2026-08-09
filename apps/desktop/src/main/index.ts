@@ -80,11 +80,14 @@ function createWindow(): void {
     height: 580,
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     }
+  })
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`Preload script failed: ${preloadPath}`, error)
   })
   window.once('ready-to-show', () => window.show())
   if (process.env['ELECTRON_RENDERER_URL']) {

@@ -16,6 +16,7 @@
     "dev": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run native:build && npm run dev --workspace @chromashift/desktop",
     "build": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run build --workspace @chromashift/desktop && npm run native:build",
     "test": "npm run test --workspaces --if-present && npm run native:test",
+    "smoke:desktop": "npm run build && node apps/desktop/scripts/smoke.mjs",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "native:build": "dotnet build native/DisplayService/DisplayService.csproj",

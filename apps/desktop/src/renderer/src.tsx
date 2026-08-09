@@ -15,7 +15,20 @@ function App(): React.JSX.Element {
   const [status, setStatus] = useState<NativeStatus>({ state: 'starting' })
 
   useEffect(() => {
-    void window.chromaShift.getNativeStatus().then(setStatus)
+    if (window.chromaShift === undefined) {
+      setStatus({
+        state: 'error',
+        message: 'Desktop bridge unavailable. The preload script failed to load.'
+      })
+      return
+    }
+
+    void window.chromaShift.getNativeStatus().then(setStatus).catch((error: unknown) => {
+      setStatus({
+        state: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      })
+    })
   }, [])
 
   return (

@@ -10,6 +10,7 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
+npm run smoke:desktop
 ```
 
 `npm run test` runs the core-domain and protocol unit tests, six pure
@@ -21,6 +22,12 @@ schema migration. The integration test verifies readiness, foreground
 resolution, multi-display stable IDs, primary display detection, capability
 resolution, explicit unknown-command errors, restore-aware shutdown, and ADLX
 availability on the current machine.
+
+`npm run smoke:desktop` builds and launches the actual Electron application,
+reloads its renderer through the Chromium debugging protocol, and verifies the
+sandboxed preload bridge, rendered diagnostics, ready native service, and lack
+of renderer errors. It closes Electron through the normal application lifecycle
+and writes a captured window image to `apps/desktop/out/smoke/desktop.png`.
 
 ## Phase 0 hardware record (2026-08-08)
 
