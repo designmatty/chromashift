@@ -24,6 +24,7 @@ export class AutomaticActivationController {
   #currentApplication: ForegroundApplication | null = null
   #mode: ActivationMode = automaticActivationMode
   #currentTarget: ActivationTarget | null = null
+  #previewing = false
 
   public constructor(
     private readonly repository: ProfileRepository,
@@ -115,7 +116,39 @@ export class AutomaticActivationController {
     }
 
     this.#currentApplication = parsed.data.application
+    if (this.#previewing) return Promise.resolve()
     return this.#activateCurrentApplication()
+  }
+
+  public async beginPreview(): Promise<void> {
+    if (!this.#enabled) throw new Error('Display preview is not available.')
+    if (this.#previewing) throw new Error('A display preview is already active.')
+    this.#previewing = true
+    await this.coordinator.waitForIdle()
+  }
+
+  public async cancelPreview(): Promise<void> {
+    if (!this.#previewing) return
+    this.#previewing = false
+    await this.coordinator.resetAfterExternalRestore()
+    await this.#activateCurrentApplication()
+  }
+
+  public async confirmPreview(profileId: string): Promise<void> {
+    if (!this.#previewing) throw new Error('No display preview is active.')
+    this.#mode = manualActivationMode(profileId)
+    this.#previewing = false
+    await this.coordinator.resetAfterExternalRestore()
+    const outcome = await this.#activateCurrentApplication()
+    if (outcome.status === 'failed' || outcome.status === 'partialFailure') {
+      throw new Error(outcome.failures.map((failure) => failure.message).join(' '))
+    }
+  }
+
+  public async refreshAfterConfigurationChange(): Promise<void> {
+    if (!this.#enabled || this.#previewing) return
+    await this.coordinator.resetAfterExternalRestore()
+    await this.#activateCurrentApplication()
   }
 
   public async selectManualProfile(profileId: string): Promise<ActivationOutcome> {
@@ -160,6 +193,7 @@ export class AutomaticActivationController {
 
   public async handleNativeServiceExit(): Promise<void> {
     this.#enabled = false
+    this.#previewing = false
     this.#pendingApplications.length = 0
     this.#currentTarget = null
     await this.coordinator.resetAfterNativeServiceRestart()

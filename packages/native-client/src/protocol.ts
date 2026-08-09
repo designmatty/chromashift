@@ -96,6 +96,10 @@ export const foregroundCurrentResultSchema = z.object({
   application: foregroundApplicationSchema.nullable()
 })
 
+export const foregroundApplicationsResultSchema = z.object({
+  applications: z.array(foregroundApplicationSchema)
+})
+
 export const foregroundApplicationChangedDataSchema = z.object({
   application: foregroundApplicationSchema
 })

@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./src/protocol.ts",
+      "default": "./dist/protocol.js"
     }
   },
   "scripts": {

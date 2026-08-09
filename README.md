@@ -1,7 +1,7 @@
 # ChromaShift
 
-ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestones 1–3
-are complete: the repository contains a diagnostics Electron shell, a narrow
+ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestones 1–4
+are complete: the repository contains a functional Electron profile manager, a narrow
 Electron-to-.NET protocol, event-driven foreground detection,
 display/capability discovery, baseline-safe Windows, NVIDIA, and AMD provider
 spikes, a tested TypeScript core for profiles and activation, tray controls,
@@ -42,22 +42,24 @@ See `docs/display-research.md` for the verified hardware matrix and constraints,
 and `docs/core-domain.md` for the profile and activation contracts. AMD writes
 are implemented against official ADLX but remain unverified because the test
 machine has no AMD-driven display. Automatic foreground activation and manual
-tray controls are connected through Electron main. The diagnostics renderer is
-still intentionally unpolished until Milestone 4.
+tray controls are connected through Electron main. The renderer now supports
+profile CRUD, display and application assignments, capability-driven controls,
+light/dark design tokens, and rollback-safe live preview.
 
 ## Current roadmap
 
-Milestone 3 is complete:
+Milestone 4 is complete:
 
-1. tray read model, lifecycle, and close-to-tray behavior — complete
-2. manual profiles, automatic mode, and baseline reset — complete
-3. shared restore-safe shutdown with actionable failure recovery — complete
-4. ASAR/NSIS packaging with the native service outside ASAR — complete
+1. Tailwind-based UI foundation, themes, error boundary, and accessible states — complete
+2. centralized, sender-validated, bidirectionally validated product IPC — complete
+3. profile create, edit, delete, duplicate, default, and manual activation — complete
+4. display, foreground-application, and `.exe` assignment workflows — complete
+5. capability/HDR-aware live preview with explicit save/cancel rollback — complete
+6. tray mini panel, permanent Default profile, visible-app picker, and startup,
+   close, and theme settings — complete
 
-Milestone 4 is next and introduces the functional profile UI, centralized
-validated renderer-to-main contracts, and only the Tailwind/shadcn/Radix
-components actually needed. Milestone 5 covers resilience, packaged-app
-security, and the release hardware matrix.
+Milestone 5 is next and covers resilience, packaged-app security, diagnostics,
+and the release hardware matrix.
 
 The repository will not be rebased onto a general Electron starter. See
 `AGENTS.md` for the reviewed starter-template decision and the authoritative

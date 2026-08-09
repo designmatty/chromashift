@@ -190,16 +190,23 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
 
     const deadline = Date.now() + timeoutMilliseconds
     let body = ''
+    let productReady = false
     while (Date.now() < deadline) {
       const evaluation = await send('Runtime.evaluate', {
-        expression: 'document.body.innerText',
+        expression: `(async () => ({
+          body: document.body.innerText,
+          ready: typeof window.chromaShift?.getState === 'function' &&
+            (await window.chromaShift.getState()).ok
+        }))()`,
+        awaitPromise: true,
         returnByValue: true
       })
-      body = typeof evaluation.result.value === 'string' ? evaluation.result.value : ''
-      if (body.includes('Status\nReady') && body.includes('Automatic activation\nEnabled')) break
+      body = typeof evaluation.result.value?.body === 'string' ? evaluation.result.value.body : ''
+      productReady = evaluation.result.value?.ready === true
+      if (productReady && body.includes('Profiles')) break
       await delay(100)
     }
-    if (!body.includes('Status\nReady') || !body.includes('Automatic activation\nEnabled')) {
+    if (!productReady || !body.includes('Profiles')) {
       throw new Error(`${label} did not become ready.\n${body}\n${output}`)
     }
     try {

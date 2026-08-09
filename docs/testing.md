@@ -46,10 +46,18 @@ Profile-path regression coverage verifies the explicit stable application-data
 location, isolated command-line overrides, exact legacy-file copying,
 non-overwrite behavior, and concurrent migration safety.
 
+Milestone 4 coverage validates the renderer-to-main schemas, rejects malformed
+profile and preview requests, verifies capability rejection before any preview
+write, and covers preview capture/apply/update/confirmation, explicit rollback,
+and removal of the final override. Activation tests also prove foreground events
+are remembered without writing during preview and that rollback applies the latest
+intended target. Settings tests cover defaults, validation, and atomic persistence.
+
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the
-sandboxed preload bridge, rendered diagnostics, ready native service, and lack
-of renderer errors. It also verifies automatic activation is enabled with a
+sandboxed preload bridge, read-only profile navigation, Settings navigation,
+live Edit preview and cancel restoration, validated product state, and lack of
+renderer errors. It also verifies automatic activation is enabled with a
 fresh isolated user-data directory, exits Electron through the shared
 restore-aware lifecycle, and writes a captured window image to
 `apps/desktop/out/smoke/desktop.png`.

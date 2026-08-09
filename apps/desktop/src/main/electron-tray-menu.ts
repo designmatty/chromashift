@@ -1,15 +1,15 @@
-import { Menu, Tray, nativeImage, type MenuItemConstructorOptions } from 'electron'
+import { Menu, Tray, nativeImage, type MenuItemConstructorOptions, type Rectangle } from 'electron'
 import type { TrayCommands, TrayMenuPort, TrayReadModel } from './tray-controller.js'
 
 export class ElectronTrayMenu implements TrayMenuPort {
   readonly #tray: Tray
 
-  public constructor(iconPath: string, openWindow: () => void) {
+  public constructor(iconPath: string, toggleMiniPanel: (bounds: Rectangle) => void) {
     const icon = nativeImage.createFromPath(iconPath)
     if (icon.isEmpty()) throw new Error(`Tray icon could not be loaded: ${iconPath}`)
     this.#tray = new Tray(icon.resize({ width: 16, height: 16 }))
     this.#tray.setToolTip('ChromaShift')
-    this.#tray.on('click', openWindow)
+    this.#tray.on('click', (_event, bounds) => toggleMiniPanel(bounds))
   }
 
   public update(model: TrayReadModel, commands: TrayCommands): void {

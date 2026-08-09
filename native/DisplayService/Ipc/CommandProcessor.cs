@@ -77,6 +77,12 @@ internal sealed class CommandProcessor(
                     application = foregroundApplications.GetCurrent()
                 });
                 break;
+            case "applications.list":
+                await protocol.WriteSuccessAsync(request.Id!, new
+                {
+                    applications = foregroundApplications.ListVisible()
+                });
+                break;
             case "displays.list":
                 await protocol.WriteSuccessAsync(request.Id!, new
                 {

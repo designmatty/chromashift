@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "paths": { "@/*": ["./src/renderer/*"] },
     "jsx": "react-jsx",
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "module": "ESNext",
@@ -8,5 +9,5 @@
     "target": "ES2023",
     "types": ["vite/client"]
   },
-  "include": ["src/renderer"]
+  "include": ["src/renderer", "src/shared"]
 }

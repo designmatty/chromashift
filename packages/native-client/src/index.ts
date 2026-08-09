@@ -20,6 +20,7 @@ export {
   foregroundApplicationChangedDataSchema,
   foregroundApplicationSchema,
   foregroundCurrentResultSchema,
+  foregroundApplicationsResultSchema,
   displayAdapterSchema,
   displayListResultSchema,
   displaySchema,

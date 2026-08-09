@@ -13,6 +13,7 @@ import {
   displaySettingsSchema,
   displayStateSchema,
   foregroundCurrentResultSchema,
+  foregroundApplicationsResultSchema,
   displayListResultSchema,
   displayCapabilitiesResultSchema,
   restoreAllResultSchema,
@@ -140,6 +141,12 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
   async getForegroundApplication(): Promise<ForegroundApplication | null> {
     return foregroundCurrentResultSchema.parse(await this.request('foreground.current')).application
+  }
+
+  async getVisibleApplications(): Promise<ForegroundApplication[]> {
+    return foregroundApplicationsResultSchema.parse(
+      await this.request('applications.list')
+    ).applications
   }
 
   async getDisplays(): Promise<Display[]> {
