@@ -34,6 +34,7 @@ describe('DisplayService lifecycle', () => {
     expect(info.providers.amd.libraryAvailable).toBe(true)
     const capabilityReport = await client.getDisplayCapabilityReport(displays[0]!.id)
     expect(capabilityReport.capabilities.gamma.provider).toBe('windows')
+    expect(capabilityReport.capabilities.gamma.max).toBe(2.8)
     expect(capabilityReport.capabilities.saturation.provider).toBe('nvidia')
     expect(capabilityReport.nativeState.nvidia.saturation.current).toBeTypeOf('number')
     const displayState = await client.getDisplayState(displays[0]!.id)

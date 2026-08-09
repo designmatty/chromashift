@@ -21,7 +21,7 @@ The persisted root object has schema version 1:
 A profile contains vendor-neutral color settings, application rules, and stable
 display IDs. Brightness, contrast, saturation, hue, and color temperature use
 normalized values from 0 through 100. Gamma uses the product range 0.5 through
-2.0 already accepted by the native protocol. Every color setting is optional;
+2.8 accepted by the native protocol. Every color setting is optional;
 an omitted field means that the profile does not override that capability.
 
 Zod validates the complete persisted document. Profile IDs and display targets

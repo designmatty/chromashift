@@ -57,6 +57,18 @@ describe('native protocol', () => {
         settings: { saturation: 101 }
       }).success
     ).toBe(false)
+    expect(
+      displayApplyRequestSchema.parse({
+        displayId: 'display:abc',
+        settings: { gamma: 2.8 }
+      }).settings.gamma
+    ).toBe(2.8)
+    expect(
+      displayApplyRequestSchema.safeParse({
+        displayId: 'display:abc',
+        settings: { gamma: 2.81 }
+      }).success
+    ).toBe(false)
   })
 
   it('validates Windows and AMD display state results', () => {

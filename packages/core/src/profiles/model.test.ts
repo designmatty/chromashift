@@ -6,7 +6,7 @@ function validProfile() {
     id: 'gaming',
     name: 'Gaming',
     enabled: true,
-    color: { saturation: 75, gamma: 1.15 },
+    color: { saturation: 75, gamma: 2.8 },
     applications: [
       {
         executableName: 'Game.exe',
@@ -33,7 +33,7 @@ describe('profile model', () => {
     ['brightness', -1],
     ['contrast', 101],
     ['gamma', 0.49],
-    ['gamma', 2.01],
+    ['gamma', 2.81],
     ['saturation', Number.NaN]
   ])('rejects an unsafe %s value of %s', (setting, value) => {
     expect(() => colorSettingsSchema.parse({ [setting]: value })).toThrow()

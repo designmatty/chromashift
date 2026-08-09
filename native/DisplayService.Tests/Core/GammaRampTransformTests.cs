@@ -31,11 +31,23 @@ public sealed class GammaRampTransformTests
         Assert.NotEqual(baseline.GetHash(), first.GetHash());
     }
 
+    [Fact]
+    public void ProductMaximumGammaIsAccepted()
+    {
+        var baseline = CreateLinearRamp();
+
+        var transformed = GammaRampTransform.Apply(
+            baseline,
+            new GammaSettings(null, null, 2.8));
+
+        Assert.NotEqual(baseline.GetHash(), transformed.GetHash());
+    }
+
     [Theory]
     [InlineData(-1, 50, 1)]
     [InlineData(50, 101, 1)]
     [InlineData(50, 50, 0.49)]
-    [InlineData(50, 50, 2.01)]
+    [InlineData(50, 50, 2.81)]
     public void ValuesOutsideProductRangesAreRejected(double brightness, double contrast, double gamma)
     {
         var baseline = CreateLinearRamp();
