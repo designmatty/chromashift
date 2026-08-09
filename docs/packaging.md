@@ -42,6 +42,13 @@ The installer is per-user and preserves Electron's user-data directory during
 upgrade and uninstall. `profiles.json` therefore remains outside the install
 directory and is not deleted by the NSIS uninstaller.
 
+The configuration location is explicitly pinned to
+`%APPDATA%\ChromaShift\profiles.json`. On first startup after upgrading from a
+pre-packaging build, ChromaShift copies the legacy
+`%APPDATA%\@chromashift\desktop\profiles.json` only when the stable destination
+does not exist. It never moves or overwrites either file. Command-line
+`--user-data-dir` overrides remain isolated for smoke tests and diagnostics.
+
 ## Code signing
 
 No certificate or secret is committed. Electron Builder consumes
