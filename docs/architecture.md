@@ -68,6 +68,12 @@ Profile JSON stays in Electron's per-user application-data directory and the NSI
 uninstaller is configured not to delete it. See `packaging.md` for commands,
 layout checks, smoke coverage, and signing hooks.
 
+The profile configuration path is pinned explicitly to
+`%APPDATA%\ChromaShift\profiles.json` so package metadata changes cannot move it
+again. When that file is absent, startup performs a non-overwriting one-time copy
+from the pre-Milestone 3 `%APPDATA%\@chromashift\desktop\profiles.json` path.
+Explicit `--user-data-dir` launches remain isolated and never import legacy data.
+
 ## Desktop foundation decision
 
 ChromaShift retains this repository structure rather than rebasing onto the

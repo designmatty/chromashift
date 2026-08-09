@@ -42,6 +42,9 @@ disabled profile entries, activation-driven menu refresh, manual and automatic
 mode changes, explicit baseline reset, close-to-tray behavior, serialized
 restore-before-exit ordering, concurrent exit suppression, actionable restore
 failure handling, and retry.
+Profile-path regression coverage verifies the explicit stable application-data
+location, isolated command-line overrides, exact legacy-file copying,
+non-overwrite behavior, and concurrent migration safety.
 
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the

@@ -11,10 +11,12 @@ import {
   type SystemInfo
 } from '@chromashift/native-client'
 import { ActivationCoordinator } from './activation-coordinator.js'
+import { resolveApplicationDataPaths } from './application-data-path.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
 import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
 import { ShutdownCoordinator } from './shutdown-coordinator.js'
 import { describeError, JsonConsoleLogger } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
@@ -50,6 +52,12 @@ let shutdownCoordinator: ShutdownCoordinator | undefined
 let nativeStatus: NativeStatus = { state: 'starting' }
 let lastForegroundEvent: ForegroundApplication | null = null
 const logger = new JsonConsoleLogger()
+const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
+const applicationDataPaths = resolveApplicationDataPaths(
+  app.getPath('appData'),
+  hasUserDataOverride ? app.getPath('userData') : undefined
+)
+if (!hasUserDataOverride) app.setPath('userData', applicationDataPaths.userDataDirectory)
 const windowController = new WindowController(
   () => mainWindow,
   () => createWindow(),
@@ -85,8 +93,20 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
 }
 
 async function startNativeService(): Promise<void> {
-  const configurationPath = join(app.getPath('userData'), 'profiles.json')
+  const configurationPath = applicationDataPaths.profileConfigurationPath
   try {
+    const migratedFrom = await migrateLegacyProfileConfiguration(
+      configurationPath,
+      applicationDataPaths.legacyProfileConfigurationPaths
+    )
+    if (migratedFrom !== null) {
+      logger.write({
+        level: 'information',
+        eventName: 'ProfileConfigurationMigrated',
+        sourcePath: migratedFrom,
+        destinationPath: configurationPath
+      })
+    }
     nativeClient = new NativeClient({ executablePath: servicePath() })
     profileRepository = new JsonProfileRepository(
       new AppDataProfileConfigurationStorage(configurationPath)
@@ -243,7 +263,7 @@ ipcMain.handle('diagnostics:get-native-status', async (event): Promise<NativeSta
         ? nativeStatus.automaticActivation
         : {
             state: 'disabled' as const,
-            configurationPath: join(app.getPath('userData'), 'profiles.json'),
+            configurationPath: applicationDataPaths.profileConfigurationPath,
             message: 'Automatic activation status is unavailable.'
           }
       nativeStatus = {
