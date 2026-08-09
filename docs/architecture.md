@@ -35,9 +35,25 @@ resolves manual/foreground/default/baseline precedence without importing
 Electron or the native client. A storage port leaves the app-data filesystem
 adapter in Electron main. See `core-domain.md` for the exact contracts.
 
-The Electron diagnostics shell does not invoke this domain layer yet. Connecting
-foreground events and activation decisions to native display writes is
-Milestone 2; tray behavior and polished controls remain later milestones.
+Electron main now composes that domain layer with the native client. It stores
+configuration atomically at `profiles.json` under Electron's user-data directory
+and validates the complete document before automatic activation is enabled.
+Foreground events received during startup are buffered until validation finishes.
+Invalid persisted data disables automation explicitly rather than silently
+replacing the user's configuration.
+
+The activation coordinator processes foreground transitions through one promise
+queue. It resolves the intended profile in arrival order, suppresses a duplicate
+only after a successful transition, captures each desired display baseline before
+applying, restores displays removed from the next profile, and restores all
+captured displays for a baseline target. Because the native baseline remains
+immutable across profile changes, gamma transforms never compound. Per-display
+failures are logged and returned as partial outcomes while remaining displays
+continue; failed transitions reset deduplication so a later event can retry.
+External restoration and native-service exit also reset activation state.
+
+The diagnostics shell surfaces whether automation was enabled and the exact
+configuration path. Tray behavior and polished controls remain later milestones.
 
 ## Desktop foundation decision
 

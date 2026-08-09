@@ -5,16 +5,30 @@ import { createInterface, type Interface } from 'node:readline'
 import {
   nativeMessageSchema,
   nativeResponseSchema,
+  baselineCaptureResultSchema,
+  displayApplyRequestSchema,
+  displayApplyResultSchema,
+  displayRequestSchema,
+  displayRestoreResultSchema,
+  displaySettingsSchema,
+  displayStateSchema,
   foregroundCurrentResultSchema,
   displayListResultSchema,
   displayCapabilitiesResultSchema,
+  restoreAllResultSchema,
   systemInfoSchema,
+  type BaselineCaptureResult,
+  type DisplayApplyResult,
   type NativeEvent,
   type ForegroundApplication,
   type Display,
   type DisplayCapabilities,
   type DisplayCapabilityReport,
+  type DisplayRestoreResult,
+  type DisplaySettings,
+  type DisplayState,
   type NativeResponse,
+  type RestoreAllResult,
   type SystemInfo
 } from './protocol.js'
 
@@ -26,8 +40,16 @@ interface PendingRequest {
 
 export interface NativeClientOptions {
   executablePath: string
+  executableArguments?: readonly string[]
   requestTimeoutMs?: number
   startupTimeoutMs?: number
+}
+
+interface ResolvedNativeClientOptions {
+  executablePath: string
+  executableArguments: readonly string[]
+  requestTimeoutMs: number
+  startupTimeoutMs: number
 }
 
 export interface NativeClientEvents {
@@ -37,8 +59,24 @@ export interface NativeClientEvents {
   exit: [code: number | null, signal: NodeJS.Signals | null]
 }
 
+export class NativeServiceError extends Error {
+  readonly code: string
+  readonly command: string
+  readonly requestId: string
+  readonly nativeMessage: string
+
+  constructor(code: string, message: string, command: string, requestId: string) {
+    super(`${code}: ${message}`)
+    this.name = 'NativeServiceError'
+    this.code = code
+    this.command = command
+    this.requestId = requestId
+    this.nativeMessage = message
+  }
+}
+
 export class NativeClient extends EventEmitter<NativeClientEvents> {
-  readonly #options: Required<NativeClientOptions>
+  readonly #options: ResolvedNativeClientOptions
   readonly #pending = new Map<string, PendingRequest>()
   #process?: ChildProcessWithoutNullStreams
   #lines?: Interface
@@ -48,6 +86,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   constructor(options: NativeClientOptions) {
     super()
     this.#options = {
+      executableArguments: [],
       requestTimeoutMs: 5_000,
       startupTimeoutMs: 10_000,
       ...options
@@ -63,7 +102,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       return this.getSystemInfo()
     }
 
-    const child = spawn(this.#options.executablePath, [], {
+    const child = spawn(this.#options.executablePath, [...this.#options.executableArguments], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -84,8 +123,15 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       this.emit('exit', code, signal)
     })
 
-    await this.#waitForReady()
-    return this.getSystemInfo()
+    try {
+      await this.#waitForReady()
+      return await this.getSystemInfo()
+    } catch (error) {
+      const startupError = error instanceof Error ? error : new Error(String(error))
+      if (child.exitCode === null && !child.killed) child.kill()
+      this.#fail(startupError)
+      throw startupError
+    }
   }
 
   async getSystemInfo(): Promise<SystemInfo> {
@@ -105,9 +151,40 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   }
 
   async getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
+    const params = displayRequestSchema.parse({ displayId })
     return displayCapabilitiesResultSchema.parse(
-      await this.request('display.capabilities', { displayId })
+      await this.request('display.capabilities', params)
     )
+  }
+
+  async getDisplayState(displayId: string): Promise<DisplayState> {
+    const params = displayRequestSchema.parse({ displayId })
+    return displayStateSchema.parse(await this.request('display.state', params))
+  }
+
+  async captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
+    const params = displayRequestSchema.parse({ displayId })
+    return baselineCaptureResultSchema.parse(await this.request('baseline.capture', params))
+  }
+
+  async applyDisplaySettings(
+    displayId: string,
+    settings: DisplaySettings
+  ): Promise<DisplayApplyResult> {
+    const params = displayApplyRequestSchema.parse({
+      displayId,
+      settings: displaySettingsSchema.parse(settings)
+    })
+    return displayApplyResultSchema.parse(await this.request('display.apply', params))
+  }
+
+  async restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {
+    const params = displayRequestSchema.parse({ displayId })
+    return displayRestoreResultSchema.parse(await this.request('display.restore', params))
+  }
+
+  async restoreAllBaselines(): Promise<RestoreAllResult> {
+    return restoreAllResultSchema.parse(await this.request('baseline.restoreAll'))
   }
 
   async request(command: string, params?: Record<string, unknown>): Promise<unknown> {
@@ -127,7 +204,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     this.#process.stdin.write(`${JSON.stringify({ id, command, params })}\n`)
     const message = await response
     if (!message.ok) {
-      throw new Error(`${message.error.code}: ${message.error.message}`)
+      throw new NativeServiceError(message.error.code, message.error.message, command, id)
     }
     return message.result
   }
@@ -144,11 +221,14 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
         resolve()
         return
       }
-      child.once('exit', () => resolve())
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         if (child.exitCode === null) child.kill()
         resolve()
       }, this.#options.requestTimeoutMs)
+      child.once('exit', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
     })
   }
 

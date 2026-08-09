@@ -49,6 +49,8 @@ function App(): React.JSX.Element {
               <dt>Operating system</dt><dd>{status.info.operatingSystem}</dd>
               <dt>AMD ADLX</dt><dd>{status.info.providers.amd.initialized ? `Ready (${status.info.providers.amd.version ?? 'unknown version'})` : status.info.providers.amd.error ?? 'Unavailable'}</dd>
               <dt>AMD displays</dt><dd>{status.info.providers.amd.displayCount} — {status.info.providers.amd.runtimeValidation}</dd>
+              <dt>Automatic activation</dt><dd className={status.automaticActivation.state === 'enabled' ? 'success' : 'error'}>{status.automaticActivation.state === 'enabled' ? `Enabled (${status.automaticActivation.initialOutcome ?? 'no initial transition'})` : `Disabled — ${status.automaticActivation.message}`}</dd>
+              <dt>Profile configuration</dt><dd>{status.automaticActivation.configurationPath}</dd>
             </dl>
             <h3>Foreground application</h3>
             {status.currentApplication === null ? (

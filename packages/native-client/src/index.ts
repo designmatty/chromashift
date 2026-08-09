@@ -1,6 +1,22 @@
-export { NativeClient, type NativeClientOptions } from './client.js'
+export {
+  NativeClient,
+  NativeServiceError,
+  type NativeClientOptions
+} from './client.js'
 export {
   PROTOCOL_VERSION,
+  baselineCaptureResultSchema,
+  displayApplyRequestSchema,
+  displayApplyResultSchema,
+  displayIdSchema,
+  displayRequestSchema,
+  displayRestoreResultSchema,
+  displaySettingsSchema,
+  displayStateSchema,
+  gammaRampSchema,
+  restoreAllResultSchema,
+  windowsDisplayStateSchema,
+  amdDisplayStateSchema,
   foregroundApplicationChangedDataSchema,
   foregroundApplicationSchema,
   foregroundCurrentResultSchema,
@@ -25,5 +41,12 @@ export {
   type Display,
   type Capability,
   type DisplayCapabilities,
-  type DisplayCapabilityReport
+  type DisplayCapabilityReport,
+  type DisplaySettings,
+  type GammaRamp,
+  type DisplayState,
+  type BaselineCaptureResult,
+  type DisplayApplyResult,
+  type DisplayRestoreResult,
+  type RestoreAllResult
 } from './protocol.js'

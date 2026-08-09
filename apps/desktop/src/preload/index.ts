@@ -9,6 +9,13 @@ export type NativeStatus =
       lastForegroundEvent: ForegroundApplication | null
       displays: Display[]
       capabilityReports: Record<string, DisplayCapabilityReport>
+      automaticActivation:
+        | {
+            state: 'enabled'
+            configurationPath: string
+            initialOutcome: 'activated' | 'skipped' | 'partialFailure' | 'failed' | null
+          }
+        | { state: 'disabled'; configurationPath: string; message: string }
     }
   | { state: 'error'; message: string }
   | { state: 'starting' }

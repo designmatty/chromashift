@@ -13,21 +13,32 @@ npm run build
 npm run smoke:desktop
 ```
 
-`npm run test` runs the core-domain and protocol unit tests, six pure
-gamma-transform tests, builds the native helper, and runs a real
-Electron-client-to-helper lifecycle test. Core coverage includes schema bounds,
+`npm run test` runs the core-domain, desktop activation, protocol, and
+native-client lifecycle unit tests, six pure gamma-transform tests, builds the
+native helper, and runs a real Electron-client-to-helper lifecycle test. Core coverage includes schema bounds,
 optional overrides, path and filename matching, disabled profiles, activation
 precedence and rapid transitions, duplicate suppression, JSON persistence, and
-schema migration. The integration test verifies readiness, foreground
+schema migration. A deterministic fake helper verifies activation command
+requests and responses, runtime validation, structured errors, unsolicited
+events, request/startup timeouts, and pending-request rejection on process exit.
+The hardware integration test verifies readiness, foreground
 resolution, multi-display stable IDs, primary display detection, capability
-resolution, explicit unknown-command errors, restore-aware shutdown, and ADLX
-availability on the current machine.
+resolution and display state, explicit structured unknown-command errors,
+restore-aware shutdown, and ADLX availability on the current machine.
+
+Desktop activation coverage verifies app-data reads and atomic replacement,
+configuration gating, startup event buffering, foreground/default/baseline
+transitions, duplicate suppression, stale-display restoration, serialized rapid
+events, baseline capture before every apply, partial capability/restore failures,
+retry behavior, and state reset after external restoration or native restart.
 
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, rendered diagnostics, ready native service, and lack
-of renderer errors. It closes Electron through the normal application lifecycle
-and writes a captured window image to `apps/desktop/out/smoke/desktop.png`.
+of renderer errors. It also verifies automatic activation is enabled with a
+fresh isolated user-data directory, closes Electron through the normal
+restore-aware lifecycle, and writes a captured window image to
+`apps/desktop/out/smoke/desktop.png`.
 
 ## Phase 0 hardware record (2026-08-08)
 

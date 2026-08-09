@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "install-electron --no && electron-vite dev",
     "build": "electron-vite build",
+    "test": "vitest run src/main",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
+    "@chromashift/core": "*",
     "@chromashift/native-client": "*",
     "react": "19.2.8",
     "react-dom": "19.2.8"
@@ -22,6 +24,7 @@
     "electron": "43.3.0",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",
-    "vite": "7.3.6"
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
   }
 }

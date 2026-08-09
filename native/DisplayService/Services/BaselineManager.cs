@@ -63,7 +63,7 @@ internal sealed class BaselineManager(
             }
             EnsureGammaSafe(display);
             var ramp = ReadGamma(display);
-            return new { displayId, gammaRamp = ramp, gammaRampHash = ramp.GetHash() };
+            return new { displayId, provider = "windows", gammaRamp = ramp, gammaRampHash = ramp.GetHash() };
         }
     }
 
