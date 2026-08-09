@@ -33,12 +33,21 @@ function profile(id: string): ColorProfile {
 }
 
 describe('JSON profile repository', () => {
-  it('starts with an empty valid configuration when storage does not exist', async () => {
+  it('starts with the permanent default profile when storage does not exist', async () => {
     const repository = new JsonProfileRepository(new MemoryStorage())
     await expect(repository.getConfiguration()).resolves.toEqual({
       schemaVersion: 1,
-      profiles: [],
-      settings: { defaultProfileId: null }
+      profiles: [
+        {
+          id: 'default',
+          name: 'Default profile',
+          enabled: true,
+          color: {},
+          applications: [],
+          displays: []
+        }
+      ],
+      settings: { defaultProfileId: 'default' }
     })
   })
 
@@ -49,6 +58,7 @@ describe('JSON profile repository', () => {
     await repository.save({ ...profile('gaming'), name: 'Gaming updated' })
 
     await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({ id: 'default', name: 'Default profile' }),
       expect.objectContaining({ id: 'gaming', name: 'Gaming updated' })
     ])
     await expect(repository.findById('GAMING')).resolves.toMatchObject({ id: 'gaming' })

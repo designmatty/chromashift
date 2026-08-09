@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { colorProfileSchema, type ColorProfile } from './model.js'
 
 export const CURRENT_SCHEMA_VERSION = 1 as const
+export const DEFAULT_PROFILE_ID = 'default' as const
 
 export const profileSettingsSchema = z
   .object({
@@ -76,8 +77,19 @@ export class UnsupportedConfigurationVersionError extends ConfigurationValidatio
 export function createEmptyConfiguration(): ProfileConfiguration {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    profiles: [],
-    settings: { defaultProfileId: null }
+    profiles: [createDefaultProfile()],
+    settings: { defaultProfileId: DEFAULT_PROFILE_ID }
+  }
+}
+
+export function createDefaultProfile(): ColorProfile {
+  return {
+    id: DEFAULT_PROFILE_ID,
+    name: 'Default profile',
+    enabled: true,
+    color: {},
+    applications: [],
+    displays: []
   }
 }
 

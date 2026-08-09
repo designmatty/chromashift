@@ -27,6 +27,8 @@ describe('DisplayService lifecycle', () => {
       expect(foreground.pid).toBeGreaterThan(0)
       expect(foreground.monitorDeviceName).toMatch(/^\\\\\.\\DISPLAY\d+$/)
     }
+    const visibleApplications = await client.getVisibleApplications()
+    expect(visibleApplications.every((application) => application.pid > 0)).toBe(true)
     const displays = await client.getDisplays()
     expect(displays.length).toBeGreaterThan(0)
     expect(new Set(displays.map((display) => display.id)).size).toBe(displays.length)

@@ -466,6 +466,31 @@ describe('AutomaticActivationController', () => {
     expect(native.calls.at(-1)).toEqual({ operation: 'restoreAll' })
   })
 
+  it('suspends writes during preview and applies the latest foreground target on rollback', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(
+      configuration([defaultProfile, gameAProfile], 'default')
+    )
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('Browser.exe'))
+
+    await controller.beginPreview()
+    await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
+    expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(1)
+
+    await controller.cancelPreview()
+
+    expect(
+      native.calls
+        .filter((call) => call.operation === 'apply')
+        .map((call) => call.settings?.saturation)
+    ).toEqual([50, 75])
+  })
+
   it('retains failed baseline resets so a later transition retries stale displays', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(

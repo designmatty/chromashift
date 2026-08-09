@@ -4,6 +4,7 @@ import {
   displayRestoreResultSchema,
   displayStateSchema,
   foregroundCurrentResultSchema,
+  foregroundApplicationsResultSchema,
   nativeMessageSchema,
   nativeRequestSchema,
   restoreAllResultSchema
@@ -38,6 +39,18 @@ describe('native protocol', () => {
         }
       }).application?.executable
     ).toBe('example.exe')
+  })
+
+  it('validates visible top-level application results', () => {
+    expect(foregroundApplicationsResultSchema.parse({
+      applications: [{
+        pid: 42,
+        executable: 'example.exe',
+        path: 'C:\\Example\\example.exe',
+        title: 'Example',
+        monitorDeviceName: '\\\\.\\DISPLAY1'
+      }]
+    }).applications).toHaveLength(1)
   })
 
   it('validates product-level display settings before they cross the native boundary', () => {

@@ -7,6 +7,10 @@ namespace ChromaShift.DisplayService.Services;
 
 internal sealed class ForegroundApplicationService
 {
+    private const uint GetWindowOwner = 4;
+    private const int ExtendedWindowStyle = -20;
+    private const long ToolWindowStyle = 0x00000080L;
+    private const uint DwmWindowAttributeCloaked = 14;
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const int MaxPathCharacters = 32_768;
@@ -15,6 +19,46 @@ internal sealed class ForegroundApplicationService
     {
         var window = GetForegroundWindow();
         return window == IntPtr.Zero ? null : Resolve(window);
+    }
+
+    internal IReadOnlyList<ForegroundApplication> ListVisible()
+    {
+        var applications = new List<ForegroundApplication>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var shellWindow = GetShellWindow();
+        _ = EnumWindows((window, _) =>
+        {
+            if (window == shellWindow || !IsWindowVisible(window) ||
+                GetWindow(window, GetWindowOwner) != IntPtr.Zero || IsToolWindow(window) ||
+                IsCloaked(window))
+            {
+                return true;
+            }
+
+            var application = Resolve(window);
+            if (application?.Path is null || string.IsNullOrWhiteSpace(application.Title) ||
+                application.Pid == Environment.ProcessId || !paths.Add(application.Path))
+            {
+                return true;
+            }
+
+            applications.Add(application);
+            return true;
+        }, IntPtr.Zero);
+        return applications;
+    }
+
+    private static bool IsToolWindow(IntPtr window) =>
+        (GetWindowLongPtr(window, ExtendedWindowStyle).ToInt64() & ToolWindowStyle) != 0;
+
+    private static bool IsCloaked(IntPtr window)
+    {
+        var cloaked = 0;
+        return DwmGetWindowAttribute(
+            window,
+            DwmWindowAttributeCloaked,
+            out cloaked,
+            Marshal.SizeOf<int>()) == 0 && cloaked != 0;
     }
 
     internal ForegroundApplication? Resolve(IntPtr window)
@@ -108,6 +152,32 @@ internal sealed class ForegroundApplicationService
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
+    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr window, uint command);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(
+        IntPtr window,
+        uint attribute,
+        out int value,
+        int valueSize);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);

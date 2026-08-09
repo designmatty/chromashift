@@ -1400,17 +1400,11 @@ before writing native state.
 
 ## Preview rollback
 
-When previewing extreme display changes, support automatic rollback.
-
-Conceptually:
-
-```text
-Keep these settings?
-
-Reverting in 15 seconds…
-```
-
-This may be implemented after the initial feasibility work.
+Preview is explicitly controlled by the user. Do not show a countdown or discard
+changes on a timer. Canceling Edit, stopping Preview, changing away from a dirty
+profile, or resetting a mini-panel override must restore the exact pre-preview
+automatic/manual state. Save keeps the edited result; an explicit Preview button
+acts as a toggle.
 
 ---
 
@@ -1720,8 +1714,8 @@ Current status on 2026-08-08:
 - Milestone 1 — complete
 - Milestone 2 — complete
 - Milestone 3 — complete
-- Milestone 4 — next
-- Milestone 5 — pending
+- Milestone 4 — complete
+- Milestone 5 — next
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -1909,7 +1903,7 @@ adopting the starter itself.
 
 # Milestone 4 — Profile UI
 
-### Slice 4.1 — UI foundation
+### Slice 4.1 — UI foundation (completed)
 
 - add Tailwind CSS only when this slice begins
 - add only the shadcn/Radix components used by current screens
@@ -1918,14 +1912,14 @@ adopting the starter itself.
 - retain the native Windows frame unless a later reviewed decision changes it
 - do not add Router, Query, or animation libraries without demonstrated need
 
-### Slice 4.2 — Typed renderer-to-main product API
+### Slice 4.2 — Typed renderer-to-main product API (completed)
 
 - centralize request and response contracts in shared Zod schemas
 - validate IPC sender, arguments, and returned data
 - expose a narrow capability-oriented preload API rather than generic `invoke`
 - translate native and persistence failures into explicit user-facing results
 
-### Slice 4.3 — Profile management
+### Slice 4.3 — Profile management (completed)
 
 - profile list
 - create
@@ -1933,19 +1927,41 @@ adopting the starter itself.
 - delete
 - duplicate
 
-### Slice 4.4 — Assignment workflows
+### Slice 4.4 — Assignment workflows (completed)
 
 - display selection
 - application selection
 
-### Slice 4.5 — Capability-driven preview
+### Slice 4.5 — Capability-driven preview (completed)
 
 - live preview
 - unsupported/HDR-unsafe control explanations
-- confirmation timeout and automatic rollback
+- explicit preview toggle without a countdown timer
 - cancel restores the exact pre-preview state
 
 Focus on functionality before visual polish.
+
+### Slice 4.6 — Windows panel workflows (completed)
+
+- use the reviewed shadcn preset `b5dee6f9W`, selectively adding only controls
+  used by ChromaShift, with Lucide icons
+- keep the native Windows frame for the app panel
+- open a borderless mini panel from tray left-click, position it next to the
+  taskbar, close it on focus loss, and close it when opening the app panel
+- let mini-panel color overrides survive panel focus loss but restore them when
+  switching profiles, returning to Auto switch, resetting, or exiting
+- provide `Update profile` and `Reset changes` actions for temporary overrides
+- keep one always-enabled, undeletable Default profile as the catch-all; it has
+  no application assignments but remains editable and copyable
+- keep profile navigation read-only until Edit; navigation never previews a
+  profile without an explicit Preview action
+- replace foreground-window capture with a visible top-level application picker,
+  excluding ChromaShift, system/background windows, and duplicate executables;
+  retain the `.exe` browser
+- add System/Light/Dark theme, launch-at-startup, login launch behavior, close
+  behavior, and Reset displays settings; diagnostics/log browsing remains M5
+- login launch respects `Start in tray` versus `Show app panel`; explicit launches
+  always show the app panel
 
 ---
 
@@ -2253,12 +2269,10 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–3 are complete. Work on **Milestone 4, one
+Phase 0 and Milestones 1–4 are complete. Work on **Milestone 5, one
 numbered slice at a time**, unless the user explicitly changes priority.
 
-The next slice is **Slice 4.1 — UI foundation**.
-
-Do not begin visual polish before the Milestone 4 functional UI exists.
+The next slice is **Slice 5.1 — Display and operating-system transitions**.
 
 ## Completed Phase 0 deliverables
 

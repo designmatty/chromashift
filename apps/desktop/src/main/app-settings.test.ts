@@ -1,0 +1,48 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { afterEach, describe, expect, it } from 'vitest'
+import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
+
+const directories: string[] = []
+
+async function settingsPath(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'chromashift-settings-'))
+  directories.push(directory)
+  return join(directory, 'settings.json')
+}
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((directory) =>
+    rm(directory, { recursive: true, force: true })
+  ))
+})
+
+describe('AppSettingsRepository', () => {
+  it('uses the product defaults when no settings file exists', async () => {
+    const repository = new AppSettingsRepository(await settingsPath())
+    await expect(repository.get()).resolves.toEqual(defaultAppSettings)
+  })
+
+  it('validates and atomically persists settings', async () => {
+    const path = await settingsPath()
+    const repository = new AppSettingsRepository(path)
+    const settings = {
+      launchAtStartup: true,
+      launchBehavior: 'app' as const,
+      closeBehavior: 'shutdown' as const,
+      theme: 'dark' as const
+    }
+
+    await expect(repository.save(settings)).resolves.toEqual(settings)
+    await expect(readFile(path, 'utf8')).resolves.toBe(`${JSON.stringify(settings, null, 2)}\n`)
+  })
+
+  it('rejects malformed persisted settings rather than silently changing behavior', async () => {
+    const path = await settingsPath()
+    await writeFile(path, JSON.stringify({ ...defaultAppSettings, theme: 'purple' }))
+    const repository = new AppSettingsRepository(path)
+
+    await expect(repository.get()).rejects.toThrow()
+  })
+})

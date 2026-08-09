@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-React diagnostics renderer
+React profile renderer
   -> sandboxed preload
   -> Electron main
        -> @chromashift/core (profiles, matching, activation, persistence)
@@ -13,7 +13,7 @@ React diagnostics renderer
 ```
 
 Electron owns product behavior. The renderer has no Node integration and sees
-only a narrow context-bridged diagnostics API. Native handles, vendor structures,
+only a narrow context-bridged product API. Native handles, vendor structures,
 profile matching, and persistence never cross layers accidentally.
 
 `DisplayService` owns only Windows/GPU work: active-display enumeration,
@@ -52,13 +52,48 @@ failures are logged and returned as partial outcomes while remaining displays
 continue; failed transitions reset deduplication so a later event can retry.
 External restoration and native-service exit also reset activation state.
 
-The diagnostics shell surfaces whether automation was enabled and the exact
-configuration path. The system tray reads the same activation state, supports
+The renderer uses centralized Zod request and response contracts shared by
+renderer, preload, and main. Preload exposes capability-oriented methods rather
+than a generic IPC invoke. Main validates the sender and input for every
+privileged request, validates its response before returning it, and maps native,
+persistence, validation, and unsupported-capability failures into explicit
+user-facing results.
+
+The profile workspace supports CRUD, default/manual activation, multi-display
+targets, foreground-application assignment, and an Electron `.exe` picker. Its
+controls derive support and provider explanations from each selected display's
+capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
+display view retains the hardware diagnostics needed for provider support.
+
+Live preview is an explicit activation session. It suspends automatic display
+writes while still remembering foreground changes and applies only validated
+settings from the native service's immutable baseline. Edit mode previews changes
+as they are made; the separate Preview action is a user-controlled toggle. Cancel,
+reset, navigation away from a dirty edit, or failure resets the activation resolver
+and reapplies the exact previous manual/foreground/default/baseline target. There
+is deliberately no countdown timer. Native apply restores baseline before each
+complete settings request so removing an override cannot inherit a stale value.
+
+Tray left-click opens a dedicated borderless mini-panel window next to the taskbar.
+It hides when focus is lost and when the full app opens. Quick color changes remain
+temporary across focus loss and expose `Update profile` and `Reset changes`; profile
+selection establishes a manual override until the user returns to Auto switch.
+Mini-panel footer actions open the corresponding Profiles, Displays, or Settings
+view in the native-framed app panel.
+
+App settings are validated and atomically persisted separately from profiles.
+They control login launch, login-only tray/app startup behavior, close-to-tray
+versus restore-safe shutdown, and System/Light/Dark rendering. Explicit launches
+still show the app panel. The permanent Default profile remains the only catch-all,
+cannot be disabled or deleted, and cannot receive application assignments.
+
+The system tray reads the same activation state, supports
 manual profile overrides, returns to automatic mode, and can restore baseline.
-Closing the window hides it without stopping activation. Tray Exit and other
+Closing the window either hides it or requests shutdown according to settings.
+Tray Exit and other
 application quit requests share one shutdown coordinator, which waits for queued
 activation work and requires `service.shutdown` to confirm restoration before
-allowing Electron to exit. A restore failure reopens diagnostics and keeps the
+allowing Electron to exit. A restore failure reopens the product window and keeps the
 application and helper alive so Exit can be retried.
 
 Windows packages use ASAR for application code and a self-contained .NET publish

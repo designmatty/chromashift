@@ -10,10 +10,12 @@ export {
 } from './profiles/model.js'
 export {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_PROFILE_ID,
   ConfigurationValidationError,
   UnsupportedConfigurationVersionError,
   cloneProfile,
   createEmptyConfiguration,
+  createDefaultProfile,
   parseProfileConfiguration,
   parseProfileConfigurationJson,
   profileConfigurationSchema,

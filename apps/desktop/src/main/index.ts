@@ -1,67 +1,63 @@
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { join, resolve } from 'node:path'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  type OpenDialogOptions
+} from 'electron'
+import { basename, extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { JsonProfileRepository, type ProfileRepository } from '@chromashift/core'
 import {
   NativeClient,
-  foregroundApplicationChangedDataSchema,
-  type ForegroundApplication,
-  type Display,
-  type DisplayCapabilityReport,
-  type SystemInfo
+  foregroundApplicationChangedDataSchema
 } from '@chromashift/native-client'
+import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { ActivationCoordinator } from './activation-coordinator.js'
+import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
 import { resolveApplicationDataPaths } from './application-data-path.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
 import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
 import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
+import { MiniPanelController } from './mini-panel-controller.js'
+import { registerProductIpcHandlers } from './product-ipc.js'
+import { ProductController } from './product-controller.js'
+import { PreviewSessionController } from './preview-session-controller.js'
 import { ShutdownCoordinator } from './shutdown-coordinator.js'
 import { describeError, JsonConsoleLogger } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
-type AutomaticActivationStatus =
-  | {
-      state: 'enabled'
-      configurationPath: string
-      initialOutcome: 'activated' | 'skipped' | 'partialFailure' | 'failed' | null
-    }
-  | { state: 'disabled'; configurationPath: string; message: string }
-
-type NativeStatus =
-  | {
-      state: 'ready'
-      info: SystemInfo
-      currentApplication: ForegroundApplication | null
-      lastForegroundEvent: ForegroundApplication | null
-      displays: Display[]
-      capabilityReports: Record<string, DisplayCapabilityReport>
-      automaticActivation: AutomaticActivationStatus
-    }
-  | { state: 'error'; message: string }
-  | { state: 'starting' }
-
 let mainWindow: BrowserWindow | undefined
+let miniWindow: BrowserWindow | undefined
 let nativeClient: NativeClient | undefined
 let profileRepository: ProfileRepository | undefined
 let automaticActivation: AutomaticActivationController | undefined
 let trayController: TrayController | undefined
 let shutdownCoordinator: ShutdownCoordinator | undefined
-let nativeStatus: NativeStatus = { state: 'starting' }
-let lastForegroundEvent: ForegroundApplication | null = null
+let productController: ProductController | undefined
+let previewController: PreviewSessionController | undefined
+let productStateBroadcastPending = false
 const logger = new JsonConsoleLogger()
 const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
 const applicationDataPaths = resolveApplicationDataPaths(
   app.getPath('appData'),
   hasUserDataOverride ? app.getPath('userData') : undefined
 )
+const settingsRepository = new AppSettingsRepository(applicationDataPaths.settingsPath)
+let currentSettings = defaultAppSettings
 if (!hasUserDataOverride) app.setPath('userData', applicationDataPaths.userDataDirectory)
 const windowController = new WindowController(
   () => mainWindow,
   () => createWindow(),
   () => shutdownCoordinator?.exiting === true
+)
+const miniPanelController = new MiniPanelController(
+  () => miniWindow,
+  () => createMiniWindow()
 )
 
 function servicePath(): string {
@@ -86,8 +82,10 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
   const developmentUrl = process.env['ELECTRON_RENDERER_URL']
   if (developmentUrl !== undefined) {
     if (new URL(senderUrl).origin === new URL(developmentUrl).origin) return
-  } else if (senderUrl === pathToFileURL(join(__dirname, '../renderer/index.html')).toString()) {
-    return
+  } else {
+    const expected = new URL(pathToFileURL(join(__dirname, '../renderer/index.html')).toString())
+    const actual = new URL(senderUrl)
+    if (actual.protocol === expected.protocol && actual.pathname === expected.pathname) return
   }
   throw new Error(`Renderer IPC sender is not trusted: ${senderUrl}`)
 }
@@ -121,7 +119,7 @@ async function startNativeService(): Promise<void> {
     nativeClient.on('event', (event) => {
       if (event.event === 'foregroundApplicationChanged') {
         const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
-        if (parsed.success) lastForegroundEvent = parsed.data.application
+        if (parsed.success) scheduleProductStateBroadcast()
       }
       void automaticActivation?.handleNativeEvent(event).catch((error: unknown) => {
         logger.write({
@@ -131,7 +129,7 @@ async function startNativeService(): Promise<void> {
         })
       })
     })
-    nativeClient.on('exit', (code, signal) => {
+    nativeClient.on('exit', () => {
       void automaticActivation?.handleNativeServiceExit().catch((error: unknown) => {
         logger.write({
           level: 'error',
@@ -139,59 +137,31 @@ async function startNativeService(): Promise<void> {
           ...describeError(error)
         })
       })
-      if (shutdownCoordinator?.exiting !== true) {
-        nativeStatus = {
-          state: 'error',
-          message: `DisplayService exited (code=${String(code)}, signal=${String(signal)})`
-        }
-      }
+      if (shutdownCoordinator?.exiting !== true) scheduleProductStateBroadcast()
     })
-    const info = await nativeClient.start()
-    const displays = await nativeClient.getDisplays()
+    await nativeClient.start()
     const currentApplication = await nativeClient.getForegroundApplication()
-    let automaticActivationStatus: AutomaticActivationStatus
     try {
-      const initialOutcome = await automaticActivation.start(currentApplication)
-      automaticActivationStatus = {
-        state: 'enabled',
-        configurationPath,
-        initialOutcome: initialOutcome?.status ?? null
-      }
+      await automaticActivation.start(currentApplication)
     } catch (error) {
-      automaticActivationStatus = {
-        state: 'disabled',
+      logger.write({
+        level: 'error',
+        eventName: 'AutomaticActivationUnavailable',
         configurationPath,
-        message: describeError(error).message
-      }
-    }
-    nativeStatus = {
-      state: 'ready',
-      info,
-      currentApplication,
-      lastForegroundEvent,
-      displays,
-      capabilityReports: Object.fromEntries(
-        await Promise.all(
-          displays.map(async (display) => [
-            display.id,
-            await nativeClient!.getDisplayCapabilityReport(display.id)
-          ])
-        )
-      ),
-      automaticActivation: automaticActivationStatus
+        ...describeError(error)
+      })
     }
   } catch (error) {
-    nativeStatus = {
-      state: 'error',
-      message: error instanceof Error ? error.message : String(error)
-    }
+    logger.write({ level: 'error', eventName: 'NativeServiceStartupFailed', ...describeError(error) })
   }
 }
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 820,
-    height: 580,
+    width: 1120,
+    height: 760,
+    minWidth: 880,
+    minHeight: 640,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -204,8 +174,23 @@ function createWindow(): BrowserWindow {
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`Preload script failed: ${preloadPath}`, error)
   })
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== window.webContents.getURL()) event.preventDefault()
+  })
   window.on('close', (event) => {
     const wasExiting = shutdownCoordinator?.exiting === true
+    if (!wasExiting && currentSettings.closeBehavior === 'shutdown') {
+      event.preventDefault()
+      void shutdownCoordinator?.request('application')
+      return
+    }
+    if (!wasExiting && previewController?.state.state === 'active' &&
+      previewController.state.kind !== 'override') {
+      void previewController.cancel().catch((error: unknown) => {
+        logger.write({ level: 'warning', eventName: 'PreviewCancelOnCloseFailed', ...describeError(error) })
+      })
+    }
     windowController.handleClose(event, window)
     if (!wasExiting) {
       logger.write({ level: 'information', eventName: 'MainWindowHiddenToTray' })
@@ -223,8 +208,52 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-function openWindow(): void {
+function createMiniWindow(): BrowserWindow {
+  const panel = new BrowserWindow({
+    width: 330,
+    height: 510,
+    show: false,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#18181b',
+    ...(process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  miniWindow = panel
+  panel.on('blur', () => panel.hide())
+  panel.on('closed', () => { if (miniWindow === panel) miniWindow = undefined })
+  panel.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`Mini-panel preload script failed: ${preloadPath}`, error)
+  })
+  panel.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  panel.webContents.on('will-navigate', (event, url) => {
+    if (url !== panel.webContents.getURL()) event.preventDefault()
+  })
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    void panel.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=mini`)
+  } else {
+    void panel.loadFile(join(__dirname, '../renderer/index.html'), { query: { panel: 'mini' } })
+  }
+  return panel
+}
+
+function openWindow(view: AppPanelView = 'profiles'): void {
+  miniPanelController.hide()
   windowController.open()
+  const window = mainWindow
+  if (window === undefined || window.webContents.isDestroyed()) return
+  const navigate = (): void => window.webContents.send(productIpcChannels.navigateAppPanel, view)
+  if (window.webContents.isLoading()) window.webContents.once('did-finish-load', navigate)
+  else navigate()
 }
 
 function configureDesktopLifecycle(): Promise<void> {
@@ -237,76 +266,126 @@ function configureDesktopLifecycle(): Promise<void> {
     nativeClient,
     app,
     {
-      show: openWindow,
+      show: () => openWindow(),
       showError: (title, message) => dialog.showErrorBox(title, message)
     },
     logger
   )
-  const trayMenu = new ElectronTrayMenu(trayIconPath(), openWindow)
+  const trayMenu = new ElectronTrayMenu(
+    trayIconPath(),
+    (bounds) => miniPanelController.toggle(bounds)
+  )
   trayController = new TrayController(
     profileRepository,
     automaticActivation,
-    { open: openWindow },
+    { open: () => openWindow() },
     shutdownCoordinator,
     trayMenu,
     logger
   )
+  automaticActivation.subscribe(() => scheduleProductStateBroadcast())
+  previewController = new PreviewSessionController(
+    nativeClient,
+    automaticActivation,
+    () => scheduleProductStateBroadcast()
+  )
+  productController = new ProductController(
+    profileRepository,
+    nativeClient,
+    automaticActivation,
+    previewController,
+    {
+      pick: async () => {
+        const options: OpenDialogOptions = {
+          title: 'Choose an application',
+          properties: ['openFile'],
+          filters: [{ name: 'Windows applications', extensions: ['exe'] }]
+        }
+        const result = mainWindow === undefined
+          ? await dialog.showOpenDialog(options)
+          : await dialog.showOpenDialog(mainWindow, options)
+        const executablePath = result.filePaths[0]
+        if (result.canceled || executablePath === undefined) return null
+        const executableName = basename(executablePath)
+        const icon = await app.getFileIcon(executablePath, { size: 'normal' })
+        return {
+          executableName,
+          executablePath,
+          friendlyName: basename(executablePath, extname(executablePath)),
+          iconDataUrl: icon.isEmpty() ? null : icon.toDataURL()
+        }
+      },
+      describe: async (application) => {
+        if (application.path === null || application.executable === null ||
+          application.pid === process.pid) return null
+        const icon = await app.getFileIcon(application.path, { size: 'normal' })
+        return {
+          executableName: application.executable,
+          executablePath: application.path,
+          friendlyName: application.title || basename(application.path, extname(application.path)),
+          iconDataUrl: icon.isEmpty() ? null : icon.toDataURL()
+        }
+      }
+    },
+    {
+      get: () => settingsRepository.get(),
+      save: (settings) => settingsRepository.save(settings),
+      apply: (settings) => {
+        currentSettings = settings
+        app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup })
+      }
+    },
+    {
+      refreshTray: () => trayController?.refresh() ?? Promise.resolve(),
+      stateChanged: () => scheduleProductStateBroadcast()
+    }
+  )
   return trayController.start()
 }
 
-ipcMain.handle('diagnostics:get-native-status', async (event): Promise<NativeStatus> => {
-  assertTrustedRenderer(event)
-  if (nativeClient?.running) {
-    try {
-      const displays = await nativeClient.getDisplays()
-      const automaticActivationStatus = nativeStatus.state === 'ready'
-        ? nativeStatus.automaticActivation
-        : {
-            state: 'disabled' as const,
-            configurationPath: applicationDataPaths.profileConfigurationPath,
-            message: 'Automatic activation status is unavailable.'
-          }
-      nativeStatus = {
-        state: 'ready',
-        info: await nativeClient.getSystemInfo(),
-        currentApplication: await nativeClient.getForegroundApplication(),
-        lastForegroundEvent,
-        displays,
-        capabilityReports: Object.fromEntries(
-          await Promise.all(
-            displays.map(async (display) => [
-              display.id,
-              await nativeClient!.getDisplayCapabilityReport(display.id)
-            ])
-          )
-        ),
-        automaticActivation: automaticActivationStatus
+function scheduleProductStateBroadcast(): void {
+  if (productStateBroadcastPending) return
+  productStateBroadcastPending = true
+  setTimeout(() => {
+    productStateBroadcastPending = false
+    const controller = productController
+    const windows = [mainWindow, miniWindow].filter(
+      (window): window is BrowserWindow => window !== undefined && !window.webContents.isDestroyed()
+    )
+    if (controller === undefined || windows.length === 0) return
+    void controller.getStateForBroadcast().then((state) => {
+      for (const window of windows) {
+        if (!window.webContents.isDestroyed()) {
+          window.webContents.send(productIpcChannels.stateChanged, state)
+        }
       }
-    } catch (error) {
-      nativeStatus = {
-        state: 'error',
-        message: error instanceof Error ? error.message : String(error)
-      }
-    }
-  }
-  return nativeStatus
-})
+    }).catch((error: unknown) => {
+      logger.write({ level: 'warning', eventName: 'ProductStateBroadcastFailed', ...describeError(error) })
+    })
+  }, 25)
+}
 
-ipcMain.handle('application:request-exit', async (event): Promise<boolean> => {
-  assertTrustedRenderer(event)
-  if (shutdownCoordinator === undefined) return false
-  return shutdownCoordinator.request('application')
-})
+registerProductIpcHandlers(
+  ipcMain,
+  () => productController,
+  assertTrustedRenderer,
+  () => shutdownCoordinator?.request('application') ?? Promise.resolve(false),
+  openWindow
+)
 
 void app.whenReady().then(async () => {
+  currentSettings = await settingsRepository.get()
+  app.setLoginItemSettings({ openAtLogin: currentSettings.launchAtStartup })
   await startNativeService()
-  createWindow()
   await configureDesktopLifecycle()
-  app.on('activate', openWindow)
+  if (!app.getLoginItemSettings().wasOpenedAtLogin || currentSettings.launchBehavior === 'app') {
+    createWindow()
+  }
+  app.on('activate', () => openWindow())
 })
 
 app.on('window-all-closed', () => {
-  // Closing the diagnostics window hides it; the tray keeps activation alive.
+  // The tray keeps ChromaShift alive when windows are hidden or closed.
 })
 
 app.on('before-quit', (event) => {

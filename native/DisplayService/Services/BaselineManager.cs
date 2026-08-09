@@ -86,6 +86,11 @@ internal sealed class BaselineManager(
 
             try
             {
+                // Every request represents the complete product-level state for this
+                // display. Restore first so settings omitted from a later profile or
+                // live-preview update do not inherit values from the previous request.
+                RestoreEntry(display, baseline);
+
                 string? gammaHash = null;
                 int? brightness = null;
                 int? contrast = null;

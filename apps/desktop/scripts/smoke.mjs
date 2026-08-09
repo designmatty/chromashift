@@ -120,11 +120,12 @@ async function connectToDebugger(url) {
 
 async function waitForUi(debuggerClient) {
   const deadline = Date.now() + timeoutMilliseconds
+  let lastSnapshot
   while (Date.now() < deadline) {
     const evaluation = await debuggerClient.send('Runtime.evaluate', {
       expression: `({
         body: document.body.innerText,
-        bridgeReady: typeof window.chromaShift?.getNativeStatus === 'function' &&
+        bridgeReady: typeof window.chromaShift?.getState === 'function' &&
           typeof window.chromaShift?.requestExit === 'function',
         documentReady: document.readyState,
         title: document.title
@@ -132,12 +133,41 @@ async function waitForUi(debuggerClient) {
       returnByValue: true
     })
     const snapshot = evaluation.result.value
-    if (snapshot.documentReady === 'complete' && !snapshot.body.includes('Starting DisplayService')) {
+    lastSnapshot = snapshot
+    if (snapshot.documentReady === 'complete' && snapshot.bridgeReady &&
+      snapshot.body.includes('Profiles') && snapshot.body.includes('Default profile')) {
       return snapshot
     }
     await delay(100)
   }
-  throw new Error('The diagnostics UI did not finish rendering.')
+  throw new Error(`The product UI did not finish rendering: ${JSON.stringify(lastSnapshot)}`)
+}
+
+async function waitForText(debuggerClient, text) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    const evaluation = await debuggerClient.send('Runtime.evaluate', {
+      expression: `document.body.innerText.includes(${JSON.stringify(text)})`,
+      returnByValue: true
+    })
+    if (evaluation.result.value === true) return
+    await delay(100)
+  }
+  throw new Error(`The product UI did not render ${JSON.stringify(text)}.`)
+}
+
+async function waitForExpression(debuggerClient, expression, failureMessage) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    const evaluation = await debuggerClient.send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (evaluation.result.value === true) return
+    await delay(100)
+  }
+  throw new Error(failureMessage)
 }
 
 async function waitForExit(child) {
@@ -184,27 +214,146 @@ try {
   await debuggerClient.send('Page.enable')
   await debuggerClient.send('Log.enable')
 
+  // Discard debugger-attachment noise from the already loaded first document;
+  // the explicit reload below is the renderer/preload run under test.
+  await delay(100)
+  debuggerClient.events.length = 0
   const loaded = debuggerClient.waitForEvent('Page.loadEventFired')
   await debuggerClient.send('Page.reload', { ignoreCache: true })
   await loaded
 
   const ui = await waitForUi(debuggerClient)
+  const productState = await debuggerClient.send('Runtime.evaluate', {
+    expression: 'window.chromaShift.getState()',
+    awaitPromise: true,
+    returnByValue: true
+  })
+  ui.productReady = productState.result.value?.ok === true
+
+  if (!ui.bridgeReady) throw new Error('The preload bridge was not exposed.')
+  if (!ui.body.includes('ChromaShift') || !ui.body.includes('Profiles')) {
+    throw new Error(`The product UI was incomplete:\n${ui.body}`)
+  }
+  if (!ui.productReady) throw new Error('The validated product state was unavailable.')
+
+  const readOnlyProfile = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => ({
+      hasEdit: [...document.querySelectorAll('button')]
+        .some((candidate) => candidate.textContent?.trim() === 'Edit'),
+      hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null
+    }))()`,
+    returnByValue: true
+  })
+  if (!readOnlyProfile.result.value?.hasEdit || readOnlyProfile.result.value?.hasNameInput) {
+    throw new Error('Profile navigation did not begin in read-only mode.')
+  }
+
+  const settingsNavigation = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((candidate) => candidate.textContent?.trim() === 'Settings')
+      button?.click()
+      return button !== undefined
+    })()`,
+    returnByValue: true
+  })
+  if (settingsNavigation.result.value !== true) throw new Error('Settings navigation was unavailable.')
+  await waitForText(debuggerClient, 'Launch at startup')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Profiles')?.click()`
+  })
+  await waitForText(debuggerClient, 'Default profile')
+
+  const createProfile = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((candidate) => candidate.textContent?.trim() === 'New profile')
+      if (button === undefined) return false
+      button.click()
+      return true
+    })()`,
+    returnByValue: true
+  })
+  if (createProfile.result.value !== true) throw new Error('The create-profile control was unavailable.')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') !== null`,
+    'New profile did not enter Edit mode.'
+  )
+
+  const editControls = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const nameInput = document.querySelector('[aria-label="Profile name"]')
+      const displayCheckbox = document.querySelector('.display-option [data-slot="checkbox"]')
+      const brightnessCheckbox = document.querySelector('.control [data-slot="checkbox"]')
+      if (nameInput === null || displayCheckbox === null || brightnessCheckbox === null) {
+        return {
+          ready: false,
+          hasNameInput: nameInput !== null,
+          hasDisplayCheckbox: displayCheckbox !== null,
+          hasBrightnessCheckbox: brightnessCheckbox !== null,
+          body: document.body.innerText
+        }
+      }
+      displayCheckbox.click()
+      brightnessCheckbox.click()
+      return { ready: true }
+    })()`,
+    returnByValue: true
+  })
+  if (editControls.result.value?.ready !== true) {
+    throw new Error(`Edit mode did not expose profile name, display, and color controls: ${JSON.stringify(editControls.result.value)}`)
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' && result.value.preview.kind === 'edit'
+    })()`,
+    'Live edit preview did not activate.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('.control [data-slot="checkbox"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        Object.keys(result.value.preview.color).length === 0
+    })()`,
+    'Removing the final color override did not restore a baseline-only preview.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'inactive'
+    })()`,
+    'Cancel did not restore and close the live edit preview.'
+  )
+
+  const createdState = await debuggerClient.send('Runtime.evaluate', {
+    expression: 'window.chromaShift.getState()',
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (createdState.result.value?.value?.configuration?.profiles?.length !== 2) {
+    throw new Error('The profile creation workflow did not persist a profile.')
+  }
+
   const failures = debuggerClient.events.filter((event) =>
     event.method === 'Runtime.exceptionThrown' ||
     (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error') ||
     (event.method === 'Log.entryAdded' && event.params.entry.level === 'error')
   )
-
-  if (!ui.bridgeReady) throw new Error('The preload bridge was not exposed.')
-  if (!ui.body.includes('ChromaShift') || !ui.body.includes('Native service')) {
-    throw new Error(`The diagnostics UI was incomplete:\n${ui.body}`)
-  }
-  if (!ui.body.includes('Status\nReady')) {
-    throw new Error(`The native service was not ready:\n${ui.body}`)
-  }
-  if (!ui.body.includes('Automatic activation\nEnabled')) {
-    throw new Error(`Automatic activation was not enabled:\n${ui.body}`)
-  }
   if (failures.length > 0) {
     throw new Error(`The renderer reported ${failures.length} error event(s): ${JSON.stringify(failures)}`)
   }
@@ -253,4 +402,8 @@ try {
   })
 }
 
-if (smokeFailure !== undefined) throw smokeFailure
+if (smokeFailure !== undefined) {
+  if (standardOutput !== '') globalThis.console.error(`Electron stdout:\n${standardOutput}`)
+  if (standardError !== '') globalThis.console.error(`Electron stderr:\n${standardError}`)
+  throw smokeFailure
+}
