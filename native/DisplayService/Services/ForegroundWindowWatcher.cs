@@ -13,19 +13,18 @@ internal sealed class ForegroundWindowWatcher : IDisposable
 
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly WinEventDelegate _callback = HandleWinEvent;
-    private readonly ForegroundApplicationService _applications;
+    private readonly ForegroundWindowChangeResolver _changes;
     private readonly Func<ForegroundApplication, Task> _onChanged;
     private Thread? _thread;
     private uint _threadId;
     private IntPtr _hook;
-    private IntPtr _lastWindow;
     private bool _disposed;
 
     internal ForegroundWindowWatcher(
         ForegroundApplicationService applications,
         Func<ForegroundApplication, Task> onChanged)
     {
-        _applications = applications;
+        _changes = new ForegroundWindowChangeResolver(GetForegroundWindow, applications.Resolve);
         _onChanged = onChanged;
     }
 
@@ -129,13 +128,12 @@ internal sealed class ForegroundWindowWatcher : IDisposable
         _ = eventTime;
 
         var watcher = Current;
-        if (watcher is null || window == IntPtr.Zero || window == watcher._lastWindow)
+        if (watcher is null || window == IntPtr.Zero)
         {
             return;
         }
 
-        watcher._lastWindow = window;
-        var application = watcher._applications.Resolve(window);
+        var application = watcher._changes.ResolveForEvent(window);
         if (application is null)
         {
             return;
@@ -187,6 +185,9 @@ internal sealed class ForegroundWindowWatcher : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostThreadMessage(uint threadId, uint message, UIntPtr wordParameter, IntPtr longParameter);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern int GetMessage(out Message message, IntPtr window, uint minimumMessage, uint maximumMessage);

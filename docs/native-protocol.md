@@ -50,7 +50,7 @@ version change.
 `display.apply.settings` accepts optional `brightness`, `contrast`, `gamma`,
 `saturation`, `hue`, and `colorTemperature`. Omission means “do not override.”
 Brightness, contrast, saturation, hue, and color temperature use normalized
-product values 0–100. Product gamma is 0.5–2.0. Providers query and map native
+product values 0–100. Product gamma is 0.5–2.8. Providers query and map native
 ranges rather than persisting vendor values.
 
 ## Events

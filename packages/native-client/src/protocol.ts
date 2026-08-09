@@ -10,7 +10,7 @@ export const displaySettingsSchema = z
   .object({
     brightness: normalizedColorValueSchema.optional(),
     contrast: normalizedColorValueSchema.optional(),
-    gamma: z.number().finite().min(0.5).max(2).optional(),
+    gamma: z.number().finite().min(0.5).max(2.8).optional(),
     saturation: normalizedColorValueSchema.optional(),
     hue: normalizedColorValueSchema.optional(),
     colorTemperature: normalizedColorValueSchema.optional()

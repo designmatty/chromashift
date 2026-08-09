@@ -24,7 +24,7 @@ internal sealed class CapabilityResolver(
             return new DisplayCapabilities(
                 ProviderCapability("amd", amdState.Brightness),
                 ProviderCapability("amd", amdState.Contrast),
-                new CapabilityDescriptor(amdState.GammaRamp is not null, amdState.GammaRamp is not null ? "amd" : "unknown", amdState.GammaRamp is not null ? 0.5 : null, amdState.GammaRamp is not null ? 2 : null, amdState.GammaRamp is not null ? 1 : null, amdState.GammaReason),
+                new CapabilityDescriptor(amdState.GammaRamp is not null, amdState.GammaRamp is not null ? "amd" : "unknown", amdState.GammaRamp is not null ? 0.5 : null, amdState.GammaRamp is not null ? 2.8 : null, amdState.GammaRamp is not null ? 1 : null, amdState.GammaReason),
                 ProviderCapability("amd", amdState.Saturation),
                 ProviderCapability("amd", amdState.Hue),
                 ProviderCapability("amd", amdState.ColorTemperature));
@@ -45,7 +45,7 @@ internal sealed class CapabilityResolver(
         return new DisplayCapabilities(
             WindowsCapability(windowsGammaSupported, 0, 100, 50, windowsReason),
             WindowsCapability(windowsGammaSupported, 0, 100, 50, windowsReason),
-            WindowsCapability(windowsGammaSupported, 0.5, 2, 1, windowsReason),
+            WindowsCapability(windowsGammaSupported, 0.5, 2.8, 1, windowsReason),
             nvidiaSaturation,
             nvidiaHue,
             new CapabilityDescriptor(false, "unknown", null, null, null, "No verified provider is available."));

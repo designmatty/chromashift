@@ -7,7 +7,7 @@ internal static class GammaRampTransform
         baseline.Validate();
         ValidateRange(settings.Brightness, 0, 100, nameof(settings.Brightness));
         ValidateRange(settings.Contrast, 0, 100, nameof(settings.Contrast));
-        ValidateRange(settings.Gamma, 0.5, 2.0, nameof(settings.Gamma));
+        ValidateRange(settings.Gamma, 0.5, 2.8, nameof(settings.Gamma));
 
         if (settings is { Brightness: null, Contrast: null, Gamma: null })
         {
