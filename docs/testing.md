@@ -15,12 +15,16 @@ npm run smoke:desktop
 
 `npm run test` runs the core-domain, desktop activation, protocol, and
 native-client lifecycle unit tests, six pure gamma-transform tests, builds the
-native helper, and runs a real Electron-client-to-helper lifecycle test. Core coverage includes schema bounds,
-optional overrides, path and filename matching, disabled profiles, activation
-precedence and rapid transitions, duplicate suppression, JSON persistence, and
-schema migration. A deterministic fake helper verifies activation command
-requests and responses, runtime validation, structured errors, unsolicited
-events, request/startup timeouts, and pending-request rejection on process exit.
+native helper, and runs a real Electron-client-to-helper lifecycle test. Core
+coverage includes schema bounds, optional overrides, path and filename matching,
+disabled profiles, activation precedence and rapid transitions, duplicate
+suppression, JSON persistence, and schema migration. Native foreground tests
+verify that delayed Alt+Tab events resolve the actual current foreground HWND,
+failed resolution remains retryable, and HWND duplicates reach Electron for
+successful-target deduplication. A deterministic fake helper verifies activation
+command requests and responses, runtime validation, structured errors,
+unsolicited events, request/startup timeouts, and pending-request rejection on
+process exit.
 The hardware integration test verifies readiness, foreground
 resolution, multi-display stable IDs, primary display detection, capability
 resolution and display state, explicit structured unknown-command errors,

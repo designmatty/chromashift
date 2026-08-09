@@ -68,7 +68,11 @@ such as `DISPLAY6` are never persisted as identity.
 The foreground watcher runs `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` on a
 dedicated message-loop thread. It resolved Notepad, Explorer/Electron, and Brave
 events with PID, executable, accessible full path, title, and monitor. Profile
-matching intentionally remains outside the helper.
+matching intentionally remains outside the helper. Because out-of-context
+WinEvents can be delivered after Alt+Tab focus has already moved, each callback
+is reconciled against the current `GetForegroundWindow` result. Native code does
+not suppress repeated HWND events; Electron suppresses only duplicate activation
+targets after a successful transition, preserving retry behavior.
 
 Gamma uses `GetDeviceGammaRamp` and `SetDeviceGammaRamp` with three 256-entry
 16-bit channels. The NVIDIA driver did not advertise `CM_GAMMA_RAMP` through
