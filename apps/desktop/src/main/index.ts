@@ -113,7 +113,8 @@ async function startNativeService(): Promise<void> {
     automaticActivation = new AutomaticActivationController(
       profileRepository,
       coordinator,
-      logger
+      logger,
+      (application) => application?.pid === process.pid
     )
     nativeClient.on('diagnostic', (message) => console.error(`[DisplayService] ${message}`))
     nativeClient.on('event', (event) => {
@@ -211,16 +212,23 @@ function createWindow(): BrowserWindow {
 function createMiniWindow(): BrowserWindow {
   const panel = new BrowserWindow({
     width: 330,
-    height: 510,
+    height: 388,
+    useContentSize: true,
     show: false,
     frame: false,
+    roundedCorners: true,
+    hasShadow: true,
     resizable: false,
     maximizable: false,
     minimizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
     skipTaskbar: true,
     alwaysOnTop: true,
-    backgroundColor: '#18181b',
-    ...(process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}),
+    backgroundColor: process.platform === 'win32' ? '#00000000' : '#18181b',
+    ...(process.platform === 'win32'
+      ? { backgroundMaterial: 'acrylic' as const, transparent: true }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -231,6 +239,12 @@ function createMiniWindow(): BrowserWindow {
   miniWindow = panel
   panel.on('blur', () => panel.hide())
   panel.on('closed', () => { if (miniWindow === panel) miniWindow = undefined })
+  panel.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') {
+      event.preventDefault()
+      panel.hide()
+    }
+  })
   panel.webContents.on('preload-error', (_event, preloadPath, error) => {
     console.error(`Mini-panel preload script failed: ${preloadPath}`, error)
   })

@@ -44,6 +44,26 @@ public sealed class GammaRampTransformTests
     }
 
     [Theory]
+    [InlineData(75, 24, 1)]
+    [InlineData(75, 25, 1.3)]
+    public void BrightLowContrastCombinationsRemainRecoverable(
+        double brightness,
+        double contrast,
+        double gamma)
+    {
+        var baseline = CreateLinearRamp();
+
+        var transformed = GammaRampTransform.Apply(
+            baseline,
+            new GammaSettings(brightness, contrast, gamma));
+
+        Assert.Equal(baseline.Red[0], transformed.Red[0]);
+        Assert.Equal(baseline.Red[^1], transformed.Red[^1]);
+        Assert.True(transformed.Red.Zip(transformed.Red.Skip(1)).All(pair => pair.First <= pair.Second));
+        Assert.True(transformed.Red.Distinct().Count() > 200);
+    }
+
+    [Theory]
     [InlineData(-1, 50, 1)]
     [InlineData(50, 101, 1)]
     [InlineData(50, 50, 0.49)]

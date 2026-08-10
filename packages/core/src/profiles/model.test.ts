@@ -22,6 +22,17 @@ describe('profile model', () => {
     expect(colorProfileSchema.parse(validProfile())).toEqual(validProfile())
   })
 
+  it('retains inactive values separately from applied overrides', () => {
+    expect(colorProfileSchema.parse({
+      ...validProfile(),
+      color: {},
+      lastColorValues: { brightness: 75, gamma: 1.3 }
+    })).toMatchObject({
+      color: {},
+      lastColorValues: { brightness: 75, gamma: 1.3 }
+    })
+  })
+
   it('preserves omitted settings as omitted overrides', () => {
     const settings = colorSettingsSchema.parse({ saturation: 75 })
 

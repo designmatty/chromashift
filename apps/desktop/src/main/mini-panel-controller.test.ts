@@ -9,7 +9,7 @@ function fakePanel() {
   const panel = {
     isDestroyed: () => false,
     isVisible: () => visible,
-    getSize: () => [330, 510],
+    getSize: () => [330, 388],
     setPosition: (x: number, y: number) => { positions.push([x, y]) },
     show: () => { visible = true; calls.push('show') },
     focus: () => calls.push('focus'),
@@ -35,7 +35,7 @@ describe('MiniPanelController', () => {
     controller.toggle(trayBounds)
     controller.toggle(trayBounds)
 
-    expect(positions).toEqual([[1582, 522]])
+    expect(positions).toEqual([[1582, 644]])
     expect(calls).toEqual(['show', 'focus', 'hide'])
   })
 

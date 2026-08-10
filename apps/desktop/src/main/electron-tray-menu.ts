@@ -36,7 +36,7 @@ export class ElectronTrayMenu implements TrayMenuPort {
       { label: 'Profiles', submenu: profileItems },
       { type: 'separator' },
       {
-        label: 'Reset displays',
+        label: 'Restore original display settings',
         enabled: model.controlsEnabled,
         click: commands.resetBaseline
       },

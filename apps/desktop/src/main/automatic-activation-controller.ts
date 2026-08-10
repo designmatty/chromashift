@@ -8,6 +8,7 @@ import {
 } from '@chromashift/core'
 import {
   foregroundApplicationChangedDataSchema,
+  type ForegroundApplication as NativeForegroundApplication,
   type NativeEvent
 } from '@chromashift/native-client'
 import {
@@ -29,7 +30,8 @@ export class AutomaticActivationController {
   public constructor(
     private readonly repository: ProfileRepository,
     private readonly coordinator: ActivationCoordinator,
-    private readonly logger: StructuredLogger
+    private readonly logger: StructuredLogger,
+    private readonly ignoreApplication: (application: NativeForegroundApplication) => boolean = () => false
   ) {}
 
   public get enabled(): boolean {
@@ -106,6 +108,16 @@ export class AutomaticActivationController {
         level: 'warning',
         eventName: 'ForegroundApplicationEventRejected',
         issues: parsed.error.issues.map((issue) => issue.message)
+      })
+      return Promise.resolve()
+    }
+
+    if (this.ignoreApplication(parsed.data.application)) {
+      this.logger.write({
+        level: 'information',
+        eventName: 'ForegroundApplicationIgnored',
+        pid: parsed.data.application.pid,
+        executable: parsed.data.application.executable
       })
       return Promise.resolve()
     }

@@ -141,7 +141,7 @@ export class TrayController {
         )
       },
       resetBaseline: () => {
-        void this.#runAction('Displays could not be reset', () =>
+        void this.#runAction('Original display settings could not be restored', () =>
           this.activation.restoreBaseline()
         )
       }

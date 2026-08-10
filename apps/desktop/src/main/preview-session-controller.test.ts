@@ -85,6 +85,23 @@ class FakeActivation implements PreviewActivationPort {
   public confirmPreview(profileId: string): Promise<void> { this.calls.push(`confirm:${profileId}`); return Promise.resolve() }
 }
 
+class DeferredApplyNative extends FakeNative {
+  public applyStarted!: () => void
+  public releaseApply!: () => void
+  public readonly applyStartedPromise = new Promise<void>((resolve) => { this.applyStarted = resolve })
+  private readonly applyReleasedPromise = new Promise<void>((resolve) => { this.releaseApply = resolve })
+
+  public override async applyDisplaySettings(
+    displayId: string,
+    settings: DisplaySettings
+  ): Promise<DisplayApplyResult> {
+    this.applied.push({ displayId, settings })
+    this.applyStarted()
+    await this.applyReleasedPromise
+    return { displayId, settings, applied: {} }
+  }
+}
+
 function profile(color: ColorProfile['color'] = { saturation: 75 }): ColorProfile {
   return {
     id: 'gaming',
@@ -153,5 +170,41 @@ describe('PreviewSessionController', () => {
       { displayId: display.id, settings: {} }
     ])
     expect(controller.state).toMatchObject({ state: 'active', color: {} })
+  })
+
+  it('starts an override with empty settings when the first change removes the final control', async () => {
+    const native = new FakeNative()
+    const controller = new PreviewSessionController(
+      native,
+      new FakeActivation(),
+      () => undefined
+    )
+
+    await controller.start(profile({}), 'override')
+
+    expect(native.applied).toEqual([{ displayId: display.id, settings: {} }])
+    expect(controller.state).toMatchObject({
+      state: 'active',
+      kind: 'override',
+      color: {}
+    })
+  })
+
+  it('rolls back after an in-flight preview apply instead of allowing the apply to win the race', async () => {
+    const native = new DeferredApplyNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+
+    const starting = controller.start(profile(), 'edit')
+    await native.applyStartedPromise
+    const cancelling = controller.cancel()
+
+    expect(activation.calls).toEqual(['begin'])
+    native.releaseApply()
+    await starting
+    await cancelling
+
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(activation.calls).toEqual(['begin', 'cancel'])
   })
 })

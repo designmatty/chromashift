@@ -71,7 +71,7 @@ describe('ProductController Default profile', () => {
     await expect(product.deleteProfile('DEFAULT')).rejects.toBeInstanceOf(ProductConflictError)
   })
 
-  it('keeps Default enabled and free of application assignments when edited', async () => {
+  it('allows Default to be renamed while keeping it enabled and free of application assignments', async () => {
     const { product, repository } = controller()
     const defaultProfile = await repository.findById('default')
     const edited: ColorProfile = {
@@ -83,7 +83,7 @@ describe('ProductController Default profile', () => {
 
     await expect(product.saveProfile(edited)).resolves.toMatchObject({
       id: 'default',
-      name: 'Default profile',
+      name: 'Renamed',
       enabled: true,
       applications: []
     })

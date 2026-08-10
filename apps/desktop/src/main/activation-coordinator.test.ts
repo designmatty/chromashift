@@ -338,12 +338,12 @@ describe('ActivationCoordinator', () => {
   })
 })
 
-function foregroundEvent(executable: string): NativeEvent {
+function foregroundEvent(executable: string, pid = 42): NativeEvent {
   return {
     event: 'foregroundApplicationChanged',
     data: {
       application: {
-        pid: 42,
+        pid,
         executable,
         path: null,
         title: executable,
@@ -489,6 +489,31 @@ describe('AutomaticActivationController', () => {
         .filter((call) => call.operation === 'apply')
         .map((call) => call.settings?.saturation)
     ).toEqual([50, 75])
+  })
+
+  it('ignores ChromaShift foreground events so saving restores the external application profile', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(
+      configuration([defaultProfile, gameAProfile], 'default')
+    )
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger(),
+      (foreground) => foreground?.pid === 99
+    )
+    await controller.start(application('GameA.exe'))
+
+    await controller.beginPreview()
+    await controller.handleNativeEvent(foregroundEvent('electron.exe', 99))
+    await controller.cancelPreview()
+
+    expect(controller.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-a' })
+    expect(
+      native.calls
+        .filter((call) => call.operation === 'apply')
+        .map((call) => call.settings?.saturation)
+    ).toEqual([75, 75])
   })
 
   it('retains failed baseline resets so a later transition retries stale displays', async () => {

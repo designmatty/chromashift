@@ -114,7 +114,7 @@ export class ProductController {
   public async saveProfile(profile: ColorProfile): Promise<ColorProfile> {
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
     const saved = await this.repository.save(isDefault
-      ? { ...profile, id: DEFAULT_PROFILE_ID, name: 'Default profile', enabled: true, applications: [] }
+      ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] }
       : profile)
     if (
       !saved.enabled &&

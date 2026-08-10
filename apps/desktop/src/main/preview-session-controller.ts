@@ -37,6 +37,7 @@ interface ActivePreview {
 
 export class PreviewSessionController {
   #active: ActivePreview | null = null
+  #operationTail: Promise<void> = Promise.resolve()
 
   public constructor(
     private readonly native: PreviewNativePort,
@@ -60,10 +61,17 @@ export class PreviewSessionController {
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override'
   ): Promise<void> {
-    if (this.#active !== null) await this.cancel()
+    return this.#enqueue(() => this.#start(profile, kind))
+  }
+
+  async #start(
+    profile: ColorProfile,
+    kind: 'preview' | 'edit' | 'override'
+  ): Promise<void> {
+    if (this.#active !== null) await this.#cancel()
     const displayIds = profile.displays.map((target) => target.displayId)
     const settingNames = Object.keys(profile.color) as Array<keyof ColorSettings>
-    await this.#validate(displayIds, profile.color)
+    await this.#validate(displayIds, profile.color, kind !== 'preview')
     await this.activation.beginPreview()
 
     try {
@@ -84,11 +92,19 @@ export class PreviewSessionController {
     color: ColorSettings,
     displayIds: string[]
   ): Promise<void> {
+    return this.#enqueue(() => this.#update(profileId, color, displayIds))
+  }
+
+  async #update(
+    profileId: string,
+    color: ColorSettings,
+    displayIds: string[]
+  ): Promise<void> {
     const active = this.#requireActive(profileId)
     if (!sameDisplayIds(active.displayIds, displayIds)) {
       const kind = active.kind
-      await this.cancel()
-      await this.start({
+      await this.#cancel()
+      await this.#start({
         id: profileId,
         name: 'Display preview',
         enabled: true,
@@ -108,6 +124,10 @@ export class PreviewSessionController {
   }
 
   public async confirm(profileId: string): Promise<void> {
+    return this.#enqueue(() => this.#confirm(profileId))
+  }
+
+  async #confirm(profileId: string): Promise<void> {
     this.#requireActive(profileId)
     this.#clearActive()
     try {
@@ -118,6 +138,10 @@ export class PreviewSessionController {
   }
 
   public async completePreservingMode(profileId: string): Promise<void> {
+    return this.#enqueue(() => this.#completePreservingMode(profileId))
+  }
+
+  async #completePreservingMode(profileId: string): Promise<void> {
     this.#requireActive(profileId)
     this.#clearActive()
     try {
@@ -128,6 +152,10 @@ export class PreviewSessionController {
   }
 
   public async cancel(): Promise<void> {
+    return this.#enqueue(() => this.#cancel())
+  }
+
+  async #cancel(): Promise<void> {
     if (this.#active === null) return
     this.#clearActive()
     try {
@@ -141,12 +169,22 @@ export class PreviewSessionController {
     await this.cancel()
   }
 
-  async #validate(displayIds: string[], color: ColorSettings): Promise<void> {
+  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#operationTail.then(operation)
+    this.#operationTail = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  async #validate(
+    displayIds: string[],
+    color: ColorSettings,
+    allowEmpty = false
+  ): Promise<void> {
     if (displayIds.length === 0) {
       throw new PreviewValidationError('Select at least one display before previewing.')
     }
     const settingNames = Object.keys(color) as Array<keyof ColorSettings>
-    if (settingNames.length === 0) {
+    if (settingNames.length === 0 && !allowEmpty) {
       throw new PreviewValidationError('Enable at least one color control before previewing.')
     }
 
