@@ -124,6 +124,13 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
     await run(window.chromaShift.cancelPreview(), setError)
   }
 
+  async function rollbackExplicitPreview(): Promise<void> {
+    const current = await run(window.chromaShift.getState(), setError)
+    if (current?.preview.state === 'active' && current.preview.kind === 'preview') {
+      await run(window.chromaShift.cancelPreview(), setError)
+    }
+  }
+
   async function action<T>(request: Promise<ProductResult<T>>, done?: (value: T) => void): Promise<void> {
     setBusy(true); setError(null)
     const value = await run(request, setError)
@@ -133,11 +140,11 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
 
   async function selectProfile(profile: ColorProfile): Promise<void> {
     if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    const leavingPreview = activeSession?.kind === 'preview' &&
-      activeSession.profileId.toLowerCase() !== profile.id.toLowerCase()
+    const leavingProfile = selected !== null &&
+      selected.id.toLowerCase() !== profile.id.toLowerCase()
     const rollback = editing
       ? rollbackEditPreview()
-      : leavingPreview
+      : leavingProfile
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
     if (editing) resetRememberedColorValues(selected)
@@ -150,8 +157,8 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
     if (editing && dirty && !confirm('Discard the changes to this profile?')) return
     const rollback = editing
       ? rollbackEditPreview()
-      : activeSession?.kind === 'preview'
-        ? run(window.chromaShift.cancelPreview(), setError)
+      : view === 'profiles'
+        ? rollbackExplicitPreview()
         : Promise.resolve()
     if (editing) resetRememberedColorValues(selected)
     setDraft(selected === null ? null : structuredClone(selected))
