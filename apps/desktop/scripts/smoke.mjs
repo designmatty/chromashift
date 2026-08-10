@@ -11,6 +11,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
 const screenshotDirectory = join(desktopDirectory, 'out', 'smoke')
 const screenshotPath = join(screenshotDirectory, 'desktop.png')
+const miniScreenshotPath = join(screenshotDirectory, 'mini-panel.png')
 const timeoutMilliseconds = 15_000
 
 function delay(milliseconds) {
@@ -240,13 +241,52 @@ try {
     expression: `(() => ({
       hasEdit: [...document.querySelectorAll('button')]
         .some((candidate) => candidate.textContent?.trim() === 'Edit'),
-      hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null
+      hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null,
+      hasColorInput: document.querySelector('.detail-section [data-slot="slider"]') !== null,
+      hasColorSummary: document.querySelector('.color-summary') !== null,
+      hasDisplayInput: document.querySelector('.display-option') !== null,
+      hasDisplaySummary: document.querySelector('.display-summary, .read-only-empty') !== null
     }))()`,
     returnByValue: true
   })
-  if (!readOnlyProfile.result.value?.hasEdit || readOnlyProfile.result.value?.hasNameInput) {
-    throw new Error('Profile navigation did not begin in read-only mode.')
+  if (!readOnlyProfile.result.value?.hasEdit || readOnlyProfile.result.value?.hasNameInput ||
+    readOnlyProfile.result.value?.hasColorInput || !readOnlyProfile.result.value?.hasColorSummary ||
+    readOnlyProfile.result.value?.hasDisplayInput || !readOnlyProfile.result.value?.hasDisplaySummary) {
+    throw new Error('Profile navigation did not begin with a read-only color summary.')
   }
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Edit')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') !== null`,
+    'The Default profile did not expose its name in Edit mode.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const input = document.querySelector('[aria-label="Profile name"]')
+      input?.focus()
+      input?.select()
+    })()`
+  })
+  await debuggerClient.send('Input.insertText', { text: 'Desktop default' })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === 'Desktop default'`,
+    'The Default profile name input did not accept keyboard text.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') === null &&
+      document.querySelector('.detail-header h1')?.textContent === 'Default profile'`,
+    'Cancel did not restore the Default profile name.'
+  )
 
   const settingsNavigation = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
@@ -259,6 +299,7 @@ try {
   })
   if (settingsNavigation.result.value !== true) throw new Error('Settings navigation was unavailable.')
   await waitForText(debuggerClient, 'Launch at startup')
+  await waitForText(debuggerClient, 'Restore original display settings')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
       .find((candidate) => candidate.textContent?.trim() === 'Profiles')?.click()`
@@ -280,6 +321,19 @@ try {
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]') !== null`,
     'New profile did not enter Edit mode.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const input = document.querySelector('[aria-label="Profile name"]')
+      input?.focus()
+      input?.select()
+    })()`
+  })
+  await debuggerClient.send('Input.insertText', { text: 'Smoke profile' })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile'`,
+    'A new profile name did not accept keyboard text.'
   )
 
   const editControls = await debuggerClient.send('Runtime.evaluate', {
@@ -315,6 +369,31 @@ try {
   )
 
   await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('.control [data-slot="slider-thumb"] input[type="range"]')?.focus()`
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.color.brightness === 51
+    })()`,
+    'The edit-mode brightness slider did not retain its changed value.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('.control [data-slot="checkbox"]')?.click()`
   })
   await waitForExpression(
@@ -328,6 +407,74 @@ try {
   )
 
   await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('.control [data-slot="checkbox"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.color.brightness === 51
+    })()`,
+    'Re-enabling a color control did not restore its last defined value.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('.control [data-slot="checkbox"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        Object.keys(result.value.preview.color).length === 0
+    })()`,
+    'The retained color value could not be disabled again.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Save')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.activation.mode.kind !== 'automatic') return false
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      return profile?.name === 'Smoke profile' && Object.keys(profile.color).length === 0 &&
+        profile.lastColorValues?.brightness === 51
+    })()`,
+    'Saving did not retain the disabled value and restore automatic activation.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Edit')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.kind === 'edit' &&
+        Object.keys(result.value.preview.color).length === 0
+    })()`,
+    'The saved profile could not re-enter live Edit mode for Cancel coverage.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('.control [data-slot="checkbox"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.color.brightness === 51
+    })()`,
+    'The applied-change Cancel check could not preview brightness.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
       .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
   })
@@ -335,10 +482,67 @@ try {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'inactive'
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.activation.mode.kind !== 'automatic') return false
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      return profile !== undefined && Object.keys(profile.color).length === 0 &&
+        profile.lastColorValues?.brightness === 51 &&
+        document.querySelector('.color-summary') !== null
     })()`,
-    'Cancel did not restore and close the live edit preview.'
+    'Cancel did not roll back an applied live-edit change.'
   )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Edit')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.kind === 'edit' &&
+        Object.keys(result.value.preview.color).length === 0
+    })()`,
+    'The profile could not re-enter Edit mode for scheduled-change Cancel coverage.'
+  )
+  const cancelScheduledChange = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const brightnessCheckbox = document.querySelector('.control [data-slot="checkbox"]')
+      if (brightnessCheckbox === null) return false
+      brightnessCheckbox.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const cancel = [...document.querySelectorAll('button')]
+        .find((candidate) => candidate.textContent?.trim() === 'Cancel')
+      cancel?.click()
+      return cancel !== undefined
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (cancelScheduledChange.result.value !== true) {
+    throw new Error('The Cancel control was unavailable during live Edit mode.')
+  }
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: 'new Promise((resolve) => setTimeout(resolve, 300))',
+    awaitPromise: true
+  })
+  const cancelledState = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.activation.mode.kind !== 'automatic') return false
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      return profile !== undefined && Object.keys(profile.color).length === 0 &&
+        profile.lastColorValues?.brightness === 51 &&
+        document.querySelector('.color-summary') !== null &&
+        document.querySelector('.detail-section [data-slot="slider"]') === null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (cancelledState.result.value !== true) {
+    throw new Error('Cancel did not discard a scheduled live-edit change and restore automatic activation.')
+  }
 
   const createdState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',
@@ -348,6 +552,130 @@ try {
   if (createdState.result.value?.value?.configuration?.profiles?.length !== 2) {
     throw new Error('The profile creation workflow did not persist a profile.')
   }
+
+  const screenshot = await debuggerClient.send('Page.captureScreenshot', {
+    format: 'png',
+    fromSurface: true
+  })
+  await mkdir(screenshotDirectory, { recursive: true })
+  await writeFile(screenshotPath, globalThis.Buffer.from(screenshot.data, 'base64'))
+
+  const prepareMiniPanel = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) return false
+      const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
+      const display = state.value.displays[0]
+      if (profile === undefined || display === undefined) return false
+      const saved = await window.chromaShift.saveProfile({
+        ...profile,
+        color: { brightness: 50 },
+        displays: [{ displayId: display.id }]
+      })
+      if (!saved.ok) return false
+      const activated = await window.chromaShift.activateProfile(profile.id)
+      return activated.ok
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (prepareMiniPanel.result.value !== true) {
+    throw new Error('Could not prepare a manual profile for mini-panel smoke coverage.')
+  }
+
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('.color-summary > div:first-child dd')?.textContent === '50%'`,
+    'The saved profile color was not rendered before explicit preview coverage.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Preview')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.kind === 'preview'
+    })()`,
+    'The explicit profile preview did not activate.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('.profile-item')]
+      .find((candidate) => candidate.querySelector('strong')?.textContent === 'Default profile')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.activation.mode.kind !== 'manual') return false
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      return profile !== undefined && result.value.activation.mode.profileId === profile.id &&
+        document.querySelector('.detail-header h1')?.textContent === 'Default profile'
+    })()`,
+    'Navigating to another profile did not stop preview and restore manual activation.'
+  )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `history.replaceState({}, '', location.pathname + '?panel=mini')`
+  })
+  const miniLoaded = debuggerClient.waitForEvent('Page.loadEventFired')
+  await debuggerClient.send('Page.reload', { ignoreCache: true })
+  await miniLoaded
+  await waitForText(debuggerClient, 'Manually selected')
+
+  const disabledMiniControl = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const checkbox = document.querySelector('.control [data-slot="checkbox"]')
+      checkbox?.click()
+      return checkbox !== null
+    })()`,
+    returnByValue: true
+  })
+  if (disabledMiniControl.result.value !== true) {
+    throw new Error('The mini-panel color control was unavailable.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.kind === 'override' &&
+        Object.keys(result.value.preview.color).length === 0 &&
+        document.body.innerText.includes('Update profile') &&
+        document.body.innerText.includes('Reset changes')
+    })()`,
+    'Disabling the final mini-panel control did not activate a baseline override.'
+  )
+
+  await debuggerClient.send('Emulation.setDeviceMetricsOverride', {
+    width: 330,
+    height: 388,
+    deviceScaleFactor: 1,
+    mobile: false
+  })
+  const miniScreenshot = await debuggerClient.send('Page.captureScreenshot', {
+    format: 'png',
+    fromSurface: true
+  })
+  await writeFile(miniScreenshotPath, globalThis.Buffer.from(miniScreenshot.data, 'base64'))
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'inactive' &&
+        result.value.activation.mode.kind === 'manual'
+    })()`,
+    'Reset changes did not restore the saved manual profile after mini-panel coverage.'
+  )
 
   const failures = debuggerClient.events.filter((event) =>
     event.method === 'Runtime.exceptionThrown' ||
@@ -361,19 +689,13 @@ try {
     throw new Error(`Electron reported a preload failure:\n${standardError}`)
   }
 
-  const screenshot = await debuggerClient.send('Page.captureScreenshot', {
-    format: 'png',
-    fromSurface: true
-  })
-  await mkdir(screenshotDirectory, { recursive: true })
-  await writeFile(screenshotPath, globalThis.Buffer.from(screenshot.data, 'base64'))
-
   globalThis.console.log('Desktop smoke test passed.')
   globalThis.console.log(`Renderer: ${ui.title} (${target.url})`)
   globalThis.console.log('Preload bridge: ready')
   globalThis.console.log('Native service: ready')
   globalThis.console.log(`Renderer errors: ${failures.length}`)
   globalThis.console.log(`Screenshot: ${screenshotPath}`)
+  globalThis.console.log(`Mini-panel screenshot: ${miniScreenshotPath}`)
 } catch (error) {
   smokeFailure = error
 } finally {

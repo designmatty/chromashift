@@ -1,4 +1,4 @@
-import { Component, StrictMode, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
+import { Component, StrictMode, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ColorProfile, ColorSettings } from '@chromashift/core'
 import {
@@ -50,6 +50,12 @@ const controls: Array<{ key: ColorKey; label: string; min: number; max: number; 
   { key: 'hue', label: 'Hue', min: 0, max: 100, step: 1, initial: 50 },
   { key: 'colorTemperature', label: 'Color temperature', min: 0, max: 100, step: 1, initial: 50 }
 ]
+const rememberedColorValues = new Map<string, ColorSettings>()
+
+function resetRememberedColorValues(profile: ColorProfile | null): void {
+  if (profile === null) return
+  rememberedColorValues.set(profile.id, { ...profile.lastColorValues, ...profile.color })
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   public override state = { error: null as Error | null }
@@ -87,6 +93,8 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
+  const editPreviewGeneration = useRef(0)
+  const pendingEditPreviews = useRef(new Set<Promise<unknown>>())
   const selected = product.configuration.profiles.find((profile) => profile.id === selectedId) ?? product.configuration.profiles[0] ?? null
   const activeSession = product.preview.state === 'active' ? product.preview : null
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
@@ -97,15 +105,24 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
   const draftSignature = JSON.stringify(draft)
   useEffect(() => {
     if (!editing || draft === null || draft.displays.length === 0) return
-    if (activeSession?.kind !== 'edit' && Object.keys(draft.color).length === 0) return
+    const generation = editPreviewGeneration.current
     const timer = setTimeout(() => {
+      if (generation !== editPreviewGeneration.current) return
       const request = activeSession?.kind === 'edit' && activeSession.profileId === draft.id
         ? window.chromaShift.updatePreview(draft.id, draft.color, draft.displays.map((item) => item.displayId))
         : window.chromaShift.startPreview(draft, 'edit')
-      void run(request, setError)
+      const pending = run(request, setError)
+      pendingEditPreviews.current.add(pending)
+      void pending.finally(() => pendingEditPreviews.current.delete(pending))
     }, 120)
     return () => clearTimeout(timer)
   }, [editing, draftSignature, activeSession?.kind, activeSession?.profileId])
+
+  async function rollbackEditPreview(): Promise<void> {
+    editPreviewGeneration.current += 1
+    await Promise.allSettled([...pendingEditPreviews.current])
+    await run(window.chromaShift.cancelPreview(), setError)
+  }
 
   async function action<T>(request: Promise<ProductResult<T>>, done?: (value: T) => void): Promise<void> {
     setBusy(true); setError(null)
@@ -116,20 +133,32 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
 
   async function selectProfile(profile: ColorProfile): Promise<void> {
     if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    if (editing && activeSession?.kind === 'edit') await run(window.chromaShift.cancelPreview(), setError)
+    const leavingPreview = activeSession?.kind === 'preview' &&
+      activeSession.profileId.toLowerCase() !== profile.id.toLowerCase()
+    const rollback = editing
+      ? rollbackEditPreview()
+      : leavingPreview
+        ? run(window.chromaShift.cancelPreview(), setError)
+        : Promise.resolve()
+    if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id); setDraft(structuredClone(profile)); setEditing(false); setDirty(false)
+    await rollback
   }
 
   async function navigate(nextView: MainView): Promise<void> {
     if (nextView === view) return
     if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    if (editing && activeSession?.kind === 'edit') {
-      await run(window.chromaShift.cancelPreview(), setError)
-    }
+    const rollback = editing
+      ? rollbackEditPreview()
+      : activeSession?.kind === 'preview'
+        ? run(window.chromaShift.cancelPreview(), setError)
+        : Promise.resolve()
+    if (editing) resetRememberedColorValues(selected)
     setDraft(selected === null ? null : structuredClone(selected))
     setEditing(false)
     setDirty(false)
     setView(nextView)
+    await rollback
   }
 
   useEffect(() => {
@@ -138,12 +167,16 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
 
   async function beginEdit(): Promise<void> {
     if (activeSession?.kind === 'preview') await run(window.chromaShift.cancelPreview(), setError)
+    editPreviewGeneration.current += 1
+    resetRememberedColorValues(selected)
     setDraft(structuredClone(selected)); setEditing(true); setDirty(false)
   }
 
   async function cancelEdit(): Promise<void> {
-    if (activeSession?.kind === 'edit') await run(window.chromaShift.cancelPreview(), setError)
+    const rollback = rollbackEditPreview()
+    resetRememberedColorValues(selected)
     setDraft(selected === null ? null : structuredClone(selected)); setEditing(false); setDirty(false)
+    await rollback
   }
 
   const shownProfile = draft ?? selected
@@ -171,7 +204,7 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
           onEdit={() => void beginEdit()}
           onChange={(profile) => { setDraft(profile); setDirty(true) }}
           onCancel={() => void cancelEdit()}
-          onSave={() => void action(activeSession?.kind === 'edit' ? window.chromaShift.confirmPreview(shownProfile, 'manual') : window.chromaShift.saveProfile(shownProfile), (saved) => { setDraft(saved); setEditing(false); setDirty(false) })}
+          onSave={() => void action(activeSession?.kind === 'edit' ? window.chromaShift.confirmPreview(shownProfile, 'preserve') : window.chromaShift.saveProfile(shownProfile), (saved) => { setDraft(saved); setEditing(false); setDirty(false) })}
           onPreview={() => void action(activeSession?.kind === 'preview' ? window.chromaShift.cancelPreview() : window.chromaShift.startPreview(shownProfile, 'preview'))}
           onCopy={() => void action(window.chromaShift.duplicateProfile(shownProfile.id), (copy) => { setSelectedId(copy.id); setDraft(copy) })}
           onDelete={() => { if (confirm(`Delete “${shownProfile.name}”?`)) void action(window.chromaShift.deleteProfile(shownProfile.id), () => setSelectedId(DEFAULT_ID)) }}
@@ -193,22 +226,38 @@ interface DetailProps { profile: ColorProfile; color: ColorSettings; product: Pr
 function ProfileDetail(props: DetailProps): React.JSX.Element {
   const p = props.profile
   return <section className="profile-detail">
-    <header className="detail-header"><div><div className="title-row">{props.editing && p.id !== DEFAULT_ID ? <Input className="profile-name-input" value={p.name} maxLength={100} aria-label="Profile name" onChange={(event) => props.onChange({ ...p, name: event.target.value })} /> : <h1>{p.name}</h1>}{p.id === DEFAULT_ID && <Badge>Global profile</Badge>}</div><p>{p.id === DEFAULT_ID ? 'The catch-all profile for applications without assignments.' : 'Activates when an assigned application is in the foreground.'}</p></div><div className="header-actions"><Switch checked={p.enabled} disabled={p.id === DEFAULT_ID || props.editing} onCheckedChange={props.onEnabled} aria-label="Profile enabled" />{props.editing ? <><Button variant="outline" onClick={props.onCancel}>Cancel</Button><Button disabled={!props.dirty || props.busy || p.name.trim().length === 0} onClick={props.onSave}><Check />Save</Button></> : <><Button variant={props.previewing ? 'secondary' : 'outline'} onClick={props.onPreview}>{props.previewing ? <><RotateCcw />Stop preview</> : <><SlidersHorizontal />Preview</>}</Button><Button onClick={props.onEdit}><Edit3 />Edit</Button><Button variant="ghost" size="icon" onClick={props.onCopy} aria-label="Copy profile"><Copy /></Button>{p.id !== DEFAULT_ID && <Button variant="ghost" size="icon" onClick={props.onDelete} aria-label="Delete profile"><Trash2 /></Button>}</>}</div></header>
+    <header className="detail-header"><div><div className="title-row">{props.editing ? <Input className="profile-name-input" value={p.name} maxLength={100} aria-label="Profile name" onValueChange={(name) => props.onChange({ ...p, name })} /> : <h1>{p.name}</h1>}{p.id === DEFAULT_ID && <Badge>Global profile</Badge>}</div><p>{p.id === DEFAULT_ID ? 'The catch-all profile for applications without assignments.' : 'Activates when an assigned application is in the foreground.'}</p></div><div className="header-actions"><Switch checked={p.enabled} disabled={p.id === DEFAULT_ID || props.editing} onCheckedChange={props.onEnabled} aria-label="Profile enabled" />{props.editing ? <><Button variant="outline" onClick={props.onCancel}>Cancel</Button><Button disabled={!props.dirty || props.busy || p.name.trim().length === 0} onClick={props.onSave}><Check />Save</Button></> : <><Button variant={props.previewing ? 'secondary' : 'outline'} onClick={props.onPreview}>{props.previewing ? <><RotateCcw />Stop preview</> : <><SlidersHorizontal />Preview</>}</Button><Button onClick={props.onEdit}><Edit3 />Edit</Button><Button variant="ghost" size="icon" onClick={props.onCopy} aria-label="Copy profile"><Copy /></Button>{p.id !== DEFAULT_ID && <Button variant="ghost" size="icon" onClick={props.onDelete} aria-label="Delete profile"><Trash2 /></Button>}</>}</div></header>
     <Separator />
-    <section className="detail-section"><SectionTitle title="Displays" description="All selected displays receive the same supported settings." /><div className="display-options">{props.product.displays.map((display) => { const checked = p.displays.some((item) => item.displayId === display.id); return <label className={checked ? 'display-option checked' : 'display-option'} key={display.id}><Checkbox checked={checked} disabled={!props.editing} onCheckedChange={(value) => props.onChange({ ...p, displays: value ? [...p.displays, { displayId: display.id }] : p.displays.filter((item) => item.displayId !== display.id) })} /><Monitor /><span><strong>{display.name}</strong><small>{display.adapter.name} · {display.primary ? 'Primary' : display.connection}</small></span></label> })}</div></section>
+    <section className="detail-section"><SectionTitle title="Displays" description="All selected displays receive the same supported settings." />{props.editing ? <div className="display-options">{props.product.displays.map((display) => { const checked = p.displays.some((item) => item.displayId === display.id); return <label className={checked ? 'display-option checked' : 'display-option'} key={display.id}><Checkbox checked={checked} onCheckedChange={(value) => props.onChange({ ...p, displays: value ? [...p.displays, { displayId: display.id }] : p.displays.filter((item) => item.displayId !== display.id) })} /><Monitor /><span><strong>{display.name}</strong><small>{display.adapter.name} · {display.primary ? 'Primary' : display.connection}</small></span></label> })}</div> : <DisplaySummary profile={p} product={props.product} />}</section>
     <Separator />
-    <section className="detail-section"><SectionTitle title="Color controls" description={props.editing ? 'Changes are previewed live on every selected display.' : 'Enter Edit mode to change these values.'} /><ColorControls profile={p} color={props.color} product={props.product} editable={props.editing} onChange={(color) => props.onChange({ ...p, color })} /></section>
+    <section className="detail-section"><SectionTitle title={props.editing ? 'Color controls' : 'Color settings'} description={props.editing ? 'Changes are previewed live on every selected display.' : 'Saved overrides for this profile.'} />{props.editing ? <ColorControls profile={p} color={props.color} product={props.product} editable onChange={(color, lastColorValues) => props.onChange({ ...p, color, lastColorValues })} /> : <ColorSummary color={p.color} />}</section>
     {p.id !== DEFAULT_ID && <><Separator /><section className="detail-section"><ApplicationAssignments profile={p} editing={props.editing} onChange={props.onChange} onError={props.onError} /></section></>}
   </section>
 }
 
-function ColorControls({ profile, color, product, editable, onChange, compact = false }: { profile: ColorProfile; color: ColorSettings; product: ProductState; editable: boolean; onChange(color: ColorSettings): void; compact?: boolean }): React.JSX.Element {
+function ColorControls({ profile, color, product, editable, onChange, compact = false }: { profile: ColorProfile; color: ColorSettings; product: ProductState; editable: boolean; onChange(color: ColorSettings, lastColorValues: ColorSettings): void; compact?: boolean }): React.JSX.Element {
+  const remembered = { ...profile.lastColorValues, ...rememberedColorValues.get(profile.id) }
+  for (const control of controls) {
+    const value = color[control.key]
+    if (value !== undefined) remembered[control.key] = value
+  }
+  rememberedColorValues.set(profile.id, remembered)
   return <div className={compact ? 'controls compact' : 'controls'}>{controls.map((control) => {
     const support = controlSupport(control.key, profile, product)
     const value = color[control.key]
     const enabled = value !== undefined
-    return <div className="control" key={control.key}><div className="control-label"><label><Checkbox checked={enabled} disabled={!editable || !support.available} onCheckedChange={(checked) => { const next = { ...color }; if (checked) next[control.key] = control.initial; else delete next[control.key]; onChange(next) }} /><strong>{control.label}</strong></label><span>{enabled ? formatValue(control.key, value) : 'Not overridden'}</span></div><Slider value={[value ?? control.initial]} min={control.min} max={control.max} step={control.step} disabled={!editable || !enabled || !support.available} onValueChange={(values) => { const next = Array.isArray(values) ? values[0] : values; if (next !== undefined) onChange({ ...color, [control.key]: next }) }} /><small>{support.available ? support.providers : support.reason}</small></div>
+    return <div className="control" key={control.key}><div className="control-label"><label><Checkbox checked={enabled} disabled={!editable || !support.available} onCheckedChange={(checked) => { const next = { ...color }; if (checked) next[control.key] = remembered[control.key] ?? control.initial; else { if (value !== undefined) remembered[control.key] = value; delete next[control.key] } rememberedColorValues.set(profile.id, remembered); onChange(next, { ...remembered }) }} /><strong>{control.label}</strong></label><span>{enabled ? formatValue(control.key, value) : formatValue(control.key, remembered[control.key] ?? control.initial)}</span></div><Slider value={[value ?? remembered[control.key] ?? control.initial]} min={control.min} max={control.max} step={control.step} disabled={!editable || !enabled || !support.available} onValueChange={(values) => { const next = Array.isArray(values) ? values[0] : values; if (next !== undefined) { remembered[control.key] = next; rememberedColorValues.set(profile.id, remembered); onChange({ ...color, [control.key]: next }, { ...remembered }) } }} /><small>{support.available ? support.providers : support.reason}</small></div>
   })}</div>
+}
+
+function ColorSummary({ color }: { color: ColorSettings }): React.JSX.Element {
+  return <dl className="color-summary">{controls.map((control) => { const value = color[control.key]; return <div className={value === undefined ? 'unset' : ''} key={control.key}><dt>{control.label}</dt><dd>{value === undefined ? 'Not overridden' : formatValue(control.key, value)}</dd></div> })}</dl>
+}
+
+function DisplaySummary({ profile, product }: { profile: ColorProfile; product: ProductState }): React.JSX.Element {
+  const assigned = profile.displays.map((target) => product.displays.find((display) => display.id === target.displayId)).filter((display) => display !== undefined)
+  if (assigned.length === 0) return <p className="read-only-empty">No displays assigned.</p>
+  return <div className="display-summary">{assigned.map((display) => <div key={display.id}><Monitor /><span><strong>{display.name}</strong><small>{display.adapter.name} · {display.primary ? 'Primary' : display.connection}</small></span></div>)}</div>
 }
 
 function ApplicationAssignments({ profile, editing, onChange, onError }: { profile: ColorProfile; editing: boolean; onChange(profile: ColorProfile): void; onError(error: ProductError | null): void }): React.JSX.Element {
@@ -228,10 +277,9 @@ function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
   const [dirty, setDirty] = useState(override !== null)
   const signature = JSON.stringify(color)
   useTheme(product.settings.theme)
-  useEffect(() => { setColor(override?.color ?? active?.color ?? {}); setDirty(override !== null) }, [active?.id, override?.profileId])
+  useEffect(() => { if (active !== undefined) resetRememberedColorValues(active); setColor(override?.color ?? active?.color ?? {}); setDirty(override !== null) }, [active?.id, override?.profileId])
   useEffect(() => {
     if (!dirty || active === undefined || active.displays.length === 0) return
-    if (override === null && Object.keys(color).length === 0) return
     const timer = setTimeout(() => {
       const request = override === null
         ? window.chromaShift.startPreview({ ...active, color }, 'override')
@@ -243,19 +291,20 @@ function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
 
   async function choose(profileId: string | null): Promise<void> {
     if (product.preview.state === 'active') await run(window.chromaShift.cancelPreview(), setError)
+    resetRememberedColorValues(active ?? null)
     if (profileId === null) await run(window.chromaShift.enableAutomatic(), setError)
     else await run(window.chromaShift.activateProfile(profileId), setError)
     setPicker(false); setDirty(false)
   }
 
   if (active === undefined) return <div className="mini-panel"><Empty title="No profiles available" /></div>
-  return <div className="mini-panel">{error !== null && <div className="mini-error">{error.message}</div>}{picker ? <div className="mini-picker"><header><Button variant="ghost" size="icon-sm" onClick={() => setPicker(false)}><ArrowLeft /></Button><strong>Profile controls</strong></header><button className={product.activation.mode.kind === 'automatic' ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(null)}><Checkbox checked={product.activation.mode.kind === 'automatic'} /><span>Auto switch</span><Badge variant="secondary">Recommended</Badge></button><Separator />{product.configuration.profiles.filter((profile) => profile.enabled).map((profile) => <button className={product.activation.mode.kind === 'manual' && active.id === profile.id ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(profile.id)} key={profile.id}><Checkbox checked={product.activation.mode.kind === 'manual' && active.id === profile.id} /><span>{profile.name}</span>{profile.id === DEFAULT_ID && <Badge>Global</Badge>}</button>)}</div> : <><div className="mini-controls"><ColorControls profile={active} color={color} product={product} editable onChange={(next) => { setColor(next); setDirty(JSON.stringify(next) !== JSON.stringify(active.color)) }} compact /></div>{dirty && <div className="mini-save"><Button variant="secondary" onClick={() => { setColor(active.color); setDirty(false); void run(window.chromaShift.cancelPreview(), setError) }}>Reset changes</Button><Button onClick={() => void run(window.chromaShift.confirmPreview({ ...active, color }, 'preserve'), setError)}>Update profile</Button></div>}<footer><button className="active-profile" onClick={() => setPicker(true)}><SlidersHorizontal /><span><small>{product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}</small><strong>{active.name}</strong></span></button><IconTooltip label="Open app panel"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('profiles')} aria-label="Open app panel"><ExternalLink /></Button></IconTooltip><IconTooltip label="Open settings"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('settings')} aria-label="Open settings"><SettingsIcon /></Button></IconTooltip><IconTooltip label="Open displays"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('displays')} aria-label="Open displays"><Monitor /></Button></IconTooltip></footer></>}</div>
+  return <div className="mini-panel">{error !== null && <div className="mini-error">{error.message}</div>}{picker ? <div className="mini-picker"><header><Button variant="ghost" size="icon-sm" onClick={() => setPicker(false)}><ArrowLeft /></Button><strong>Profile controls</strong></header><button className={product.activation.mode.kind === 'automatic' ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(null)}><Checkbox checked={product.activation.mode.kind === 'automatic'} /><span>Auto switch</span><Badge variant="secondary">Recommended</Badge></button><Separator />{product.configuration.profiles.filter((profile) => profile.enabled).map((profile) => <button className={product.activation.mode.kind === 'manual' && active.id === profile.id ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(profile.id)} key={profile.id}><Checkbox checked={product.activation.mode.kind === 'manual' && active.id === profile.id} /><span>{profile.name}</span>{profile.id === DEFAULT_ID && <Badge>Global</Badge>}</button>)}</div> : <><div className="mini-controls"><ColorControls profile={active} color={color} product={product} editable onChange={(next) => { setColor(next); setDirty(JSON.stringify(next) !== JSON.stringify(active.color)) }} compact /></div>{dirty && <div className="mini-save"><Button variant="secondary" onClick={() => { resetRememberedColorValues(active); setColor(active.color); setDirty(false); void run(window.chromaShift.cancelPreview(), setError) }}>Reset changes</Button><Button onClick={() => void run(window.chromaShift.confirmPreview({ ...active, color, lastColorValues: rememberedColorValues.get(active.id) ?? active.lastColorValues }, 'preserve'), setError)}>Update profile</Button></div>}<footer><button className="active-profile" onClick={() => setPicker(true)}><SlidersHorizontal /><span><small>{product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}</small><strong>{active.name}</strong></span></button><IconTooltip label="Open app panel"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('profiles')} aria-label="Open app panel"><ExternalLink /></Button></IconTooltip><IconTooltip label="Open settings"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('settings')} aria-label="Open settings"><SettingsIcon /></Button></IconTooltip><IconTooltip label="Open displays"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('displays')} aria-label="Open displays"><Monitor /></Button></IconTooltip></footer></>}</div>
 }
 
 function SettingsPanel({ product, onError }: { product: ProductState; onError(error: ProductError | null): void }): React.JSX.Element {
   const settings = product.settings
   const update = (next: typeof settings): void => { void run(window.chromaShift.updateSettings(next), onError) }
-  return <section className="settings-page"><header><h1>Settings</h1><p>Control how ChromaShift starts, closes, and appears.</p></header><SettingsRow title="Launch at startup" description="Start ChromaShift when you sign in to Windows."><Switch checked={settings.launchAtStartup} onCheckedChange={(value) => update({ ...settings, launchAtStartup: value })} /></SettingsRow><SettingsRow title="Windows startup behavior" description="Choose what appears during an automatic login launch."><Select value={settings.launchBehavior} onValueChange={(value) => update({ ...settings, launchBehavior: value as 'tray' | 'app' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tray">Start in tray</SelectItem><SelectItem value="app">Show app panel</SelectItem></SelectContent></Select></SettingsRow><SettingsRow title="Close behavior" description="Choose what the window close button does."><Select value={settings.closeBehavior} onValueChange={(value) => update({ ...settings, closeBehavior: value as 'tray' | 'shutdown' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tray">Minimize to tray</SelectItem><SelectItem value="shutdown">Shut down ChromaShift</SelectItem></SelectContent></Select></SettingsRow><SettingsRow title="Theme" description="Use the Windows theme or choose one explicitly."><Select value={settings.theme} onValueChange={(value) => update({ ...settings, theme: value as 'system' | 'light' | 'dark' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="system">System</SelectItem><SelectItem value="light">Light</SelectItem><SelectItem value="dark">Dark</SelectItem></SelectContent></Select></SettingsRow><Separator /><div className="settings-actions"><Button variant="outline" onClick={() => void run(window.chromaShift.restoreBaseline(), onError)}><RotateCcw />Reset displays</Button><Button variant="outline" disabled><FolderOpen />Open logs and diagnostics</Button><small>Log-file browsing will be connected with Milestone 5 diagnostics.</small></div></section>
+  return <section className="settings-page"><header><h1>Settings</h1><p>Control how ChromaShift starts, closes, and appears.</p></header><SettingsRow title="Launch at startup" description="Start ChromaShift when you sign in to Windows."><Switch checked={settings.launchAtStartup} onCheckedChange={(value) => update({ ...settings, launchAtStartup: value })} /></SettingsRow><SettingsRow title="Windows startup behavior" description="Choose what appears during an automatic login launch."><Select value={settings.launchBehavior} onValueChange={(value) => update({ ...settings, launchBehavior: value as 'tray' | 'app' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tray">Start in tray</SelectItem><SelectItem value="app">Show app panel</SelectItem></SelectContent></Select></SettingsRow><SettingsRow title="Close behavior" description="Choose what the window close button does."><Select value={settings.closeBehavior} onValueChange={(value) => update({ ...settings, closeBehavior: value as 'tray' | 'shutdown' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tray">Minimize to tray</SelectItem><SelectItem value="shutdown">Shut down ChromaShift</SelectItem></SelectContent></Select></SettingsRow><SettingsRow title="Theme" description="Use the Windows theme or choose one explicitly."><Select value={settings.theme} onValueChange={(value) => update({ ...settings, theme: value as 'system' | 'light' | 'dark' })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="system">System</SelectItem><SelectItem value="light">Light</SelectItem><SelectItem value="dark">Dark</SelectItem></SelectContent></Select></SettingsRow><Separator /><div className="settings-actions"><Button variant="outline" onClick={() => void run(window.chromaShift.restoreBaseline(), onError)}><RotateCcw />Restore original display settings</Button><Button variant="outline" disabled><FolderOpen />Open logs and diagnostics</Button><small>Log-file browsing will be connected with Milestone 5 diagnostics.</small></div></section>
 }
 
 function Displays({ product }: { product: ProductState }): React.JSX.Element { return <section className="displays-page"><header><h1>Displays</h1><p>Connected hardware and resolved provider capabilities.</p></header><div className="display-grid">{product.displays.map((display) => <article key={display.id}><div className="display-title"><Monitor /><div><h2>{display.name}</h2><p>{display.adapter.name}</p></div>{display.primary && <Badge>Primary</Badge>}</div><dl><dt>Connection</dt><dd>{display.connection}</dd><dt>HDR</dt><dd>{display.hdr ? 'On' : 'Off'}</dd><dt>Refresh rate</dt><dd>{display.refreshRate} Hz</dd></dl><Separator /><div className="capabilities">{Object.entries(product.capabilityReports[display.id]?.capabilities ?? {}).map(([name, capability]) => <div key={name}><span>{formatName(name)}</span><Badge variant={capability.supported ? 'secondary' : 'outline'}>{capability.supported ? capability.provider : 'Unavailable'}</Badge></div>)}</div></article>)}</div></section> }

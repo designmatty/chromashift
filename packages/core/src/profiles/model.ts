@@ -33,6 +33,7 @@ export const colorProfileSchema = z
     name: z.string().trim().min(1).max(100),
     enabled: z.boolean(),
     color: colorSettingsSchema,
+    lastColorValues: colorSettingsSchema.optional(),
     applications: z.array(applicationRuleSchema),
     displays: z.array(profileDisplayTargetSchema)
   })

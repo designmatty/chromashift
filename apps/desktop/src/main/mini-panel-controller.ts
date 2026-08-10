@@ -35,7 +35,7 @@ export class MiniPanelController {
     const display = this.getDisplay(trayBounds)
     const size = panel.getSize()
     const width = size[0] ?? 330
-    const height = size[1] ?? 510
+    const height = size[1] ?? 388
     const centerX = trayBounds.x + trayBounds.width / 2
     const taskbarIsBelow = trayBounds.y > display.workArea.y + display.workArea.height / 2
     const x = Math.min(

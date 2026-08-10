@@ -16,7 +16,7 @@ npm run smoke:package
 ```
 
 `npm run test` runs the core-domain, desktop activation, protocol, and
-native-client lifecycle unit tests, six pure gamma-transform tests, builds the
+native-client lifecycle unit tests, pure gamma-transform tests, builds the
 native helper, and runs a real Electron-client-to-helper lifecycle test. Core
 coverage includes schema bounds, optional overrides, path and filename matching,
 disabled profiles, activation precedence and rapid transitions, duplicate
@@ -48,19 +48,27 @@ non-overwrite behavior, and concurrent migration safety.
 
 Milestone 4 coverage validates the renderer-to-main schemas, rejects malformed
 profile and preview requests, verifies capability rejection before any preview
-write, and covers preview capture/apply/update/confirmation, explicit rollback,
-and removal of the final override. Activation tests also prove foreground events
-are remembered without writing during preview and that rollback applies the latest
-intended target. Settings tests cover defaults, validation, and atomic persistence.
+write, and covers preview capture/apply/update/confirmation, serialized rollback
+after an in-flight display apply,
+removal of the final override, and retention of a disabled control's last value.
+Activation tests also prove foreground events are remembered without writing
+during preview, that ChromaShift's own windows do not replace the external
+foreground target, and that rollback applies the latest intended target. Settings
+tests cover defaults, validation, and atomic persistence.
 
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, read-only profile navigation, Settings navigation,
-live Edit preview and cancel restoration, validated product state, and lack of
-renderer errors. It also verifies automatic activation is enabled with a
-fresh isolated user-data directory, exits Electron through the shared
-restore-aware lifecycle, and writes a captured window image to
-`apps/desktop/out/smoke/desktop.png`.
+read-only display/color summaries without edit inputs, live Edit preview,
+keyboard editing of Default and normal profile names, disabled-control value
+retention, cancellation of a debounced edit before it can reapply discarded
+values, explicit-preview rollback when another profile is selected, and the
+mini-panel path
+where disabling the final color control starts a baseline-only override before
+Reset reapplies the saved manual profile. It also verifies validated product state, automatic
+activation with fresh isolated user data, restore-aware exit, and no renderer
+errors. Captured images are written to `apps/desktop/out/smoke/desktop.png` and
+`apps/desktop/out/smoke/mini-panel.png`.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
 publishing a self-contained `DisplayService`. `npm run smoke:package` validates
@@ -80,6 +88,9 @@ user-data directories.
   NVIDIA mappings.
 - Captured the Windows RGB ramp, wrote identity and gamma 1.02 transforms, read
   them back exactly, and restored the original ramp on both displays.
+- Verified the endpoint-preserving Windows ramp transform on `DISPLAY6` with
+  brightness 75/contrast 24 and brightness 75/contrast 25/gamma 1.3. Both ramps
+  wrote and read back successfully, then the captured baseline was restored.
 - Changed primary-display NVIDIA saturation 50→55 and hue 0→4, read back both,
   then restored 50/0.
 - Closed helper stdin after changing gamma/saturation/hue. The helper restored
