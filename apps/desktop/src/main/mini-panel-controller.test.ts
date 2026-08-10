@@ -11,8 +11,7 @@ function fakePanel() {
     isVisible: () => visible,
     getSize: () => [330, 388],
     setPosition: (x: number, y: number) => { positions.push([x, y]) },
-    show: () => { visible = true; calls.push('show') },
-    focus: () => calls.push('focus'),
+    showInactive: () => { visible = true; calls.push('showInactive') },
     hide: () => { visible = false; calls.push('hide') }
   } as unknown as BrowserWindow
   return { panel, calls, positions }
@@ -23,7 +22,7 @@ const display = {
 } as Display
 
 describe('MiniPanelController', () => {
-  it('positions above a bottom taskbar, focuses, and toggles closed', () => {
+  it('positions above a bottom taskbar, shows without activation, and toggles closed', () => {
     const { panel, calls, positions } = fakePanel()
     const controller = new MiniPanelController(
       () => panel,
@@ -36,7 +35,7 @@ describe('MiniPanelController', () => {
     controller.toggle(trayBounds)
 
     expect(positions).toEqual([[1582, 644]])
-    expect(calls).toEqual(['show', 'focus', 'hide'])
+    expect(calls).toEqual(['showInactive', 'hide'])
   })
 
   it('places the panel below a top taskbar and clamps it inside the work area', () => {

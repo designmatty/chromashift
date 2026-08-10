@@ -18,8 +18,7 @@ export class MiniPanelController {
       return
     }
     this.#position(panel, trayBounds)
-    panel.show()
-    panel.focus()
+    panel.showInactive()
   }
 
   public hide(): void {

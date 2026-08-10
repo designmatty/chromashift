@@ -70,6 +70,13 @@ activation with fresh isolated user data, restore-aware exit, and no renderer
 errors. Captured images are written to `apps/desktop/out/smoke/desktop.png` and
 `apps/desktop/out/smoke/mini-panel.png`.
 
+`npm run smoke:quick-panel` is the Windows-native interaction check for the
+post-Milestone 4 quick-panel spike. It shows the actual Electron panel over a
+WinForms foreground probe, confirms `WS_EX_NOACTIVATE` on the panel HWND, uses a
+native pointer click to operate a React control, and verifies that the original
+window retains both foreground status and subsequent keyboard input. This test
+also exercises non-100% display scaling rather than relying on DOM-only input.
+
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
 publishing a self-contained `DisplayService`. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout, starts the helper directly, exercises

@@ -61,6 +61,12 @@ Milestone 4 is complete:
 Milestone 5 is next and covers resilience, packaged-app security, diagnostics,
 and the release hardware matrix.
 
+A post-Milestone 4 Windows spike also proved that the existing Electron mini
+panel can use native `WS_EX_NOACTIVATE` behavior without a C# window-style
+command or a native UI rewrite. See
+[`docs/quick-panel-spike.md`](docs/quick-panel-spike.md) for the interaction
+test, tray caveat, and pending click-away dismissal decision.
+
 The repository will not be rebased onto a general Electron starter. See
 `AGENTS.md` for the reviewed starter-template decision and the authoritative
 slice definitions.

@@ -1708,13 +1708,15 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-08:
+Current status on 2026-08-10:
 
 - Phase 0 — complete
 - Milestone 1 — complete
 - Milestone 2 — complete
 - Milestone 3 — complete
 - Milestone 4 — complete
+- Windows non-activating quick-panel spike — behavior prototype complete;
+  production dismissal decision pending
 - Milestone 5 — next
 
 Implement the roadmap in the numbered slices below. A slice is complete only
@@ -1947,7 +1949,9 @@ Focus on functionality before visual polish.
   used by ChromaShift, with Lucide icons
 - keep the native Windows frame for the app panel
 - open a borderless mini panel from tray left-click, position it next to the
-  taskbar, close it on focus loss, and close it when opening the app panel
+  taskbar, and close it when opening the app panel; the post-M4 native-window
+  spike replaces focus-taking/blur dismissal on Windows with a non-activating
+  `BrowserWindow`, while exact outside-click dismissal remains pending
 - let mini-panel color overrides survive panel focus loss but restore them when
   switching profiles, returning to Auto switch, resetting, or exiting
 - provide `Update profile` and `Reset changes` actions for temporary overrides

@@ -3,8 +3,10 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  screen,
   type IpcMainInvokeEvent,
-  type OpenDialogOptions
+  type OpenDialogOptions,
+  type Rectangle
 } from 'electron'
 import { basename, extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -225,6 +227,7 @@ function createMiniWindow(): BrowserWindow {
     autoHideMenuBar: true,
     skipTaskbar: true,
     alwaysOnTop: true,
+    ...(process.platform === 'win32' ? { focusable: false } : {}),
     backgroundColor: process.platform === 'win32' ? '#00000000' : '#18181b',
     ...(process.platform === 'win32'
       ? { backgroundMaterial: 'acrylic' as const, transparent: true }
@@ -237,7 +240,7 @@ function createMiniWindow(): BrowserWindow {
     }
   })
   miniWindow = panel
-  panel.on('blur', () => panel.hide())
+  if (process.platform !== 'win32') panel.on('blur', () => panel.hide())
   panel.on('closed', () => { if (miniWindow === panel) miniWindow = undefined })
   panel.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
@@ -258,6 +261,50 @@ function createMiniWindow(): BrowserWindow {
     void panel.loadFile(join(__dirname, '../renderer/index.html'), { query: { panel: 'mini' } })
   }
   return panel
+}
+
+function reportQuickPanelSpikeState(): void {
+  if (process.env['CHROMASHIFT_QUICK_PANEL_SPIKE'] !== '1') return
+  const panel = miniWindow
+  if (panel === undefined || !panel.isVisible()) return
+  const display = screen.getDisplayMatching(panel.getBounds())
+  const nativeHandle = panel.getNativeWindowHandle()
+  const handle = nativeHandle.length >= 8
+    ? nativeHandle.readBigUInt64LE().toString()
+    : BigInt(nativeHandle.readUInt32LE()).toString()
+  console.log(JSON.stringify({
+    eventName: 'QuickPanelSpikeShown',
+    handle,
+    bounds: panel.getBounds(),
+    displayBounds: display.bounds,
+    displayScaleFactor: display.scaleFactor,
+    focusable: panel.isFocusable(),
+    focused: panel.isFocused()
+  }))
+}
+
+function toggleMiniPanel(bounds: Rectangle): void {
+  miniPanelController.toggle(bounds)
+  setImmediate(reportQuickPanelSpikeState)
+}
+
+function scheduleQuickPanelSpikeProbe(): void {
+  const rawDelay = process.env['CHROMASHIFT_QUICK_PANEL_SPIKE_DELAY_MS']
+  if (rawDelay === undefined) return
+  const delay = Number(rawDelay)
+  if (!Number.isFinite(delay) || delay < 0) {
+    throw new Error('CHROMASHIFT_QUICK_PANEL_SPIKE_DELAY_MS must be a non-negative number.')
+  }
+  setTimeout(() => {
+    const display = screen.getPrimaryDisplay()
+    const trayBounds = {
+      x: display.workArea.x + display.workArea.width - 24,
+      y: display.workArea.y + display.workArea.height,
+      width: 24,
+      height: 24
+    }
+    toggleMiniPanel(trayBounds)
+  }, delay)
 }
 
 function openWindow(view: AppPanelView = 'profiles'): void {
@@ -287,7 +334,7 @@ function configureDesktopLifecycle(): Promise<void> {
   )
   const trayMenu = new ElectronTrayMenu(
     trayIconPath(),
-    (bounds) => miniPanelController.toggle(bounds)
+    toggleMiniPanel
   )
   trayController = new TrayController(
     profileRepository,
@@ -392,6 +439,7 @@ void app.whenReady().then(async () => {
   app.setLoginItemSettings({ openAtLogin: currentSettings.launchAtStartup })
   await startNativeService()
   await configureDesktopLifecycle()
+  scheduleQuickPanelSpikeProbe()
   if (!app.getLoginItemSettings().wasOpenedAtLogin || currentSettings.launchBehavior === 'app') {
     createWindow()
   }
