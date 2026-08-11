@@ -11,20 +11,21 @@ npm run typecheck
 npm run test
 npm run build
 npm run verify
+npm run native:test:integration
 npm run smoke:desktop
 npm run package:win
 npm run smoke:package
 ```
 
 `npm run verify` is the canonical non-interactive Windows verification path. It
-runs formatting checks, lint, typechecking, all TypeScript and native tests, and
-the full build. GitHub CI invokes this exact command. It intentionally does not
-run display-mutating desktop, crash-restoration, or package smoke tests because
-those require a suitable interactive Windows session and restoration guard.
+runs formatting checks, lint, typechecking, deterministic TypeScript and native
+tests, and the full build. GitHub CI invokes this exact command. It intentionally
+does not run the machine-specific native integration test, display-mutating
+desktop smoke, crash-restoration smoke, or package smoke because those require a
+suitable interactive Windows session and restoration guard.
 
 `npm run test` runs the core-domain, desktop activation, protocol, and
-native-client lifecycle unit tests, pure gamma-transform tests, builds the
-native helper, and runs a real Electron-client-to-helper lifecycle test. Core
+native-client unit tests plus pure gamma-transform tests. Core
 coverage includes schema bounds, optional overrides, path and filename matching,
 disabled profiles, activation precedence and rapid transitions, duplicate
 suppression, JSON persistence, and schema migration. Native foreground tests
@@ -34,7 +35,8 @@ successful-target deduplication. A deterministic fake helper verifies activation
 command requests and responses, runtime validation, structured errors,
 unsolicited events, request/startup timeouts, and pending-request rejection on
 process exit.
-The hardware integration test verifies readiness, foreground
+`npm run native:test:integration` builds the helper and runs the
+machine-specific native client lifecycle test. It verifies readiness, foreground
 resolution, multi-display stable IDs, primary display detection, capability
 resolution and display state, explicit structured unknown-command errors,
 restore-aware shutdown, and ADLX availability on the current machine.

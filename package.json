@@ -28,7 +28,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "native:build": "dotnet build native/DisplayService/DisplayService.csproj",
     "native:publish": "dotnet publish native/DisplayService/DisplayService.csproj --configuration Release --runtime win-x64 --self-contained true --output native/DisplayService/bin/Release/net10.0-windows/win-x64/publish",
-    "native:test": "dotnet test native/DisplayService.Tests/DisplayService.Tests.csproj && npm run native:build && npm run test:native --workspace @chromashift/native-client",
+    "native:test": "dotnet test native/DisplayService.Tests/DisplayService.Tests.csproj",
+    "native:test:integration": "npm run native:build && npm run test:native --workspace @chromashift/native-client",
     "native:run": "dotnet run --project native/DisplayService/DisplayService.csproj"
   },
   "devDependencies": {

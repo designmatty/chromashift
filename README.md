@@ -41,6 +41,7 @@ npm run lint
 npm run typecheck
 npm run verify
 npm run native:run
+npm run native:test:integration
 npm run package:win
 npm run smoke:package
 ```

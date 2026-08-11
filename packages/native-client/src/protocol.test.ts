@@ -7,7 +7,8 @@ import {
   foregroundApplicationsResultSchema,
   nativeMessageSchema,
   nativeRequestSchema,
-  restoreAllResultSchema
+  restoreAllResultSchema,
+  systemInfoSchema
 } from './protocol.js'
 
 describe('native protocol', () => {
@@ -25,6 +26,27 @@ describe('native protocol', () => {
     expect(
       nativeMessageSchema.safeParse({ id: '42', ok: false, error: null }).success
     ).toBe(false)
+  })
+
+  it('accepts unavailable AMD diagnostics with omitted version fields', () => {
+    const info = systemInfoSchema.parse({
+      protocolVersion: 1,
+      serviceVersion: '1.0.0',
+      operatingSystem: 'Windows',
+      processId: 42,
+      providers: {
+        amd: {
+          libraryAvailable: false,
+          initialized: false,
+          displayCount: 0,
+          runtimeValidation: 'ADLX is unavailable.',
+          error: 'Unable to load amdadlx64.dll'
+        }
+      }
+    })
+
+    expect(info.providers.amd.version).toBeUndefined()
+    expect(info.providers.amd.fullVersion).toBeUndefined()
   })
 
   it('validates resolved foreground application details', () => {
