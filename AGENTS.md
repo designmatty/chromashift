@@ -845,6 +845,12 @@ Electron crash
 
 Heartbeat/watchdog behavior does not have to ship in the first proof of concept, but the architecture should support it.
 
+The shipped Windows lifecycle now detaches `DisplayService` from Electron's
+terminating process group and passes the Electron PID. Direct parent-process exit
+monitoring restores captured baselines after tested abrupt Electron termination.
+Retain stdin EOF as a secondary signal. This is not a substitute for later
+heartbeat coverage of a hung parent or recovery from helper/OS termination.
+
 ---
 
 # Foreground application detection
@@ -1982,6 +1988,7 @@ Focus on functionality before visual polish.
 
 ### Slice 5.2 — Process and restoration resilience
 
+- abrupt Electron parent exit restoration (completed; detached helper plus PID monitor)
 - process exits
 - unsupported GPU
 - missing vendor SDK

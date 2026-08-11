@@ -6,12 +6,17 @@ import { dirname, join, resolve } from 'node:path'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { fileURLToPath } from 'node:url'
 import electronPath from 'electron'
+import { NativeClient } from '@chromashift/native-client'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
 const screenshotDirectory = join(desktopDirectory, 'out', 'smoke')
 const screenshotPath = join(screenshotDirectory, 'desktop.png')
 const miniScreenshotPath = join(screenshotDirectory, 'mini-panel.png')
+const displayServicePath = resolve(
+  desktopDirectory,
+  '../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe'
+)
 const timeoutMilliseconds = 15_000
 
 function delay(milliseconds) {
@@ -171,6 +176,20 @@ async function waitForExpression(debuggerClient, expression, failureMessage) {
   throw new Error(failureMessage)
 }
 
+function displayStateFingerprint(state) {
+  return JSON.stringify(state)
+}
+
+async function waitForRestoredDisplayState(native, displayId, expectedFingerprint) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    const state = await native.getDisplayState(displayId)
+    if (displayStateFingerprint(state) === expectedFingerprint) return state
+    await delay(100)
+  }
+  return native.getDisplayState(displayId)
+}
+
 async function waitForExit(child) {
   if (child.exitCode !== null) return child.exitCode
   return withTimeout(
@@ -184,6 +203,19 @@ const debuggingPort = await reservePort()
 const userDataDirectory = await mkdtemp(join(tmpdir(), 'chromashift-smoke-'))
 const environment = { ...globalThis.process.env }
 delete environment.ELECTRON_RUN_AS_NODE
+const forceElectronTermination = globalThis.process.argv.includes('--force-exit')
+
+// Keep a second native service alive as a restoration guard. It captures the
+// real pre-smoke state and lets this test verify what remains on the display
+// after Electron has fully exited. The guard restores its own baseline in the
+// final cleanup even when the assertion fails.
+const restorationGuard = new NativeClient({ executablePath: displayServicePath })
+await restorationGuard.start()
+const guardedDisplay = (await restorationGuard.getDisplays())[0]
+if (guardedDisplay === undefined) throw new Error('The restoration guard found no displays.')
+const guardedBaseline = await restorationGuard.getDisplayState(guardedDisplay.id)
+const guardedBaselineFingerprint = displayStateFingerprint(guardedBaseline)
+await restorationGuard.captureBaseline(guardedDisplay.id)
 
 let standardOutput = ''
 let standardError = ''
@@ -569,7 +601,7 @@ try {
       if (profile === undefined || display === undefined) return false
       const saved = await window.chromaShift.saveProfile({
         ...profile,
-        color: { brightness: 50 },
+        color: { brightness: 55 },
         displays: [{ displayId: display.id }]
       })
       if (!saved.ok) return false
@@ -585,7 +617,7 @@ try {
 
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('.color-summary > div:first-child dd')?.textContent === '50%'`,
+    `document.querySelector('.color-summary > div:first-child dd')?.textContent === '55%'`,
     'The saved profile color was not rendered before explicit preview coverage.'
   )
 
@@ -689,6 +721,11 @@ try {
     throw new Error(`Electron reported a preload failure:\n${standardError}`)
   }
 
+  const controlledState = await restorationGuard.getDisplayState(guardedDisplay.id)
+  if (displayStateFingerprint(controlledState) === guardedBaselineFingerprint) {
+    throw new Error('The smoke profile did not change the guarded display state.')
+  }
+
   globalThis.console.log('Desktop smoke test passed.')
   globalThis.console.log(`Renderer: ${ui.title} (${target.url})`)
   globalThis.console.log('Preload bridge: ready')
@@ -700,21 +737,47 @@ try {
   smokeFailure = error
 } finally {
   if (debuggerClient !== undefined) {
-    try {
-      await debuggerClient.send('Runtime.evaluate', {
-        expression: 'void window.chromaShift.requestExit()'
-      }, 1_000)
-    } catch {
-      // Restore-safe exit can tear down the debugging socket before acknowledging.
+    if (!forceElectronTermination) {
+      try {
+        await debuggerClient.send('Runtime.evaluate', {
+          expression: 'void window.chromaShift.requestExit()'
+        }, 1_000)
+      } catch {
+        // Restore-safe exit can tear down the debugging socket before acknowledging.
+      }
     }
     debuggerClient.close()
   }
+
+  if (forceElectronTermination && electron.exitCode === null) electron.kill()
 
   try {
     await waitForExit(electron)
   } catch (error) {
     electron.kill()
     smokeFailure ??= error
+  }
+  try {
+    const restoredState = await waitForRestoredDisplayState(
+      restorationGuard,
+      guardedDisplay.id,
+      guardedBaselineFingerprint
+    )
+    if (displayStateFingerprint(restoredState) !== guardedBaselineFingerprint) {
+      smokeFailure ??= new Error(
+        `Electron exit left ${guardedDisplay.name} on ${displayStateFingerprint(restoredState)}; ` +
+        `expected baseline ${guardedBaselineFingerprint}.`
+      )
+    }
+  } catch (error) {
+    smokeFailure ??= error
+  } finally {
+    try {
+      await restorationGuard.restoreDisplay(guardedDisplay.id)
+      await restorationGuard.stop()
+    } catch (error) {
+      smokeFailure ??= error
+    }
   }
   await rm(userDataDirectory, {
     recursive: true,

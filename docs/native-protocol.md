@@ -14,9 +14,11 @@ The service first emits:
 
 Electron waits for readiness, detects process errors/exits, rejects outstanding
 requests, and sends `service.shutdown` on exit. Shutdown restores every captured
-baseline before acknowledging. EOF also triggers restore-all and a safe helper
-exit, covering loss of the parent pipe. A later heartbeat is still needed for
-failure modes where neither shutdown nor EOF cleanup can run.
+baseline before acknowledging. On Windows the helper is detached from Electron's
+terminating process group and receives `--parent-pid`; either parent-process exit
+or stdin EOF triggers restore-all and a safe helper exit. A later heartbeat is
+still needed for a hung parent, helper crash, power loss, and failure modes where
+the helper itself cannot execute cleanup.
 
 ## Envelopes
 

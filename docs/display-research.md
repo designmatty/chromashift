@@ -155,12 +155,18 @@ its own mapped NVAPI controls.
 
 Closing stdin after a modified apply simulated loss of the Electron parent. The
 helper restored gamma and NVIDIA state before exiting: a fresh helper read the
-original gamma hash and 50/0. Normal `service.shutdown`, explicit per-display
-restore, restore-all, and partial-apply rollback use the same verified path.
+original gamma hash and 50/0. A later desktop regression test demonstrated that
+abrupt Electron termination did not reliably deliver that EOF before the helper
+was terminated. The Windows launch now detaches the helper and passes the Electron
+PID; direct parent-process exit monitoring restored the exact guarded display
+state after the same forced-termination sequence. Normal `service.shutdown`,
+explicit per-display restore, restore-all, and partial-apply rollback use the
+same verified path.
 
-This EOF mechanism covers normal child-pipe loss, but is not a complete watchdog:
-an abrupt helper crash, power loss, or OS termination cannot execute process
-cleanup. A heartbeat/supervisor remains required during hardening.
+Parent-exit monitoring and EOF cover graceful shutdown and tested abrupt Electron
+termination. They are not a complete watchdog: a hung Electron parent, abrupt
+helper crash, power loss, or OS termination may still prevent cleanup. A heartbeat
+or stronger supervisor remains required during hardening.
 
 ## Multi-monitor and topology findings
 
@@ -182,8 +188,8 @@ display handles across calls, which avoids blindly reusing stale handles.
 - No AMD-driven monitor was available. The ADLX implementation is not a claim of
   AMD hardware validation.
 - Stable IDs were verified across enumeration, not physical reconnect cycles.
-- EOF restoration is not a heartbeat watchdog and cannot recover from every
-  possible native-service or OS failure.
+- Parent-exit and EOF restoration are not a heartbeat watchdog and cannot recover
+  from every possible native-service or OS failure.
 
 ## Recommended production architecture
 

@@ -42,6 +42,7 @@ interface PendingRequest {
 export interface NativeClientOptions {
   executablePath: string
   executableArguments?: readonly string[]
+  detached?: boolean
   requestTimeoutMs?: number
   startupTimeoutMs?: number
 }
@@ -49,6 +50,7 @@ export interface NativeClientOptions {
 interface ResolvedNativeClientOptions {
   executablePath: string
   executableArguments: readonly string[]
+  detached: boolean
   requestTimeoutMs: number
   startupTimeoutMs: number
 }
@@ -88,6 +90,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     super()
     this.#options = {
       executableArguments: [],
+      detached: false,
       requestTimeoutMs: 5_000,
       startupTimeoutMs: 10_000,
       ...options
@@ -105,6 +108,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
     const child = spawn(this.#options.executablePath, [...this.#options.executableArguments], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: this.#options.detached,
       windowsHide: true
     })
     this.#process = child

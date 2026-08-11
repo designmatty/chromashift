@@ -70,6 +70,12 @@ activation with fresh isolated user data, restore-aware exit, and no renderer
 errors. Captured images are written to `apps/desktop/out/smoke/desktop.png` and
 `apps/desktop/out/smoke/mini-panel.png`.
 
+The desktop smoke keeps a separate native restoration guard alive, proves that
+the product changed the real display state, and then compares the post-exit state
+with the exact pre-smoke state. `npm run smoke:desktop:crash` runs the same path
+but forcibly terminates Electron instead of requesting a graceful exit; this
+verifies detached-helper parent-process monitoring and crash restoration.
+
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
 publishing a self-contained `DisplayService`. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout, starts the helper directly, exercises
@@ -106,5 +112,6 @@ and the distinction between verified and implemented-unverified behavior.
 
 Before advertising production support, test an AMD-driven display, HDR-on
 capability behavior, cable reconnect, sleep/wake, topology changes, driver reset,
-and abrupt-process watchdog recovery. These are intentionally recorded as
-hardening work rather than silently treated as Phase 0 successes.
+helper-process crash recovery, and heartbeat recovery for a hung Electron parent.
+These are intentionally recorded as hardening work rather than silently treated
+as Phase 0 successes.

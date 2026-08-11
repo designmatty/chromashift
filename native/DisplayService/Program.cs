@@ -49,6 +49,13 @@ using var amd = new AmdAdlxProvider();
 var baselines = new BaselineManager(displays, gamma, nvidia, amd);
 var capabilities = new CapabilityResolver(gamma, nvidia, amd);
 var processor = new CommandProcessor(protocol, foregroundApplications, displays, baselines, capabilities);
+var parentProcessId = ParentProcessMonitor.ParseParentProcessId(args);
+using var parentProcess = parentProcessId is int processId
+    ? ParentProcessMonitor.TryOpen(processId)
+    : null;
+var parentExited = parentProcessId is null
+    ? null
+    : parentProcess is null ? Task.CompletedTask : parentProcess.WaitForExitAsync();
 
 await protocol.WriteEventAsync("service.ready", new
 {
@@ -63,8 +70,23 @@ await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
 
 try
 {
-    while (!processor.ShutdownRequested && await Console.In.ReadLineAsync() is { } line)
+    while (!processor.ShutdownRequested)
     {
+        var readLine = Console.In.ReadLineAsync();
+        if (parentExited is not null && await Task.WhenAny(readLine, parentExited) == parentExited)
+        {
+            await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                level = "warning",
+                eventName = "ParentProcessExited",
+                parentProcessId
+            }));
+            break;
+        }
+        if (await readLine is not { } line)
+        {
+            break;
+        }
         await processor.ProcessLineAsync(line);
     }
 }
