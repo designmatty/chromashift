@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  screen,
   type IpcMainInvokeEvent,
   type OpenDialogOptions
 } from 'electron'
@@ -57,8 +58,22 @@ const windowController = new WindowController(
 )
 const miniPanelController = new MiniPanelController(
   () => miniWindow,
-  () => createMiniWindow()
+  () => createMiniWindow(),
+  (bounds) => screen.getDisplayMatching(bounds),
+  () => currentSettings.miniPanelPosition,
+  (position) => saveMiniPanelPosition(position)
 )
+
+function saveMiniPanelPosition(position: { x: number, y: number }): void {
+  const currentPosition = currentSettings.miniPanelPosition
+  if (currentPosition?.x === position.x && currentPosition.y === position.y) return
+  currentSettings = { ...currentSettings, miniPanelPosition: position }
+  void settingsRepository.save(currentSettings).then(() => {
+    scheduleProductStateBroadcast()
+  }).catch((error: unknown) => {
+    logger.write({ level: 'warning', eventName: 'MiniPanelPositionSaveFailed', ...describeError(error) })
+  })
+}
 
 function servicePath(): string {
   return resolveDisplayServicePath({
@@ -228,11 +243,9 @@ function createMiniWindow(): BrowserWindow {
     fullscreenable: false,
     autoHideMenuBar: true,
     skipTaskbar: true,
-    alwaysOnTop: true,
+    ...(process.platform === 'win32' ? { focusable: false } : {}),
     backgroundColor: process.platform === 'win32' ? '#00000000' : '#18181b',
-    ...(process.platform === 'win32'
-      ? { backgroundMaterial: 'acrylic' as const, transparent: true }
-      : {}),
+    ...(process.platform === 'win32' ? { transparent: true } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -241,7 +254,14 @@ function createMiniWindow(): BrowserWindow {
     }
   })
   miniWindow = panel
-  panel.on('blur', () => panel.hide())
+  if (process.platform !== 'win32') panel.on('blur', () => panel.hide())
+  let userMovedPanel = false
+  panel.on('will-move', () => { userMovedPanel = true })
+  panel.on('moved', () => {
+    if (!userMovedPanel) return
+    userMovedPanel = false
+    miniPanelController.rememberPosition(panel.getBounds())
+  })
   panel.on('closed', () => { if (miniWindow === panel) miniWindow = undefined })
   panel.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
@@ -388,7 +408,8 @@ registerProductIpcHandlers(
   () => productController,
   assertTrustedRenderer,
   () => shutdownCoordinator?.request('application') ?? Promise.resolve(false),
-  openWindow
+  openWindow,
+  () => miniPanelController.hide()
 )
 
 void app.whenReady().then(async () => {

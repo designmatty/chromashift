@@ -64,6 +64,26 @@ nav { display: grid; gap: 4px; }.nav { height: 31px; padding: 0 9px; display: fl
   --mini-stroke: rgb(255 255 255 / 11%);
 }
 html:has(.mini-panel), body:has(.mini-panel) { background: transparent; overflow: hidden; }
+.mini-titlebar {
+  min-height: 34px;
+  padding: 2px 4px 2px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--mini-stroke);
+  background: var(--mini-layer);
+  cursor: move;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.mini-titlebar strong { font-size: 12px; font-weight: 600; }
+.mini-titlebar [data-slot="button"] {
+  width: 30px;
+  height: 28px;
+  min-height: 28px;
+  -webkit-app-region: no-drag;
+}
+.mini-panel > .empty { min-height: 0; flex: 1; }
 .mini-controls {
   flex: 1;
   overflow-y: auto;

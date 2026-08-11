@@ -74,12 +74,17 @@ and reapplies the exact previous manual/foreground/default/baseline target. Ther
 is deliberately no countdown timer. Native apply restores baseline before each
 complete settings request so removing an override cannot inherit a stale value.
 
-Tray left-click opens a dedicated borderless mini-panel window next to the taskbar.
-It hides when focus is lost and when the full app opens. Quick color changes remain
-temporary across focus loss and expose `Update profile` and `Reset changes`; profile
-selection establishes a manual override until the user returns to Auto switch.
-Mini-panel footer actions open the corresponding Profiles, Displays, or Settings
-view in the native-framed app panel.
+Tray left-click opens a dedicated borderless mini-panel window. On Windows it is a
+pointer-oriented, non-activating Electron surface: opening or interacting with it
+does not make ChromaShift the foreground application. It is raised at the popup-menu
+window level so it remains above the hidden-icons drawer. The panel has an explicit
+close button, hides when the full app opens, and can be dragged by its header. A user
+position is persisted and clamped to a connected display; without one, the panel
+opens next to the tray. Quick color changes remain temporary while the panel is
+hidden and expose `Update profile` and `Reset changes`; profile selection establishes
+a manual override until the user returns to Auto switch. Mini-panel footer actions
+open the corresponding Profiles, Displays, or Settings view in the native-framed
+app panel.
 
 App settings are validated and atomically persisted separately from profiles.
 They control login launch, login-only tray/app startup behavior, close-to-tray

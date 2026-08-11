@@ -304,8 +304,105 @@ function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
     setPicker(false); setDirty(false)
   }
 
-  if (active === undefined) return <div className="mini-panel"><Empty title="No profiles available" /></div>
-  return <div className="mini-panel">{error !== null && <div className="mini-error">{error.message}</div>}{picker ? <div className="mini-picker"><header><Button variant="ghost" size="icon-sm" onClick={() => setPicker(false)}><ArrowLeft /></Button><strong>Profile controls</strong></header><button className={product.activation.mode.kind === 'automatic' ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(null)}><Checkbox checked={product.activation.mode.kind === 'automatic'} /><span>Auto switch</span><Badge variant="secondary">Recommended</Badge></button><Separator />{product.configuration.profiles.filter((profile) => profile.enabled).map((profile) => <button className={product.activation.mode.kind === 'manual' && active.id === profile.id ? 'picker-row selected' : 'picker-row'} onClick={() => void choose(profile.id)} key={profile.id}><Checkbox checked={product.activation.mode.kind === 'manual' && active.id === profile.id} /><span>{profile.name}</span>{profile.id === DEFAULT_ID && <Badge>Global</Badge>}</button>)}</div> : <><div className="mini-controls"><ColorControls profile={active} color={color} product={product} editable onChange={(next) => { setColor(next); setDirty(JSON.stringify(next) !== JSON.stringify(active.color)) }} compact /></div>{dirty && <div className="mini-save"><Button variant="secondary" onClick={() => { resetRememberedColorValues(active); setColor(active.color); setDirty(false); void run(window.chromaShift.cancelPreview(), setError) }}>Reset changes</Button><Button onClick={() => void run(window.chromaShift.confirmPreview({ ...active, color, lastColorValues: rememberedColorValues.get(active.id) ?? active.lastColorValues }, 'preserve'), setError)}>Update profile</Button></div>}<footer><button className="active-profile" onClick={() => setPicker(true)}><SlidersHorizontal /><span><small>{product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}</small><strong>{active.name}</strong></span></button><IconTooltip label="Open app panel"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('profiles')} aria-label="Open app panel"><ExternalLink /></Button></IconTooltip><IconTooltip label="Open settings"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('settings')} aria-label="Open settings"><SettingsIcon /></Button></IconTooltip><IconTooltip label="Open displays"><Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('displays')} aria-label="Open displays"><Monitor /></Button></IconTooltip></footer></>}</div>
+  const titleBar = <MiniPanelTitleBar onClose={() => {
+    void run(window.chromaShift.hideMiniPanel(), setError)
+  }} />
+  if (active === undefined) {
+    return <div className="mini-panel">{titleBar}<Empty title="No profiles available" /></div>
+  }
+
+  return <div className="mini-panel">
+    {titleBar}
+    {error !== null && <div className="mini-error">{error.message}</div>}
+    {picker
+      ? <div className="mini-picker">
+          <header>
+            <Button variant="ghost" size="icon-sm" onClick={() => setPicker(false)}>
+              <ArrowLeft />
+            </Button>
+            <strong>Profile controls</strong>
+          </header>
+          <button
+            className={product.activation.mode.kind === 'automatic' ? 'picker-row selected' : 'picker-row'}
+            onClick={() => void choose(null)}
+          >
+            <Checkbox checked={product.activation.mode.kind === 'automatic'} />
+            <span>Auto switch</span>
+            <Badge variant="secondary">Recommended</Badge>
+          </button>
+          <Separator />
+          {product.configuration.profiles.filter((profile) => profile.enabled).map((profile) =>
+            <button
+              className={product.activation.mode.kind === 'manual' && active.id === profile.id
+                ? 'picker-row selected'
+                : 'picker-row'}
+              onClick={() => void choose(profile.id)}
+              key={profile.id}
+            >
+              <Checkbox checked={product.activation.mode.kind === 'manual' && active.id === profile.id} />
+              <span>{profile.name}</span>
+              {profile.id === DEFAULT_ID && <Badge>Global</Badge>}
+            </button>
+          )}
+        </div>
+      : <>
+          <div className="mini-controls">
+            <ColorControls
+              profile={active}
+              color={color}
+              product={product}
+              editable
+              onChange={(next) => {
+                setColor(next)
+                setDirty(JSON.stringify(next) !== JSON.stringify(active.color))
+              }}
+              compact
+            />
+          </div>
+          {dirty && <div className="mini-save">
+            <Button variant="secondary" onClick={() => {
+              resetRememberedColorValues(active)
+              setColor(active.color)
+              setDirty(false)
+              void run(window.chromaShift.cancelPreview(), setError)
+            }}>Reset changes</Button>
+            <Button onClick={() => void run(window.chromaShift.confirmPreview({
+              ...active,
+              color,
+              lastColorValues: rememberedColorValues.get(active.id) ?? active.lastColorValues
+            }, 'preserve'), setError)}>Update profile</Button>
+          </div>}
+          <footer>
+            <button className="active-profile" onClick={() => setPicker(true)}>
+              <SlidersHorizontal />
+              <span>
+                <small>{product.activation.mode.kind === 'automatic'
+                  ? 'Auto switch'
+                  : 'Manually selected'}</small>
+                <strong>{active.name}</strong>
+              </span>
+            </button>
+            <IconTooltip label="Open app panel">
+              <Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('profiles')} aria-label="Open app panel"><ExternalLink /></Button>
+            </IconTooltip>
+            <IconTooltip label="Open settings">
+              <Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('settings')} aria-label="Open settings"><SettingsIcon /></Button>
+            </IconTooltip>
+            <IconTooltip label="Open displays">
+              <Button variant="ghost" size="icon" onClick={() => void window.chromaShift.openAppPanel('displays')} aria-label="Open displays"><Monitor /></Button>
+            </IconTooltip>
+          </footer>
+        </>}
+  </div>
+}
+
+function MiniPanelTitleBar({ onClose }: { onClose(): void }): React.JSX.Element {
+  return <header className="mini-titlebar">
+    <strong>ChromaShift</strong>
+    <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close mini panel">
+      <X />
+    </Button>
+  </header>
 }
 
 function SettingsPanel({ product, onError }: { product: ProductState; onError(error: ProductError | null): void }): React.JSX.Element {

@@ -11,8 +11,9 @@ function fakePanel() {
     isVisible: () => visible,
     getSize: () => [330, 388],
     setPosition: (x: number, y: number) => { positions.push([x, y]) },
-    show: () => { visible = true; calls.push('show') },
-    focus: () => calls.push('focus'),
+    setAlwaysOnTop: (_flag: boolean, level: string) => calls.push(`alwaysOnTop:${level}`),
+    showInactive: () => { visible = true; calls.push('showInactive') },
+    moveTop: () => calls.push('moveTop'),
     hide: () => { visible = false; calls.push('hide') }
   } as unknown as BrowserWindow
   return { panel, calls, positions }
@@ -23,7 +24,7 @@ const display = {
 } as Display
 
 describe('MiniPanelController', () => {
-  it('positions above a bottom taskbar, focuses, and toggles closed', () => {
+  it('positions above a bottom taskbar, shows without activation, and toggles closed', () => {
     const { panel, calls, positions } = fakePanel()
     const controller = new MiniPanelController(
       () => panel,
@@ -36,7 +37,7 @@ describe('MiniPanelController', () => {
     controller.toggle(trayBounds)
 
     expect(positions).toEqual([[1582, 644]])
-    expect(calls).toEqual(['show', 'focus', 'hide'])
+    expect(calls).toEqual(['alwaysOnTop:pop-up-menu', 'showInactive', 'moveTop', 'hide'])
   })
 
   it('places the panel below a top taskbar and clamps it inside the work area', () => {
@@ -50,5 +51,35 @@ describe('MiniPanelController', () => {
     controller.toggle({ x: -20, y: -24, width: 24, height: 24 })
 
     expect(positions).toEqual([[8, 8]])
+  })
+
+  it('reopens at the remembered position and clamps it to a connected display', () => {
+    const { panel, positions } = fakePanel()
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display,
+      () => ({ x: 1900, y: -100 })
+    )
+
+    controller.toggle({ x: 1840, y: 1040, width: 24, height: 24 })
+
+    expect(positions).toEqual([[1582, 8]])
+  })
+
+  it('remembers a user-moved position', () => {
+    const { panel } = fakePanel()
+    const positions: Array<{ x: number, y: number }> = []
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display,
+      () => undefined,
+      (position) => positions.push(position)
+    )
+
+    controller.rememberPosition({ x: 420, y: 240, width: 330, height: 388 })
+
+    expect(positions).toEqual([{ x: 420, y: 240 }])
   })
 })

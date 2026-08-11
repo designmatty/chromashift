@@ -145,6 +145,12 @@ const api: ChromaShiftApi = {
     voidResultSchema,
     { view }
   ),
+  hideMiniPanel: () => invoke(
+    productIpcChannels.hideMiniPanel,
+    emptyRequestSchema,
+    voidResultSchema,
+    {}
+  ),
   onStateChanged: (listener) => {
     ipcRenderer.removeAllListeners(productIpcChannels.stateChanged)
     ipcRenderer.on(productIpcChannels.stateChanged, (_event, input: unknown) => {

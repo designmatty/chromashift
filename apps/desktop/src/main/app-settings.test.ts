@@ -31,11 +31,13 @@ describe('AppSettingsRepository', () => {
       launchAtStartup: true,
       launchBehavior: 'app' as const,
       closeBehavior: 'shutdown' as const,
-      theme: 'dark' as const
+      theme: 'dark' as const,
+      miniPanelPosition: { x: 420, y: 240 }
     }
 
     await expect(repository.save(settings)).resolves.toEqual(settings)
     await expect(readFile(path, 'utf8')).resolves.toBe(`${JSON.stringify(settings, null, 2)}\n`)
+    await expect(new AppSettingsRepository(path).get()).resolves.toEqual(settings)
   })
 
   it('rejects malformed persisted settings rather than silently changing behavior', async () => {

@@ -32,7 +32,8 @@ export function registerProductIpcHandlers(
   getController: () => ProductController | undefined,
   assertTrustedRenderer: (event: IpcMainInvokeEvent) => void,
   requestExit: () => Promise<boolean>,
-  openAppPanel: (view?: AppPanelView) => void
+  openAppPanel: (view?: AppPanelView) => void,
+  hideMiniPanel: () => void
 ): void {
   const controller = (): ProductController => {
     const value = getController()
@@ -102,6 +103,11 @@ export function registerProductIpcHandlers(
   register(ipc, productIpcChannels.openAppPanel, openAppPanelRequestSchema, voidResultSchema,
     assertTrustedRenderer, async (request) => {
       openAppPanel(request.view)
+      return null
+    })
+  register(ipc, productIpcChannels.hideMiniPanel, emptyRequestSchema, voidResultSchema,
+    assertTrustedRenderer, async () => {
+      hideMiniPanel()
       return null
     })
 }
