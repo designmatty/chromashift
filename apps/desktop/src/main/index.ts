@@ -205,9 +205,9 @@ function createWindow(): BrowserWindow {
       void shutdownCoordinator?.request('application')
       return
     }
-    if (!wasExiting && previewController?.state.state === 'active' &&
-      previewController.state.kind !== 'override') {
-      void previewController.cancel().catch((error: unknown) => {
+    if (!wasExiting) {
+      window.webContents.send(productIpcChannels.appPanelClosed)
+      void previewController?.cancelNonOverride().catch((error: unknown) => {
         logger.write({ level: 'warning', eventName: 'PreviewCancelOnCloseFailed', ...describeError(error) })
       })
     }

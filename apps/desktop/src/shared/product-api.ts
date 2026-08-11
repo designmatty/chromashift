@@ -31,6 +31,7 @@ export const productIpcChannels = {
   requestExit: 'application:request-exit',
   openAppPanel: 'application:open-app-panel',
   hideMiniPanel: 'application:hide-mini-panel',
+  appPanelClosed: 'application:app-panel-closed',
   navigateAppPanel: 'application:navigate-app-panel',
   stateChanged: 'product:state-changed'
 } as const
@@ -168,5 +169,6 @@ export interface ChromaShiftApi {
   openAppPanel(view?: AppPanelView): Promise<ProductResult<null>>
   hideMiniPanel(): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
+  onAppPanelClosed(listener: () => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
 }

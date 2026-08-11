@@ -1,10 +1,11 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import electronPath from 'electron'
 import { NativeClient } from '@chromashift/native-client'
 
@@ -18,6 +19,7 @@ const displayServicePath = resolve(
   '../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe'
 )
 const timeoutMilliseconds = 15_000
+const execFileAsync = promisify(execFile)
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
@@ -197,6 +199,52 @@ async function waitForExit(child) {
     timeoutMilliseconds,
     'Electron to exit cleanly'
   )
+}
+
+async function closeMainWindow(processId) {
+  const source = `
+    using System;
+    using System.Runtime.InteropServices;
+    using System.Text;
+    public static class NativeWindowCloser {
+      private delegate bool EnumWindowsProc(IntPtr handle, IntPtr parameter);
+      [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+      [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+      [DllImport("user32.dll")] private static extern int GetWindowText(IntPtr handle, StringBuilder text, int count);
+      [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+      public static bool CloseVisibleWindow(uint processId) {
+        IntPtr target = IntPtr.Zero;
+        EnumWindows((handle, parameter) => {
+          uint owner;
+          GetWindowThreadProcessId(handle, out owner);
+          if (owner != processId) return true;
+          var title = new StringBuilder(256);
+          GetWindowText(handle, title, title.Capacity);
+          if (title.ToString() != "ChromaShift") return true;
+          target = handle;
+          return false;
+        }, IntPtr.Zero);
+        return target != IntPtr.Zero && PostMessage(target, 0x0010, IntPtr.Zero, IntPtr.Zero);
+      }
+    }
+  `
+  const command = `Add-Type -TypeDefinition @'
+${source}
+'@
+[NativeWindowCloser]::CloseVisibleWindow(${processId})`
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    { windowsHide: true }
+  )
+  if (stdout.trim().toLowerCase() !== 'true') {
+    throw new Error('Windows did not accept the native app-panel close request.')
+  }
 }
 
 const debuggingPort = await reservePort()
@@ -575,6 +623,43 @@ try {
   if (cancelledState.result.value !== true) {
     throw new Error('Cancel did not discard a scheduled live-edit change and restore automatic activation.')
   }
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Edit')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') !== null`,
+    'The profile could not enter Edit mode for app-panel close coverage.'
+  )
+  await delay(20)
+  await closeMainWindow(electron.pid)
+  await delay(300)
+  const priorEvents = debuggerClient.events
+  const reopenedTarget = await waitForDebuggerTarget(debuggingPort)
+  const reopenedDebugger = await connectToDebugger(reopenedTarget.webSocketDebuggerUrl)
+  await reopenedDebugger.send('Runtime.enable')
+  await reopenedDebugger.send('Page.enable')
+  await reopenedDebugger.send('Log.enable')
+  reopenedDebugger.events.push(...priorEvents)
+  debuggerClient.close()
+  debuggerClient = reopenedDebugger
+  await debuggerClient.send('Page.bringToFront')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.openAppPanel('profiles')`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'inactive' &&
+        document.querySelector('[aria-label="Profile name"]') === null &&
+        document.querySelector('.color-summary') !== null
+    })()`,
+    'Closing and reopening the app panel did not leave Edit mode and cancel its preview.'
+  )
 
   const createdState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',

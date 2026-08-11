@@ -207,4 +207,32 @@ describe('PreviewSessionController', () => {
     expect(controller.state).toEqual({ state: 'inactive' })
     expect(activation.calls).toEqual(['begin', 'cancel'])
   })
+
+  it('cancels an edit that finishes starting after the app panel closes', async () => {
+    const native = new DeferredApplyNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+
+    const starting = controller.start(profile(), 'edit')
+    await native.applyStartedPromise
+    const closing = controller.cancelNonOverride()
+
+    native.releaseApply()
+    await starting
+    await closing
+
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(activation.calls).toEqual(['begin', 'cancel'])
+  })
+
+  it('keeps a mini-panel override when the app panel closes', async () => {
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(new FakeNative(), activation, () => undefined)
+
+    await controller.start(profile(), 'override')
+    await controller.cancelNonOverride()
+
+    expect(controller.state).toMatchObject({ state: 'active', kind: 'override' })
+    expect(activation.calls).toEqual(['begin'])
+  })
 })
