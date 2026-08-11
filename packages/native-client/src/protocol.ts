@@ -75,8 +75,8 @@ export const systemInfoSchema = z.object({
     amd: z.object({
       libraryAvailable: z.boolean(),
       initialized: z.boolean(),
-      version: z.string().nullable(),
-      fullVersion: z.number().int().nonnegative().nullable(),
+      version: z.string().nullable().optional(),
+      fullVersion: z.number().int().nonnegative().nullable().optional(),
       displayCount: z.number().int().nonnegative(),
       runtimeValidation: z.string(),
       error: z.string().nullable().optional()

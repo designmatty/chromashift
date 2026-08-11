@@ -417,23 +417,34 @@ try {
   )
 
   const editControls = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
+    expression: `(async () => {
       const nameInput = document.querySelector('[aria-label="Profile name"]')
       const displayCheckbox = document.querySelector('.display-option [data-slot="checkbox"]')
-      const brightnessCheckbox = document.querySelector('.control [data-slot="checkbox"]')
-      if (nameInput === null || displayCheckbox === null || brightnessCheckbox === null) {
+      if (nameInput === null || displayCheckbox === null) {
         return {
           ready: false,
           hasNameInput: nameInput !== null,
           hasDisplayCheckbox: displayCheckbox !== null,
-          hasBrightnessCheckbox: brightnessCheckbox !== null,
+          hasBrightnessCheckbox: false,
           body: document.body.innerText
         }
       }
       displayCheckbox.click()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      const brightnessCheckbox = document.querySelector('.control [data-slot="checkbox"]')
+      if (brightnessCheckbox === null) {
+        return {
+          ready: false,
+          hasNameInput: true,
+          hasDisplayCheckbox: true,
+          hasBrightnessCheckbox: false,
+          body: document.body.innerText
+        }
+      }
       brightnessCheckbox.click()
       return { ready: true }
     })()`,
+    awaitPromise: true,
     returnByValue: true
   })
   if (editControls.result.value?.ready !== true) {
@@ -448,9 +459,21 @@ try {
     'Live edit preview did not activate.'
   )
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('.control [data-slot="slider-thumb"] input[type="range"]')?.focus()`
+  const sliderFocus = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const slider = document.querySelector('.control [role="slider"]')
+      slider?.focus()
+      return slider === null ? null : {
+        active: document.activeElement === slider,
+        disabled: slider.getAttribute('aria-disabled'),
+        value: slider.getAttribute('aria-valuenow')
+      }
+    })()`,
+    returnByValue: true
   })
+  if (sliderFocus.result.value?.active !== true) {
+    throw new Error(`The Chakra brightness slider could not receive keyboard focus: ${JSON.stringify(sliderFocus.result.value)}`)
+  }
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
     key: 'ArrowRight',

@@ -1,5 +1,23 @@
 # AGENTS.md
 
+# Instruction routing
+
+This file is the canonical repository-level instruction source. Load the
+matching focused skill when working in these areas:
+
+- `.agents/skills/chromashift-desktop-ui/SKILL.md` for renderer, Chakra UI,
+  theme, app-panel, or mini-panel work
+- `.agents/skills/chromashift-display-safety/SKILL.md` for native display
+  providers, baselines, HDR, topology, or foreground-window behavior
+- `.agents/skills/chromashift-profile-model/SKILL.md` for profiles,
+  persistence migrations, matching, activation, or preview semantics
+- `.agents/skills/chromashift-packaging-release/SKILL.md` for packaging,
+  restore-safe shutdown, release automation, or installer validation
+
+Read `docs/architecture.md` and the task-relevant focused skill before changing
+one of those surfaces. Keep durable product and architecture decisions here;
+keep procedural detail in the focused skills and docs rather than duplicating it.
+
 # Windows Display Profile Manager
 
 ## Objective
@@ -80,10 +98,11 @@ Recommended supporting libraries:
 
 Avoid adding dependencies unless they provide clear value.
 
-Delay the product UI stack until Milestone 4. At that point, Tailwind CSS and
-selectively added shadcn/Radix components are acceptable for design tokens and
-accessible controls. Add only components the product uses and treat generated
-component source as application-owned code.
+Use Chakra UI v3 for renderer components, semantic design tokens, and accessible
+control composition. ChromaShift migrated away from Tailwind, shadcn, and Base
+UI on 2026-08-11 before the per-display UI redesign. Keep product-specific
+window and layout styling as plain application-owned CSS where Chakra primitives
+do not express it cleanly. Do not reintroduce a second styling system.
 
 Do not add React Router unless navigation complexity actually warrants it.
 
@@ -121,14 +140,21 @@ ChromaShift already has the more important foundations:
 - baseline capture and safe restoration
 - vendor-neutral domain packages and tests
 
-Patterns that may be adapted:
+Patterns adapted from the starter before the Chakra decision:
 
 - Electron Builder configuration for Windows NSIS packaging, icons, ASAR, and
   artifact naming
-- Tailwind CSS design tokens and selectively generated shadcn/Radix controls
 - a React error boundary
 - a centralized Zod schema registry for renderer-to-main IPC
 - useful import aliases and formatting conventions
+
+The `designmatty/geoswap` repository was reviewed at commit
+`04381215673d5409f774da3f94df855798739586` on 2026-08-11. ChromaShift adopts
+its feature-oriented renderer organization, canonical verification/CI concept,
+focused repository skills, and semantic-theme approach. It does not adopt
+GeoSwap's web/extension frameworks, source-only package model, database stack,
+or Bash-first workflow. Chakra UI is intentionally adopted; React Router,
+TanStack Form, React Compiler, WXT, and Cloudflare remain unneeded.
 
 Do not copy these starter defaults:
 
@@ -1911,8 +1937,8 @@ adopting the starter itself.
 
 ### Slice 4.1 — UI foundation (completed)
 
-- add Tailwind CSS only when this slice begins
-- add only the shadcn/Radix components used by current screens
+- Chakra UI v3 now owns accessible renderer controls and semantic tokens;
+  Tailwind, shadcn, and Base UI were removed in the 2026-08-11 foundation migration
 - define ChromaShift design tokens and light/dark themes
 - add a React error boundary and accessible loading/error states
 - retain the native Windows frame unless a later reviewed decision changes it
@@ -1949,8 +1975,8 @@ Focus on functionality before visual polish.
 
 ### Slice 4.6 — Windows panel workflows (completed)
 
-- use the reviewed shadcn preset `b5dee6f9W`, selectively adding only controls
-  used by ChromaShift, with Lucide icons
+- use Chakra UI components with Lucide icons and application-owned wrappers only
+  where Chakra's compound component API benefits from a narrower product API
 - keep the native Windows frame for the app panel
 - open a borderless, non-activating mini panel from tray left-click, keep it
   above taskbar flyouts, and close it when opening the app panel
@@ -2298,8 +2324,11 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–4 are complete. Work on **Milestone 5, one
-numbered slice at a time**, unless the user explicitly changes priority.
+Phase 0 and Milestones 1–4 are complete. The GeoSwap-inspired Chakra UI,
+feature-organization, canonical verification, CI, and focused-skill foundation
+was accepted on 2026-08-11. Once that foundation is validated, resume
+**Milestone 5, one numbered slice at a time**, unless the user explicitly
+changes priority.
 
 The next slice is **Slice 5.1 — Display and operating-system transitions**.
 

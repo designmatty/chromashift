@@ -59,6 +59,15 @@ privileged request, validates its response before returning it, and maps native,
 persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
+The renderer uses Chakra UI v3 for accessible primitives and semantic theme
+tokens. `src.tsx` is bootstrap-only; app composition, Profiles, Displays,
+Settings, and the mini panel live in focused modules under `app/`, `features/`,
+`components/`, and `hooks/`. Product-specific Electron window and mini-panel
+layout remains application-owned plain CSS. Tailwind, shadcn, and Base UI were
+removed before the per-display UI redesign so the renderer has one styling
+system. React Router remains deferred because the three app-panel views do not
+need URL navigation.
+
 The profile workspace supports CRUD, default/manual activation, multi-display
 targets, foreground-application assignment, and an Electron `.exe` picker. Its
 controls derive support and provider explanations from each selected display's
@@ -122,12 +131,19 @@ selected patterns only:
 
 - Electron Builder packaging conventions
 - a React error boundary
-- Tailwind design tokens and selectively added shadcn/Radix controls
+- a semantic design-token system and accessible component primitives; the later
+  product decision implements this with Chakra UI v3
 - centralized Zod contracts for renderer-to-main IPC
 
 Those patterns must be reimplemented inside the existing boundaries. The
 starter's disabled sandbox, generic IPC abstraction, custom title bar, resource
 protocol, dependency set, and lockfile are not adopted.
+
+The later `designmatty/geoswap` review added repository-organization guidance:
+feature-oriented renderer modules, one canonical verification command called by
+Windows CI, and focused repository skills routed from `AGENTS.md`. ChromaShift
+adopts those patterns without taking GeoSwap's web/extension frameworks,
+source-only package model, database stack, or Bash-first scripts.
 
 The roadmap deliberately sequences the borrowed patterns after automatic
 activation:
