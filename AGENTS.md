@@ -1971,6 +1971,26 @@ Focus on functionality before visual polish.
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
 
+### Deferred redesign — Per-display profile settings (planned)
+
+The current shipped model applies one shared color object to every selected
+display. A future redesign will store independent color settings per stable display
+ID. Default will implicitly cover connected displays without assignment checkboxes;
+displays with no overrides remain at captured baseline. Application profiles will
+retain explicit display assignment with independent settings per target.
+
+Do not start this cross-layer migration until replacement app-panel and mini-panel
+mockups are reviewed. Use `docs/per-display-profile-settings-plan.md` as the source
+of truth for schema, migration, activation, preview, UX, testing, and exit criteria.
+
+The redesign handoff is Figma-MCP-first. Require the Figma file URL and relevant
+page/frame/node IDs, inspect components, variants, variables, annotations, and
+auto-layout constraints through the connected Figma MCP, and record a node-to-code
+mapping before renderer work. If Figma MCP is unavailable, pause UI implementation
+and ask the user to connect it; do not substitute guesses from flattened screenshots.
+Treat mockups as layout and flow direction rather than an exhaustive feature spec,
+and ask the user about ambiguous or missing states before implementation.
+
 ---
 
 # Milestone 5 — Hardening
