@@ -30,6 +30,7 @@ export const productIpcChannels = {
   cancelPreview: 'product:cancel-preview',
   requestExit: 'application:request-exit',
   openAppPanel: 'application:open-app-panel',
+  hideMiniPanel: 'application:hide-mini-panel',
   navigateAppPanel: 'application:navigate-app-panel',
   stateChanged: 'product:state-changed'
 } as const
@@ -61,7 +62,11 @@ export const appSettingsSchema = z.object({
   launchAtStartup: z.boolean(),
   launchBehavior: z.enum(['tray', 'app']),
   closeBehavior: z.enum(['tray', 'shutdown']),
-  theme: z.enum(['system', 'light', 'dark'])
+  theme: z.enum(['system', 'light', 'dark']),
+  miniPanelPosition: z.object({
+    x: z.number().int(),
+    y: z.number().int()
+  }).strict().optional()
 })
 
 export const productStateSchema = z.object({
@@ -161,6 +166,7 @@ export interface ChromaShiftApi {
   cancelPreview(): Promise<ProductResult<null>>
   requestExit(): Promise<ProductResult<boolean>>
   openAppPanel(view?: AppPanelView): Promise<ProductResult<null>>
+  hideMiniPanel(): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
 }

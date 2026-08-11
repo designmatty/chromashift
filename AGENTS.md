@@ -1952,9 +1952,11 @@ Focus on functionality before visual polish.
 - use the reviewed shadcn preset `b5dee6f9W`, selectively adding only controls
   used by ChromaShift, with Lucide icons
 - keep the native Windows frame for the app panel
-- open a borderless mini panel from tray left-click, position it next to the
-  taskbar, close it on focus loss, and close it when opening the app panel
-- let mini-panel color overrides survive panel focus loss but restore them when
+- open a borderless, non-activating mini panel from tray left-click, keep it
+  above taskbar flyouts, and close it when opening the app panel
+- provide an explicit close button and a draggable header; remember the user
+  position, clamp it to connected displays, and use tray anchoring as the fallback
+- let mini-panel color overrides survive hiding the panel but restore them when
   switching profiles, returning to Auto switch, resetting, or exiting
 - provide `Update profile` and `Reset changes` actions for temporary overrides
 - keep one always-enabled, undeletable Default profile as the catch-all; it has
