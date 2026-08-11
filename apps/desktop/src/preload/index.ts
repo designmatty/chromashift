@@ -159,6 +159,10 @@ const api: ChromaShiftApi = {
       else console.error('Rejected invalid product state event.', state.error)
     })
   },
+  onAppPanelClosed: (listener) => {
+    ipcRenderer.removeAllListeners(productIpcChannels.appPanelClosed)
+    ipcRenderer.on(productIpcChannels.appPanelClosed, () => listener())
+  },
   onAppPanelNavigation: (listener) => {
     ipcRenderer.removeAllListeners(productIpcChannels.navigateAppPanel)
     ipcRenderer.on(productIpcChannels.navigateAppPanel, (_event, input: unknown) => {

@@ -155,6 +155,12 @@ export class PreviewSessionController {
     return this.#enqueue(() => this.#cancel())
   }
 
+  public async cancelNonOverride(): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#active?.kind !== 'override') await this.#cancel()
+    })
+  }
+
   async #cancel(): Promise<void> {
     if (this.#active === null) return
     this.#clearActive()

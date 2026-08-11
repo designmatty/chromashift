@@ -172,6 +172,18 @@ function MainApp({ product }: { product: ProductState }): React.JSX.Element {
     window.chromaShift.onAppPanelNavigation((nextView) => void navigate(nextView))
   })
 
+  useEffect(() => {
+    window.chromaShift.onAppPanelClosed(() => {
+      if (!editing) return
+      const rollback = rollbackEditPreview()
+      resetRememberedColorValues(selected)
+      setDraft(selected === null ? null : structuredClone(selected))
+      setEditing(false)
+      setDirty(false)
+      void rollback
+    })
+  })
+
   async function beginEdit(): Promise<void> {
     if (activeSession?.kind === 'preview') await run(window.chromaShift.cancelPreview(), setError)
     editPreviewGeneration.current += 1
