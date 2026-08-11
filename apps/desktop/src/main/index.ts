@@ -105,7 +105,11 @@ async function startNativeService(): Promise<void> {
         destinationPath: configurationPath
       })
     }
-    nativeClient = new NativeClient({ executablePath: servicePath() })
+    nativeClient = new NativeClient({
+      executablePath: servicePath(),
+      executableArguments: [`--parent-pid=${process.pid}`],
+      detached: process.platform === 'win32'
+    })
     profileRepository = new JsonProfileRepository(
       new AppDataProfileConfigurationStorage(configurationPath)
     )

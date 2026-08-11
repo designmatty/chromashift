@@ -17,6 +17,7 @@
     "build": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run build --workspace @chromashift/desktop && npm run native:build",
     "test": "npm run test --workspaces --if-present && npm run native:test",
     "smoke:desktop": "npm run build && node apps/desktop/scripts/smoke.mjs",
+    "smoke:desktop:crash": "npm run build && node apps/desktop/scripts/smoke.mjs --force-exit",
     "package:dir": "npm run build && npm run native:publish && npm run package:dir --workspace @chromashift/desktop",
     "package:win": "npm run build && npm run native:publish && npm run package:win --workspace @chromashift/desktop",
     "smoke:package": "npm run smoke:package --workspace @chromashift/desktop",
