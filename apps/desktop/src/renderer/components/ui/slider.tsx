@@ -1,52 +1,35 @@
-import { Slider as SliderPrimitive } from "@base-ui/react/slider"
+import { Slider as ChakraSlider } from '@chakra-ui/react'
 
-import { cn } from "@/lib/utils"
-
-function Slider({
-  className,
-  defaultValue,
-  value,
-  min = 0,
-  max = 100,
-  ...props
-}: SliderPrimitive.Root.Props) {
-  const _values = Array.isArray(value)
-    ? value
-    : Array.isArray(defaultValue)
-      ? defaultValue
-      : [min, max]
-
-  return (
-    <SliderPrimitive.Root
-      className={cn("data-horizontal:w-full data-vertical:h-full", className)}
-      data-slot="slider"
-      defaultValue={defaultValue}
-      value={value}
-      min={min}
-      max={max}
-      thumbAlignment="edge"
-      {...props}
-    >
-      <SliderPrimitive.Control className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col">
-        <SliderPrimitive.Track
-          data-slot="slider-track"
-          className="relative grow overflow-hidden rounded-md bg-muted select-none data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1"
-        >
-          <SliderPrimitive.Indicator
-            data-slot="slider-range"
-            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
-          />
-        </SliderPrimitive.Track>
-        {Array.from({ length: _values.length }, (_, index) => (
-          <SliderPrimitive.Thumb
-            data-slot="slider-thumb"
-            key={index}
-            className="relative block size-3 shrink-0 rounded-md border border-ring bg-white ring-ring/30 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-2 focus-visible:ring-2 focus-visible:outline-hidden active:ring-2 disabled:pointer-events-none disabled:opacity-50"
-          />
-        ))}
-      </SliderPrimitive.Control>
-    </SliderPrimitive.Root>
-  )
+interface SliderProps {
+  value: number[]
+  min: number
+  max: number
+  step: number
+  disabled?: boolean
+  onValueChange(values: number[]): void
 }
 
-export { Slider }
+export function Slider(props: SliderProps): React.JSX.Element {
+  return (
+    <ChakraSlider.Root
+      colorPalette="brand"
+      data-slot="slider"
+      disabled={props.disabled}
+      max={props.max}
+      min={props.min}
+      step={props.step}
+      thumbAlignment="center"
+      value={props.value}
+      onValueChange={(details) => props.onValueChange(details.value)}
+    >
+      <ChakraSlider.Control>
+        <ChakraSlider.Track data-slot="slider-track">
+          <ChakraSlider.Range data-slot="slider-range" />
+        </ChakraSlider.Track>
+        <ChakraSlider.Thumb data-slot="slider-thumb" index={0}>
+          <ChakraSlider.HiddenInput />
+        </ChakraSlider.Thumb>
+      </ChakraSlider.Control>
+    </ChakraSlider.Root>
+  )
+}

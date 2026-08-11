@@ -39,9 +39,9 @@ Before implementation, the agent must:
 6. ask the user about missing or ambiguous behavior before changing the product
    model; the mockups communicate layout and flow but are not assumed to enumerate
    every feature or edge case
-7. reuse the existing shadcn-owned components and Lucide icons where they match;
-   export Figma assets only when they cannot be represented faithfully with the
-   established component or icon system
+7. reuse the existing Chakra UI components, semantic theme tokens, and Lucide
+   icons where they match; export Figma assets only when they cannot be
+   represented faithfully with the established component or icon system
 
 The product semantics and safety rules in this plan remain authoritative when a
 visual frame is ambiguous. User answers can amend those decisions. Figma-derived

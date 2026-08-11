@@ -10,10 +10,17 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
+npm run verify
 npm run smoke:desktop
 npm run package:win
 npm run smoke:package
 ```
+
+`npm run verify` is the canonical non-interactive Windows verification path. It
+runs formatting checks, lint, typechecking, all TypeScript and native tests, and
+the full build. GitHub CI invokes this exact command. It intentionally does not
+run display-mutating desktop, crash-restoration, or package smoke tests because
+those require a suitable interactive Windows session and restoration guard.
 
 `npm run test` runs the core-domain, desktop activation, protocol, and
 native-client lifecycle unit tests, pure gamma-transform tests, builds the

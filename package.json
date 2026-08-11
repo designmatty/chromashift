@@ -21,6 +21,9 @@
     "package:dir": "npm run build && npm run native:publish && npm run package:dir --workspace @chromashift/desktop",
     "package:win": "npm run build && npm run native:publish && npm run package:win --workspace @chromashift/desktop",
     "smoke:package": "npm run smoke:package --workspace @chromashift/desktop",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "format": "prettier --write apps/desktop/src/renderer apps/desktop/electron.vite.config.ts package.json apps/desktop/package.json .github/workflows",
+    "format:check": "prettier --check apps/desktop/src/renderer apps/desktop/electron.vite.config.ts package.json apps/desktop/package.json .github/workflows",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "native:build": "dotnet build native/DisplayService/DisplayService.csproj",
@@ -31,6 +34,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "eslint": "9.39.5",
+    "prettier": "3.9.6",
     "typescript-eslint": "8.66.0"
   }
 }
