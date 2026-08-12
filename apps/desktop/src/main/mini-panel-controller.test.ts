@@ -1,20 +1,25 @@
 import type { BrowserWindow, Display, Rectangle } from 'electron'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MiniPanelController } from './mini-panel-controller.js'
 
 function fakePanel() {
   let visible = false
+  let destroyed = false
   const calls: string[] = []
   const positions: Array<[number, number]> = []
   const panel = {
-    isDestroyed: () => false,
+    isDestroyed: () => destroyed,
     isVisible: () => visible,
     getSize: () => [330, 388],
     setPosition: (x: number, y: number) => { positions.push([x, y]) },
     setAlwaysOnTop: (_flag: boolean, level: string) => calls.push(`alwaysOnTop:${level}`),
     showInactive: () => { visible = true; calls.push('showInactive') },
     moveTop: () => calls.push('moveTop'),
-    hide: () => { visible = false; calls.push('hide') }
+    hide: () => { visible = false; calls.push('hide') },
+    destroy: () => {
+      destroyed = true
+      calls.push('destroy')
+    }
   } as unknown as BrowserWindow
   return { panel, calls, positions }
 }
@@ -24,8 +29,25 @@ const display = {
 } as Display
 
 describe('MiniPanelController', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('positions above a bottom taskbar, shows without activation, and toggles closed', () => {
+    vi.useFakeTimers()
     const { panel, calls, positions } = fakePanel()
+    const controller = new MiniPanelController(() => panel, () => panel, () => display)
+    const trayBounds: Rectangle = { x: 1840, y: 1040, width: 24, height: 24 }
+
+    controller.toggle(trayBounds)
+    controller.toggle(trayBounds)
+    vi.advanceTimersByTime(5_000)
+
+    expect(positions).toEqual([[1582, 644]])
+    expect(calls).toEqual(['alwaysOnTop:pop-up-menu', 'showInactive', 'moveTop', 'hide', 'destroy'])
+  })
+
+  it('keeps a quickly reopened panel alive', () => {
+    vi.useFakeTimers()
+    const { panel, calls } = fakePanel()
     const controller = new MiniPanelController(
       () => panel,
       () => panel,
@@ -35,9 +57,11 @@ describe('MiniPanelController', () => {
 
     controller.toggle(trayBounds)
     controller.toggle(trayBounds)
+    vi.advanceTimersByTime(1_000)
+    controller.toggle(trayBounds)
+    vi.advanceTimersByTime(5_000)
 
-    expect(positions).toEqual([[1582, 644]])
-    expect(calls).toEqual(['alwaysOnTop:pop-up-menu', 'showInactive', 'moveTop', 'hide'])
+    expect(calls).not.toContain('destroy')
   })
 
   it('places the panel below a top taskbar and clamps it inside the work area', () => {

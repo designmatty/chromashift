@@ -10,8 +10,10 @@
   "scripts": {
     "dev": "install-electron --no && electron-vite dev",
     "build": "electron-vite build",
+    "check:renderer-budget": "node scripts/check-renderer-budget.mjs",
     "package:dir": "electron-builder --win dir --x64 --publish never",
     "package:win": "electron-builder --win nsis --x64 --publish never",
+    "measure:memory": "node scripts/measure-memory.mjs",
     "smoke:package": "node scripts/package-smoke.mjs",
     "test": "vitest run src/main src/shared",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"

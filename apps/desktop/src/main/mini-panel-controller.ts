@@ -6,19 +6,24 @@ export interface MiniPanelPosition {
 }
 
 export class MiniPanelController {
+  #releaseTimer: ReturnType<typeof setTimeout> | undefined
+
   public constructor(
     private readonly getWindow: () => BrowserWindow | undefined,
     private readonly createWindow: () => BrowserWindow,
     private readonly getDisplay: (bounds: Rectangle) => Display = (bounds) =>
       screen.getDisplayMatching(bounds),
     private readonly getRememberedPosition: () => MiniPanelPosition | undefined = () => undefined,
-    private readonly saveRememberedPosition: (position: MiniPanelPosition) => void = () => undefined
+    private readonly saveRememberedPosition: (position: MiniPanelPosition) => void = () => undefined,
+    private readonly releaseDelayMilliseconds = 5_000
   ) {}
 
   public toggle(trayBounds: Rectangle): void {
+    this.#cancelRelease()
     const panel = this.#window()
     if (panel.isVisible()) {
       panel.hide()
+      this.#scheduleRelease(panel)
       return
     }
     this.#position(panel, trayBounds)
@@ -28,7 +33,10 @@ export class MiniPanelController {
   }
 
   public hide(): void {
-    this.getWindow()?.hide()
+    const panel = this.getWindow()
+    if (panel === undefined || panel.isDestroyed()) return
+    panel.hide()
+    this.#scheduleRelease(panel)
   }
 
   public rememberPosition(bounds: Rectangle): void {
@@ -38,6 +46,20 @@ export class MiniPanelController {
   #window(): BrowserWindow {
     const current = this.getWindow()
     return current === undefined || current.isDestroyed() ? this.createWindow() : current
+  }
+
+  #scheduleRelease(panel: BrowserWindow): void {
+    this.#cancelRelease()
+    this.#releaseTimer = setTimeout(() => {
+      this.#releaseTimer = undefined
+      if (!panel.isDestroyed() && !panel.isVisible()) panel.destroy()
+    }, this.releaseDelayMilliseconds)
+  }
+
+  #cancelRelease(): void {
+    if (this.#releaseTimer === undefined) return
+    clearTimeout(this.#releaseTimer)
+    this.#releaseTimer = undefined
   }
 
   #position(panel: BrowserWindow, trayBounds: Rectangle): void {

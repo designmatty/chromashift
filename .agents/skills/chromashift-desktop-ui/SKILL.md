@@ -13,9 +13,12 @@ description: Use for ChromaShift renderer, Chakra UI, app-panel, mini-panel, the
    React Router, or another UI/state library without a concrete reviewed need.
 4. Keep the renderer sandboxed and use only the narrow `window.chromaShift`
    preload API. Never import Node or native-client functionality into renderer code.
-5. Preserve the native app frame and the pointer-oriented, non-activating mini
-   panel. Mini-panel work must retain drag, close, position, taskbar z-order, and
-   no-keyboard-focus behavior.
+5. Preserve native Windows caption behavior. The approved app-panel redesign may
+   use Electron's hidden title bar with native `titleBarOverlay`; do not replace
+   minimize, maximize, close, or Snap behavior with renderer-drawn caption
+   buttons. Preserve the pointer-oriented, non-activating mini panel. Mini-panel
+   work must retain drag, close, position, taskbar z-order, and no-keyboard-focus
+   behavior.
 6. Preserve existing DOM accessibility labels and smoke-test selectors when
    practical; update the smoke intentionally when the approved UX changes them.
 7. Run `npm run format:check`, `npm run lint`, `npm run typecheck`, tests, build,

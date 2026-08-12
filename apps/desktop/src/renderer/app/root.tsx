@@ -1,6 +1,14 @@
-import { MiniPanel } from '@/features/mini-panel/mini-panel'
 import { useProduct } from '@/hooks/use-product'
-import { MainApp } from './main-app'
+import { lazy, Suspense } from 'react'
+
+const MainApp = lazy(async () => {
+  const module = await import('./main-app')
+  return { default: module.MainApp }
+})
+const MiniPanel = lazy(async () => {
+  const module = await import('@/features/mini-panel/mini-panel')
+  return { default: module.MiniPanel }
+})
 
 export function Root(): React.JSX.Element {
   const product = useProduct()
@@ -20,9 +28,22 @@ export function Root(): React.JSX.Element {
       </div>
     )
   }
-  return new URLSearchParams(location.search).get('panel') === 'mini' ? (
-    <MiniPanel product={product.state} />
-  ) : (
-    <MainApp product={product.state} />
+  return (
+    <Suspense fallback={<LoadingState />}>
+      {new URLSearchParams(location.search).get('panel') === 'mini' ? (
+        <MiniPanel product={product.state} />
+      ) : (
+        <MainApp product={product.state} />
+      )}
+    </Suspense>
+  )
+}
+
+function LoadingState(): React.JSX.Element {
+  return (
+    <div className="center-state" aria-busy="true">
+      <div className="spinner" />
+      <p>Loading ChromaShift…</p>
+    </div>
   )
 }

@@ -32,6 +32,8 @@ import { describeError, JsonConsoleLogger } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
+app.disableHardwareAcceleration()
+
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined
 let nativeClient: NativeClient | undefined
@@ -51,6 +53,8 @@ const applicationDataPaths = resolveApplicationDataPaths(
 const settingsRepository = new AppSettingsRepository(applicationDataPaths.settingsPath)
 let currentSettings = defaultAppSettings
 if (!hasUserDataOverride) app.setPath('userData', applicationDataPaths.userDataDirectory)
+const ownsSingleInstanceLock = app.requestSingleInstanceLock()
+if (!ownsSingleInstanceLock) app.quit()
 const windowController = new WindowController(
   () => mainWindow,
   () => createWindow(),
@@ -213,7 +217,7 @@ function createWindow(): BrowserWindow {
     }
     windowController.handleClose(event, window)
     if (!wasExiting) {
-      logger.write({ level: 'information', eventName: 'MainWindowHiddenToTray' })
+      logger.write({ level: 'information', eventName: 'MainWindowReleasedToTray' })
     }
   })
   window.on('closed', () => {
@@ -254,7 +258,7 @@ function createMiniWindow(): BrowserWindow {
     }
   })
   miniWindow = panel
-  if (process.platform !== 'win32') panel.on('blur', () => panel.hide())
+  if (process.platform !== 'win32') panel.on('blur', () => miniPanelController.hide())
   let userMovedPanel = false
   panel.on('will-move', () => { userMovedPanel = true })
   panel.on('moved', () => {
@@ -266,7 +270,7 @@ function createMiniWindow(): BrowserWindow {
   panel.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
       event.preventDefault()
-      panel.hide()
+      miniPanelController.hide()
     }
   })
   panel.webContents.on('preload-error', (_event, preloadPath, error) => {
@@ -292,6 +296,12 @@ function openWindow(view: AppPanelView = 'profiles'): void {
   const navigate = (): void => window.webContents.send(productIpcChannels.navigateAppPanel, view)
   if (window.webContents.isLoading()) window.webContents.once('did-finish-load', navigate)
   else navigate()
+}
+
+if (ownsSingleInstanceLock) {
+  app.on('second-instance', () => {
+    if (app.isReady()) openWindow()
+  })
 }
 
 function configureDesktopLifecycle(): Promise<void> {
@@ -413,6 +423,7 @@ registerProductIpcHandlers(
 )
 
 void app.whenReady().then(async () => {
+  if (!ownsSingleInstanceLock) return
   currentSettings = await settingsRepository.get()
   app.setLoginItemSettings({ openAtLogin: currentSettings.launchAtStartup })
   await startNativeService()
