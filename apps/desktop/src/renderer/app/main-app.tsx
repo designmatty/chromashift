@@ -284,18 +284,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           bg="bg.inverted"
           color="fg.inverted"
           _dark={{
-            "bg":"bg.muted",
-            "color":"fg.muted"
+            bg: 'bg.muted',
+            color: 'fg.muted'
           }}
         >
           <CircleAlert size={20} />
-          <Stack  flex="1" gap="0">
-            <Heading
-              overflow="hidden"
-              size="lg"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
+          <Stack flex="1" gap="0">
+            <Heading overflow="hidden" size="lg" textOverflow="ellipsis" whiteSpace="nowrap">
               You have temporary overrides on{' '}
               {product.configuration.profiles.find(
                 (profile) => profile.id === temporaryOverride.profileId
