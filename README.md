@@ -66,8 +66,10 @@ Milestone 4 is complete:
 6. tray mini panel, permanent Default profile, visible-app picker, and startup,
    close, and theme settings — complete
 
-Milestone 5 is next and covers resilience, packaged-app security, diagnostics,
-and the release hardware matrix.
+Milestone 5 is next and covers power/display transitions, bounded renderer and
+sidecar resilience, packaged-app security, diagnostics, and the release hardware
+matrix. The upcoming per-display UI plan also records the native title-bar
+overlay, persisted window geometry, and responsive-layout work.
 
 The repository will not be rebased onto a general Electron starter. See
 `AGENTS.md` for the reviewed starter-template decision and the authoritative
@@ -77,3 +79,9 @@ The renderer is organized by product feature under
 `apps/desktop/src/renderer/features`. Chakra UI v3 owns accessible controls and
 semantic tokens; product-specific Electron window layout remains plain CSS.
 Tailwind, shadcn, and Base UI are not part of the current stack.
+
+The measured UI-stack, Electron-memory, and Tauri decision record is in
+[`docs/performance.md`](docs/performance.md). `npm run measure:memory` samples
+the real Windows process tree, and the normal verification gate enforces the
+renderer bundle budget. Electron remains the production shell, with Electron
+Builder retained for packaging.

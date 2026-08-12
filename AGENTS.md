@@ -102,7 +102,25 @@ Use Chakra UI v3 for renderer components, semantic design tokens, and accessible
 control composition. ChromaShift migrated away from Tailwind, shadcn, and Base
 UI on 2026-08-11 before the per-display UI redesign. Keep product-specific
 window and layout styling as plain application-owned CSS where Chakra primitives
-do not express it cleanly. Do not reintroduce a second styling system.
+do not express it cleanly. Do not reintroduce a second styling system. The
+measured Chakra, Base UI, Radix, shadcn, and Astryx comparison and the criteria
+for revisiting this decision live in `docs/performance.md`.
+
+Keep idle renderer lifetime deliberate: closing the app panel releases its
+BrowserWindow renderer, and a hidden mini panel is released after a short grace
+period. Keep hardware acceleration disabled while the renderer has no GPU-heavy
+surface; re-enable it only with a measured interaction requirement and repeat
+the desktop memory and visual smoke tests. Enforce the renderer bundle budget
+and use the restore-safe memory measurement rather than Task Manager snapshots.
+
+Electron remains ChromaShift's production desktop shell. A functional Tauri 2
+port was measured on 2026-08-11 at commit
+`c0956613cc6932b8699bb93622fb97608734e1ab`; its renderer-free tray and installer
+were substantially smaller, but its visible app and mini-panel states were
+heavier on the test host and it duplicated the mature TypeScript product core in
+Rust. Keep the port as comparison evidence rather than a migration path. Revisit
+the shell only if a future measured constraint outweighs the migration, parity,
+and Windows-window-semantics cost recorded in `docs/performance.md`.
 
 Do not add React Router unless navigation complexity actually warrants it.
 
@@ -156,12 +174,25 @@ GeoSwap's web/extension frameworks, source-only package model, database stack,
 or Bash-first workflow. Chakra UI is intentionally adopted; React Router,
 TanStack Form, React Compiler, WXT, and Cloudflare remain unneeded.
 
+The `pingdotgg/t3code` repository was reviewed at commit
+`560d4a4560ddb5f42c8f8e0e35fa7827c0e46f80` on 2026-08-11. ChromaShift keeps
+Electron and Electron Builder and selectively adopts its native title-bar
+overlay, bounded renderer recovery, persisted window geometry, testable power
+lifecycle adapter, pure responsive-layout contracts, worktree-local development
+data, and release-invariant checks. Sidecar restart supervision is deferred
+until its interaction with captured display baselines is explicitly safe. Do not
+adopt T3 Code's Tailwind/Base UI/Effect stack, custom resource protocol,
+`webviewTag`, disabled background throttling, persistent resource monitor, pnpm,
+or Vite+ migration.
+
 Do not copy these starter defaults:
 
 - disabled Electron renderer sandboxing or `ELECTRON_DISABLE_SANDBOX`
 - its Conveyor IPC implementation as a replacement for ChromaShift's native
   protocol or preload API
-- a frameless/custom title bar by default
+- a fully frameless app panel or renderer-drawn replacement caption controls;
+  the approved redesign may use `titleBarStyle: "hidden"` with Electron's native
+  `titleBarOverlay` so Windows retains minimize, maximize, close, and Snap behavior
 - a custom resource protocol without a concrete requirement and containment
   tests
 - React Router, TanStack Query, Framer Motion, or other unused dependencies
@@ -2033,6 +2064,14 @@ and ask the user about ambiguous or missing states before implementation.
 - HDR toggles
 - NVIDIA driver reset
 - topology re-enumeration and stale-handle invalidation
+- introduce a small testable adapter over Electron power events for lock,
+  unlock, suspend, and resume instead of scattering `powerMonitor` listeners
+- on resume, invalidate native handles, re-enumerate displays, re-resolve
+  capabilities/HDR, validate baseline ownership, and only then reapply the
+  intended product state; never write through stale handles
+- persist debounced main-window bounds and maximized state, reject geometry that
+  no longer intersects a connected display, and flush the final valid state on
+  close without delaying restore-safe shutdown
 
 ### Slice 5.2 — Process and restoration resilience
 
@@ -2044,6 +2083,13 @@ and ask the user about ambiguous or missing states before implementation.
 - Electron crash
 - heartbeat/watchdog restoration
 - emergency restore shortcut
+- add bounded recovery for renderer `crashed`, `oom`, and `abnormal-exit` states;
+  recreate from main-owned product state, cap retries within a time window, and
+  surface a terminal error rather than entering a reload loop
+- add a DisplayService version/health handshake before considering automatic
+  restart; any bounded backoff and circuit breaker must preserve the original
+  captured-baseline owner and must never recapture already modified output as a
+  new baseline
 
 ### Slice 5.3 — Packaged application security and diagnostics
 
@@ -2052,6 +2098,9 @@ and ask the user about ambiguous or missing states before implementation.
 - dependency audit and current Electron security patch level
 - production Content Security Policy and Electron fuse review
 - structured logs sufficient to diagnose activation and restore failures
+- isolate development data automatically per Git worktree while retaining
+  explicit user-data overrides for smoke tests and intentional production-data
+  migration checks
 
 ### Slice 5.4 — Hardware matrix and release readiness
 
@@ -2060,6 +2109,10 @@ and ask the user about ambiguous or missing states before implementation.
 - NVIDIA and AMD driver/version matrix
 - installed upgrade and uninstall behavior
 - code-signing and installer reputation readiness
+- add a release preflight/smoke that verifies tag, application version, package
+  metadata, update manifest, artifact names, and published architectures agree
+  before upload; serialize release publication and retain signing/notarization
+  hooks even while credentials are absent
 
 ---
 
@@ -2326,9 +2379,11 @@ This kind of visibility is preferable to opaque abstractions.
 
 Phase 0 and Milestones 1–4 are complete. The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
-was accepted on 2026-08-11. Once that foundation is validated, resume
-**Milestone 5, one numbered slice at a time**, unless the user explicitly
-changes priority.
+was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
+settled Electron as the production shell and added the recommendations recorded
+in the per-display UI plan and Milestone 5. Once the current foundation is
+validated, resume **Milestone 5, one numbered slice at a time**, unless the user
+explicitly changes priority.
 
 The next slice is **Slice 5.1 — Display and operating-system transitions**.
 

@@ -16,6 +16,13 @@ Electron owns product behavior. The renderer has no Node integration and sees
 only a narrow context-bridged product API. Native handles, vendor structures,
 profile matching, and persistence never cross layers accidentally.
 
+Electron remains the production desktop shell after a measured side-by-side
+Tauri 2 port. Tauri materially reduced the renderer-free tray floor and installer
+size, but its visible app and mini-panel states were heavier on the test host and
+the port duplicated the mature TypeScript product core in Rust. ChromaShift keeps
+Electron Builder rather than adding Electron Forge; `docs/performance.md` records
+the measurements and the threshold for reconsidering the shell.
+
 `DisplayService` owns only Windows/GPU work: active-display enumeration,
 foreground events, capability discovery, native state reads/writes, and exact
 baseline restoration. It resolves controls independently. On the tested NVIDIA
@@ -65,8 +72,15 @@ Settings, and the mini panel live in focused modules under `app/`, `features/`,
 `components/`, and `hooks/`. Product-specific Electron window and mini-panel
 layout remains application-owned plain CSS. Tailwind, shadcn, and Base UI were
 removed before the per-display UI redesign so the renderer has one styling
-system. React Router remains deferred because the three app-panel views do not
-need URL navigation.
+system. The app panel and mini panel are separate lazy renderer entries. React
+Router remains deferred because the three app-panel views do not need URL
+navigation.
+
+The upcoming app-panel redesign may extend React content into the title-bar area
+with Electron's hidden title bar and native `titleBarOverlay`. Windows continues
+to own caption controls and Snap behavior; the renderer owns only the reserved
+header layout plus explicit drag/no-drag regions. A fully frameless window with
+replacement caption buttons remains out of scope.
 
 The profile workspace supports CRUD, default/manual activation, multi-display
 targets, foreground-application assignment, and an Electron `.exe` picker. Its
@@ -87,13 +101,13 @@ Tray left-click opens a dedicated borderless mini-panel window. On Windows it is
 pointer-oriented, non-activating Electron surface: opening or interacting with it
 does not make ChromaShift the foreground application. It is raised at the popup-menu
 window level so it remains above the hidden-icons drawer. The panel has an explicit
-close button, hides when the full app opens, and can be dragged by its header. A user
+close button, closes when the full app opens, and can be dragged by its header. A user
 position is persisted and clamped to a connected display; without one, the panel
 opens next to the tray. Quick color changes remain temporary while the panel is
 hidden and expose `Update profile` and `Reset changes`; profile selection establishes
 a manual override until the user returns to Auto switch. Mini-panel footer actions
-open the corresponding Profiles, Displays, or Settings view in the native-framed
-app panel.
+open the corresponding Profiles, Displays, or Settings view in the
+native-caption-controlled app panel.
 
 App settings are validated and atomically persisted separately from profiles.
 They control login launch, login-only tray/app startup behavior, close-to-tray
@@ -103,7 +117,17 @@ cannot be disabled or deleted, and cannot receive application assignments.
 
 The system tray reads the same activation state, supports
 manual profile overrides, returns to automatic mode, and can restore baseline.
-Closing the window either hides it or requests shutdown according to settings.
+Closing the window either releases its renderer to the tray or requests shutdown
+according to settings. Opening the app recreates the renderer from main-owned
+product state. ChromaShift holds a single-instance lock, so launching it again
+signals the existing tray process to recreate and focus the app panel instead
+of starting a second DisplayService owner. A hidden mini-panel renderer is
+released after a short grace period so one quick reopen remains responsive
+without retaining a second renderer indefinitely. Electron hardware
+acceleration is disabled because this utility has no GPU-heavy renderer work and
+the measured Windows private-memory reduction is material;
+`docs/performance.md` records the benchmark and the conditions that would
+require revisiting this decision.
 Tray Exit and other
 application quit requests share one shutdown coordinator, which waits for queued
 activation work and requires `service.shutdown` to confirm restoration before

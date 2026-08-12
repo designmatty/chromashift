@@ -7,7 +7,7 @@ export interface ManagedWindowPort {
   isMinimized(): boolean
   restore(): void
   show(): void
-  hide(): void
+  destroy(): void
   focus(): void
 }
 
@@ -31,6 +31,6 @@ export class WindowController {
   public handleClose(event: CloseEventPort, window: ManagedWindowPort): void {
     if (this.isExiting()) return
     event.preventDefault()
-    window.hide()
+    window.destroy()
   }
 }

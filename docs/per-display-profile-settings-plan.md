@@ -270,6 +270,14 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - implement approved per-display navigation and summaries
 - make Default display membership implicit/read-only
 - implement display assignment only for application profiles
+- implement the approved header with Electron's hidden title bar and native
+  `titleBarOverlay`; reserve the overlay rectangle and define explicit drag and
+  interactive no-drag regions instead of drawing replacement caption buttons
+- persist debounced window bounds/maximized state and recover safely when saved
+  geometry no longer intersects a connected display
+- express responsive geometry as pure, unit-tested layout contracts for minimum
+  sidebar width, minimum editor width, narrow-window overflow, and persisted
+  sidebar sizing
 
 ### Slice 6 - Mini panel
 
@@ -299,6 +307,10 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - duplication deep-copies all target settings and remembered values
 - renderer read-only and Edit views never conflate display assignment with display
   selection
+- title-bar overlay geometry does not cover editable controls and retains native
+  minimize, maximize, close, keyboard, DPI, and Windows Snap behavior
+- responsive layout contracts keep the profile list and editor usable at the
+  supported minimum window size and with long display/profile names
 - mini-panel Reset restores all temporarily touched displays
 - normal shutdown and abrupt Electron termination restore all captured baselines
 

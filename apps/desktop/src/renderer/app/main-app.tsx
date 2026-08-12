@@ -18,10 +18,17 @@ import type {
 } from '../../shared/product-api.js'
 
 const DEFAULT_ID = 'default'
+const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
+const LAST_VIEW_KEY = 'chromashift.app-panel.view'
 
 export function MainApp({ product }: { product: ProductState }): React.JSX.Element {
-  const [view, setView] = useState<AppPanelView>('profiles')
-  const [selectedId, setSelectedId] = useState(product.configuration.profiles[0]?.id ?? null)
+  const [view, setView] = useState<AppPanelView>(readLastView)
+  const [selectedId, setSelectedId] = useState(() => {
+    const remembered = localStorage.getItem(LAST_PROFILE_KEY)
+    return product.configuration.profiles.some((profile) => profile.id === remembered)
+      ? remembered
+      : (product.configuration.profiles[0]?.id ?? null)
+  })
   const [draft, setDraft] = useState<ColorProfile | null>(null)
   const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -37,6 +44,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
 
   useProductTheme(product.settings.theme)
+
+  useEffect(() => {
+    localStorage.setItem(LAST_VIEW_KEY, view)
+  }, [view])
+
+  useEffect(() => {
+    if (selectedId === null) localStorage.removeItem(LAST_PROFILE_KEY)
+    else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
+  }, [selectedId])
 
   useEffect(() => {
     if (!editing && selected !== null) setDraft(structuredClone(selected))
@@ -309,4 +325,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       </main>
     </div>
   )
+}
+
+function readLastView(): AppPanelView {
+  const remembered = localStorage.getItem(LAST_VIEW_KEY)
+  return remembered === 'profiles' || remembered === 'displays' || remembered === 'settings'
+    ? remembered
+    : 'profiles'
 }

@@ -48,7 +48,8 @@ events, baseline capture before every apply, partial capability/restore failures
 retry behavior, and state reset after external restoration or native restart.
 Tray and lifecycle coverage verifies current-profile read models, enabled and
 disabled profile entries, activation-driven menu refresh, manual and automatic
-mode changes, explicit baseline reset, close-to-tray behavior, serialized
+mode changes, explicit baseline reset, renderer-releasing close-to-tray behavior,
+serialized
 restore-before-exit ordering, concurrent exit suppression, actionable restore
 failure handling, and retry.
 Profile-path regression coverage verifies the explicit stable application-data
@@ -78,6 +79,19 @@ Reset reapplies the saved manual profile. It also verifies validated product sta
 activation with fresh isolated user data, restore-aware exit, and no renderer
 errors. Captured images are written to `apps/desktop/out/smoke/desktop.png` and
 `apps/desktop/out/smoke/mini-panel.png`.
+
+The desktop close/reopen path now closes the real native window, verifies that
+its renderer is released, and launches ChromaShift again with the same isolated
+user-data directory. The single-instance signal must recreate the app panel in
+the existing process without starting a second DisplayService owner.
+
+`npm run measure:memory` launches the production Electron build with isolated
+user data, samples the complete Windows child-process tree in visible and tray
+states, and exits through the same restore-safe shutdown coordinator. The exact
+baseline and interpretation live in `docs/performance.md`. `npm run
+check:renderer-budget` measures all emitted renderer JavaScript and CSS and
+fails if their combined gzip size exceeds 300 KB or the largest raw JavaScript
+chunk exceeds 1.1 MB. Root `npm run verify` runs this budget after the build.
 
 The desktop smoke keeps a separate native restoration guard alive, proves that
 the product changed the real display state, and then compares the post-exit state

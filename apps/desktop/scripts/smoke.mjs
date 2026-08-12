@@ -660,6 +660,17 @@ try {
   await closeMainWindow(electron.pid)
   await delay(300)
   const priorEvents = debuggerClient.events
+  const reopen = spawn(
+    electronPath,
+    [`--user-data-dir=${userDataDirectory}`, '.'],
+    {
+      cwd: desktopDirectory,
+      env: environment,
+      stdio: 'ignore',
+      windowsHide: true
+    }
+  )
+  await waitForExit(reopen)
   const reopenedTarget = await waitForDebuggerTarget(debuggingPort)
   const reopenedDebugger = await connectToDebugger(reopenedTarget.webSocketDebuggerUrl)
   await reopenedDebugger.send('Runtime.enable')

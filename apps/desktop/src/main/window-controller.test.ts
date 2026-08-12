@@ -7,14 +7,14 @@ function windowPort(overrides: Partial<ManagedWindowPort> = {}): ManagedWindowPo
     isMinimized: () => false,
     restore: vi.fn(),
     show: vi.fn(),
-    hide: vi.fn(),
+    destroy: vi.fn(),
     focus: vi.fn(),
     ...overrides
   }
 }
 
 describe('WindowController', () => {
-  it('hides a closed window so automatic activation remains alive', () => {
+  it('releases a closed renderer while the tray process remains alive', () => {
     const window = windowPort()
     const preventDefault = vi.fn()
     const controller = new WindowController(() => window, () => window, () => false)
@@ -22,7 +22,7 @@ describe('WindowController', () => {
     controller.handleClose({ preventDefault }, window)
 
     expect(preventDefault).toHaveBeenCalledOnce()
-    expect(window.hide).toHaveBeenCalledOnce()
+    expect(window.destroy).toHaveBeenCalledOnce()
   })
 
   it('allows close during coordinated shutdown and restores an existing window on open', () => {
