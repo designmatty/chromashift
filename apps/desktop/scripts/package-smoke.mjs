@@ -273,7 +273,7 @@ try {
 
   await mkdir(installedUserData, { recursive: true })
   const configurationPath = join(installedUserData, 'profiles.json')
-  const configuration = '{\n  "schemaVersion": 1,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
+  const configuration = '{\n  "schemaVersion": 2,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
   await writeFile(configurationPath, configuration)
   await smokeService(installedService, 'installed')
   await smokeApplication(installedApplication, installedUserData, 'installed app')

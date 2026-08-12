@@ -66,15 +66,16 @@ privileged request, validates its response before returning it, and maps native,
 persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
-The renderer uses Chakra UI v3 for accessible primitives and semantic theme
-tokens. `src.tsx` is bootstrap-only; app composition, Profiles, Displays,
-Settings, and the mini panel live in focused modules under `app/`, `features/`,
-`components/`, and `hooks/`. Product-specific Electron window and mini-panel
-layout remains application-owned plain CSS. Tailwind, shadcn, and Base UI were
-removed before the per-display UI redesign so the renderer has one styling
-system. The app panel and mini panel are separate lazy renderer entries. React
-Router remains deferred because the three app-panel views do not need URL
-navigation.
+The renderer uses Chakra UI v3 for accessible primitives, semantic theme tokens,
+and product layout. `src.tsx` is bootstrap-only; app composition, Profiles,
+Displays, Settings, and the mini panel live in focused modules under `app/`,
+`features/`, `components/`, and `hooks/`. Electron-specific drag regions,
+non-activating mini-panel geometry, and responsive panel composition use Chakra
+style props or component-local Chakra `css`; there is no application-owned
+global stylesheet. Tailwind, shadcn, and Base UI were removed before the
+per-display UI redesign so the renderer has one styling system. The app panel
+and mini panel are separate lazy renderer entries. React Router remains deferred
+because the three app-panel views do not need URL navigation.
 
 The upcoming app-panel redesign may extend React content into the title-bar area
 with Electron's hidden title bar and native `titleBarOverlay`. Windows continues
@@ -96,6 +97,10 @@ reset, navigation away from a dirty edit, or failure resets the activation resol
 and reapplies the exact previous manual/foreground/default/baseline target. There
 is deliberately no countdown timer. Native apply restores baseline before each
 complete settings request so removing an override cannot inherit a stale value.
+Entering Edit from an unchanged explicit preview of the same profile promotes the
+existing session in place: it retains the captured baseline and applied values and
+performs no restore, capture, or display write. A changed draft or different profile
+continues through the full restore-safe transition.
 
 Tray left-click opens a dedicated borderless mini-panel window. On Windows it is a
 pointer-oriented, non-activating Electron surface: opening or interacting with it

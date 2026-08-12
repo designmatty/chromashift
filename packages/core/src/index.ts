@@ -1,13 +1,25 @@
 export {
   colorProfileSchema,
+  colorSettingNames,
   colorSettingsSchema,
   applicationRuleSchema,
   profileDisplayTargetSchema,
   type ColorProfile,
+  type ColorSettingName,
   type ColorSettings,
   type ApplicationRule,
   type ProfileDisplayTarget
 } from './profiles/model.js'
+export {
+  activeColorTargets,
+  findDisplayTarget,
+  hasColorOverrides,
+  removeDisplayTarget,
+  resolveDisplayColor,
+  sameDisplayId,
+  setDisplayTarget,
+  type DisplayColorTarget
+} from './profiles/targets.js'
 export {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_PROFILE_ID,
@@ -21,14 +33,27 @@ export {
   profileConfigurationSchema,
   profileSettingsSchema,
   serializeProfileConfiguration,
+  type ParseProfileConfigurationOptions,
   type ProfileConfiguration,
   type ProfileSettings
 } from './profiles/configuration.js'
 export {
+  describeMigrationNotice,
+  migrateVersionOneProfile,
+  migrateVersionOneProfiles,
+  versionOneConfigurationSchema,
+  versionOneProfileSchema,
+  type ConfigurationMigrationNotice,
+  type MigrationNoticeListener,
+  type VersionOneConfiguration,
+  type VersionOneProfile
+} from './profiles/migration.js'
+export {
   JsonProfileRepository,
   type DuplicateProfileOptions,
   type ProfileConfigurationStorage,
-  type ProfileRepository
+  type ProfileRepository,
+  type ProfileRepositoryOptions
 } from './profiles/repository.js'
 export {
   findMatchingProfile,

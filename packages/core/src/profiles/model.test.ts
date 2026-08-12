@@ -6,14 +6,13 @@ function validProfile() {
     id: 'gaming',
     name: 'Gaming',
     enabled: true,
-    color: { saturation: 75, gamma: 2.8 },
     applications: [
       {
         executableName: 'Game.exe',
         executablePath: 'C:\\Games\\Game.exe'
       }
     ],
-    displays: [{ displayId: 'display:primary' }]
+    displays: [{ displayId: 'display:primary', color: { saturation: 75, gamma: 2.8 } }]
   }
 }
 
@@ -22,15 +21,53 @@ describe('profile model', () => {
     expect(colorProfileSchema.parse(validProfile())).toEqual(validProfile())
   })
 
-  it('retains inactive values separately from applied overrides', () => {
+  it('stores different color settings for two displays in one profile', () => {
+    const profile = colorProfileSchema.parse({
+      ...validProfile(),
+      displays: [
+        { displayId: 'display:primary', color: { saturation: 75 } },
+        { displayId: 'display:secondary', color: { brightness: 40, gamma: 1.2 } }
+      ]
+    })
+
+    expect(profile.displays[0]?.color).toEqual({ saturation: 75 })
+    expect(profile.displays[1]?.color).toEqual({ brightness: 40, gamma: 1.2 })
+  })
+
+  it('accepts a display target that overrides nothing', () => {
+    const profile = colorProfileSchema.parse({
+      ...validProfile(),
+      displays: [{ displayId: 'display:primary', color: {} }]
+    })
+
+    expect(profile.displays[0]?.color).toEqual({})
+  })
+
+  it('retains inactive values separately from applied overrides per display', () => {
     expect(colorProfileSchema.parse({
       ...validProfile(),
-      color: {},
-      lastColorValues: { brightness: 75, gamma: 1.3 }
+      displays: [
+        {
+          displayId: 'display:primary',
+          color: {},
+          lastColorValues: { brightness: 75, gamma: 1.3 }
+        }
+      ]
     })).toMatchObject({
-      color: {},
-      lastColorValues: { brightness: 75, gamma: 1.3 }
+      displays: [
+        {
+          displayId: 'display:primary',
+          color: {},
+          lastColorValues: { brightness: 75, gamma: 1.3 }
+        }
+      ]
     })
+  })
+
+  it('rejects a shared profile-level color object', () => {
+    expect(() =>
+      colorProfileSchema.parse({ ...validProfile(), color: { saturation: 75 } })
+    ).toThrow()
   })
 
   it('preserves omitted settings as omitted overrides', () => {
@@ -57,8 +94,13 @@ describe('profile model', () => {
   })
 
   it('rejects duplicate display targets case-insensitively', () => {
-    const profile = validProfile()
-    profile.displays.push({ displayId: 'DISPLAY:PRIMARY' })
+    const profile = {
+      ...validProfile(),
+      displays: [
+        { displayId: 'display:primary', color: { saturation: 75 } },
+        { displayId: 'DISPLAY:PRIMARY', color: { brightness: 10 } }
+      ]
+    }
 
     expect(() => colorProfileSchema.parse(profile)).toThrow(/assigned more than once/)
   })

@@ -66,8 +66,16 @@ versions.
 
 The real application penalty is therefore much smaller than the isolated
 primitive delta: about 20 KB gzip. Tailwind's generated CSS and the exact set of
-components matter. The renderer budget now fails above 300 KB gzip for all
-JavaScript and CSS or above 1.1 MB raw for its largest JavaScript chunk.
+components matter. The completed Chakra-only renderer refactor measured 315.53
+KB gzip after replacing the remaining application shell, profile list, mini
+panel, shared controls, feature views, and browser-native settings selects with
+Chakra components, style props, and semantic theme tokens. The composable Chakra
+Select collection and floating-positioning path added 11.44 KB gzip over the
+previous native-select build. The renderer no longer has an application-owned
+CSS file; the small emitted CSS asset contains the bundled Fontsource
+declarations. Because component declarations live in runtime JavaScript, the
+hard renderer budget is 320 KB gzip for all JavaScript and CSS, leaving 4.47 KB
+of measured headroom, or 1.1 MB raw for its largest JavaScript chunk.
 
 Lazy app-panel and mini-panel entries do not materially change the app-panel
 payload, but the mini-panel initial JavaScript and CSS path drops to about
@@ -146,11 +154,11 @@ options alone did not preserve foreground focus.
 
 Measured on the same Windows 11 host, with private bytes as the primary metric:
 
-| State | Electron private | Tauri private | Result |
-| --- | ---: | ---: | --- |
-| App panel visible | 188.2 MiB | 280.9 MiB | Tauri 49.2% higher |
-| Tray, no renderer | 127.7 MiB | 27.1 MiB | Tauri 78.7% lower |
-| Mini panel only | not measured | 329.2 MiB | Tauri mini state needs investigation |
+| State             | Electron private | Tauri private | Result                               |
+| ----------------- | ---------------: | ------------: | ------------------------------------ |
+| App panel visible |        188.2 MiB |     280.9 MiB | Tauri 49.2% higher                   |
+| Tray, no renderer |        127.7 MiB |      27.1 MiB | Tauri 78.7% lower                    |
+| Mini panel only   |     not measured |     329.2 MiB | Tauri mini state needs investigation |
 
 The Tauri NSIS installer was 26.53 MiB versus Electron's 129.0 MiB, and its
 renderer-ready startup was 452 ms versus 1,229 ms in the comparison harness.

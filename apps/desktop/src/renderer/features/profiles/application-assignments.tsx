@@ -1,8 +1,7 @@
-import { Button, Menu, Portal } from '@chakra-ui/react'
+import { Box, Button, Flex, IconButton, Image, Menu, Portal, Stack, Text } from '@chakra-ui/react'
 import { AppWindow, FolderOpen, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
-import { SectionTitle } from '@/components/layout/presentational'
 import { run } from '@/lib/product-result'
 import type { ApplicationSelection, ProductError } from '../../../shared/product-api.js'
 
@@ -36,20 +35,40 @@ export function ApplicationAssignments({
       ...profile,
       applications: [
         ...profile.applications,
-        { executableName: app.executableName, executablePath: app.executablePath }
+        {
+          executableName: app.executableName,
+          executablePath: app.executablePath,
+          ...(app.iconDataUrl === null ? {} : { iconDataUrl: app.iconDataUrl })
+        }
       ]
     })
   }
 
   return (
     <>
-      <div className="application-heading">
-        <SectionTitle
-          title="Applications"
-          description="Choose a visible application or browse for an executable."
-        />
+      <Flex minH="26px" align="center" gap="10px">
         {editing && (
-          <div className="application-actions">
+          <Flex align="center" gap="10px">
+            <Button
+              size="sm"
+              variant="subtle"
+              h="26px"
+              minH="26px"
+              px="10px"
+              py="5px"
+              rounded="6px"
+              bg="bg.muted"
+              color="inherit"
+              fontSize="12px"
+              onClick={() =>
+                void run(window.chromaShift.pickApplication(), onError).then((app) => {
+                  if (app !== undefined && app !== null) add(app)
+                })
+              }
+            >
+              Browse
+              <FolderOpen size={16} />
+            </Button>
             <Menu.Root
               positioning={{ placement: 'bottom-end' }}
               onOpenChange={(details) => {
@@ -57,9 +76,17 @@ export function ApplicationAssignments({
               }}
             >
               <Menu.Trigger asChild>
-                <Button colorPalette="brand" size="sm" variant="outline">
-                  <AppWindow />
-                  Open application
+                <Button
+                  h="26px"
+                  minH="26px"
+                  px="10px"
+                  py="5px"
+                  rounded="6px"
+                  bg="bg.muted"
+                  color="inherit"
+                  fontSize="12px"
+                >
+                  Select from open apps
                 </Button>
               </Menu.Trigger>
               <Portal>
@@ -77,11 +104,15 @@ export function ApplicationAssignments({
                           value={app.executablePath}
                           onSelect={() => add(app)}
                         >
-                          {app.iconDataUrl !== null ? <img src={app.iconDataUrl} /> : <AppWindow />}
-                          <span>
-                            <strong>{app.friendlyName}</strong>
-                            <small>{app.executableName}</small>
-                          </span>
+                          {app.iconDataUrl !== null ? (
+                            <Image boxSize="20px" rounded="full" src={app.iconDataUrl} alt="" />
+                          ) : (
+                            <AppWindow />
+                          )}
+                          <Stack minW="0" gap="0">
+                            <Text as="strong">{app.friendlyName}</Text>
+                            <Text as="small">{app.executableName}</Text>
+                          </Stack>
                         </Menu.Item>
                       ))
                     )}
@@ -89,33 +120,62 @@ export function ApplicationAssignments({
                 </Menu.Positioner>
               </Portal>
             </Menu.Root>
-            <Button
-              colorPalette="brand"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                void run(window.chromaShift.pickApplication(), onError).then((app) => {
-                  if (app !== undefined && app !== null) add(app)
-                })
-              }
-            >
-              <FolderOpen />
-              Browse
-            </Button>
-          </div>
+          </Flex>
         )}
-      </div>
-      <div className="assigned-apps">
-        {profile.applications.length === 0 && <p>No applications assigned.</p>}
+      </Flex>
+      <Stack mt="10px" gap="10px">
         {profile.applications.map((rule, index) => (
-          <div className="assigned-app" key={`${rule.executableName}-${index}`}>
-            <AppWindow />
-            <span>
-              <strong>{rule.executableName}</strong>
-              <small>{rule.executablePath ?? 'Filename match'}</small>
-            </span>
+          <Box
+            minH="47px"
+            px="10px"
+            py="4px"
+            display="grid"
+            gridTemplateColumns="30px minmax(0, 1fr) 20px"
+            alignItems="center"
+            gap="10px"
+            rounded="6px"
+            bg="bg.muted"
+            key={`${rule.executableName}-${index}`}
+          >
+            {rule.iconDataUrl === undefined ? (
+              <AppWindow size={30} />
+            ) : (
+              <Image
+                boxSize="30px"
+                rounded="full"
+                objectFit="cover"
+                src={rule.iconDataUrl}
+                alt=""
+              />
+            )}
+            <Stack minW="0" gap="0">
+              <Text
+                as="strong"
+                overflow="hidden"
+                fontSize="18px"
+                fontWeight="500"
+                textOverflow="ellipsis"
+                whiteSpace="nowrap"
+              >
+                {rule.executableName}
+              </Text>
+              <Text
+                as="small"
+                overflow="hidden"
+                fontFamily="mono"
+                fontSize="12px"
+                textOverflow="ellipsis"
+                whiteSpace="nowrap"
+              >
+                {rule.executablePath ?? 'Filename match'}
+              </Text>
+            </Stack>
             {editing && (
-              <button
+              <IconButton
+                variant="ghost"
+                boxSize="20px"
+                minW="20px"
+                p="0"
                 aria-label={`Remove ${rule.executableName}`}
                 onClick={() =>
                   onChange({
@@ -124,12 +184,12 @@ export function ApplicationAssignments({
                   })
                 }
               >
-                <X />
-              </button>
+                <X size={20} />
+              </IconButton>
             )}
-          </div>
+          </Box>
         ))}
-      </div>
+      </Stack>
     </>
   )
 }

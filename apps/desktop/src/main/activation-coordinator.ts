@@ -1,5 +1,6 @@
 import {
   ActivationResolver,
+  activeColorTargets,
   automaticActivationMode,
   findMatchingProfile,
   type ActivationResolution,
@@ -38,10 +39,6 @@ export interface ActivationOutcome {
   status: 'activated' | 'skipped' | 'partialFailure' | 'failed'
   resolution: ActivationResolution | null
   failures: ActivationFailure[]
-}
-
-function hasColorOverrides(profile: ColorProfile): boolean {
-  return Object.keys(profile.color).length > 0
 }
 
 function findSelectedProfile(
@@ -167,11 +164,11 @@ export class ActivationCoordinator {
     resolution: ActivationResolution
   ): Promise<ActivationOutcome> {
     const failures: ActivationFailure[] = []
-    const desiredDisplayIds = hasColorOverrides(profile)
-      ? profile.displays.map((target) => target.displayId)
-      : []
+    // Targets whose settings object is empty leave that display at its captured
+    // baseline, so they are excluded from the desired set and restored below.
+    const desiredTargets = activeColorTargets(profile)
     const normalizedDesiredIds = new Set(
-      desiredDisplayIds.map((displayId) => displayId.toLowerCase())
+      desiredTargets.map((target) => target.displayId.toLowerCase())
     )
 
     for (const displayId of [...this.#capturedDisplayIds]) {
@@ -194,19 +191,19 @@ export class ActivationCoordinator {
       }
     }
 
-    for (const displayId of desiredDisplayIds) {
+    for (const target of desiredTargets) {
       try {
-        await this.native.captureBaseline(displayId)
-        this.#capturedDisplayIds.add(displayId)
+        await this.native.captureBaseline(target.displayId)
+        this.#capturedDisplayIds.add(target.displayId)
       } catch (error) {
-        failures.push(this.#failure('capture', error, displayId))
+        failures.push(this.#failure('capture', error, target.displayId))
         continue
       }
 
       try {
-        await this.native.applyDisplaySettings(displayId, profile.color)
+        await this.native.applyDisplaySettings(target.displayId, target.color)
       } catch (error) {
-        failures.push(this.#failure('apply', error, displayId))
+        failures.push(this.#failure('apply', error, target.displayId))
       }
     }
 
@@ -221,7 +218,7 @@ export class ActivationCoordinator {
       eventName: 'ProfileActivated',
       profileId: profile.id,
       reason: resolution.reason,
-      displayIds: desiredDisplayIds
+      displayIds: desiredTargets.map((target) => target.displayId)
     })
     return { status: 'activated', resolution, failures: [] }
   }

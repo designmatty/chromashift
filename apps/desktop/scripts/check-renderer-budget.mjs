@@ -5,7 +5,7 @@ import { gzipSync } from 'node:zlib'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const outputDirectory = resolve(scriptDirectory, '../out/renderer')
-const totalGzipBudget = 300_000
+const totalGzipBudget = 320_000
 const largestJavaScriptBudget = 1_100_000
 
 async function filesUnder(directory) {

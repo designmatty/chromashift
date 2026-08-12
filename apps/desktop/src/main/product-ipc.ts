@@ -18,14 +18,21 @@ import {
   productStateResultSchema,
   profileIdRequestSchema,
   profileResultSchema,
+  reorderProfilesRequestSchema,
   saveProfileRequestSchema,
+  setMiniPanelViewRequestSchema,
   setDefaultProfileRequestSchema,
   voidResultSchema,
   type AppPanelView,
+  type MiniPanelView,
   type ProductError
 } from '../shared/product-api.js'
-import { PreviewValidationError } from './preview-session-controller.js'
-import { ProductConflictError, ProductController, ProductNotFoundError } from './product-controller.js'
+import { PreviewRestoreError, PreviewValidationError } from './preview-session-controller.js'
+import {
+  ProductConflictError,
+  ProductController,
+  ProductNotFoundError
+} from './product-controller.js'
 
 export function registerProductIpcHandlers(
   ipc: IpcMain,
@@ -33,7 +40,9 @@ export function registerProductIpcHandlers(
   assertTrustedRenderer: (event: IpcMainInvokeEvent) => void,
   requestExit: () => Promise<boolean>,
   openAppPanel: (view?: AppPanelView) => void,
-  hideMiniPanel: () => void
+  hideMiniPanel: () => void,
+  showMiniPanel: () => void,
+  setMiniPanelView: (view: MiniPanelView) => void = () => undefined
 ): void {
   const controller = (): ProductController => {
     const value = getController()
@@ -41,75 +50,218 @@ export function registerProductIpcHandlers(
     return value
   }
 
-  register(ipc, productIpcChannels.getState, emptyRequestSchema, productStateResultSchema,
-    assertTrustedRenderer, async () => controller().getState())
-  register(ipc, productIpcChannels.createProfile, createProfileRequestSchema, profileResultSchema,
-    assertTrustedRenderer, async (request) => controller().createProfile(request.name))
-  register(ipc, productIpcChannels.saveProfile, saveProfileRequestSchema, profileResultSchema,
-    assertTrustedRenderer, async (request) => controller().saveProfile(request.profile))
-  register(ipc, productIpcChannels.duplicateProfile, profileIdRequestSchema, profileResultSchema,
-    assertTrustedRenderer, async (request) => controller().duplicateProfile(request.profileId))
-  register(ipc, productIpcChannels.deleteProfile, profileIdRequestSchema, booleanResultSchema,
-    assertTrustedRenderer, async (request) => controller().deleteProfile(request.profileId))
-  register(ipc, productIpcChannels.setDefaultProfile, setDefaultProfileRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async (request) => {
+  register(
+    ipc,
+    productIpcChannels.getState,
+    emptyRequestSchema,
+    productStateResultSchema,
+    assertTrustedRenderer,
+    async () => controller().getState()
+  )
+  register(
+    ipc,
+    productIpcChannels.createProfile,
+    createProfileRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().createProfile(request.name)
+  )
+  register(
+    ipc,
+    productIpcChannels.saveProfile,
+    saveProfileRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().saveProfile(request.profile)
+  )
+  register(
+    ipc,
+    productIpcChannels.duplicateProfile,
+    profileIdRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().duplicateProfile(request.profileId)
+  )
+  register(
+    ipc,
+    productIpcChannels.deleteProfile,
+    profileIdRequestSchema,
+    booleanResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().deleteProfile(request.profileId)
+  )
+  register(
+    ipc,
+    productIpcChannels.reorderProfiles,
+    reorderProfilesRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      await controller().reorderProfiles(request.profileIds)
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.setDefaultProfile,
+    setDefaultProfileRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
       await controller().setDefaultProfile(request.profileId)
       return null
-    })
-  register(ipc, productIpcChannels.activateProfile, profileIdRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async (request) => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.activateProfile,
+    profileIdRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
       await controller().activateProfile(request.profileId)
       return null
-    })
-  register(ipc, productIpcChannels.enableAutomatic, emptyRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async () => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.enableAutomatic,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
       await controller().enableAutomatic()
       return null
-    })
-  register(ipc, productIpcChannels.restoreBaseline, emptyRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async () => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.restoreBaseline,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
       await controller().restoreBaseline()
       return null
-    })
-  register(ipc, productIpcChannels.pickApplication, emptyRequestSchema,
-    applicationSelectionResultSchema, assertTrustedRenderer,
-    async () => controller().pickApplication())
-  register(ipc, productIpcChannels.listApplications, emptyRequestSchema,
-    applicationSelectionsResultSchema, assertTrustedRenderer,
-    async () => controller().listApplications())
-  register(ipc, productIpcChannels.updateSettings, appSettingsRequestSchema,
-    appSettingsResultSchema, assertTrustedRenderer,
-    async (request) => controller().updateSettings(request.settings))
-  register(ipc, productIpcChannels.startPreview, startSessionRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async (request) => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.pickApplication,
+    emptyRequestSchema,
+    applicationSelectionResultSchema,
+    assertTrustedRenderer,
+    async () => controller().pickApplication()
+  )
+  register(
+    ipc,
+    productIpcChannels.listApplications,
+    emptyRequestSchema,
+    applicationSelectionsResultSchema,
+    assertTrustedRenderer,
+    async () => controller().listApplications()
+  )
+  register(
+    ipc,
+    productIpcChannels.updateSettings,
+    appSettingsRequestSchema,
+    appSettingsResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().updateSettings(request.settings)
+  )
+  register(
+    ipc,
+    productIpcChannels.startPreview,
+    startSessionRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
       await controller().startPreview(request.profile, request.kind)
       return null
-    })
-  register(ipc, productIpcChannels.updatePreview, previewUpdateRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async (request) => {
-      await controller().updatePreview(request.profileId, request.color, request.displayIds)
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.updatePreview,
+    previewUpdateRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      await controller().updatePreview(request.profileId, request.targets)
       return null
-    })
-  register(ipc, productIpcChannels.confirmPreview, commitSessionRequestSchema, profileResultSchema,
-    assertTrustedRenderer, async (request) =>
-      controller().confirmPreview(request.profile, request.activation))
-  register(ipc, productIpcChannels.cancelPreview, emptyRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async () => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.confirmPreview,
+    commitSessionRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    async (request) => controller().confirmPreview(request.profile, request.activation)
+  )
+  register(
+    ipc,
+    productIpcChannels.cancelPreview,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
       await controller().cancelPreview()
       return null
-    })
-  register(ipc, productIpcChannels.requestExit, emptyRequestSchema, booleanResultSchema,
-    assertTrustedRenderer, requestExit)
-  register(ipc, productIpcChannels.openAppPanel, openAppPanelRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async (request) => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.requestExit,
+    emptyRequestSchema,
+    booleanResultSchema,
+    assertTrustedRenderer,
+    requestExit
+  )
+  register(
+    ipc,
+    productIpcChannels.openAppPanel,
+    openAppPanelRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
       openAppPanel(request.view)
       return null
-    })
-  register(ipc, productIpcChannels.hideMiniPanel, emptyRequestSchema, voidResultSchema,
-    assertTrustedRenderer, async () => {
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.hideMiniPanel,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
       hideMiniPanel()
       return null
-    })
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.showMiniPanel,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
+      showMiniPanel()
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.setMiniPanelView,
+    setMiniPanelViewRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      setMiniPanelView(request.view)
+      return null
+    }
+  )
 }
 
 function register<TRequest, TValue>(
@@ -129,8 +281,9 @@ function register<TRequest, TValue>(
         error: {
           code: 'INVALID_REQUEST',
           message: 'The request was invalid.',
-          details: request.error.issues.map((issue) =>
-            `${issue.path.join('.') || 'request'}: ${issue.message}`)
+          details: request.error.issues.map(
+            (issue) => `${issue.path.join('.') || 'request'}: ${issue.message}`
+          )
         }
       })
     }
@@ -155,6 +308,9 @@ export function mapProductError(error: unknown): ProductError {
   }
   if (error instanceof PreviewValidationError) {
     return { code: 'UNSUPPORTED', message: error.message }
+  }
+  if (error instanceof PreviewRestoreError) {
+    return { code: 'OPERATION_FAILED', message: error.message, details: [...error.failures] }
   }
   if (error instanceof ConfigurationValidationError) {
     return {

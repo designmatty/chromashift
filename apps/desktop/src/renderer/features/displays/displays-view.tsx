@@ -1,54 +1,110 @@
-import { Badge, Separator } from '@chakra-ui/react'
-import { Monitor } from 'lucide-react'
-import { formatName } from '@/lib/product-result'
-import type { ProductState } from '../../../shared/product-api.js'
+import { Badge, Box, Button, Flex, Grid, Heading, Stack, Text } from '@chakra-ui/react'
+import { RefreshCcwDot } from 'lucide-react'
+import { formatName, run } from '@/lib/product-result'
+import type { ProductError, ProductState } from '../../../shared/product-api.js'
 
-export function DisplaysView({ product }: { product: ProductState }): React.JSX.Element {
+export function DisplaysView({
+  product,
+  onError
+}: {
+  product: ProductState
+  onError(error: ProductError | null): void
+}): React.JSX.Element {
   return (
-    <section className="displays-page">
-      <header>
-        <h1>Displays</h1>
-        <p>Connected hardware and resolved provider capabilities.</p>
-      </header>
-      <div className="display-grid">
+    <Box as="section" h="full" minH="full" p="20px" overflow="hidden" rounded="16px" bg="bg.panel">
+      <Flex as="header" minH="26px" mb="17px" align="center" justify="space-between" gap="16px">
+        <Heading as="h1" fontSize="18px" fontWeight="700" lineHeight="23px">
+          Displays
+        </Heading>
+        <Button
+          variant="subtle"
+          size="sm"
+          h="26px"
+          minH="26px"
+          px="10px"
+          py="5px"
+          rounded="26px"
+          bg="bg.muted"
+          color="inherit"
+          fontSize="12px"
+          onClick={() => void run(window.chromaShift.restoreBaseline(), onError)}
+        >
+          <RefreshCcwDot size={16} />
+          Restore original display settings
+        </Button>
+      </Flex>
+      <Stack gap="10px">
         {product.displays.map((display) => (
-          <article key={display.id}>
-            <div className="display-title">
-              <Monitor />
-              <div>
-                <h2>{display.name}</h2>
-                <p>{display.adapter.name}</p>
-              </div>
+          <Box as="article" minW="0" key={display.id}>
+            <Flex minH="57px" p="10px" align="center" gap="10px" rounded="6px" bg="bg.muted">
+              <Box minW="0" flex="1">
+                <Heading
+                  as="h2"
+                  overflow="hidden"
+                  fontSize="18px"
+                  fontWeight="500"
+                  textOverflow="ellipsis"
+                  whiteSpace="nowrap"
+                >
+                  {display.name}
+                </Heading>
+                <Text
+                  overflow="hidden"
+                  fontFamily="mono"
+                  fontSize="14px"
+                  textOverflow="ellipsis"
+                  whiteSpace="nowrap"
+                >
+                  {display.adapter.name} · {display.connection} · {display.refreshRate} Hz
+                </Text>
+              </Box>
               {display.primary && (
-                <Badge colorPalette="brand" variant="subtle">
+                <Badge
+                  h="20px"
+                  px="6px"
+                  py="2px"
+                  rounded="6px"
+                  bg="badge.primaryBg"
+                  color="badge.primaryFg"
+                  fontSize="12px"
+                  fontWeight="500"
+                >
                   Primary
                 </Badge>
               )}
-            </div>
-            <dl>
-              <dt>Connection</dt>
-              <dd>{display.connection}</dd>
-              <dt>HDR</dt>
-              <dd>{display.hdr ? 'On' : 'Off'}</dd>
-              <dt>Refresh rate</dt>
-              <dd>{display.refreshRate} Hz</dd>
-            </dl>
-            <Separator />
-            <div className="capabilities">
+            </Flex>
+            <Grid p="10px" templateColumns="repeat(2, minmax(0, 1fr))" gap="12px 10px">
               {Object.entries(product.capabilityReports[display.id]?.capabilities ?? {}).map(
                 ([name, capability]) => (
-                  <div key={name}>
-                    <span>{formatName(name)}</span>
-                    <Badge variant={capability.supported ? 'subtle' : 'outline'}>
-                      {capability.supported ? capability.provider : 'Unavailable'}
-                    </Badge>
-                  </div>
+                  <Flex
+                    minW="0"
+                    h="21px"
+                    align="center"
+                    gap="10px"
+                    color={capability.supported ? 'fg' : 'fg.muted'}
+                    key={name}
+                  >
+                    <Text
+                      minW="0"
+                      flex="1"
+                      overflow="hidden"
+                      fontSize="16px"
+                      fontWeight="500"
+                      textOverflow="ellipsis"
+                      whiteSpace="nowrap"
+                    >
+                      {formatName(name)}
+                    </Text>
+                    <Text as="strong" fontFamily="mono" fontSize="12px" fontWeight="400">
+                      {capability.supported ? capability.provider.toLowerCase() : 'unavailable'}
+                    </Text>
+                  </Flex>
                 )
               )}
-            </div>
-          </article>
+            </Grid>
+          </Box>
         ))}
-      </div>
-    </section>
+      </Stack>
+    </Box>
   )
 }

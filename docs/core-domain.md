@@ -6,11 +6,11 @@ by Electron main during Milestone 2.
 
 ## Profile configuration
 
-The persisted root object has schema version 1:
+The persisted root object has schema version 2:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "profiles": [],
   "settings": {
     "defaultProfileId": null
@@ -18,15 +18,44 @@ The persisted root object has schema version 1:
 }
 ```
 
-A profile contains vendor-neutral color settings, application rules, and stable
-display IDs. Brightness, contrast, saturation, hue, and color temperature use
-normalized values from 0 through 100. Gamma uses the product range 0.5 through
-2.8 accepted by the native protocol. Every color setting is optional;
-an omitted field means that the profile does not override that capability.
-Profiles may also persist `lastColorValues`, which remembers the most recent
+A profile contains application rules and a list of display targets keyed by
+stable display ID. Color settings belong to the target, not the profile, so two
+displays in one profile can hold different values:
+
+```json
+{
+  "id": "tarkov-night",
+  "name": "Tarkov - Night",
+  "enabled": true,
+  "applications": [{ "executableName": "EscapeFromTarkov.exe" }],
+  "displays": [
+    { "displayId": "display:abc", "color": { "brightness": 84 } },
+    { "displayId": "display:def", "color": {} }
+  ]
+}
+```
+
+Brightness, contrast, saturation, hue, and color temperature use normalized
+values from 0 through 100. Gamma uses the product range 0.5 through 2.8 accepted
+by the native protocol. Every color setting is optional; an omitted field means
+that target does not override that capability and the display keeps its captured
+pre-ChromaShift baseline. A target whose `color` is empty issues no native write.
+Each target may also persist `lastColorValues`, which remembers the most recent
 number for an inactive control without making it an applied override. This keeps
 the optional-setting contract intact while allowing disable and re-enable to
 restore the user's prior value across application restarts.
+
+There is exactly one source of applied settings per `(profileId, displayId)`
+pair; no shared profile-level color object remains. `packages/core` exports
+`resolveDisplayColor`, `activeColorTargets`, `findDisplayTarget`,
+`setDisplayTarget`, and `removeDisplayTarget` so every layer resolves targets
+through the same case-insensitive rules.
+
+For an application profile, presence in `displays` means the display is assigned
+to that profile. For the Default profile, the renderer enumerates all connected
+displays and joins any persisted target by stable ID; a connected display with no
+persisted target stays at baseline, so a newly connected display receives no
+overrides automatically.
 
 Zod validates the complete persisted document. Profile IDs and display targets
 must be unique case-insensitively, and a configured default must reference an
@@ -37,12 +66,19 @@ silently enter the product model.
 default-profile maintenance. Its small `ProfileConfigurationStorage` interface
 keeps the app-data filesystem decision in Electron main while allowing the
 repository to be tested without filesystem state. Returned objects are cloned
-so callers cannot mutate repository state without a successful save.
+so callers cannot mutate repository state without a successful save, and
+duplication deep-copies every target's settings and remembered values.
 
-An explicit version 0 migration moves the former top-level `defaultProfileId`
-into `settings`. Loading legacy JSON rewrites it at the current version. Invalid
-or unknown versions fail explicitly and are never replaced with an empty
-configuration.
+Two explicit migrations run on load. Version 0 moves the former top-level
+`defaultProfileId` into `settings`. Version 1 copies each profile's shared
+`color` and `lastColorValues` into every one of its existing display targets,
+preserving profile IDs, names, enabled state, application rules, target order,
+and stable display IDs. A version 1 profile holding color values but targeting no
+display never reached the hardware and has no version 2 home, so migration
+discards those values and reports a `discardedUnassignedColorSettings` notice
+through `onMigrationNotice` rather than inventing a display target. Loading
+legacy JSON rewrites it at the current version. Invalid or unknown versions fail
+explicitly and are never replaced with an empty configuration.
 
 ## Application matching
 
