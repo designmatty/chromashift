@@ -5,8 +5,18 @@ export interface MiniPanelPosition {
   y: number
 }
 
+export type MiniPanelView = 'controls' | 'override' | 'picker'
+
+const MINI_PANEL_WIDTH = 400
+const MINI_PANEL_HEIGHTS: Record<MiniPanelView, number> = {
+  controls: 596,
+  override: 642,
+  picker: 335
+}
+
 export class MiniPanelController {
   #releaseTimer: ReturnType<typeof setTimeout> | undefined
+  #view: MiniPanelView = 'controls'
 
   public constructor(
     private readonly getWindow: () => BrowserWindow | undefined,
@@ -14,7 +24,9 @@ export class MiniPanelController {
     private readonly getDisplay: (bounds: Rectangle) => Display = (bounds) =>
       screen.getDisplayMatching(bounds),
     private readonly getRememberedPosition: () => MiniPanelPosition | undefined = () => undefined,
-    private readonly saveRememberedPosition: (position: MiniPanelPosition) => void = () => undefined,
+    private readonly saveRememberedPosition: (position: MiniPanelPosition) => void = () =>
+      undefined,
+    private readonly getHeightAdjustment: () => number = () => 0,
     private readonly releaseDelayMilliseconds = 5_000
   ) {}
 
@@ -26,10 +38,41 @@ export class MiniPanelController {
       this.#scheduleRelease(panel)
       return
     }
-    this.#position(panel, trayBounds)
+    this.show(trayBounds)
+  }
+
+  public show(anchorBounds?: Rectangle): void {
+    this.#cancelRelease()
+    const panel = this.#window()
+    const anchor = anchorBounds ?? this.#cursorAnchor()
+    this.#position(panel, anchor)
     panel.setAlwaysOnTop(true, 'pop-up-menu')
     panel.showInactive()
     panel.moveTop()
+  }
+
+  public setView(view: MiniPanelView): void {
+    this.#view = view
+    const panel = this.getWindow()
+    if (panel === undefined || panel.isDestroyed()) return
+    const bounds = panel.getBounds()
+    const height = MINI_PANEL_HEIGHTS[view] + this.getHeightAdjustment()
+    const display = this.getDisplay(bounds)
+    const nextX = clamp(
+      bounds.x,
+      display.workArea.x + 8,
+      display.workArea.x + display.workArea.width - MINI_PANEL_WIDTH - 8
+    )
+    const nextY = clamp(
+      bounds.y + bounds.height - height,
+      display.workArea.y + 8,
+      display.workArea.y + display.workArea.height - height - 8
+    )
+    panel.setBounds({ x: nextX, y: nextY, width: MINI_PANEL_WIDTH, height }, false)
+  }
+
+  public refreshSize(): void {
+    this.setView(this.#view)
   }
 
   public hide(): void {
@@ -62,6 +105,11 @@ export class MiniPanelController {
     this.#releaseTimer = undefined
   }
 
+  #cursorAnchor(): Rectangle {
+    const point = screen.getCursorScreenPoint()
+    return { x: point.x, y: point.y, width: 1, height: 1 }
+  }
+
   #position(panel: BrowserWindow, trayBounds: Rectangle): void {
     const size = panel.getSize()
     const width = size[0] ?? 330
@@ -70,8 +118,16 @@ export class MiniPanelController {
     if (remembered !== undefined) {
       const display = this.getDisplay({ ...remembered, width, height })
       panel.setPosition(
-        clamp(remembered.x, display.workArea.x + 8, display.workArea.x + display.workArea.width - width - 8),
-        clamp(remembered.y, display.workArea.y + 8, display.workArea.y + display.workArea.height - height - 8),
+        clamp(
+          remembered.x,
+          display.workArea.x + 8,
+          display.workArea.x + display.workArea.width - width - 8
+        ),
+        clamp(
+          remembered.y,
+          display.workArea.y + 8,
+          display.workArea.y + display.workArea.height - height - 8
+        ),
         false
       )
       return

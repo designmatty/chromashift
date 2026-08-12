@@ -517,10 +517,8 @@ Profiles should be vendor-neutral.
 Conceptually:
 
 ```ts
-export interface ColorProfile {
-  id: string;
-  name: string;
-  enabled: boolean;
+export interface ProfileDisplayTarget {
+  displayId: string;
 
   color: {
     brightness?: number;
@@ -531,13 +529,22 @@ export interface ColorProfile {
     colorTemperature?: number;
   };
 
+  lastColorValues?: ColorSettings;
+}
+
+export interface ColorProfile {
+  id: string;
+  name: string;
+  enabled: boolean;
+
   applications: ApplicationRule[];
 
   displays: ProfileDisplayTarget[];
 }
 ```
 
-Each setting must be optional.
+Color settings belong to a display target, so two displays in one profile can hold
+different values. Each setting must be optional.
 
 Important:
 
@@ -1230,6 +1237,14 @@ Show:
 - assigned applications
 - assigned displays
 - active state
+
+The switch beside the profile name represents whether that profile is the
+current activation target; it does not edit `profile.enabled`. Switching it on
+creates a manual override and turns Auto switch off. Switching an active
+application profile off immediately returns to Auto switch, so a profile target
+is always selected. When Default is active, its activation switch stays on and
+cannot be deselected. Turning a profile itself on or off is a separate action
+available from both profile overflow menus.
 
 ---
 
@@ -2028,25 +2043,37 @@ Focus on functionality before visual polish.
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
 
-### Deferred redesign — Per-display profile settings (planned)
+### Redesign — Per-display profile settings (approved, in implementation)
 
-The current shipped model applies one shared color object to every selected
-display. A future redesign will store independent color settings per stable display
-ID. Default will implicitly cover connected displays without assignment checkboxes;
-displays with no overrides remain at captured baseline. Application profiles will
-retain explicit display assignment with independent settings per target.
+Color settings are stored independently per stable display ID inside a profile,
+not once per profile. `ProfileDisplayTarget` owns `color` and `lastColorValues`;
+the profile root has no shared color object. There is exactly one source of
+applied settings per `(profileId, displayId)` pair.
 
-Do not start this cross-layer migration until replacement app-panel and mini-panel
-mockups are reviewed. Use `docs/per-display-profile-settings-plan.md` as the source
-of truth for schema, migration, activation, preview, UX, testing, and exit criteria.
+Configuration schema version 2 introduces this shape with an explicit version 1 to
+version 2 migration that copies the old shared `color` into every existing display
+target. Never silently reset or rewrite `%APPDATA%\ChromaShift\profiles.json`.
 
-The redesign handoff is Figma-MCP-first. Require the Figma file URL and relevant
-page/frame/node IDs, inspect components, variants, variables, annotations, and
-auto-layout constraints through the connected Figma MCP, and record a node-to-code
-mapping before renderer work. If Figma MCP is unavailable, pause UI implementation
-and ask the user to connect it; do not substitute guesses from flattened screenshots.
-Treat mockups as layout and flow direction rather than an exhaustive feature spec,
-and ask the user about ambiguous or missing states before implementation.
+An omitted color setting means that display keeps its captured pre-ChromaShift
+baseline. A profile target whose `color` is empty issues no apply write, and a
+display dropped from the desired target set is restored baseline-first.
+
+Default is the fallback when no application profile matches. It implicitly covers
+every connected display; a connected display with no Default overrides stays at
+baseline, so newly connected displays receive nothing automatically. The Edit-mode
+display checkbox means `this profile overrides this display`, and it applies to
+Default and application profiles alike. Label the fallback profile `Default`,
+never `Global`.
+
+Use `docs/per-display-profile-settings-plan.md` as the source of truth for schema,
+migration, activation, preview, UX, testing, and exit criteria. Its
+`Confirmed UX decisions` and `Design-to-implementation mapping` sections are
+authoritative where an individual Figma frame disagrees.
+
+The redesign is Figma-MCP-first. Inspect components, variants, variables,
+annotations, and auto-layout constraints through the connected Figma MCP rather
+than guessing from flattened screenshots, and ask the user about ambiguous or
+missing states before changing the product model.
 
 ---
 

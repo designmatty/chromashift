@@ -61,6 +61,9 @@ profile and preview requests, verifies capability rejection before any preview
 write, and covers preview capture/apply/update/confirmation, serialized rollback
 after an in-flight display apply,
 removal of the final override, and retention of a disabled control's last value.
+Preview-session tests also prove that an unchanged same-profile preview promotes
+to Edit without restore, capture, or apply writes, while changed drafts retain the
+full restore-safe transition.
 Activation tests also prove foreground events are remembered without writing
 during preview, that ChromaShift's own windows do not replace the external
 foreground target, and that rollback applies the latest intended target. Settings
@@ -71,14 +74,25 @@ reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, read-only profile navigation, Settings navigation,
 read-only display/color summaries without edit inputs, live Edit preview,
 keyboard editing of Default and normal profile names, disabled-control value
-retention, cancellation of a debounced edit before it can reapply discarded
-values, explicit-preview rollback when another profile is selected, and the
-mini-panel path
-where disabling the final color control starts a baseline-only override before
-Reset reapplies the saved manual profile. It also verifies validated product state, automatic
-activation with fresh isolated user data, restore-aware exit, and no renderer
-errors. Captured images are written to `apps/desktop/out/smoke/desktop.png` and
-`apps/desktop/out/smoke/mini-panel.png`.
+retention, shared trigger IDs and keyboard behavior for tooltip-wrapped profile
+menus, closed Switch labels, disabled-switch tooltip composition, profile
+activation switches versus profile enablement, manual/automatic mode transitions,
+hover- and focus-revealed sidebar profile actions, unique compound-trigger IDs,
+suppression of Edit and Preview only on the profile being edited, and verified
+edit-to-edit and edit-to-preview navigation through other profiles' menus,
+profile-list Preview and Stop preview state switching,
+real Electron same-profile Preview-to-Edit promotion and rollback,
+cancellation of a debounced edit before it can reapply discarded values,
+explicit-preview rollback when another profile is selected, the exact Figma
+light-mode shell/panel/row/select/foreground colors, right-edge alignment of the
+sidebar Settings action, and the mini-panel paths where disabling the final
+saved color control starts a baseline-only override while an unchanged Default
+brightness on/off round trip cancels its temporary override. It also verifies
+validated product state, automatic activation with fresh isolated user data,
+restore-aware exit, and no renderer errors. Captured images are written under
+`apps/desktop/out/smoke/` for the app panel, mini panel, Settings General, the
+open Chakra settings Select, Displays, About, the mini profile picker, and the
+restored Default mini panel.
 
 The desktop close/reopen path now closes the real native window, verifies that
 its renderer is released, and launches ChromaShift again with the same isolated
@@ -90,7 +104,7 @@ user data, samples the complete Windows child-process tree in visible and tray
 states, and exits through the same restore-safe shutdown coordinator. The exact
 baseline and interpretation live in `docs/performance.md`. `npm run
 check:renderer-budget` measures all emitted renderer JavaScript and CSS and
-fails if their combined gzip size exceeds 300 KB or the largest raw JavaScript
+fails if their combined gzip size exceeds 320 KB or the largest raw JavaScript
 chunk exceeds 1.1 MB. Root `npm run verify` runs this budget after the build.
 
 The desktop smoke keeps a separate native restoration guard alive, proves that

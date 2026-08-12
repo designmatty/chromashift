@@ -15,7 +15,6 @@ function profile(
     id,
     name: id,
     enabled,
-    color: {},
     applications,
     displays: []
   }

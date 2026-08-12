@@ -1,9 +1,28 @@
-import { Button, NativeSelect, Separator } from '@chakra-ui/react'
-import { FolderOpen, RotateCcw } from 'lucide-react'
+import { Box, createListCollection, Heading, Portal, Select, Stack } from '@chakra-ui/react'
+import { useMemo } from 'react'
 import { SettingsRow } from '@/components/layout/presentational'
 import { Switch } from '@/components/ui/switch'
 import { run } from '@/lib/product-result'
 import type { ProductError, ProductState } from '../../../shared/product-api.js'
+
+interface SelectItem<T extends string> {
+  label: string
+  value: T
+}
+
+const launchItems: SelectItem<'tray' | 'app'>[] = [
+  { label: 'Minimized to tray', value: 'tray' },
+  { label: 'App panel', value: 'app' }
+]
+const closeItems: SelectItem<'tray' | 'shutdown'>[] = [
+  { label: 'Minimize to tray', value: 'tray' },
+  { label: 'Shut down ChromaShift', value: 'shutdown' }
+]
+const themeItems: SelectItem<'system' | 'light' | 'dark'>[] = [
+  { label: 'Match system', value: 'system' },
+  { label: 'Light', value: 'light' },
+  { label: 'Dark', value: 'dark' }
+]
 
 export function SettingsPanel({
   product,
@@ -18,91 +37,119 @@ export function SettingsPanel({
   }
 
   return (
-    <section className="settings-page">
-      <header>
-        <h1>Settings</h1>
-        <p>Control how ChromaShift starts, closes, and appears.</p>
-      </header>
-      <SettingsRow
-        title="Launch at startup"
-        description="Start ChromaShift when you sign in to Windows."
-      >
-        <Switch
-          checked={settings.launchAtStartup}
-          onCheckedChange={(value) => update({ ...settings, launchAtStartup: value })}
+    <Stack
+      as="section"
+      h="full"
+      minH="full"
+      p="20px"
+      gap="17px"
+      overflow="hidden"
+      rounded="16px"
+      bg="bg.panel"
+    >
+      <Heading as="h1" minH="26px" fontSize="18px" fontWeight="700" lineHeight="23px">
+        General Settings
+      </Heading>
+      <Box overflow="hidden" rounded="6px" bg="bg.muted" css={{ '& > *': { borderRadius: 0 } }}>
+        <SettingsRow
+          title="Launch at start up"
+          description="Start ChromaShift when you sign in to Windows"
+        >
+          <Switch
+            checked={settings.launchAtStartup}
+            onCheckedChange={(details) => update({ ...settings, launchAtStartup: details.checked })}
+            aria-label="Launch at startup"
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Windows startup behavior"
+          description="Choose how ChromaShift appears at launch"
+        >
+          <SettingsSelect
+            ariaLabel="Windows startup behavior"
+            value={settings.launchBehavior}
+            items={launchItems}
+            onChange={(launchBehavior) => update({ ...settings, launchBehavior })}
+          />
+        </SettingsRow>
+      </Box>
+      <SettingsRow title="Close behavior" description="Choose what happens when you click close">
+        <SettingsSelect
+          ariaLabel="Close behavior"
+          value={settings.closeBehavior}
+          items={closeItems}
+          onChange={(closeBehavior) => update({ ...settings, closeBehavior })}
         />
       </SettingsRow>
-      <SettingsRow
-        title="Windows startup behavior"
-        description="Choose what appears during an automatic login launch."
-      >
-        <NativeSelect.Root size="sm" width="190px">
-          <NativeSelect.Field
-            aria-label="Windows startup behavior"
-            value={settings.launchBehavior}
-            onChange={(event) =>
-              update({ ...settings, launchBehavior: event.target.value as 'tray' | 'app' })
-            }
-          >
-            <option value="tray">Start in tray</option>
-            <option value="app">Show app panel</option>
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
+      <SettingsRow title="Theme" description="">
+        <SettingsSelect
+          ariaLabel="Theme"
+          value={settings.theme}
+          items={themeItems}
+          onChange={(theme) => update({ ...settings, theme })}
+        />
       </SettingsRow>
-      <SettingsRow title="Close behavior" description="Choose what the window close button does.">
-        <NativeSelect.Root size="sm" width="190px">
-          <NativeSelect.Field
-            aria-label="Close behavior"
-            value={settings.closeBehavior}
-            onChange={(event) =>
-              update({
-                ...settings,
-                closeBehavior: event.target.value as 'tray' | 'shutdown'
-              })
-            }
-          >
-            <option value="tray">Minimize to tray</option>
-            <option value="shutdown">Shut down ChromaShift</option>
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
-      </SettingsRow>
-      <SettingsRow title="Theme" description="Use the Windows theme or choose one explicitly.">
-        <NativeSelect.Root size="sm" width="190px">
-          <NativeSelect.Field
-            aria-label="Theme"
-            value={settings.theme}
-            onChange={(event) =>
-              update({
-                ...settings,
-                theme: event.target.value as 'system' | 'light' | 'dark'
-              })
-            }
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
-      </SettingsRow>
-      <Separator />
-      <div className="settings-actions">
-        <Button
-          colorPalette="brand"
-          variant="outline"
-          onClick={() => void run(window.chromaShift.restoreBaseline(), onError)}
+    </Stack>
+  )
+}
+
+function SettingsSelect<T extends string>({
+  ariaLabel,
+  value,
+  items,
+  onChange
+}: {
+  ariaLabel: string
+  value: T
+  items: SelectItem<T>[]
+  onChange(value: T): void
+}): React.JSX.Element {
+  const collection = useMemo(() => createListCollection({ items }), [items])
+
+  return (
+    <Select.Root
+      collection={collection}
+      value={[value]}
+      onValueChange={(details) => {
+        const nextValue = details.value[0]
+        if (nextValue !== undefined) onChange(nextValue as T)
+      }}
+      size="xs"
+      w="144px"
+      flex="none"
+    >
+      <Select.HiddenSelect />
+      <Select.Label srOnly>{ariaLabel}</Select.Label>
+      <Select.Control>
+        <Select.Trigger
+          aria-label={ariaLabel}
+          h="26px"
+          minH="26px"
+          px="10px"
+          borderColor="border"
+          rounded="6px"
+          bg="bg.select"
+          color="fg"
+          fontSize="12px"
         >
-          <RotateCcw />
-          Restore original display settings
-        </Button>
-        <Button colorPalette="brand" variant="outline" disabled>
-          <FolderOpen />
-          Open logs and diagnostics
-        </Button>
-        <small>Log-file browsing will be connected with Milestone 5 diagnostics.</small>
-      </div>
-    </section>
+          <Select.ValueText />
+        </Select.Trigger>
+        <Select.IndicatorGroup pr="8px">
+          <Select.Indicator color="fg.muted" />
+        </Select.IndicatorGroup>
+      </Select.Control>
+      <Portal>
+        <Select.Positioner>
+          <Select.Content bg="bg.select" borderColor="border" color="fg">
+            {collection.items.map((item) => (
+              <Select.Item item={item} key={item.value}>
+                <Select.ItemText>{item.label}</Select.ItemText>
+                <Select.ItemIndicator />
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select.Positioner>
+      </Portal>
+    </Select.Root>
   )
 }

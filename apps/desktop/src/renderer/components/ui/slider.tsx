@@ -6,13 +6,14 @@ interface SliderProps {
   max: number
   step: number
   disabled?: boolean
+  compact?: boolean
+  'aria-label'?: string
   onValueChange(values: number[]): void
 }
 
 export function Slider(props: SliderProps): React.JSX.Element {
   return (
     <ChakraSlider.Root
-      colorPalette="brand"
       data-slot="slider"
       disabled={props.disabled}
       max={props.max}
@@ -20,13 +21,30 @@ export function Slider(props: SliderProps): React.JSX.Element {
       step={props.step}
       thumbAlignment="center"
       value={props.value}
+      w="full"
+      opacity={props.disabled ? '0.7' : '1'}
+      aria-label={props['aria-label'] === undefined ? undefined : [props['aria-label']]}
       onValueChange={(details) => props.onValueChange(details.value)}
     >
       <ChakraSlider.Control>
-        <ChakraSlider.Track data-slot="slider-track">
-          <ChakraSlider.Range data-slot="slider-range" />
+        <ChakraSlider.Track
+          h="25px"
+          overflow="hidden"
+          rounded="4px"
+          bg={props.compact ? 'slider.compactTrack' : 'slider.track'}
+        >
+          <ChakraSlider.Range h="25px" bg="slider.fill" />
         </ChakraSlider.Track>
-        <ChakraSlider.Thumb data-slot="slider-thumb" index={0}>
+        <ChakraSlider.Thumb
+          index={0}
+          w="16px"
+          h="25px"
+          borderWidth="1px"
+          borderColor="slider.thumbBorder"
+          rounded="4px"
+          bg="slider.thumb"
+          boxShadow="none"
+        >
           <ChakraSlider.HiddenInput />
         </ChakraSlider.Thumb>
       </ChakraSlider.Control>

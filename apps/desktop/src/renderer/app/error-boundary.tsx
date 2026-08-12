@@ -1,5 +1,6 @@
-import { Button } from '@chakra-ui/react'
+import { Button, Text } from '@chakra-ui/react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { CenterState } from './root'
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   public override state = { error: null as Error | null }
@@ -15,13 +16,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   public override render(): ReactNode {
     if (this.state.error === null) return this.props.children
     return (
-      <div className="center-state" role="alert">
-        <h1>ChromaShift could not render</h1>
-        <p>{this.state.error.message}</p>
-        <Button colorPalette="brand" onClick={() => location.reload()}>
-          Reload
-        </Button>
-      </div>
+      <CenterState role="alert" title="ChromaShift could not render">
+        <Text>{this.state.error.message}</Text>
+        <Button onClick={() => location.reload()}>Reload</Button>
+      </CenterState>
     )
   }
 }

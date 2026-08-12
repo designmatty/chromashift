@@ -17,13 +17,16 @@ export const colorSettingsSchema = z
 export const applicationRuleSchema = z
   .object({
     executableName: z.string().trim().min(1),
-    executablePath: z.string().trim().min(1).optional()
+    executablePath: z.string().trim().min(1).optional(),
+    iconDataUrl: z.string().startsWith('data:image/').optional()
   })
   .strict()
 
 export const profileDisplayTargetSchema = z
   .object({
-    displayId: identifierSchema
+    displayId: identifierSchema,
+    color: colorSettingsSchema,
+    lastColorValues: colorSettingsSchema.optional()
   })
   .strict()
 
@@ -32,8 +35,6 @@ export const colorProfileSchema = z
     id: identifierSchema,
     name: z.string().trim().min(1).max(100),
     enabled: z.boolean(),
-    color: colorSettingsSchema,
-    lastColorValues: colorSettingsSchema.optional(),
     applications: z.array(applicationRuleSchema),
     displays: z.array(profileDisplayTargetSchema)
   })
@@ -57,3 +58,14 @@ export type ColorSettings = z.infer<typeof colorSettingsSchema>
 export type ApplicationRule = z.infer<typeof applicationRuleSchema>
 export type ProfileDisplayTarget = z.infer<typeof profileDisplayTargetSchema>
 export type ColorProfile = z.infer<typeof colorProfileSchema>
+
+export const colorSettingNames = [
+  'brightness',
+  'contrast',
+  'gamma',
+  'saturation',
+  'hue',
+  'colorTemperature'
+] as const satisfies ReadonlyArray<keyof ColorSettings>
+
+export type ColorSettingName = (typeof colorSettingNames)[number]

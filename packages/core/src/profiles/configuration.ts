@@ -1,7 +1,13 @@
 import { z } from 'zod'
+import {
+  migrateVersionOneProfiles,
+  versionOneConfigurationSchema,
+  versionZeroConfigurationSchema,
+  type MigrationNoticeListener
+} from './migration.js'
 import { colorProfileSchema, type ColorProfile } from './model.js'
 
-export const CURRENT_SCHEMA_VERSION = 1 as const
+export const CURRENT_SCHEMA_VERSION = 2 as const
 export const DEFAULT_PROFILE_ID = 'default' as const
 
 export const profileSettingsSchema = z
@@ -46,14 +52,6 @@ export const profileConfigurationSchema = z
     }
   })
 
-const versionZeroConfigurationSchema = z
-  .object({
-    schemaVersion: z.literal(0),
-    profiles: z.array(colorProfileSchema),
-    defaultProfileId: z.string().trim().min(1).nullable().optional()
-  })
-  .strict()
-
 export type ProfileSettings = z.infer<typeof profileSettingsSchema>
 export type ProfileConfiguration = z.infer<typeof profileConfigurationSchema>
 
@@ -87,7 +85,6 @@ export function createDefaultProfile(): ColorProfile {
     id: DEFAULT_PROFILE_ID,
     name: 'Default profile',
     enabled: true,
-    color: {},
     applications: [],
     displays: []
   }
@@ -116,27 +113,40 @@ function validateCurrentConfiguration(
   throw new ConfigurationValidationError(message, formatIssues(result.error))
 }
 
-export function parseProfileConfiguration(input: unknown): ProfileConfiguration {
+export interface ParseProfileConfigurationOptions {
+  /** Called once per lossy decision taken while migrating older schema versions. */
+  onMigrationNotice?: MigrationNoticeListener
+}
+
+export function parseProfileConfiguration(
+  input: unknown,
+  options: ParseProfileConfigurationOptions = {}
+): ProfileConfiguration {
   const version = parseVersion(input)
 
   if (version === CURRENT_SCHEMA_VERSION) {
     return validateCurrentConfiguration(input)
   }
 
-  if (version === 0) {
-    const result = versionZeroConfigurationSchema.safeParse(input)
+  if (version === 1 || version === 0) {
+    const schema = version === 1 ? versionOneConfigurationSchema : versionZeroConfigurationSchema
+    const result = schema.safeParse(input)
     if (!result.success) {
       throw new ConfigurationValidationError(
-        'Version 0 profile configuration is invalid.',
+        `Version ${version} profile configuration is invalid.`,
         formatIssues(result.error)
       )
     }
 
+    const defaultProfileId = 'settings' in result.data
+      ? result.data.settings.defaultProfileId
+      : (result.data.defaultProfileId ?? null)
+
     return validateCurrentConfiguration(
       {
         schemaVersion: CURRENT_SCHEMA_VERSION,
-        profiles: result.data.profiles,
-        settings: { defaultProfileId: result.data.defaultProfileId ?? null }
+        profiles: migrateVersionOneProfiles(result.data.profiles, options.onMigrationNotice),
+        settings: { defaultProfileId }
       },
       'Migrated profile configuration is invalid.'
     )
@@ -145,7 +155,10 @@ export function parseProfileConfiguration(input: unknown): ProfileConfiguration 
   throw new UnsupportedConfigurationVersionError(version)
 }
 
-export function parseProfileConfigurationJson(json: string): ProfileConfiguration {
+export function parseProfileConfigurationJson(
+  json: string,
+  options: ParseProfileConfigurationOptions = {}
+): ProfileConfiguration {
   let input: unknown
   try {
     input = JSON.parse(json)
@@ -154,7 +167,7 @@ export function parseProfileConfigurationJson(json: string): ProfileConfiguratio
       cause: error
     })
   }
-  return parseProfileConfiguration(input)
+  return parseProfileConfiguration(input, options)
 }
 
 export function serializeProfileConfiguration(configuration: ProfileConfiguration): string {

@@ -1,3 +1,4 @@
+import { Heading, Spinner, Stack, Text } from '@chakra-ui/react'
 import { useProduct } from '@/hooks/use-product'
 import { lazy, Suspense } from 'react'
 
@@ -14,19 +15,13 @@ export function Root(): React.JSX.Element {
   const product = useProduct()
   if (product.error !== null) {
     return (
-      <div className="center-state" role="alert">
-        <h1>ChromaShift could not start</h1>
-        <p>{product.error.message}</p>
-      </div>
+      <CenterState role="alert" title="ChromaShift could not start">
+        {product.error.message}
+      </CenterState>
     )
   }
   if (product.state === null) {
-    return (
-      <div className="center-state" aria-busy="true">
-        <div className="spinner" />
-        <p>Connecting to DisplayService…</p>
-      </div>
-    )
+    return <CenterState busy>Connecting to DisplayService…</CenterState>
   }
   return (
     <Suspense fallback={<LoadingState />}>
@@ -40,10 +35,37 @@ export function Root(): React.JSX.Element {
 }
 
 function LoadingState(): React.JSX.Element {
+  return <CenterState busy>Loading ChromaShift…</CenterState>
+}
+
+export function CenterState({
+  children,
+  busy = false,
+  role,
+  title
+}: {
+  children: React.ReactNode
+  busy?: boolean
+  role?: 'alert'
+  title?: string
+}): React.JSX.Element {
   return (
-    <div className="center-state" aria-busy="true">
-      <div className="spinner" />
-      <p>Loading ChromaShift…</p>
-    </div>
+    <Stack
+      minH="260px"
+      placeContent="center"
+      align="center"
+      gap="10px"
+      color="fg.muted"
+      aria-busy={busy || undefined}
+      role={role}
+    >
+      {busy && <Spinner size="md" borderWidth="2px" color="fg" />}
+      {title !== undefined && (
+        <Heading as="h1" color="fg" fontSize="16px">
+          {title}
+        </Heading>
+      )}
+      {typeof children === 'string' ? <Text>{children}</Text> : children}
+    </Stack>
   )
 }

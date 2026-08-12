@@ -1,12 +1,13 @@
 # Per-display profile settings redesign plan
 
-Status: planned and deferred pending new product mockups
+Status: implemented and validated
 Decision date: 2026-08-11
+UX confirmed: 2026-08-11
 
-This document is the handoff for a future implementation thread. It records the
-agreed product direction and the cross-layer work required to replace the current
-one-color-object-per-profile model. Do not begin the UI implementation until the
-new app-panel and mini-panel mockups settle the open interaction questions below.
+This document records the agreed product direction and the cross-layer work
+required to replace the current one-color-object-per-profile model. The
+replacement mockups have been reviewed through the Figma MCP and the open
+interaction questions are answered in `Confirmed UX decisions` below.
 
 ## Design source and Figma MCP workflow
 
@@ -18,10 +19,14 @@ Design references to fill in when the mockups are ready:
 
 | Reference | Value |
 |---|---|
-| Figma file URL | TBD |
-| App-panel page or root node | TBD |
-| Mini-panel page or root node | TBD |
-| Shared components or design-system page | TBD |
+| Figma file URL | https://www.figma.com/design/zPdG2A9e1XjzhS4Po8ujLf/chromashift?m=dev |
+| App-panel page or root node | https://www.figma.com/design/zPdG2A9e1XjzhS4Po8ujLf/chromashift?node-id=53-3&m=dev |
+| Mini-panel page or root node | https://www.figma.com/design/zPdG2A9e1XjzhS4Po8ujLf/chromashift?node-id=53-2&m=dev |
+| Shared components or design-system page | None published; the file defines no Figma variables or component library |
+
+Because the file publishes no variables or shared components, the implementation
+reuses the existing Chakra semantic tokens, `components/ui` adapters, and Lucide
+icons. Only spacing, sizing, hierarchy, and layout are taken from Figma.
 
 Before implementation, the agent must:
 
@@ -53,6 +58,60 @@ After implementation, capture the real app and mini panel at the same theme,
 scale, content, and state as the approved Figma frames. Compare hierarchy,
 spacing, typography, colors, controls, overflow, and window dimensions, then test
 the actual Windows interaction path in addition to the visual comparison.
+
+## Design-to-implementation mapping
+
+| Figma node | Frame | React surface |
+|---|---|---|
+| `35:1606` | App panel, read-only Default profile | `features/profiles/profile-detail.tsx` |
+| `35:1729` | App panel, read-only application profile | `features/profiles/profile-detail.tsx` |
+| `35:1268` | App panel, Edit mode Default profile | `features/profiles/profile-detail.tsx` |
+| `35:1429` | App panel, Edit mode application profile | `features/profiles/profile-detail.tsx` |
+| `39:4000` | App panel, temporary-override banner | `app/main-app.tsx` (`.override-banner`) |
+| `35:1269` | Title bar with reserved caption overlay | `components/layout/presentational.tsx` and `main/index.ts` |
+| `35:1284` | Profile sidebar, count, Auto Switch footer | `features/profiles/profile-list.tsx` |
+| `35:1346` | `Display color controls` section | `features/profiles/display-controls.tsx` |
+| `35:1351` | One display row, badges, expand chevron | `features/profiles/display-controls.tsx` |
+| `35:1360` | Per-setting checkbox, value, slider list | `features/profiles/color-controls.tsx` |
+| `35:1415` | `Copy to` control | `features/profiles/display-controls.tsx` (`CopyToMenu`) |
+| `35:1426` | `Applications` section | `features/profiles/application-assignments.tsx` |
+| `39:2365` | Settings, General | `features/settings/settings-panel.tsx` |
+| `39:2723` | Settings, Displays and per-capability providers | `features/displays/displays-view.tsx` |
+| `39:2957` | Settings, About | `features/settings/about-panel.tsx` |
+| `35:1859` | Mini panel, default state | `features/mini-panel/mini-panel.tsx` |
+| `35:1871` | Mini panel, monitor selector | `features/mini-panel/mini-panel.tsx` (`.mini-display-selector`) |
+| `35:1944` | Mini panel with temporary overrides | `features/mini-panel/mini-panel.tsx` |
+| `35:2034` | Mini panel, profile picker with back button | `features/mini-panel/mini-panel.tsx` (`.mini-picker`) |
+
+## Confirmed UX decisions
+
+These answers close the open questions below and are authoritative where they
+disagree with an individual frame.
+
+1. The display row checkbox in Edit mode means `this profile overrides this
+   display`, not `this display is assigned`. It is shown for Default and for
+   application profiles alike. Clearing it removes that display's target and
+   returns the display to its captured baseline. This preserves the rule that a
+   connected Default display with no overrides stays at baseline.
+2. The permanent fallback profile is named `Default profile` and carries a
+   `Default` badge. The word `Global` is not used in shipped UI. The read-only
+   `Global` badge and the `Global profile` name field in the mockups are
+   superseded.
+3. Displays saved in a profile but not currently connected render as a dimmed row
+   with a `Disconnected` badge, inline below the connected displays. The row
+   expands to show its saved values and can be removed only in Edit mode.
+4. Mini-panel `Update profile` persists the complete draft, covering every display
+   touched during the temporary-override session. `Reset changes` restores every
+   display that session touched.
+5. Read-only mode lists all connected displays. Displays this profile does not
+   override are dimmed and summarize as `Not overridden`.
+6. Display navigation inside one profile is an expand/collapse accordion in the
+   app panel and a single-selection monitor dropdown in the mini panel. Neither
+   surface offers simultaneous multi-display editing, so no mixed-value
+   representation is required.
+7. Per-display capability and HDR gating renders inline as `unavailable` in the
+   value slot with the control disabled. Settings, Displays additionally lists the
+   resolving provider per capability.
 
 ## Why change the model
 
@@ -237,7 +296,7 @@ requiring text entry or keyboard focus belongs in the full app panel.
 
 ## Implementation slices
 
-### Slice 1 - Confirm UX and contract
+### Slice 1 - Confirm UX and contract (completed)
 
 - connect the Figma MCP and record the approved file, page, frame, and component
   node IDs in this document
@@ -247,25 +306,25 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - close every UX question listed above
 - finalize version 2 names and Default semantics in `AGENTS.md` and this document
 
-### Slice 2 - Core schema and migration
+### Slice 2 - Core schema and migration (completed)
 
 - add per-display color/remembered settings to `packages/core`
 - implement and fixture-test version 1 to version 2 migration
 - update CRUD, duplication, validation, and configuration documentation
 
-### Slice 3 - Activation coordinator
+### Slice 3 - Activation coordinator (completed)
 
 - resolve and apply independent target settings
 - restore stale/empty targets baseline-first
 - test partial failures, identical transitions, and multi-display ordering
 
-### Slice 4 - Preview and product API
+### Slice 4 - Preview and product API (completed)
 
 - update preview session state and rollback for touched displays
 - update shared Zod IPC schemas, main handlers, and the narrow preload API
 - retain sender validation and capability/HDR rejection
 
-### Slice 5 - Full app UI
+### Slice 5 - Full app UI (completed)
 
 - implement approved per-display navigation and summaries
 - make Default display membership implicit/read-only
@@ -279,12 +338,12 @@ requiring text entry or keyboard focus belongs in the full app panel.
   sidebar width, minimum editor width, narrow-window overflow, and persisted
   sidebar sizing
 
-### Slice 6 - Mini panel
+### Slice 6 - Mini panel (completed)
 
 - implement the approved compact per-display interaction
 - verify close, drag, remembered position, taskbar Z-order, and non-activation
 
-### Slice 7 - End-to-end validation
+### Slice 7 - End-to-end validation (completed)
 
 - migrate an isolated copy of the real version 1 configuration
 - extend desktop smoke for two displays with different settings

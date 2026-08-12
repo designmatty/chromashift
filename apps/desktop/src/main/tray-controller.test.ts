@@ -24,15 +24,13 @@ const profiles: ColorProfile[] = [
     id: 'gaming',
     name: 'Gaming',
     enabled: true,
-    color: { saturation: 75 },
     applications: [],
-    displays: [{ displayId: 'display:one' }]
+    displays: [{ displayId: 'display:one', color: { saturation: 75 } }]
   },
   {
     id: 'disabled',
     name: 'Disabled profile',
     enabled: false,
-    color: {},
     applications: [],
     displays: []
   }
@@ -41,7 +39,7 @@ const profiles: ColorProfile[] = [
 class MemoryStorage implements ProfileConfigurationStorage {
   public read(): Promise<string> {
     return Promise.resolve(JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       profiles,
       settings: { defaultProfileId: null }
     }))

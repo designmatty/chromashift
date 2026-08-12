@@ -18,7 +18,6 @@ function profile(
     id,
     name: id,
     enabled,
-    color: {},
     applications: executableName === undefined ? [] : [{ executableName }],
     displays: []
   }
@@ -29,7 +28,7 @@ function configuration(
   defaultProfileId: string | null = null
 ): ProfileConfiguration {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profiles,
     settings: { defaultProfileId }
   }

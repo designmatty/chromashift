@@ -5,23 +5,38 @@ import { MiniPanelController } from './mini-panel-controller.js'
 function fakePanel() {
   let visible = false
   let destroyed = false
+  let bounds = { x: 100, y: 100, width: 400, height: 596 }
   const calls: string[] = []
   const positions: Array<[number, number]> = []
+  const resized: Rectangle[] = []
   const panel = {
     isDestroyed: () => destroyed,
     isVisible: () => visible,
-    getSize: () => [330, 388],
-    setPosition: (x: number, y: number) => { positions.push([x, y]) },
+    getSize: () => [bounds.width, bounds.height],
+    getBounds: () => bounds,
+    setBounds: (next: Rectangle) => {
+      bounds = next
+      resized.push(next)
+    },
+    setPosition: (x: number, y: number) => {
+      positions.push([x, y])
+    },
     setAlwaysOnTop: (_flag: boolean, level: string) => calls.push(`alwaysOnTop:${level}`),
-    showInactive: () => { visible = true; calls.push('showInactive') },
+    showInactive: () => {
+      visible = true
+      calls.push('showInactive')
+    },
     moveTop: () => calls.push('moveTop'),
-    hide: () => { visible = false; calls.push('hide') },
+    hide: () => {
+      visible = false
+      calls.push('hide')
+    },
     destroy: () => {
       destroyed = true
       calls.push('destroy')
     }
   } as unknown as BrowserWindow
-  return { panel, calls, positions }
+  return { panel, calls, positions, resized }
 }
 
 const display = {
@@ -34,14 +49,18 @@ describe('MiniPanelController', () => {
   it('positions above a bottom taskbar, shows without activation, and toggles closed', () => {
     vi.useFakeTimers()
     const { panel, calls, positions } = fakePanel()
-    const controller = new MiniPanelController(() => panel, () => panel, () => display)
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display
+    )
     const trayBounds: Rectangle = { x: 1840, y: 1040, width: 24, height: 24 }
 
     controller.toggle(trayBounds)
     controller.toggle(trayBounds)
     vi.advanceTimersByTime(5_000)
 
-    expect(positions).toEqual([[1582, 644]])
+    expect(positions).toEqual([[1512, 436]])
     expect(calls).toEqual(['alwaysOnTop:pop-up-menu', 'showInactive', 'moveTop', 'hide', 'destroy'])
   })
 
@@ -88,12 +107,12 @@ describe('MiniPanelController', () => {
 
     controller.toggle({ x: 1840, y: 1040, width: 24, height: 24 })
 
-    expect(positions).toEqual([[1582, 8]])
+    expect(positions).toEqual([[1512, 8]])
   })
 
   it('remembers a user-moved position', () => {
     const { panel } = fakePanel()
-    const positions: Array<{ x: number, y: number }> = []
+    const positions: Array<{ x: number; y: number }> = []
     const controller = new MiniPanelController(
       () => panel,
       () => panel,
@@ -102,8 +121,41 @@ describe('MiniPanelController', () => {
       (position) => positions.push(position)
     )
 
-    controller.rememberPosition({ x: 420, y: 240, width: 330, height: 388 })
+    controller.rememberPosition({ x: 420, y: 240, width: 400, height: 596 })
 
     expect(positions).toEqual([{ x: 420, y: 240 }])
+  })
+
+  it('keeps the bottom edge anchored while matching each Figma panel height', () => {
+    const { panel, resized } = fakePanel()
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display
+    )
+
+    controller.setView('override')
+    controller.setView('picker')
+
+    expect(resized).toEqual([
+      { x: 100, y: 54, width: 400, height: 642 },
+      { x: 100, y: 361, width: 400, height: 335 }
+    ])
+  })
+
+  it('adds the light-frame height while keeping the bottom edge anchored', () => {
+    const { panel, resized } = fakePanel()
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display,
+      () => undefined,
+      () => undefined,
+      () => 6
+    )
+
+    controller.setView('controls')
+
+    expect(resized).toEqual([{ x: 100, y: 94, width: 400, height: 602 }])
   })
 })

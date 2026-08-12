@@ -7,11 +7,17 @@ import {
   serializeProfileConfiguration,
   type ProfileConfiguration
 } from './configuration.js'
+import type { MigrationNoticeListener } from './migration.js'
 import { colorProfileSchema, type ColorProfile } from './model.js'
 
 export interface ProfileConfigurationStorage {
   read(): Promise<string | null>
   write(contents: string): Promise<void>
+}
+
+export interface ProfileRepositoryOptions {
+  /** Called for each lossy decision taken while migrating an older configuration. */
+  onMigrationNotice?: MigrationNoticeListener
 }
 
 export interface DuplicateProfileOptions {
@@ -26,6 +32,7 @@ export interface ProfileRepository {
   save(profile: ColorProfile): Promise<ColorProfile>
   duplicate(profileId: string, options: DuplicateProfileOptions): Promise<ColorProfile>
   delete(profileId: string): Promise<boolean>
+  reorder?(profileIds: readonly string[]): Promise<void>
   setDefaultProfileId(profileId: string | null): Promise<void>
 }
 
@@ -36,7 +43,10 @@ function cloneConfiguration(configuration: ProfileConfiguration): ProfileConfigu
 export class JsonProfileRepository implements ProfileRepository {
   private configuration: ProfileConfiguration | null = null
 
-  public constructor(private readonly storage: ProfileConfigurationStorage) {}
+  public constructor(
+    private readonly storage: ProfileConfigurationStorage,
+    private readonly options: ProfileRepositoryOptions = {}
+  ) {}
 
   public async getConfiguration(): Promise<ProfileConfiguration> {
     return cloneConfiguration(await this.load())
@@ -73,7 +83,7 @@ export class JsonProfileRepository implements ProfileRepository {
   ): Promise<ColorProfile> {
     const source = await this.findById(profileId)
     if (source === null) throw new Error(`Profile ${profileId} does not exist.`)
-    if (await this.findById(options.id) !== null) {
+    if ((await this.findById(options.id)) !== null) {
       throw new Error(`Profile ${options.id} already exists.`)
     }
 
@@ -93,21 +103,37 @@ export class JsonProfileRepository implements ProfileRepository {
       profiles,
       settings: {
         defaultProfileId:
-          defaultProfileId?.toLowerCase() === profileId.toLowerCase()
-            ? null
-            : defaultProfileId
+          defaultProfileId?.toLowerCase() === profileId.toLowerCase() ? null : defaultProfileId
       }
     })
     return true
   }
 
+  public async reorder(profileIds: readonly string[]): Promise<void> {
+    const current = await this.load()
+    const normalized = profileIds.map((profileId) => profileId.toLowerCase())
+    const existing = current.profiles.map((profile) => profile.id.toLowerCase())
+    if (
+      normalized.length !== existing.length ||
+      new Set(normalized).size !== normalized.length ||
+      existing.some((profileId) => !normalized.includes(profileId))
+    ) {
+      throw new Error('Profile order must contain every profile exactly once.')
+    }
+    const byId = new Map(current.profiles.map((profile) => [profile.id.toLowerCase(), profile]))
+    await this.persist({
+      ...current,
+      profiles: normalized.map((profileId) => cloneProfile(byId.get(profileId)!))
+    })
+  }
+
   public async setDefaultProfileId(profileId: string | null): Promise<void> {
     const current = await this.load()
-    const canonicalProfileId = profileId === null
-      ? null
-      : current.profiles.find(
-          (profile) => profile.id.toLowerCase() === profileId.toLowerCase()
-        )?.id
+    const canonicalProfileId =
+      profileId === null
+        ? null
+        : current.profiles.find((profile) => profile.id.toLowerCase() === profileId.toLowerCase())
+            ?.id
 
     if (profileId !== null && canonicalProfileId === undefined) {
       throw new Error(`Profile ${profileId} does not exist.`)
@@ -128,7 +154,9 @@ export class JsonProfileRepository implements ProfileRepository {
       return this.configuration
     }
 
-    const parsedConfiguration = parseProfileConfigurationJson(contents)
+    const parsedConfiguration = parseProfileConfigurationJson(contents, {
+      onMigrationNotice: this.options.onMigrationNotice
+    })
     const parsedJson: unknown = JSON.parse(contents)
     const originalVersion =
       typeof parsedJson === 'object' && parsedJson !== null && 'schemaVersion' in parsedJson

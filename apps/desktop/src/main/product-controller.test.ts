@@ -3,6 +3,7 @@ import type { DisplayCapabilityReport } from '@chromashift/native-client'
 import { describe, expect, it } from 'vitest'
 import { PreviewSessionController } from './preview-session-controller.js'
 import {
+  type ApplicationPickerPort,
   ProductConflictError,
   ProductController,
   type ProductActivationPort,
@@ -11,13 +12,23 @@ import {
 
 class MemoryStorage {
   public contents: string | null = null
-  public read(): Promise<string | null> { return Promise.resolve(this.contents) }
-  public write(contents: string): Promise<void> { this.contents = contents; return Promise.resolve() }
+  public read(): Promise<string | null> {
+    return Promise.resolve(this.contents)
+  }
+  public write(contents: string): Promise<void> {
+    this.contents = contents
+    return Promise.resolve()
+  }
 }
 
 const successfulOutcome = { status: 'activated' as const, resolution: null, failures: [] }
 
-function controller(): { product: ProductController; repository: JsonProfileRepository } {
+function controller(
+  applicationPicker: ApplicationPickerPort = {
+    pick: () => Promise.resolve(null),
+    describe: () => Promise.resolve(null)
+  }
+): { product: ProductController; repository: JsonProfileRepository } {
   const repository = new JsonProfileRepository(new MemoryStorage())
   const native: ProductNativePort = {
     getDisplays: () => Promise.resolve([]),
@@ -38,7 +49,8 @@ function controller(): { product: ProductController; repository: JsonProfileRepo
       getDisplays: native.getDisplays,
       getDisplayCapabilityReport: native.getDisplayCapabilityReport,
       captureBaseline: () => Promise.reject(new Error('Not used.')),
-      applyDisplaySettings: () => Promise.reject(new Error('Not used.'))
+      applyDisplaySettings: () => Promise.reject(new Error('Not used.')),
+      restoreDisplay: () => Promise.reject(new Error('Not used.'))
     },
     {
       beginPreview: () => Promise.resolve(),
@@ -54,9 +66,15 @@ function controller(): { product: ProductController; repository: JsonProfileRepo
       native,
       activation,
       preview,
-      { pick: () => Promise.resolve(null), describe: () => Promise.resolve(null) },
+      applicationPicker,
       {
-        get: () => Promise.resolve({ launchAtStartup: false, launchBehavior: 'tray', closeBehavior: 'tray', theme: 'system' }),
+        get: () =>
+          Promise.resolve({
+            launchAtStartup: false,
+            launchBehavior: 'tray',
+            closeBehavior: 'tray',
+            theme: 'system'
+          }),
         save: (settings) => Promise.resolve(settings),
         apply: () => undefined
       },
@@ -87,5 +105,42 @@ describe('ProductController Default profile', () => {
       enabled: true,
       applications: []
     })
+  })
+})
+
+describe('ProductController application icons', () => {
+  it('hydrates legacy application rules from their executable paths and caches the result', async () => {
+    let iconReads = 0
+    const { product, repository } = controller({
+      pick: () => Promise.resolve(null),
+      describe: () => Promise.resolve(null),
+      resolveIcon: () => {
+        iconReads += 1
+        return Promise.resolve('data:image/png;base64,AA==')
+      }
+    })
+    await repository.save({
+      id: 'tarkov',
+      name: 'Tarkov',
+      enabled: true,
+      applications: [
+        {
+          executableName: 'EscapeFromTarkov.exe',
+          executablePath: 'C:\\Battlestate Games\\Escape From Tarkov\\EscapeFromTarkov.exe'
+        }
+      ],
+      displays: []
+    })
+
+    const first = await product.getState()
+    const second = await product.getStateForBroadcast()
+
+    expect(
+      first.configuration.profiles.find((profile) => profile.id === 'tarkov')?.applications[0]
+    ).toMatchObject({ iconDataUrl: 'data:image/png;base64,AA==' })
+    expect(
+      second.configuration.profiles.find((profile) => profile.id === 'tarkov')?.applications[0]
+    ).toMatchObject({ iconDataUrl: 'data:image/png;base64,AA==' })
+    expect(iconReads).toBe(1)
   })
 })

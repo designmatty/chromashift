@@ -1,6 +1,7 @@
 import {
   JsonProfileRepository,
   type ColorProfile,
+  type ColorSettings,
   type ProfileConfiguration,
   type ProfileConfigurationStorage
 } from '@chromashift/core'
@@ -118,17 +119,28 @@ class FakeNativeActivationPort implements NativeActivationPort {
 
 function profile(
   id: string,
-  color: ColorProfile['color'],
+  color: ColorSettings,
   displayIds: string[],
+  executableName?: string
+): ColorProfile {
+  return targetedProfile(
+    id,
+    displayIds.map((displayId) => ({ displayId, color })),
+    executableName
+  )
+}
+
+function targetedProfile(
+  id: string,
+  displays: ColorProfile['displays'],
   executableName?: string
 ): ColorProfile {
   return {
     id,
     name: id,
     enabled: true,
-    color,
     applications: executableName === undefined ? [] : [{ executableName }],
-    displays: displayIds.map((displayId) => ({ displayId }))
+    displays
   }
 }
 
@@ -137,7 +149,7 @@ function configuration(
   defaultProfileId: string | null = null
 ): ProfileConfiguration {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profiles,
     settings: { defaultProfileId }
   }
@@ -222,6 +234,175 @@ describe('ActivationCoordinator', () => {
       'capture:display:two',
       'apply:display:two',
       'restoreAll:all'
+    ])
+  })
+
+  it('applies a different payload to each display in one profile', async () => {
+    const native = new FakeNativeActivationPort()
+    const perDisplay = targetedProfile(
+      'per-display',
+      [
+        { displayId: 'display:one', color: { saturation: 75 } },
+        { displayId: 'display:two', color: { brightness: 30, gamma: 1.4 } }
+      ],
+      'Multi.exe'
+    )
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([perDisplay])),
+      native,
+      new RecordingLogger()
+    )
+
+    await expect(coordinator.activate(application('Multi.exe'))).resolves.toMatchObject({
+      status: 'activated'
+    })
+
+    expect(
+      native.calls
+        .filter((call) => call.operation === 'apply')
+        .map((call) => [call.displayId, call.settings])
+    ).toEqual([
+      ['display:one', { saturation: 75 }],
+      ['display:two', { brightness: 30, gamma: 1.4 }]
+    ])
+  })
+
+  it('leaves an empty target at baseline and issues no apply write for it', async () => {
+    const native = new FakeNativeActivationPort()
+    const mixed = targetedProfile(
+      'mixed',
+      [
+        { displayId: 'display:one', color: { saturation: 75 } },
+        { displayId: 'display:two', color: {} }
+      ],
+      'Mixed.exe'
+    )
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([mixed])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('Mixed.exe'))
+
+    expect(native.calls.map((call) => `${call.operation}:${call.displayId ?? 'all'}`)).toEqual([
+      'capture:display:one',
+      'apply:display:one'
+    ])
+  })
+
+  it('restores a display whose target became empty in the next profile', async () => {
+    const native = new FakeNativeActivationPort()
+    const both = targetedProfile(
+      'both',
+      [
+        { displayId: 'display:one', color: { saturation: 75 } },
+        { displayId: 'display:two', color: { brightness: 30 } }
+      ],
+      'Both.exe'
+    )
+    const onlyOne = targetedProfile(
+      'only-one',
+      [
+        { displayId: 'display:one', color: { saturation: 75 } },
+        { displayId: 'display:two', color: {} }
+      ],
+      'OnlyOne.exe'
+    )
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([both, onlyOne])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('Both.exe'))
+    await coordinator.activate(application('OnlyOne.exe'))
+
+    expect(native.calls.map((call) => `${call.operation}:${call.displayId ?? 'all'}`)).toEqual([
+      'capture:display:one',
+      'apply:display:one',
+      'capture:display:two',
+      'apply:display:two',
+      'restore:display:two',
+      'capture:display:one',
+      'apply:display:one'
+    ])
+  })
+
+  it('isolates a capability failure on one display from the others', async () => {
+    const native = new FakeNativeActivationPort()
+    native.failApplyDisplayIds.add('display:one')
+    const perDisplay = targetedProfile(
+      'per-display',
+      [
+        { displayId: 'display:one', color: { colorTemperature: 60 } },
+        { displayId: 'display:two', color: { brightness: 30 } }
+      ],
+      'Multi.exe'
+    )
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([perDisplay])),
+      native,
+      new RecordingLogger()
+    )
+
+    const outcome = await coordinator.activate(application('Multi.exe'))
+
+    expect(outcome).toMatchObject({
+      status: 'partialFailure',
+      failures: [{ operation: 'apply', displayId: 'display:one' }]
+    })
+    expect(outcome.failures).toHaveLength(1)
+    expect(
+      native.calls
+        .filter((call) => call.operation === 'apply')
+        .map((call) => [call.displayId, call.settings])
+    ).toEqual([
+      ['display:one', { colorTemperature: 60 }],
+      ['display:two', { brightness: 30 }]
+    ])
+  })
+
+  it('applies targets in persisted order across displays', async () => {
+    const native = new FakeNativeActivationPort()
+    const ordered = targetedProfile(
+      'ordered',
+      [
+        { displayId: 'display:three', color: { hue: 10 } },
+        { displayId: 'display:one', color: { hue: 20 } },
+        { displayId: 'display:two', color: { hue: 30 } }
+      ],
+      'Ordered.exe'
+    )
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([ordered])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('Ordered.exe'))
+
+    expect(
+      native.calls.filter((call) => call.operation === 'apply').map((call) => call.displayId)
+    ).toEqual(['display:three', 'display:one', 'display:two'])
+  })
+
+  it('leaves a connected display the default profile does not target at baseline', async () => {
+    const native = new FakeNativeActivationPort()
+    const defaultOnOne = targetedProfile('default', [
+      { displayId: 'display:one', color: { saturation: 50 } }
+    ])
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([defaultOnOne], 'default')),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('Browser.exe'))
+
+    expect(native.calls.map((call) => call.displayId)).toEqual([
+      'display:one',
+      'display:one'
     ])
   })
 

@@ -3,17 +3,20 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  nativeTheme,
   screen,
   type IpcMainInvokeEvent,
   type OpenDialogOptions
 } from 'electron'
 import { basename, extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { JsonProfileRepository, type ProfileRepository } from '@chromashift/core'
 import {
-  NativeClient,
-  foregroundApplicationChangedDataSchema
-} from '@chromashift/native-client'
+  describeMigrationNotice,
+  JsonProfileRepository,
+  type ProfileRepository
+} from '@chromashift/core'
+import { NativeClient, foregroundApplicationChangedDataSchema } from '@chromashift/native-client'
+import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { ActivationCoordinator } from './activation-coordinator.js'
 import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
@@ -44,6 +47,8 @@ let shutdownCoordinator: ShutdownCoordinator | undefined
 let productController: ProductController | undefined
 let previewController: PreviewSessionController | undefined
 let productStateBroadcastPending = false
+let windowStateSaveTimer: NodeJS.Timeout | undefined
+const TITLE_BAR_HEIGHT = 37
 const logger = new JsonConsoleLogger()
 const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
 const applicationDataPaths = resolveApplicationDataPaths(
@@ -65,18 +70,86 @@ const miniPanelController = new MiniPanelController(
   () => createMiniWindow(),
   (bounds) => screen.getDisplayMatching(bounds),
   () => currentSettings.miniPanelPosition,
-  (position) => saveMiniPanelPosition(position)
+  (position) => saveMiniPanelPosition(position),
+  () => miniPanelHeightAdjustment()
 )
 
-function saveMiniPanelPosition(position: { x: number, y: number }): void {
+function saveMiniPanelPosition(position: { x: number; y: number }): void {
   const currentPosition = currentSettings.miniPanelPosition
   if (currentPosition?.x === position.x && currentPosition.y === position.y) return
   currentSettings = { ...currentSettings, miniPanelPosition: position }
-  void settingsRepository.save(currentSettings).then(() => {
-    scheduleProductStateBroadcast()
-  }).catch((error: unknown) => {
-    logger.write({ level: 'warning', eventName: 'MiniPanelPositionSaveFailed', ...describeError(error) })
-  })
+  void settingsRepository
+    .save(currentSettings)
+    .then(() => {
+      scheduleProductStateBroadcast()
+    })
+    .catch((error: unknown) => {
+      logger.write({
+        level: 'warning',
+        eventName: 'MiniPanelPositionSaveFailed',
+        ...describeError(error)
+      })
+    })
+}
+
+function titleBarOverlayOptions(): { color: string; symbolColor: string; height: number } {
+  const dark =
+    currentSettings.theme === 'dark' ||
+    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  return {
+    color: dark ? '#111114' : '#ebf1f7',
+    symbolColor: dark ? '#e6e6ea' : '#1a1a1f',
+    height: TITLE_BAR_HEIGHT
+  }
+}
+
+function appPanelBackgroundColor(): string {
+  const dark =
+    currentSettings.theme === 'dark' ||
+    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  return dark ? '#111114' : '#ebf1f7'
+}
+
+function applyTitleBarOverlay(): void {
+  if (mainWindow === undefined || mainWindow.isDestroyed()) return
+  mainWindow.setTitleBarOverlay(titleBarOverlayOptions())
+  mainWindow.setBackgroundColor(appPanelBackgroundColor())
+}
+
+/**
+ * Window geometry changes arrive in bursts while dragging or resizing, so the
+ * write is debounced and skipped entirely while maximized bounds are transient.
+ */
+function scheduleWindowStateSave(window: BrowserWindow): void {
+  if (windowStateSaveTimer !== undefined) clearTimeout(windowStateSaveTimer)
+  windowStateSaveTimer = setTimeout(() => {
+    windowStateSaveTimer = undefined
+    if (window.isDestroyed() || window.isMinimized()) return
+    const maximized = window.isMaximized()
+    const bounds = maximized ? currentSettings.windowBounds : window.getNormalBounds()
+    if (
+      maximized === (currentSettings.windowMaximized ?? false) &&
+      bounds?.x === currentSettings.windowBounds?.x &&
+      bounds?.y === currentSettings.windowBounds?.y &&
+      bounds?.width === currentSettings.windowBounds?.width &&
+      bounds?.height === currentSettings.windowBounds?.height
+    ) {
+      return
+    }
+
+    currentSettings = {
+      ...currentSettings,
+      windowMaximized: maximized,
+      ...(bounds === undefined ? {} : { windowBounds: bounds })
+    }
+    void settingsRepository.save(currentSettings).catch((error: unknown) => {
+      logger.write({
+        level: 'warning',
+        eventName: 'WindowStateSaveFailed',
+        ...describeError(error)
+      })
+    })
+  }, 400)
 }
 
 function servicePath(): string {
@@ -130,7 +203,17 @@ async function startNativeService(): Promise<void> {
       detached: process.platform === 'win32'
     })
     profileRepository = new JsonProfileRepository(
-      new AppDataProfileConfigurationStorage(configurationPath)
+      new AppDataProfileConfigurationStorage(configurationPath),
+      {
+        onMigrationNotice: (notice) => {
+          logger.write({
+            level: 'warning',
+            eventName: 'ProfileConfigurationMigrationNotice',
+            message: describeMigrationNotice(notice),
+            ...notice
+          })
+        }
+      }
     )
     const coordinator = new ActivationCoordinator(profileRepository, nativeClient, logger)
     automaticActivation = new AutomaticActivationController(
@@ -176,17 +259,29 @@ async function startNativeService(): Promise<void> {
       })
     }
   } catch (error) {
-    logger.write({ level: 'error', eventName: 'NativeServiceStartupFailed', ...describeError(error) })
+    logger.write({
+      level: 'error',
+      eventName: 'NativeServiceStartupFailed',
+      ...describeError(error)
+    })
   }
 }
 
 function createWindow(): BrowserWindow {
+  const bounds = resolveWindowBounds(
+    currentSettings.windowBounds,
+    screen.getAllDisplays().map((display) => display.workArea)
+  )
   const window = new BrowserWindow({
-    width: 1120,
-    height: 760,
-    minWidth: 880,
-    minHeight: 640,
+    ...bounds,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     show: false,
+    // The renderer draws the title bar content but Windows keeps ownership of the
+    // caption buttons, keyboard handling, DPI scaling, and Snap behavior.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOverlayOptions(),
+    backgroundColor: appPanelBackgroundColor(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -212,7 +307,11 @@ function createWindow(): BrowserWindow {
     if (!wasExiting) {
       window.webContents.send(productIpcChannels.appPanelClosed)
       void previewController?.cancelNonOverride().catch((error: unknown) => {
-        logger.write({ level: 'warning', eventName: 'PreviewCancelOnCloseFailed', ...describeError(error) })
+        logger.write({
+          level: 'warning',
+          eventName: 'PreviewCancelOnCloseFailed',
+          ...describeError(error)
+        })
       })
     }
     windowController.handleClose(event, window)
@@ -223,6 +322,11 @@ function createWindow(): BrowserWindow {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
+  if (currentSettings.windowMaximized === true) window.maximize()
+  window.on('resize', () => scheduleWindowStateSave(window))
+  window.on('move', () => scheduleWindowStateSave(window))
+  window.on('maximize', () => scheduleWindowStateSave(window))
+  window.on('unmaximize', () => scheduleWindowStateSave(window))
   window.once('ready-to-show', () => window.show())
   if (process.env['ELECTRON_RENDERER_URL']) {
     void window.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -234,8 +338,8 @@ function createWindow(): BrowserWindow {
 
 function createMiniWindow(): BrowserWindow {
   const panel = new BrowserWindow({
-    width: 330,
-    height: 388,
+    width: 400,
+    height: 596 + miniPanelHeightAdjustment(),
     useContentSize: true,
     show: false,
     frame: false,
@@ -260,13 +364,17 @@ function createMiniWindow(): BrowserWindow {
   miniWindow = panel
   if (process.platform !== 'win32') panel.on('blur', () => miniPanelController.hide())
   let userMovedPanel = false
-  panel.on('will-move', () => { userMovedPanel = true })
+  panel.on('will-move', () => {
+    userMovedPanel = true
+  })
   panel.on('moved', () => {
     if (!userMovedPanel) return
     userMovedPanel = false
     miniPanelController.rememberPosition(panel.getBounds())
   })
-  panel.on('closed', () => { if (miniWindow === panel) miniWindow = undefined })
+  panel.on('closed', () => {
+    if (miniWindow === panel) miniWindow = undefined
+  })
   panel.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') {
       event.preventDefault()
@@ -305,7 +413,11 @@ if (ownsSingleInstanceLock) {
 }
 
 function configureDesktopLifecycle(): Promise<void> {
-  if (nativeClient === undefined || automaticActivation === undefined || profileRepository === undefined) {
+  if (
+    nativeClient === undefined ||
+    automaticActivation === undefined ||
+    profileRepository === undefined
+  ) {
     return Promise.resolve()
   }
 
@@ -319,9 +431,8 @@ function configureDesktopLifecycle(): Promise<void> {
     },
     logger
   )
-  const trayMenu = new ElectronTrayMenu(
-    trayIconPath(),
-    (bounds) => miniPanelController.toggle(bounds)
+  const trayMenu = new ElectronTrayMenu(trayIconPath(), (bounds) =>
+    miniPanelController.toggle(bounds)
   )
   trayController = new TrayController(
     profileRepository,
@@ -332,10 +443,8 @@ function configureDesktopLifecycle(): Promise<void> {
     logger
   )
   automaticActivation.subscribe(() => scheduleProductStateBroadcast())
-  previewController = new PreviewSessionController(
-    nativeClient,
-    automaticActivation,
-    () => scheduleProductStateBroadcast()
+  previewController = new PreviewSessionController(nativeClient, automaticActivation, () =>
+    scheduleProductStateBroadcast()
   )
   productController = new ProductController(
     profileRepository,
@@ -349,31 +458,35 @@ function configureDesktopLifecycle(): Promise<void> {
           properties: ['openFile'],
           filters: [{ name: 'Windows applications', extensions: ['exe'] }]
         }
-        const result = mainWindow === undefined
-          ? await dialog.showOpenDialog(options)
-          : await dialog.showOpenDialog(mainWindow, options)
+        const result =
+          mainWindow === undefined
+            ? await dialog.showOpenDialog(options)
+            : await dialog.showOpenDialog(mainWindow, options)
         const executablePath = result.filePaths[0]
         if (result.canceled || executablePath === undefined) return null
         const executableName = basename(executablePath)
-        const icon = await app.getFileIcon(executablePath, { size: 'normal' })
         return {
           executableName,
           executablePath,
           friendlyName: basename(executablePath, extname(executablePath)),
-          iconDataUrl: icon.isEmpty() ? null : icon.toDataURL()
+          iconDataUrl: await applicationIconDataUrl(executablePath)
         }
       },
       describe: async (application) => {
-        if (application.path === null || application.executable === null ||
-          application.pid === process.pid) return null
-        const icon = await app.getFileIcon(application.path, { size: 'normal' })
+        if (
+          application.path === null ||
+          application.executable === null ||
+          application.pid === process.pid
+        )
+          return null
         return {
           executableName: application.executable,
           executablePath: application.path,
           friendlyName: application.title || basename(application.path, extname(application.path)),
-          iconDataUrl: icon.isEmpty() ? null : icon.toDataURL()
+          iconDataUrl: await applicationIconDataUrl(application.path)
         }
-      }
+      },
+      resolveIcon: applicationIconDataUrl
     },
     {
       get: () => settingsRepository.get(),
@@ -381,14 +494,39 @@ function configureDesktopLifecycle(): Promise<void> {
       apply: (settings) => {
         currentSettings = settings
         app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup })
+        applyTitleBarOverlay()
+        miniPanelController.refreshSize()
       }
     },
     {
       refreshTray: () => trayController?.refresh() ?? Promise.resolve(),
       stateChanged: () => scheduleProductStateBroadcast()
-    }
+    },
+    app.getVersion()
   )
   return trayController.start()
+}
+
+async function applicationIconDataUrl(executablePath: string): Promise<string | null> {
+  try {
+    const icon = await app.getFileIcon(executablePath, { size: 'normal' })
+    return icon.isEmpty() ? null : icon.toDataURL()
+  } catch (error) {
+    logger.write({
+      level: 'warning',
+      eventName: 'ApplicationIconReadFailed',
+      executablePath,
+      ...describeError(error)
+    })
+    return null
+  }
+}
+
+function miniPanelHeightAdjustment(): number {
+  const dark =
+    currentSettings.theme === 'dark' ||
+    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  return dark ? 0 : 6
 }
 
 function scheduleProductStateBroadcast(): void {
@@ -401,15 +539,22 @@ function scheduleProductStateBroadcast(): void {
       (window): window is BrowserWindow => window !== undefined && !window.webContents.isDestroyed()
     )
     if (controller === undefined || windows.length === 0) return
-    void controller.getStateForBroadcast().then((state) => {
-      for (const window of windows) {
-        if (!window.webContents.isDestroyed()) {
-          window.webContents.send(productIpcChannels.stateChanged, state)
+    void controller
+      .getStateForBroadcast()
+      .then((state) => {
+        for (const window of windows) {
+          if (!window.webContents.isDestroyed()) {
+            window.webContents.send(productIpcChannels.stateChanged, state)
+          }
         }
-      }
-    }).catch((error: unknown) => {
-      logger.write({ level: 'warning', eventName: 'ProductStateBroadcastFailed', ...describeError(error) })
-    })
+      })
+      .catch((error: unknown) => {
+        logger.write({
+          level: 'warning',
+          eventName: 'ProductStateBroadcastFailed',
+          ...describeError(error)
+        })
+      })
   }, 25)
 }
 
@@ -419,13 +564,19 @@ registerProductIpcHandlers(
   assertTrustedRenderer,
   () => shutdownCoordinator?.request('application') ?? Promise.resolve(false),
   openWindow,
-  () => miniPanelController.hide()
+  () => miniPanelController.hide(),
+  () => {
+    mainWindow?.hide()
+    miniPanelController.show()
+  },
+  (view) => miniPanelController.setView(view)
 )
 
 void app.whenReady().then(async () => {
   if (!ownsSingleInstanceLock) return
   currentSettings = await settingsRepository.get()
   app.setLoginItemSettings({ openAtLogin: currentSettings.launchAtStartup })
+  nativeTheme.on('updated', () => applyTitleBarOverlay())
   await startNativeService()
   await configureDesktopLifecycle()
   if (!app.getLoginItemSettings().wasOpenedAtLogin || currentSettings.launchBehavior === 'app') {

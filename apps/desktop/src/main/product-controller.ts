@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_PROFILE_ID, type ColorProfile, type ProfileRepository } from '@chromashift/core'
+import {
+  DEFAULT_PROFILE_ID,
+  type ColorProfile,
+  type DisplayColorTarget,
+  type ProfileConfiguration,
+  type ProfileRepository
+} from '@chromashift/core'
 import type {
   Display,
   DisplayCapabilityReport,
   ForegroundApplication
 } from '@chromashift/native-client'
-import type {
-  ApplicationSelection,
-  AppSettings,
-  ProductState
-} from '../shared/product-api.js'
+import type { ApplicationSelection, AppSettings, ProductState } from '../shared/product-api.js'
 import type { ActivationOutcome } from './activation-coordinator.js'
 import type { ActivationControllerState } from './automatic-activation-controller.js'
 import type { PreviewSessionController } from './preview-session-controller.js'
@@ -32,6 +34,7 @@ export interface ProductActivationPort {
 export interface ApplicationPickerPort {
   pick(): Promise<ApplicationSelection | null>
   describe(application: ForegroundApplication): Promise<ApplicationSelection | null>
+  resolveIcon?(executablePath: string): Promise<string | null>
 }
 
 export interface ProductSettingsPort {
@@ -50,6 +53,7 @@ export class ProductController {
     displays: Display[]
     capabilityReports: Record<string, DisplayCapabilityReport>
   } | null = null
+  #applicationIconCache = new Map<string, Promise<string | null>>()
 
   public constructor(
     private readonly repository: ProfileRepository,
@@ -58,7 +62,8 @@ export class ProductController {
     private readonly preview: PreviewSessionController,
     private readonly applicationPicker: ApplicationPickerPort,
     private readonly settings: ProductSettingsPort,
-    private readonly refresh: ProductRefreshPort
+    private readonly refresh: ProductRefreshPort,
+    private readonly version: string = '0.0.0'
   ) {}
 
   public async getState(): Promise<ProductState> {
@@ -77,18 +82,17 @@ export class ProductController {
 
   public async getStateForBroadcast(): Promise<ProductState> {
     if (this.#hardwareCache === null) return this.getState()
-    return this.#composeState(
-      this.#hardwareCache.displays,
-      this.#hardwareCache.capabilityReports
-    )
+    return this.#composeState(this.#hardwareCache.displays, this.#hardwareCache.capabilityReports)
   }
 
   async #composeState(
     displays: Display[],
     capabilityReports: Record<string, DisplayCapabilityReport>
   ): Promise<ProductState> {
+    const configuration = await this.#configurationWithApplicationIcons()
     return {
-      configuration: await this.repository.getConfiguration(),
+      version: this.version,
+      configuration,
       displays,
       capabilityReports,
       activation: this.activation.state,
@@ -98,12 +102,41 @@ export class ProductController {
     }
   }
 
+  async #configurationWithApplicationIcons(): Promise<ProfileConfiguration> {
+    const configuration = await this.repository.getConfiguration()
+    if (this.applicationPicker.resolveIcon === undefined) return configuration
+
+    const profiles = await Promise.all(
+      configuration.profiles.map(async (profile) => ({
+        ...profile,
+        applications: await Promise.all(
+          profile.applications.map(async (application) => {
+            if (application.iconDataUrl !== undefined || application.executablePath === undefined) {
+              return application
+            }
+            const iconDataUrl = await this.#resolveApplicationIcon(application.executablePath)
+            return iconDataUrl === null ? application : { ...application, iconDataUrl }
+          })
+        )
+      }))
+    )
+    return { ...configuration, profiles }
+  }
+
+  #resolveApplicationIcon(executablePath: string): Promise<string | null> {
+    const key = executablePath.toLowerCase()
+    const cached = this.#applicationIconCache.get(key)
+    if (cached !== undefined) return cached
+    const pending = this.applicationPicker.resolveIcon!(executablePath).catch(() => null)
+    this.#applicationIconCache.set(key, pending)
+    return pending
+  }
+
   public async createProfile(name: string): Promise<ColorProfile> {
     const profile = await this.repository.save({
       id: randomUUID(),
       name,
       enabled: true,
-      color: {},
       applications: [],
       displays: []
     })
@@ -113,9 +146,9 @@ export class ProductController {
 
   public async saveProfile(profile: ColorProfile): Promise<ColorProfile> {
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
-    const saved = await this.repository.save(isDefault
-      ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] }
-      : profile)
+    const saved = await this.repository.save(
+      isDefault ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] } : profile
+    )
     if (
       !saved.enabled &&
       this.activation.state.mode.kind === 'manual' &&
@@ -142,8 +175,10 @@ export class ProductController {
     if (profileId.toLowerCase() === DEFAULT_PROFILE_ID) {
       throw new ProductConflictError('The Default profile cannot be deleted.')
     }
-    if (this.preview.state.state === 'active' &&
-      this.preview.state.profileId.toLowerCase() === profileId.toLowerCase()) {
+    if (
+      this.preview.state.state === 'active' &&
+      this.preview.state.profileId.toLowerCase() === profileId.toLowerCase()
+    ) {
       await this.preview.cancel()
     }
     const deleted = await this.repository.delete(profileId)
@@ -156,6 +191,21 @@ export class ProductController {
     }
     await this.#configurationChanged()
     return true
+  }
+
+  public async reorderProfiles(profileIds: readonly string[]): Promise<void> {
+    const profiles = await this.repository.list()
+    const defaultProfile = profiles.find(
+      (profile) => profile.id.toLowerCase() === DEFAULT_PROFILE_ID
+    )
+    if (defaultProfile === undefined || profileIds[0]?.toLowerCase() !== DEFAULT_PROFILE_ID) {
+      throw new ProductConflictError('The Default profile must remain first.')
+    }
+    if (this.repository.reorder === undefined) {
+      throw new ProductConflictError('Profile reordering is unavailable.')
+    }
+    await this.repository.reorder(profileIds)
+    await this.#configurationChanged()
   }
 
   public async setDefaultProfile(profileId: string | null): Promise<void> {
@@ -191,7 +241,8 @@ export class ProductController {
   public async listApplications(): Promise<ApplicationSelection[]> {
     const selections = await Promise.all(
       (await this.native.getVisibleApplications()).map((application) =>
-        this.applicationPicker.describe(application))
+        this.applicationPicker.describe(application)
+      )
     )
     return selections.filter((selection): selection is ApplicationSelection => selection !== null)
   }
@@ -211,12 +262,8 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
-  public async updatePreview(
-    profileId: string,
-    color: ColorProfile['color'],
-    displayIds: string[]
-  ): Promise<void> {
-    await this.preview.update(profileId, color, displayIds)
+  public async updatePreview(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
+    await this.preview.update(profileId, targets)
     this.refresh.stateChanged()
   }
 
@@ -262,6 +309,6 @@ function assertSuccessfulOutcome(outcome: ActivationOutcome): void {
   if (outcome.status !== 'failed' && outcome.status !== 'partialFailure') return
   throw new Error(
     outcome.failures.map((failure) => failure.message).join(' ') ||
-    `Display activation ended with ${outcome.status}.`
+      `Display activation ended with ${outcome.status}.`
   )
 }

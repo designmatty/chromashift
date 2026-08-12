@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ConfigurationValidationError,
   UnsupportedConfigurationVersionError,
+  createEmptyConfiguration,
   parseProfileConfiguration,
   parseProfileConfigurationJson,
   serializeProfileConfiguration
@@ -11,7 +12,6 @@ const validProfile = {
   id: 'default',
   name: 'Default',
   enabled: true,
-  color: {},
   applications: [],
   displays: []
 }
@@ -19,7 +19,7 @@ const validProfile = {
 describe('profile configuration', () => {
   it('validates and serializes the current configuration', () => {
     const configuration = parseProfileConfiguration({
-      schemaVersion: 1,
+      schemaVersion: 2,
       profiles: [validProfile],
       settings: { defaultProfileId: 'default' }
     })
@@ -29,12 +29,33 @@ describe('profile configuration', () => {
     )
   })
 
-  it('rejects invalid JSON and invalid profile data', () => {
+  it('creates an empty configuration at the current version', () => {
+    expect(createEmptyConfiguration()).toEqual({
+      schemaVersion: 2,
+      profiles: [
+        {
+          id: 'default',
+          name: 'Default profile',
+          enabled: true,
+          applications: [],
+          displays: []
+        }
+      ],
+      settings: { defaultProfileId: 'default' }
+    })
+  })
+
+  it('rejects invalid JSON and invalid per-display data', () => {
     expect(() => parseProfileConfigurationJson('{')).toThrow(ConfigurationValidationError)
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 1,
-        profiles: [{ ...validProfile, color: { saturation: 120 } }],
+        schemaVersion: 2,
+        profiles: [
+          {
+            ...validProfile,
+            displays: [{ displayId: 'display:a', color: { saturation: 120 } }]
+          }
+        ],
         settings: { defaultProfileId: null }
       })
     ).toThrow(ConfigurationValidationError)
@@ -43,7 +64,7 @@ describe('profile configuration', () => {
   it('rejects duplicate profile IDs case-insensitively', () => {
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 1,
+        schemaVersion: 2,
         profiles: [validProfile, { ...validProfile, id: 'DEFAULT' }],
         settings: { defaultProfileId: null }
       })
@@ -53,25 +74,11 @@ describe('profile configuration', () => {
   it('rejects a default profile reference that does not exist', () => {
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 1,
+        schemaVersion: 2,
         profiles: [],
         settings: { defaultProfileId: 'missing' }
       })
     ).toThrow(/does not exist/)
-  })
-
-  it('migrates the version 0 top-level default profile setting', () => {
-    expect(
-      parseProfileConfiguration({
-        schemaVersion: 0,
-        profiles: [validProfile],
-        defaultProfileId: 'default'
-      })
-    ).toEqual({
-      schemaVersion: 1,
-      profiles: [validProfile],
-      settings: { defaultProfileId: 'default' }
-    })
   })
 
   it('rejects unknown schema versions explicitly', () => {
