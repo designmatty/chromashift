@@ -31,7 +31,7 @@ export interface ProfileDetailProps {
   previewing: boolean
   active: boolean
   expandedDisplayIds: string[]
-  onExpandDisplay(displayId: string, expanded: boolean): void
+  onExpandedDisplaysChange(displayIds: string[]): void
   onEdit(): void
   onChange(profile: ColorProfile): void
   onCancel(): void
@@ -65,60 +65,30 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   )
 
   return (
-    <Stack
-      as="section"
-      data-part="profile-detail"
-      h="full"
-      minH="full"
-      p="20px"
-      gap="20px"
-      overflow="auto"
-      rounded="16px"
-      bg="bg.panel"
-    >
-      <Flex as="header" minH="27px" align="center" gap="10px">
+    <Stack as="section" data-part="profile-detail">
+      <Flex as="header" align="center" gap={3}>
         {props.editing ? (
           <>
             <Input
               value={profile.name}
-              maxLength={100}
+              variant={'subtle'}
+              maxLength={65}
+              maxW={'300px'}
               aria-label="Profile name"
-              w="min(303px, 55%)"
-              h="27px"
-              px="10px"
-              py="2px"
-              border="0"
-              rounded="6px"
-              bg="bg.emphasized"
-              color="fg"
-              fontSize="18px"
+              bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
+              fontSize="lg"
+              size={'sm'}
               fontWeight="700"
               onChange={(event) => props.onChange({ ...profile, name: event.target.value })}
             />
             {isDefault && <ProfileBadge>Default</ProfileBadge>}
-            <Flex ml="auto" align="center" gap="10px">
-              <Button
-                h="26px"
-                minH="26px"
-                px="10px"
-                py="5px"
-                rounded="26px"
-                bg="bg.muted"
-                color="fg"
-                fontSize="12px"
-                onClick={props.onCancel}
-              >
+            <Flex ml="auto" align="center" gap={3}>
+              <Button rounded="full" variant={'surface'} size={'2xs'} onClick={props.onCancel}>
                 Cancel
               </Button>
               <Button
-                h="26px"
-                minH="26px"
-                px="10px"
-                py="5px"
-                rounded="26px"
-                bg="fg"
-                color="bg"
-                fontSize="12px"
+                rounded="full"
+                size={'2xs'}
                 disabled={!props.dirty || props.busy || profile.name.trim().length === 0}
                 onClick={props.onSave}
               >
@@ -131,22 +101,20 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
             {activationDisabledReason === null ? (
               activationSwitch
             ) : (
-              <Tooltip ids={{ trigger: activationSwitchId }} label={activationDisabledReason}>
+              <Tooltip
+                ids={{ trigger: activationSwitchId }}
+                content={activationDisabledReason}
+                positioning={{ placement: 'bottom-start' }}
+              >
                 {activationSwitch}
               </Tooltip>
             )}
-            <Heading
-              as="h1"
-              data-part="profile-name"
-              fontSize="18px"
-              fontWeight="700"
-              lineHeight="23px"
-            >
+            <Heading as="h1" data-part="profile-name" size="lg" fontWeight="700">
               {profile.name}
             </Heading>
             {isDefault && <ProfileBadge>Default</ProfileBadge>}
-            <Flex ml="auto" align="center" gap="20px">
-              <Tooltip label={props.previewing ? 'Stop preview' : 'Preview'}>
+            <Flex ml="auto" align="center" gap="5">
+              <Tooltip content={props.previewing ? 'Stop preview' : 'Preview'}>
                 <IconButton
                   variant={props.previewing ? 'subtle' : 'ghost'}
                   boxSize="20px"
@@ -155,10 +123,10 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                   onClick={props.onPreview}
                   aria-label={props.previewing ? 'Stop preview' : 'Preview'}
                 >
-                  {props.previewing ? <EyeOff size={20} /> : <ScanEye size={20} />}
+                  {props.previewing ? <EyeOff /> : <ScanEye />}
                 </IconButton>
               </Tooltip>
-              <Tooltip label="Edit profile">
+              <Tooltip content="Edit profile">
                 <IconButton
                   boxSize="20px"
                   minW="20px"
@@ -167,11 +135,11 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                   onClick={props.onEdit}
                   aria-label="Edit profile"
                 >
-                  <Settings2 size={20} />
+                  <Settings2 />
                 </IconButton>
               </Tooltip>
               <Menu.Root ids={{ trigger: actionsTriggerId }}>
-                <Tooltip ids={{ trigger: actionsTriggerId }} label="More profile actions">
+                <Tooltip ids={{ trigger: actionsTriggerId }} content="More profile actions">
                   <Menu.Trigger asChild>
                     <IconButton
                       boxSize="20px"
@@ -180,7 +148,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                       variant="ghost"
                       aria-label="More profile actions"
                     >
-                      <Ellipsis size={20} />
+                      <Ellipsis />
                     </IconButton>
                   </Menu.Trigger>
                 </Tooltip>
@@ -221,7 +189,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           product={props.product}
           editing={props.editing}
           expandedDisplayIds={props.expandedDisplayIds}
-          onExpandedChange={props.onExpandDisplay}
+          onExpandedChange={props.onExpandedDisplaysChange}
           onChange={props.onChange}
         />
       </Box>
@@ -247,16 +215,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
 
 function ProfileBadge({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <Badge
-      h="20px"
-      px="6px"
-      py="2px"
-      rounded="6px"
-      bg="bg.muted"
-      color="fg.muted"
-      fontSize="12px"
-      fontWeight="500"
-    >
+    <Badge bg={'colorPalette.muted'} color={'colorPalette.fg'}>
       {children}
     </Badge>
   )
@@ -270,18 +229,11 @@ function SectionHeading({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <Flex h="22px" mb="10px" align="center" justify="space-between" gap="12px">
-      <Heading as="h2" fontSize="18px" fontWeight="500" lineHeight="23px">
+    <Flex mb="10px" align="start" justify="space-between" gap="0" flexDir={'column'}>
+      <Heading as="h2" fontSize="lg" fontWeight="500">
         {title}
       </Heading>
-      <Text
-        minW="0"
-        overflow="hidden"
-        fontSize="14px"
-        textAlign="right"
-        textOverflow="ellipsis"
-        whiteSpace="nowrap"
-      >
+      <Text fontSize="sm" color={'fg.muted'}>
         {children}
       </Text>
     </Flex>

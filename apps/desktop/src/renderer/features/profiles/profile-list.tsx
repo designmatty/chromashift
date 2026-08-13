@@ -1,4 +1,16 @@
-import { Box, Button, Flex, IconButton, Image, Menu, Portal, Stack, Text } from '@chakra-ui/react'
+import {
+  Badge,
+  Box,
+  Button,
+  Flex,
+  IconButton,
+  Image,
+  Menu,
+  Portal,
+  ScrollArea,
+  Stack,
+  Text
+} from '@chakra-ui/react'
 import {
   AppWindow,
   Copy,
@@ -60,82 +72,98 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
   }
 
   return (
-    <Flex as="section" data-part="profile-list" h="full" minH="0" direction="column" gap="10px">
-      <Flex as="header" h="20px" align="center" gap="10px" color="fg.muted" fontSize="14px">
+    <Flex as="aside" data-part="settings-nav" direction="column" gap="3" width={'245px'}>
+      <Flex as="header" align="center" gap="3" color="fg.muted">
         <Text as="strong" fontWeight="500">
           Profiles
         </Text>
-        <Flex ml="auto" align="center" gap="10px">
-          <Tooltip label="New profile">
+        <Flex ml="auto" align="center" gap="2">
+          <Badge aria-label={`${props.profiles.length} profiles`} rounded={'full'}>
+            {props.profiles.length}
+          </Badge>
+          <Tooltip content="New profile" positioning={{ placement: 'top-end' }} showArrow>
             <IconButton
-              variant="ghost"
-              size="xs"
-              boxSize="16px"
-              minW="16px"
-              p="0"
+              variant="surface"
+              size="sm"
+              rounded={'full'}
+              boxSize="5"
+              minW="5"
               aria-label="New profile"
               onClick={props.onCreate}
             >
               <Plus size={16} />
             </IconButton>
           </Tooltip>
-          <Flex
-            boxSize="20px"
-            align="center"
-            justify="center"
-            rounded="full"
-            bg="bg.panel"
-            color="fg"
-            fontSize="12px"
-            fontWeight="700"
-            aria-label={`${props.profiles.length} profiles`}
-          >
-            {props.profiles.length}
-          </Flex>
         </Flex>
       </Flex>
-      <Stack alignContent="start" gap="10px">
-        {props.profiles.map((profile) => {
-          const isDefault = profile.id.toLowerCase() === DEFAULT_ID
-          return (
-            <ProfileListItem
-              key={profile.id}
-              profile={profile}
-              selected={profile.id === props.selectedId}
-              active={profile.id === props.activeId}
-              editing={profile.id === props.editingProfileId}
-              previewing={profile.id === props.previewingProfileId}
-              dragging={draggedId === profile.id}
-              onDragStart={(event) => {
-                setDraggedId(profile.id)
-                event.dataTransfer.effectAllowed = 'move'
-                event.dataTransfer.setData('text/plain', profile.id)
-              }}
-              onDragEnd={() => setDraggedId(null)}
-              onDragOver={(event) => {
-                if (!isDefault && draggedId !== null) event.preventDefault()
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                dropBefore(profile.id)
-              }}
-              onSelect={() => props.onSelect(profile)}
-              onEdit={() => props.onEdit(profile)}
-              onPreview={() => props.onPreview(profile)}
-              onDuplicate={() => props.onDuplicate(profile)}
-              onToggleEnabled={() => props.onToggleEnabled(profile)}
-              onDelete={() => props.onDelete(profile)}
-            />
-          )
-        })}
-      </Stack>
+      <ScrollArea.Root size={'xs'}>
+        <ScrollArea.Viewport
+          css={{
+            '--scroll-shadow-size': '4rem',
+            maskImage: 'linear-gradient(#000, #000)',
+            '&[data-overflow-y]': {
+              maskImage:
+                'linear-gradient(#000,#000,transparent 0,#000 var(--scroll-shadow-size),#000 calc(100% - var(--scroll-shadow-size)),transparent)',
+              '&[data-at-top]': {
+                maskImage:
+                  'linear-gradient(180deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
+              },
+              '&[data-at-bottom]': {
+                maskImage:
+                  'linear-gradient(0deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
+              }
+            }
+          }}
+        >
+          <ScrollArea.Content>
+            <Stack alignContent="start" gap={3}>
+              {props.profiles.map((profile) => {
+                const isDefault = profile.id.toLowerCase() === DEFAULT_ID
+                return (
+                  <ProfileListItem
+                    key={profile.id}
+                    profile={profile}
+                    selected={profile.id === props.selectedId}
+                    active={profile.id === props.activeId}
+                    editing={profile.id === props.editingProfileId}
+                    previewing={profile.id === props.previewingProfileId}
+                    dragging={draggedId === profile.id}
+                    onDragStart={(event) => {
+                      setDraggedId(profile.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('text/plain', profile.id)
+                    }}
+                    onDragEnd={() => setDraggedId(null)}
+                    onDragOver={(event) => {
+                      if (!isDefault && draggedId !== null) event.preventDefault()
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      dropBefore(profile.id)
+                    }}
+                    onSelect={() => props.onSelect(profile)}
+                    onEdit={() => props.onEdit(profile)}
+                    onPreview={() => props.onPreview(profile)}
+                    onDuplicate={() => props.onDuplicate(profile)}
+                    onToggleEnabled={() => props.onToggleEnabled(profile)}
+                    onDelete={() => props.onDelete(profile)}
+                  />
+                )
+              })}
+            </Stack>
+          </ScrollArea.Content>
+        </ScrollArea.Viewport>
+        <ScrollArea.Scrollbar />
+      </ScrollArea.Root>
+
       <Flex
         as="footer"
         data-part="profile-list-footer"
-        h="20px"
         mt="auto"
         align="center"
-        gap="10px"
+        gap={3}
+        position={'sticky'}
+        bottom={0}
       >
         <Switch
           checked={props.automatic}
@@ -143,18 +171,15 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
         >
           Auto switch
         </Switch>
-        <Tooltip label="Settings">
+        <Tooltip content="Settings" showArrow positioning={{ placement: 'top-end' }}>
           <IconButton
             variant="ghost"
             size="xs"
-            boxSize="20px"
-            minW="20px"
             ml="auto"
-            p="0"
             aria-label="Settings"
             onClick={props.onOpenSettings}
           >
-            <SettingsIcon size={20} />
+            <SettingsIcon />
           </IconButton>
         </Tooltip>
       </Flex>
@@ -191,20 +216,24 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
       data-selected={props.selected ? '' : undefined}
       data-disabled={props.profile.enabled ? undefined : ''}
       w="full"
-      minW="0"
       h="40px"
-      pl="6px"
-      pr="7px"
+      px={1}
       py="5px"
       align="center"
-      gap="4px"
-      rounded="33px"
+      gap="1"
+      rounded="full"
       bg={props.selected ? 'bg.panel' : 'transparent'}
       borderWidth={props.selected ? '1px' : '0'}
       borderColor="border"
       opacity={props.dragging ? '0.55' : '1'}
       _hover={{ bg: 'bg.panel' }}
-      _dark={{ borderWidth: '0' }}
+      _dark={{
+        borderWidth: '0',
+        bg: props.selected ? 'bg.muted' : 'transparent',
+        _hover: {
+          bg: 'bg.muted'
+        }
+      }}
       css={{
         '& [data-part="profile-actions-trigger"] svg': {
           opacity: 0,
@@ -214,6 +243,7 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
           { opacity: 1 }
       }}
       draggable={!isDefault}
+      className="group"
       onDragStart={props.onDragStart}
       onDragEnd={props.onDragEnd}
       onDragOver={props.onDragOver}
@@ -222,12 +252,11 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
       <Button
         data-part="profile-select"
         variant="plain"
-        minW="0"
         minH="30px"
         p="0"
         flex="1"
         justifyContent="flex-start"
-        gap="10px"
+        gap={3}
         color="inherit"
         textAlign="left"
         onClick={props.onSelect}
@@ -235,7 +264,6 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         <ProfileIcon profile={props.profile} />
         <Text
           as="strong"
-          minW="0"
           flex="1"
           overflow="hidden"
           color={props.profile.enabled ? 'inherit' : 'fg.muted'}
@@ -249,26 +277,28 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         {props.active && (
           <Box
             boxSize="6px"
-            flex="none"
             rounded="full"
-            bg="accent.active"
+            bg="orange.solid"
             aria-label="Active profile"
+            transform={'translateX(15px)'}
+            transition={'transform'}
+            _groupHover={{
+              transform: 'translateX(0)'
+            }}
           />
         )}
       </Button>
       <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
-        <Tooltip ids={{ trigger: actionsTriggerId }} label="Profile actions">
+        <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
           <Menu.Trigger asChild>
             <IconButton
               data-part="profile-actions-trigger"
-              variant="ghost"
-              size="xs"
-              boxSize="16px"
-              minW="16px"
-              p="0"
+              variant="plain"
+              size="2xs"
+              borderRadius={'full'}
               aria-label="Profile actions"
             >
-              <Ellipsis size={16} />
+              <Ellipsis />
             </IconButton>
           </Menu.Trigger>
         </Tooltip>
@@ -311,14 +341,14 @@ function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element 
   if (profile.id.toLowerCase() === DEFAULT_ID) {
     return (
       <ProfileIconFrame>
-        <Eclipse size={20} />
+        <Eclipse />
       </ProfileIconFrame>
     )
   }
   if (!profile.enabled) {
     return (
       <ProfileIconFrame disabled>
-        <PowerOff size={20} />
+        <PowerOff />
       </ProfileIconFrame>
     )
   }
@@ -326,7 +356,7 @@ function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element 
   if (applications.length === 0) {
     return (
       <ProfileIconFrame>
-        <Palette size={20} />
+        <Palette />
       </ProfileIconFrame>
     )
   }

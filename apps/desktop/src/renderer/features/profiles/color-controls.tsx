@@ -122,7 +122,7 @@ export function ColorControls({
   rememberedColorValues.set(key, remembered)
 
   return (
-    <Stack gap="12px" px={compact ? '10px' : '0'}>
+    <Stack gap={compact ? 4 : 3}>
       {controls.map((control) => {
         const support = controlSupport(control.key, display, report)
         const value = color[control.key]
@@ -131,23 +131,16 @@ export function ColorControls({
         const row = (
           <Box
             data-part="color-control"
-            minW="0"
-            h={compact ? '56px' : '25px'}
-            display={compact ? 'block' : 'grid'}
+            display={'flex'}
             gridTemplateColumns={
               compact ? undefined : { base: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' }
             }
             alignItems="center"
-            gap="10px"
+            gap={compact ? 2 : 2}
+            flexDirection={compact ? 'column' : 'row'}
             tabIndex={support.available ? undefined : 0}
           >
-            <Flex
-              minW="0"
-              h={compact ? '21px' : undefined}
-              mb={compact ? '10px' : '0'}
-              align="center"
-              gap="10px"
-            >
+            <Flex h={compact ? '21px' : undefined} align="center" gap={3} width={'100%'}>
               <Checkbox
                 checked={enabled}
                 disabled={!editable || !support.available}
@@ -163,42 +156,53 @@ export function ColorControls({
                   onChange(next, { ...remembered })
                 }}
               >
-                <Text
-                  as="strong"
-                  minW="0"
-                  flex="1"
-                  overflow="hidden"
-                  color={enabled ? 'fg' : 'fg.muted'}
-                  fontSize="16px"
-                  fontWeight="500"
-                  textOverflow="ellipsis"
-                  whiteSpace="nowrap"
-                >
-                  {control.label}
-                </Text>
+                {control.label}
               </Checkbox>
-              <Text
-                as="span"
-                w={compact || !enabled || !support.available ? 'auto' : '60px'}
-                flex="none"
-                px={compact || !enabled || !support.available ? '0' : '10px'}
-                py={compact || !enabled || !support.available ? '0' : '2px'}
-                rounded="6px"
-                bg={compact || !enabled || !support.available ? 'transparent' : 'bg.emphasized'}
-                color={!support.available ? 'fg' : 'inherit'}
-                fontFamily="mono"
-                fontSize={compact && enabled ? '16px' : enabled ? '16px' : '12px'}
-                textAlign="right"
-                fontVariantNumeric="tabular-nums"
-              >
-                {!support.available
-                  ? support.status
-                  : enabled
-                    ? formatValue(control.key, value)
-                    : editable && !compact
-                      ? formatValue(control.key, rememberedValue)
+              {editable && !compact && support.available ? (
+                <NumberInput.Root
+                  ml="auto"
+                  flex="none"
+                  onValueChange={({ valueAsNumber: inputValue }) => {
+                    if (!Number.isFinite(inputValue)) return
+                    const nextValue = Math.min(control.max, Math.max(control.min, inputValue))
+                    remembered[control.key] = nextValue
+                    rememberedColorValues.set(key, remembered)
+                    onChange({ ...color, [control.key]: nextValue }, { ...remembered })
+                  }}
+                  min={control.min}
+                  max={control.max}
+                  step={control.step}
+                  value={String(value ?? rememberedValue)}
+                  allowOverflow={false}
+                  disabled={!enabled}
+                  width="80px"
+                  size="xs"
+                >
+                  <NumberInput.Control />
+                  <NumberInput.Input
+                    aria-label={`${control.label} value for ${display?.name ?? displayId}`}
+                    fontFamily="mono"
+                    fontVariantNumeric="tabular-nums"
+                    bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
+                  />
+                </NumberInput.Root>
+              ) : (
+                <Text
+                  ml="auto"
+                  flex="none"
+                  bg={compact || !enabled || !support.available ? 'transparent' : 'bg'}
+                  color={!support.available ? 'fg/70' : 'inherit'}
+                  fontFamily="mono"
+                  fontSize={compact && enabled ? 'sm' : enabled ? 'sm' : 'xs'}
+                  textAlign="right"
+                >
+                  {!support.available
+                    ? support.status
+                    : enabled
+                      ? formatValue(control.key, value)
                       : 'Not overridden'}
-              </Text>
+                </Text>
+              )}
             </Flex>
             <Slider
               value={[value ?? rememberedValue]}
@@ -221,7 +225,11 @@ export function ColorControls({
         return support.available ? (
           <Box key={control.key}>{row}</Box>
         ) : (
-          <Tooltip key={control.key} label={support.reason}>
+          <Tooltip
+            key={control.key}
+            content={support.reason}
+            positioning={{ placement: 'top-start' }}
+          >
             {row}
           </Tooltip>
         )
@@ -257,16 +265,16 @@ export function ColorSummary({
           <Box
             as="dd"
             w={value === undefined ? 'auto' : '60px'}
-            m="0"
             px={value === undefined ? '0' : '10px'}
-            py={value === undefined ? '0' : '2px'}
-            rounded="6px"
-            bg={value === undefined ? 'transparent' : 'bg.emphasized'}
+            rounded="md"
+            bg={value === undefined ? 'transparent' : 'bg.muted'}
             fontFamily="mono"
-            fontSize={value === undefined ? '12px' : '16px'}
-            textAlign="right"
-            fontVariantNumeric="tabular-nums"
+            fontSize={value === undefined ? 'xs' : 'md'}
+            textAlign="center"
             tabIndex={support.available ? undefined : 0}
+            _dark={{
+              bg: value === undefined ? 'transparent' : 'bg.emphasized'
+            }}
           >
             {!support.available
               ? support.status
@@ -276,21 +284,13 @@ export function ColorSummary({
           </Box>
         )
         return (
-          <Flex
-            data-part="color-summary-item"
-            minW="0"
-            h="21px"
-            align="center"
-            gap="10px"
-            key={control.key}
-          >
+          <Flex data-part="color-summary-item" align="center" gap={3} key={control.key}>
             <Text
               as="dt"
-              minW="0"
               flex="1"
               overflow="hidden"
               color={value === undefined ? 'fg.muted' : 'fg'}
-              fontSize="16px"
+              fontSize="md"
               fontWeight="500"
               textOverflow="ellipsis"
               whiteSpace="nowrap"
@@ -300,7 +300,7 @@ export function ColorSummary({
             {support.available ? (
               valueElement
             ) : (
-              <Tooltip label={support.reason}>{valueElement}</Tooltip>
+              <Tooltip content={support.reason}>{valueElement}</Tooltip>
             )}
           </Flex>
         )
@@ -314,4 +314,4 @@ function formatValue(key: ColorKey, value: number): string {
     ? value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
     : `${Math.round(value)}%`
 }
-import { Box, Flex, Grid, Stack, Text } from '@chakra-ui/react'
+import { Box, Flex, Grid, NumberInput, Stack, Text } from '@chakra-ui/react'

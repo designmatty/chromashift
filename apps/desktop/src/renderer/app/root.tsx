@@ -51,13 +51,14 @@ export function CenterState({
 }): React.JSX.Element {
   return (
     <Stack
-      minH="260px"
+      minH="100%"
       placeContent="center"
       align="center"
-      gap="10px"
+      gap={3}
       color="fg.muted"
       aria-busy={busy || undefined}
       role={role}
+      bg={'bg.panel'}
     >
       {busy && <Spinner size="md" borderWidth="2px" color="fg" />}
       {title !== undefined && (

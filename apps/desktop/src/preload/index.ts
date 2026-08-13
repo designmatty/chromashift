@@ -116,6 +116,8 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.hideMiniPanel, emptyRequestSchema, voidResultSchema, {}),
   showMiniPanel: () =>
     invoke(productIpcChannels.showMiniPanel, emptyRequestSchema, voidResultSchema, {}),
+  openMiniPanelDevTools: () =>
+    invoke(productIpcChannels.openMiniPanelDevTools, emptyRequestSchema, voidResultSchema, {}),
   setMiniPanelView: (view) =>
     invoke(productIpcChannels.setMiniPanelView, setMiniPanelViewRequestSchema, voidResultSchema, {
       view

@@ -2,18 +2,21 @@ import {
   Badge,
   Box,
   Button,
+  createListCollection,
   Flex,
   Grid,
+  HStack,
+  Icon,
   IconButton,
-  Menu,
   Portal,
+  RadioGroup,
+  Select,
   Stack,
   Text
 } from '@chakra-ui/react'
 import {
   ArrowLeft,
-  Check,
-  ChevronDown,
+  Bug,
   ChevronsUpDown,
   Monitor,
   RefreshCcwDot,
@@ -30,7 +33,6 @@ import {
   type ColorSettings
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ColorControls, resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -39,6 +41,13 @@ import { run } from '@/lib/product-result'
 import type { ProductError, ProductState } from '../../../shared/product-api.js'
 
 const DEFAULT_ID = 'default'
+const AUTOMATIC_ID = '__automatic__'
+
+interface MiniProfilePickerItem {
+  label: string
+  value: string
+  global?: boolean
+}
 
 export function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
   const [picker, setPicker] = useState(false)
@@ -72,6 +81,20 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const [dirty, setDirty] = useState(override !== null)
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(() =>
     chooseInitialDisplay(product, appliedProfile)
+  )
+  const pickerItems = useMemo(
+    () =>
+      [
+        { label: 'Auto switch', value: AUTOMATIC_ID },
+        ...product.configuration.profiles
+          .filter((profile) => profile.enabled)
+          .map((profile) => ({
+            label: profile.name,
+            value: profile.id,
+            global: profile.id === DEFAULT_ID
+          }))
+      ] satisfies MiniProfilePickerItem[],
+    [product.configuration.profiles]
   )
 
   useProductTheme(product.settings.theme)
@@ -116,373 +139,372 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     setDirty(false)
   }
 
-  const titleBar = (
-    <MiniPanelTitleBar onClose={() => void run(window.chromaShift.hideMiniPanel(), setError)} />
-  )
+  function renderContent(): React.ReactNode {
+    if (active === undefined || draft === undefined) {
+      return <Empty title="No profiles available" />
+    }
 
-  if (active === undefined || draft === undefined) {
-    return (
-      <MiniPanelFrame>
-        {titleBar}
-        <Empty title="No profiles available" />
-      </MiniPanelFrame>
-    )
-  }
+    if (picker) {
+      const pickerValue = product.activation.mode.kind === 'automatic' ? AUTOMATIC_ID : active.id
+      const [automaticItem, ...profileItems] = pickerItems
 
-  if (picker) {
-    return (
-      <MiniPanelFrame picker>
-        {titleBar}
-        <Box h="43px" minH="43px" mx="10px">
-          <Button
-            variant="plain"
-            w="full"
-            h="43px"
-            px="20px"
-            py="0"
-            justifyContent="flex-start"
-            gap="10px"
-            color="inherit"
-            textAlign="left"
-            onClick={() => setPicker(false)}
-          >
-            <ArrowLeft size={20} />
-            <Text as="strong" fontSize="18px" fontWeight="700">
-              Color controls
-            </Text>
-          </Button>
-        </Box>
-        <Box
-          minH="0"
-          flex="1"
-          mx="10px"
-          mb="10px"
-          p="20px"
-          overflowY="auto"
-          borderWidth="1px"
-          borderColor="bg.muted"
-          rounded="20px"
-          scrollbarWidth="thin"
-        >
-          <PickerRow
-            selected={product.activation.mode.kind === 'automatic'}
-            onClick={() => void choose(null)}
-          >
-            <Checkbox checked={product.activation.mode.kind === 'automatic'} />
-            <Text as="span">Auto switch</Text>
-          </PickerRow>
+      return (
+        <>
           <Box
-            h="25px"
-            borderTopWidth="1px"
-            borderColor="bg.muted"
-            transform="translateY(12px)"
-            aria-hidden="true"
-          />
-          <Stack gap="12px">
-            {product.configuration.profiles
-              .filter((profile) => profile.enabled)
-              .map((profile) => (
-                <PickerRow
-                  selected={product.activation.mode.kind === 'manual' && active.id === profile.id}
-                  onClick={() => void choose(profile.id)}
-                  key={profile.id}
+            flex="1"
+            mx="3"
+
+            borderWidth="1px"
+            borderColor="border"
+            rounded="2xl"
+            bg="bg.panel"
+            overflowY="auto"
+            alignContent={'stretch'}
+          >
+            <RadioGroup.Root
+              display={'flex'}
+              flexDirection={'column'}
+              value={pickerValue}
+              onValueChange={(details) => {
+                void choose(details.value === AUTOMATIC_ID ? null : details.value)
+              }}
+            >
+              <RadioGroup.Label srOnly>Choose active profile</RadioGroup.Label>
+              {automaticItem !== undefined && (
+                <Box
+                  position={'sticky'}
+                  top={0}
+                  bg={'bg.panel'}
+                  zIndex={1}
+                  px={2}
+                  py={1}
+                  borderBottomWidth="1px"
+                  borderColor="border.muted"
                 >
-                  <Checkbox
-                    checked={product.activation.mode.kind === 'manual' && active.id === profile.id}
+                  <MiniProfilePickerOption
+                    item={automaticItem}
+                    selected={automaticItem.value === pickerValue}
+                    onSelect={() => void choose(null)}
                   />
-                  <Text as="span" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                    {profile.name}
-                  </Text>
-                  {profile.id === DEFAULT_ID && (
-                    <Badge
-                      h="20px"
-                      px="6px"
-                      py="2px"
-                      rounded="6px"
-                      bg="bg.muted"
-                      color="fg.muted"
-                      fontSize="12px"
-                      fontWeight="500"
-                    >
-                      Global
-                    </Badge>
-                  )}
-                </PickerRow>
-              ))}
-          </Stack>
-        </Box>
-      </MiniPanelFrame>
-    )
-  }
+                </Box>
+              )}
+              {profileItems.length > 0 && (
+                <>
+                  <Flex gap={1} px={2} py={4} flexDirection={'column'}>
+                    {profileItems.map((item) => (
+                      <MiniProfilePickerOption
+                        item={item}
+                        selected={item.value === pickerValue}
+                        onSelect={() => void choose(item.value)}
+                        key={item.value}
+                      />
+                    ))}
+                  </Flex>
+                </>
+              )}
+            </RadioGroup.Root>
+          </Box>
+          <Flex as="footer" mx="5" py="3" align="center" gap="2">
+            <Button
+              variant="plain"
+              padding={0}
+              w="full"
+              justifyContent="flex-start"
+              gap={3}
+              textAlign="left"
+              onClick={() => setPicker(false)}
+            >
+              <ArrowLeft />
+              <Text as="strong" fontSize="18px" fontWeight="700">
+                Back
+              </Text>
+            </Button>
+          </Flex>
+        </>
+      )
+    }
 
-  const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
-  const selectedTarget =
-    selectedDisplayId === null ? undefined : findDisplayTarget(draft, selectedDisplayId)
-  const selectedColor = selectedTarget?.color ?? {}
+    const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
+    const selectedTarget =
+      selectedDisplayId === null ? undefined : findDisplayTarget(draft, selectedDisplayId)
+    const selectedColor = selectedTarget?.color ?? {}
 
-  return (
-    <MiniPanelFrame>
-      {titleBar}
-      {dirty && (
-        <Grid
-          h="46px"
-          minH="46px"
-          mx="10px"
-          p="10px"
-          templateColumns="repeat(2, minmax(0, 1fr))"
-          gap="10px"
-        >
-          <Button
-            variant="subtle"
-            h="26px"
-            minH="26px"
-            px="10px"
-            py="5px"
-            rounded="26px"
-            bg="bg.muted"
-            color="fg"
-            fontSize="12px"
-            onClick={() => {
-              resetRememberedColorValues(active)
-              setDraft(structuredClone(active))
-              setDirty(false)
-              void run(window.chromaShift.cancelPreview(), setError)
-            }}
-          >
-            Reset changes
-          </Button>
-          <Button
-            h="26px"
-            minH="26px"
-            px="10px"
-            py="5px"
-            rounded="26px"
-            bg="white"
-            color="#111114"
-            fontSize="12px"
-            onClick={() =>
-              void run(window.chromaShift.confirmPreview(draft, 'preserve'), setError).then(
-                (saved) => {
-                  if (saved === undefined) return
-                  setDraft(structuredClone(saved))
-                  setDirty(false)
-                }
-              )
-            }
-          >
-            Update profile
-          </Button>
-        </Grid>
-      )}
-      {error !== null && (
-        <Box
-          mx="10px"
-          mb="8px"
-          px="10px"
-          py="7px"
-          rounded="6px"
-          bg="status.errorBg"
-          color="fg.error"
-        >
-          {error.message}
-        </Box>
-      )}
-      <Box
-        minH="0"
-        flex="1"
-        mx="10px"
-        p="20px"
-        overflow="hidden"
-        borderWidth="1px"
-        borderColor="bg.muted"
-        rounded="20px"
-        bg="bg.panel"
-      >
-        {product.displays.length > 1 && selectedDisplay !== undefined && (
-          <MiniDisplaySelect
-            displays={product.displays}
-            selectedId={selectedDisplay.id}
-            onSelect={setSelectedDisplayId}
-          />
-        )}
-        {selectedDisplay === undefined || selectedDisplayId === null ? (
-          <Empty title="No displays connected" />
-        ) : (
-          <ColorControls
-            profileId={draft.id}
-            displayId={selectedDisplayId}
-            color={selectedColor}
-            lastColorValues={selectedTarget?.lastColorValues}
-            product={product}
-            editable
-            onChange={(color, lastColorValues) => {
-              const next = setDisplayTarget(draft, {
-                displayId: selectedDisplayId,
-                color,
-                lastColorValues
-              })
-              if (sameAppliedColors(next, active)) {
+    return (
+      <>
+        {dirty && (
+          <Grid p="3" templateColumns="repeat(2, minmax(0, 1fr))" gap={3}>
+            <Button
+              variant="solid"
+              size={'2xs'}
+              borderRadius={'full'}
+              onClick={() => {
                 resetRememberedColorValues(active)
                 setDraft(structuredClone(active))
                 setDirty(false)
-                if (dirty || override !== null) {
-                  void run(window.chromaShift.cancelPreview(), setError)
-                }
-                return
+                void run(window.chromaShift.cancelPreview(), setError)
+              }}
+            >
+              Reset changes
+            </Button>
+            <Button
+              variant="subtle"
+              size={'2xs'}
+              borderRadius={'full'}
+              onClick={() =>
+                void run(window.chromaShift.confirmPreview(draft, 'preserve'), setError).then(
+                  (saved) => {
+                    if (saved === undefined) return
+                    setDraft(structuredClone(saved))
+                    setDirty(false)
+                  }
+                )
               }
-              setDraft(next)
-              setDirty(true)
-            }}
-            compact
-          />
+            >
+              Update profile
+            </Button>
+          </Grid>
         )}
-      </Box>
-      <Flex as="footer" h="66px" minH="66px" mx="10px" p="10px" align="center" gap="20px">
-        <Button
-          data-part="active-profile"
-          variant="plain"
-          minW="0"
-          w="196px"
-          h="46px"
-          p="0"
-          mr="auto"
-          display="grid"
-          gridTemplateColumns="20px minmax(0, 1fr)"
-          alignItems="center"
-          gap="10px"
-          color="inherit"
-          textAlign="left"
-          onClick={() => setPicker(true)}
-        >
-          <ChevronsUpDown size={20} />
-          <Stack minW="0" gap="0">
-            <Text
-              as="small"
-              overflow="hidden"
-              color="fg.muted"
-              fontSize="18px"
-              fontWeight="400"
-              lineHeight="23px"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}
-            </Text>
-            <Text
-              as="strong"
-              overflow="hidden"
-              fontSize="18px"
-              fontWeight="700"
-              lineHeight="23px"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {active.name}
-            </Text>
-          </Stack>
-        </Button>
-        <Tooltip label="Open settings">
-          <IconButton
-            variant="ghost"
-            boxSize="20px"
-            minW="20px"
-            p="0"
-            onClick={() => void window.chromaShift.openAppPanel('settings')}
-            aria-label="Open settings"
+        {error !== null && (
+          <Box
+            mx={3}
+            mb="2"
+            px="4"
+            py="1.5"
+            rounded="lg"
+            bg="bg.error"
+            color="fg.error"
+            fontWeight={'700'}
           >
-            <SettingsIcon size={20} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip label="Restore original display settings">
-          <IconButton
-            variant="ghost"
-            boxSize="20px"
-            minW="20px"
-            p="0"
-            onClick={() => void run(window.chromaShift.restoreBaseline(), setError)}
-            aria-label="Restore original display settings"
+            {error.message}
+          </Box>
+        )}
+        <MiniPanelContent>
+          {product.displays.length > 1 && selectedDisplay !== undefined && (
+            <MiniDisplaySelect
+              displays={product.displays}
+              selectedId={selectedDisplay.id}
+              onSelect={setSelectedDisplayId}
+            />
+          )}
+          {selectedDisplay === undefined || selectedDisplayId === null ? (
+            <Empty title="No displays connected" />
+          ) : (
+            <ColorControls
+              profileId={draft.id}
+              displayId={selectedDisplayId}
+              color={selectedColor}
+              lastColorValues={selectedTarget?.lastColorValues}
+              product={product}
+              editable
+              onChange={(color, lastColorValues) => {
+                const next = setDisplayTarget(draft, {
+                  displayId: selectedDisplayId,
+                  color,
+                  lastColorValues
+                })
+                if (sameAppliedColors(next, active)) {
+                  resetRememberedColorValues(active)
+                  setDraft(structuredClone(active))
+                  setDirty(false)
+                  if (dirty || override !== null) {
+                    void run(window.chromaShift.cancelPreview(), setError)
+                  }
+                  return
+                }
+                setDraft(next)
+                setDirty(true)
+              }}
+              compact
+            />
+          )}
+        </MiniPanelContent>
+        <Flex as="footer" mx="5" py="3" align="center" gap="2">
+          <Button
+            data-part="active-profile"
+            variant="plain"
+            padding={0}
+            width="210px"
+            mr="auto"
+            display="flex"
+            alignItems="center"
+            gap={3}
+            textAlign="left"
+            size={'sm'}
+            _hover={{
+              color: 'fg'
+            }}
+            onClick={() => setPicker(true)}
           >
-            <RefreshCcwDot size={20} />
-          </IconButton>
-        </Tooltip>
-      </Flex>
+            <Stack gap="0" flex={1} width={'full'}>
+              <Text color="fg.muted" fontSize="md">
+                {product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}
+              </Text>
+              <Text
+                overflow="hidden"
+                fontSize="lg"
+                fontWeight="700"
+                textOverflow="ellipsis"
+                whiteSpace="nowrap"
+              >
+                {active.name}
+              </Text>
+            </Stack>
+            <Icon size={'sm'}>
+              <ChevronsUpDown />
+            </Icon>
+          </Button>
+          <Tooltip content="Open settings">
+            <IconButton
+              size={'md'}
+              variant="ghost"
+              onClick={() => void window.chromaShift.openAppPanel('settings')}
+              aria-label="Open settings"
+            >
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Restore original display settings">
+            <IconButton
+              size={'md'}
+              variant="ghost"
+              onClick={() => void run(window.chromaShift.restoreBaseline(), setError)}
+              aria-label="Restore original display settings"
+            >
+              <RefreshCcwDot />
+            </IconButton>
+          </Tooltip>
+        </Flex>
+      </>
+    )
+  }
+
+  return (
+    <MiniPanelFrame>
+      <MiniPanelTitleBar
+        onOpenDebugger={() => void run(window.chromaShift.openMiniPanelDevTools(), setError)}
+        onClose={() => void run(window.chromaShift.hideMiniPanel(), setError)}
+      />
+      {renderContent()}
     </MiniPanelFrame>
   )
 }
 
-function MiniPanelFrame({
-  children,
-  picker = false
-}: {
-  children: React.ReactNode
-  picker?: boolean
-}): React.JSX.Element {
+function MiniPanelContent({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <Box
+      flex="1"
+      mx="3"
+      px={2.5}
+      py={4}
+      borderWidth="1px"
+      borderColor="border"
+      rounded="2xl"
+      bg={{ base: 'bg.panel', _dark: 'bg.muted' }}
+      overflow={'auto'}
+    >
+      {children}
+    </Box>
+  )
+}
+
+function MiniPanelFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <Flex
       data-part="mini-panel"
       w="400px"
-      h={picker ? '335px' : '100vh'}
       overflow="hidden"
       direction="column"
-      rounded="20px"
+      rounded="2xl"
       borderWidth="1px"
       borderColor="border"
-      bg="bg.frame"
-      color="fg"
-      fontFamily="body"
-      _dark={{ borderWidth: '0' }}
+      bg={'bg.subtle/80'}
+      height={'full'}
     >
       {children}
     </Flex>
   )
 }
 
-function PickerRow({
-  children,
+function MiniProfilePickerOption({
+  item,
   selected,
-  onClick
+  onSelect
 }: {
-  children: React.ReactNode
+  item: MiniProfilePickerItem
   selected: boolean
-  onClick(): void
+  onSelect(): void
 }): React.JSX.Element {
   return (
-    <Button
-      variant="plain"
-      w="full"
-      h="21px"
-      minH="21px"
-      p="0"
-      display="grid"
-      gridTemplateColumns="20px minmax(0, 1fr) auto"
+    <RadioGroup.Item
+      value={item.value}
+      width="full"
       alignItems="center"
-      gap="10px"
-      color={selected ? 'fg' : 'fg.muted'}
-      fontSize="16px"
-      textAlign="left"
-      onClick={onClick}
+      gap={3}
+      fontWeight={'700'}
+      color="fg/70"
+      paddingX={2}
+      paddingY={3}
+      borderRadius={'full'}
+      _hover={{
+        bg: 'bg.muted',
+        color: 'fg'
+      }}
+      _checked={{ color: 'fg', bg: 'bg.muted' }}
+      onClick={selected ? onSelect : undefined}
     >
-      {children}
-    </Button>
+      <RadioGroup.ItemHiddenInput />
+      <RadioGroup.ItemIndicator />
+      <RadioGroup.ItemText
+        minW="0"
+        flex="1"
+        overflow="hidden"
+        textOverflow="ellipsis"
+        whiteSpace="nowrap"
+      >
+        {item.label}
+      </RadioGroup.ItemText>
+      {item.global === true && (
+        <Badge size={'sm'} colorPalette={'blue'}>
+          Global
+        </Badge>
+      )}
+    </RadioGroup.Item>
   )
 }
 
-function MiniPanelTitleBar({ onClose }: { onClose(): void }): React.JSX.Element {
+function MiniPanelTitleBar({
+  onOpenDebugger,
+  onClose
+}: {
+  onOpenDebugger(): void
+  onClose(): void
+}): React.JSX.Element {
   return (
     <Flex
       as="header"
       position="relative"
       h="46px"
       minH="46px"
-      mx="10px"
+      mx="3"
       align="center"
       userSelect="none"
       css={{ WebkitAppRegion: 'drag' }}
-      _dark={{ h: '42px', minH: '42px' }}
     >
       <Brand compact />
+      <Tooltip content="Open browser inspector">
+        <IconButton
+          variant="ghost"
+          size="2xs"
+          ml="1"
+          css={{ WebkitAppRegion: 'no-drag' }}
+          onClick={onOpenDebugger}
+          aria-label="Open browser inspector"
+        >
+          <Bug size={16} />
+        </IconButton>
+      </Tooltip>
       <PanelViewToggle mini />
-      <Tooltip label="Close mini panel">
+      <Tooltip content="Close mini panel">
         <IconButton
           variant="ghost"
           boxSize="20px"
@@ -493,7 +515,7 @@ function MiniPanelTitleBar({ onClose }: { onClose(): void }): React.JSX.Element 
           onClick={onClose}
           aria-label="Close mini panel"
         >
-          <X size={20} />
+          <X />
         </IconButton>
       </Tooltip>
     </Flex>
@@ -510,52 +532,56 @@ function MiniDisplaySelect({
   onSelect(displayId: string): void
 }): React.JSX.Element {
   const selected = displays.find((display) => display.id === selectedId) ?? displays[0]
+  const collection = useMemo(
+    () =>
+      createListCollection({
+        items: displays.map((display) => ({ label: display.name, value: display.id }))
+      }),
+    [displays]
+  )
+
   return (
-    <Menu.Root positioning={{ sameWidth: true }}>
-      <Menu.Trigger asChild>
-        <Button
-          variant="plain"
-          w="full"
-          h="30px"
-          minH="30px"
-          mb="20px"
-          px="10px"
-          py="5px"
-          justifyContent="flex-start"
-          gap="10px"
-          rounded="6px"
-          bg="bg.muted"
-          color="fg.muted"
-          fontSize="12px"
-        >
-          <Monitor size={20} />
-          <Text
-            as="span"
-            minW="0"
-            flex="1"
-            overflow="hidden"
-            textAlign="left"
-            textOverflow="ellipsis"
-            whiteSpace="nowrap"
-          >
-            {selected?.name}
-          </Text>
-          <ChevronDown size={16} />
-        </Button>
-      </Menu.Trigger>
+    <Select.Root
+      collection={collection}
+      value={selected === undefined ? [] : [selected.id]}
+      positioning={{ sameWidth: true }}
+      size="xs"
+      w="full"
+      mb="5"
+
+      onValueChange={(details) => {
+        const displayId = details.value[0]
+        if (displayId !== undefined) onSelect(displayId)
+      }}
+    >
+      <Select.HiddenSelect />
+      <Select.Label srOnly>Select display</Select.Label>
+      <Select.Control>
+        <Select.Trigger aria-label="Select display" gap={3} bg="bg.subtle" borderRadius={'md'}>
+          <HStack>
+            <Icon size={'sm'}>
+              <Monitor />
+            </Icon>
+            <Select.ValueText />
+          </HStack>
+        </Select.Trigger>
+        <Select.IndicatorGroup>
+          <Select.Indicator color="fg.muted" />
+        </Select.IndicatorGroup>
+      </Select.Control>
       <Portal>
-        <Menu.Positioner>
-          <Menu.Content>
-            {displays.map((display) => (
-              <Menu.Item key={display.id} value={display.id} onClick={() => onSelect(display.id)}>
-                {display.id === selectedId && <Check />}
-                {display.name}
-              </Menu.Item>
+        <Select.Positioner>
+          <Select.Content borderWidth="1px" borderColor="border" color="fg">
+            {collection.items.map((item) => (
+              <Select.Item item={item} key={item.value}>
+                <Select.ItemText>{item.label}</Select.ItemText>
+                <Select.ItemIndicator />
+              </Select.Item>
             ))}
-          </Menu.Content>
-        </Menu.Positioner>
+          </Select.Content>
+        </Select.Positioner>
       </Portal>
-    </Menu.Root>
+    </Select.Root>
   )
 }
 

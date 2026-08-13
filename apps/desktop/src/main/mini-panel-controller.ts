@@ -9,9 +9,9 @@ export type MiniPanelView = 'controls' | 'override' | 'picker'
 
 const MINI_PANEL_WIDTH = 400
 const MINI_PANEL_HEIGHTS: Record<MiniPanelView, number> = {
-  controls: 596,
-  override: 642,
-  picker: 335
+  controls: 575,
+  override: 620,
+  picker: 575
 }
 
 export class MiniPanelController {

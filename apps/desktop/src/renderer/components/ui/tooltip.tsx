@@ -1,50 +1,44 @@
-import { Portal, Tooltip as ChakraTooltip } from '@chakra-ui/react'
-import type { ReactElement, ReactNode } from 'react'
+import { Tooltip as ChakraTooltip, Portal } from '@chakra-ui/react'
+import * as React from 'react'
 
-type TooltipIds = Partial<{
-  trigger: string
-  content: string
-  arrow: string
-  positioner: string
-}>
+export interface TooltipProps extends ChakraTooltip.RootProps {
+  showArrow?: boolean
+  portalled?: boolean
+  portalRef?: React.RefObject<HTMLElement | null>
+  content: React.ReactNode
+  contentProps?: ChakraTooltip.ContentProps
+  disabled?: boolean
+}
 
-export function Tooltip({
-  children,
-  ids,
-  label
-}: {
-  children: ReactElement
-  ids?: TooltipIds
-  label: ReactNode
-}): React.JSX.Element {
+export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(function Tooltip(props, ref) {
+  const {
+    showArrow,
+    children,
+    disabled,
+    portalled = true,
+    content,
+    contentProps,
+    portalRef,
+    ...rest
+  } = props
+
+  if (disabled) return children
+
   return (
-    <ChakraTooltip.Root
-      closeDelay={0}
-      ids={ids}
-      openDelay={350}
-      positioning={{ placement: 'top', gutter: 8 }}
-    >
+    <ChakraTooltip.Root {...rest}>
       <ChakraTooltip.Trigger asChild>{children}</ChakraTooltip.Trigger>
-      <Portal>
+      <Portal disabled={!portalled} container={portalRef}>
         <ChakraTooltip.Positioner>
-          <ChakraTooltip.Content
-            px="8px"
-            py="5px"
-            rounded="6px"
-            bg="fg"
-            color="bg.panel"
-            fontFamily="body"
-            fontSize="12px"
-            fontWeight="500"
-            boxShadow="none"
-          >
-            {label}
-            <ChakraTooltip.Arrow>
-              <ChakraTooltip.ArrowTip />
-            </ChakraTooltip.Arrow>
+          <ChakraTooltip.Content ref={ref} {...contentProps}>
+            {showArrow && (
+              <ChakraTooltip.Arrow>
+                <ChakraTooltip.ArrowTip />
+              </ChakraTooltip.Arrow>
+            )}
+            {content}
           </ChakraTooltip.Content>
         </ChakraTooltip.Positioner>
       </Portal>
     </ChakraTooltip.Root>
   )
-}
+})

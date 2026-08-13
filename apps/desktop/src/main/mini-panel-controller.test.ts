@@ -126,7 +126,7 @@ describe('MiniPanelController', () => {
     expect(positions).toEqual([{ x: 420, y: 240 }])
   })
 
-  it('keeps the bottom edge anchored while matching each Figma panel height', () => {
+  it('keeps the bottom edge anchored while matching each configured panel height', () => {
     const { panel, resized } = fakePanel()
     const controller = new MiniPanelController(
       () => panel,
@@ -138,8 +138,8 @@ describe('MiniPanelController', () => {
     controller.setView('picker')
 
     expect(resized).toEqual([
-      { x: 100, y: 54, width: 400, height: 642 },
-      { x: 100, y: 361, width: 400, height: 335 }
+      { x: 100, y: 76, width: 400, height: 620 },
+      { x: 100, y: 121, width: 400, height: 575 }
     ])
   })
 
@@ -156,6 +156,6 @@ describe('MiniPanelController', () => {
 
     controller.setView('controls')
 
-    expect(resized).toEqual([{ x: 100, y: 94, width: 400, height: 602 }])
+    expect(resized).toEqual([{ x: 100, y: 115, width: 400, height: 581 }])
   })
 })

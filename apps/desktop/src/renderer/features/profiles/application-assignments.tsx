@@ -1,5 +1,5 @@
 import { Box, Button, Flex, IconButton, Image, Menu, Portal, Stack, Text } from '@chakra-ui/react'
-import { AppWindow, FolderOpen, X } from 'lucide-react'
+import { AppWindow, ChevronDown, FolderOpen, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { run } from '@/lib/product-result'
@@ -46,20 +46,14 @@ export function ApplicationAssignments({
 
   return (
     <>
-      <Flex minH="26px" align="center" gap="10px">
+      <Flex align="center" gap={3}>
         {editing && (
-          <Flex align="center" gap="10px">
+          <Flex align="center" gap={3} mb={3}>
             <Button
-              size="sm"
+              size="2xs"
               variant="subtle"
-              h="26px"
-              minH="26px"
-              px="10px"
-              py="5px"
-              rounded="6px"
-              bg="bg.muted"
+              bg={{ base: 'bg.muted', _dark: 'bg.emphasized' }}
               color="inherit"
-              fontSize="12px"
               onClick={() =>
                 void run(window.chromaShift.pickApplication(), onError).then((app) => {
                   if (app !== undefined && app !== null) add(app)
@@ -67,7 +61,7 @@ export function ApplicationAssignments({
               }
             >
               Browse
-              <FolderOpen size={16} />
+              <FolderOpen />
             </Button>
             <Menu.Root
               positioning={{ placement: 'bottom-end' }}
@@ -77,16 +71,13 @@ export function ApplicationAssignments({
             >
               <Menu.Trigger asChild>
                 <Button
-                  h="26px"
-                  minH="26px"
-                  px="10px"
-                  py="5px"
-                  rounded="6px"
-                  bg="bg.muted"
+                  size="2xs"
+                  variant="subtle"
+                  bg={{ base: 'bg.muted', _dark: 'bg.emphasized' }}
                   color="inherit"
-                  fontSize="12px"
                 >
                   Select from open apps
+                  <ChevronDown />
                 </Button>
               </Menu.Trigger>
               <Portal>
@@ -109,7 +100,7 @@ export function ApplicationAssignments({
                           ) : (
                             <AppWindow />
                           )}
-                          <Stack minW="0" gap="0">
+                          <Stack gap="0">
                             <Text as="strong">{app.friendlyName}</Text>
                             <Text as="small">{app.executableName}</Text>
                           </Stack>
@@ -123,36 +114,35 @@ export function ApplicationAssignments({
           </Flex>
         )}
       </Flex>
-      <Stack mt="10px" gap="10px">
+      <Stack gap={3}>
         {profile.applications.map((rule, index) => (
           <Box
-            minH="47px"
-            px="10px"
-            py="4px"
+            px="3"
+            py="1"
             display="grid"
             gridTemplateColumns="30px minmax(0, 1fr) 20px"
             alignItems="center"
-            gap="10px"
-            rounded="6px"
-            bg="bg.muted"
+            gap={3}
+            rounded="md"
+            bg="bg.subtle"
             key={`${rule.executableName}-${index}`}
           >
             {rule.iconDataUrl === undefined ? (
-              <AppWindow size={30} />
+              <AppWindow />
             ) : (
               <Image
                 boxSize="30px"
                 rounded="full"
                 objectFit="cover"
                 src={rule.iconDataUrl}
-                alt=""
+                alt={`${rule.executableName}`}
               />
             )}
-            <Stack minW="0" gap="0">
+            <Stack gap="0">
               <Text
                 as="strong"
                 overflow="hidden"
-                fontSize="18px"
+                fontSize="md"
                 fontWeight="500"
                 textOverflow="ellipsis"
                 whiteSpace="nowrap"
@@ -163,7 +153,7 @@ export function ApplicationAssignments({
                 as="small"
                 overflow="hidden"
                 fontFamily="mono"
-                fontSize="12px"
+                fontSize="xs"
                 textOverflow="ellipsis"
                 whiteSpace="nowrap"
               >
@@ -175,7 +165,6 @@ export function ApplicationAssignments({
                 variant="ghost"
                 boxSize="20px"
                 minW="20px"
-                p="0"
                 aria-label={`Remove ${rule.executableName}`}
                 onClick={() =>
                   onChange({
@@ -184,7 +173,7 @@ export function ApplicationAssignments({
                   })
                 }
               >
-                <X size={20} />
+                <X />
               </IconButton>
             )}
           </Box>

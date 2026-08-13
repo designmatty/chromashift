@@ -1,5 +1,15 @@
-import { Badge, Box, Button, Flex, IconButton, Menu, Portal, Stack, Text } from '@chakra-ui/react'
-import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
+import {
+  AbsoluteCenter,
+  Accordion,
+  Badge,
+  Box,
+  Button,
+  IconButton,
+  Menu,
+  Portal,
+  Text
+} from '@chakra-ui/react'
+import { ChevronDown, Trash2 } from 'lucide-react'
 import {
   findDisplayTarget,
   removeDisplayTarget,
@@ -49,7 +59,7 @@ export function DisplayControls({
   product: ProductState
   editing: boolean
   expandedDisplayIds: string[]
-  onExpandedChange(displayId: string, expanded: boolean): void
+  onExpandedChange(displayIds: string[]): void
   onChange(profile: ColorProfile): void
 }): React.JSX.Element {
   const rows = buildDisplayRows(profile, product)
@@ -60,53 +70,37 @@ export function DisplayControls({
   const copyTargets = rows.filter((row) => row.display !== undefined)
 
   return (
-    <Stack gap="10px">
+    <Accordion.Root
+      value={expandedDisplayIds}
+      variant="plain"
+      spaceY={4}
+      collapsible
+      multiple
+      unmountOnExit
+      onValueChange={(details) => onExpandedChange(details.value)}
+    >
       {rows.map((row) => {
         const expanded = expandedDisplayIds.includes(row.displayId)
         const overridden = row.target !== undefined
         const color = row.target?.color ?? {}
         return (
-          <Box as="section" data-part="display-control" minW="0" key={row.displayId}>
-            <Flex
-              minH="39px"
-              px="10px"
-              align="center"
-              gap="10px"
-              rounded="6px"
-              bg={expanded ? 'bg.muted' : 'bg.subtle'}
-            >
-              {editing && (
-                <Checkbox
-                  checked={overridden}
-                  aria-label={`Override ${row.display?.name ?? row.displayId}`}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      onChange(setDisplayTarget(profile, { displayId: row.displayId, color: {} }))
-                      onExpandedChange(row.displayId, true)
-                    } else {
-                      onChange(removeDisplayTarget(profile, row.displayId))
-                      if (expanded) onExpandedChange(row.displayId, false)
-                    }
-                  }}
-                />
-              )}
-              <Button
-                type="button"
-                variant="plain"
-                minW="0"
-                minH="39px"
-                p="0"
-                flex="1"
-                justifyContent="flex-start"
-                gap="10px"
+          <Accordion.Item
+            key={row.displayId}
+            value={row.displayId}
+            data-part="display-control"
+            data-display-id={row.displayId}
+          >
+            <Box position="relative" rounded="md" bg="bg.subtle">
+              <Accordion.ItemTrigger
+                data-display-control-trigger
+                ps={editing ? '11' : '3'}
+                pe={editing && row.display === undefined ? '11' : '3'}
+                gap={3}
                 color={overridden ? 'inherit' : 'fg.muted'}
                 textAlign="left"
-                aria-expanded={expanded}
-                onClick={() => onExpandedChange(row.displayId, !expanded)}
               >
                 <Text
                   as="span"
-                  minW="0"
                   flex="1"
                   overflow="hidden"
                   fontSize="18px"
@@ -116,40 +110,13 @@ export function DisplayControls({
                 >
                   {row.display?.name ?? row.displayId}
                 </Text>
-                {row.display?.primary === true && (
-                  <Badge
-                    h="20px"
-                    px="6px"
-                    py="2px"
-                    rounded="6px"
-                    bg="badge.primaryBg"
-                    color="badge.primaryFg"
-                    fontSize="12px"
-                    fontWeight="500"
-                  >
-                    Primary
-                  </Badge>
-                )}
-                {row.display === undefined && (
-                  <Badge
-                    h="20px"
-                    px="6px"
-                    py="2px"
-                    rounded="6px"
-                    bg="bg.muted"
-                    color="fg.muted"
-                    fontSize="12px"
-                    fontWeight="500"
-                  >
-                    Disconnected
-                  </Badge>
-                )}
+                {row.display?.primary === true && <Badge colorPalette={'blue'}>Primary</Badge>}
+                {row.display === undefined && <Badge>Disconnected</Badge>}
                 <Text
                   as="span"
-                  minW="0"
                   overflow="hidden"
                   fontFamily="mono"
-                  fontSize="14px"
+                  fontSize="xs"
                   textAlign="right"
                   textOverflow="ellipsis"
                   whiteSpace="nowrap"
@@ -158,24 +125,47 @@ export function DisplayControls({
                     ? 'Saved settings return when this display reconnects'
                     : `${row.display.adapter.name} • ${row.display.connection}`}
                 </Text>
-                {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </Button>
-              {editing && row.display === undefined && (
-                <IconButton
-                  variant="ghost"
-                  size="xs"
-                  aria-label={`Remove ${row.displayId}`}
-                  onClick={() => {
-                    onChange(removeDisplayTarget(profile, row.displayId))
-                    if (expanded) onExpandedChange(row.displayId, false)
-                  }}
-                >
-                  <Trash2 />
-                </IconButton>
+                <Accordion.ItemIndicator />
+              </Accordion.ItemTrigger>
+              {editing && (
+                <AbsoluteCenter axis="vertical" insetStart="3">
+                  <Checkbox
+                    checked={overridden}
+                    aria-label={`Override ${row.display?.name ?? row.displayId}`}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        onChange(setDisplayTarget(profile, { displayId: row.displayId, color: {} }))
+                        onExpandedChange([...new Set([...expandedDisplayIds, row.displayId])])
+                      } else {
+                        onChange(removeDisplayTarget(profile, row.displayId))
+                        if (expanded) {
+                          onExpandedChange(expandedDisplayIds.filter((id) => id !== row.displayId))
+                        }
+                      }
+                    }}
+                  />
+                </AbsoluteCenter>
               )}
-            </Flex>
-            {expanded && (
-              <Box pt="10px" px="10px">
+              {editing && row.display === undefined && (
+                <AbsoluteCenter axis="vertical" insetEnd="2">
+                  <IconButton
+                    variant="ghost"
+                    size="xs"
+                    aria-label={`Remove ${row.displayId}`}
+                    onClick={() => {
+                      onChange(removeDisplayTarget(profile, row.displayId))
+                      if (expanded) {
+                        onExpandedChange(expandedDisplayIds.filter((id) => id !== row.displayId))
+                      }
+                    }}
+                  >
+                    <Trash2 />
+                  </IconButton>
+                </AbsoluteCenter>
+              )}
+            </Box>
+            <Accordion.ItemContent>
+              <Accordion.ItemBody pt="3" px="4">
                 {editing && overridden ? (
                   <>
                     <ColorControls
@@ -211,12 +201,12 @@ export function DisplayControls({
                 ) : (
                   <ColorSummary color={color} displayId={row.displayId} product={product} />
                 )}
-              </Box>
-            )}
-          </Box>
+              </Accordion.ItemBody>
+            </Accordion.ItemContent>
+          </Accordion.Item>
         )
       })}
-    </Stack>
+    </Accordion.Root>
   )
 }
 
@@ -242,19 +232,12 @@ function CopyToMenu({
     <Menu.Root>
       <Menu.Trigger asChild>
         <Button
-          type="button"
-          variant="plain"
-          minH="26px"
-          mt="12px"
-          px="10px"
-          py="5px"
-          gap="10px"
-          rounded="6px"
-          bg="bg.muted"
-          color="inherit"
-          fontSize="12px"
+          size={'2xs'}
+          bg={'bg'}
+          color={'fg'}
+          variant={{ base: 'outline', _dark: 'solid' }}
+          mt={3}
         >
-          <Copy size={16} display="none" />
           Copy to
           <ChevronDown size={16} />
         </Button>

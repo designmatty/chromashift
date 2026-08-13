@@ -1,9 +1,9 @@
-import { Box, Button, Flex, Grid, Heading, IconButton, Stack, Text } from '@chakra-ui/react'
-import { CircleAlert, X } from 'lucide-react'
+import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
+import { CircleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
-import { DisplaysView } from '@/features/displays/displays-view'
+import { DisplaysView } from '@/features/settings/displays-view'
 import { resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
@@ -13,11 +13,6 @@ import { SettingsNav } from '@/features/settings/settings-nav'
 import { SettingsPanel } from '@/features/settings/settings-panel'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
-import {
-  DEFAULT_SIDEBAR_WIDTH,
-  resolveSidebarWidth,
-  shouldStackPanels
-} from '../../shared/layout.js'
 import type {
   AppPanelView,
   ProductError,
@@ -39,7 +34,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   })
   const [draft, setDraft] = useState<ColorProfile | null>(null)
   const [expandedDisplayIds, setExpandedDisplayIds] = useState<string[]>([])
-  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
@@ -60,12 +54,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }, [view])
 
   useEffect(() => {
-    const onResize = (): void => setWindowWidth(window.innerWidth)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
-  useEffect(() => {
     if (selectedId === null) localStorage.removeItem(LAST_PROFILE_KEY)
     else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
   }, [selectedId])
@@ -74,11 +62,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (!editing && selected !== null) setDraft(structuredClone(selected))
   }, [selected, editing])
 
-  // Switching profiles opens the first display this profile overrides.
+  const selectedDisplayIds = selected?.displays.map((target) => target.displayId) ?? []
+  const selectedDisplayIdsSignature = selectedDisplayIds.join('\u0000')
+
+  // Viewing or editing a profile starts with every overridden display open.
   useEffect(() => {
-    const first = selected?.displays[0]?.displayId ?? product.displays[0]?.id
-    setExpandedDisplayIds(first === undefined ? [] : [first])
-  }, [selected?.id])
+    setExpandedDisplayIds(selectedDisplayIds)
+  }, [selected?.id, selectedDisplayIdsSignature, editing])
 
   const draftSignature = JSON.stringify(draft)
   useEffect(() => {
@@ -246,198 +236,158 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     product.activation.currentTarget?.kind === 'profile'
       ? product.activation.currentTarget.profileId
       : null
-  const stacked = shouldStackPanels(windowWidth)
-  const sidebarWidth = resolveSidebarWidth(
-    product.settings.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH,
-    windowWidth
-  )
 
-  return (
-    <Grid
-      data-part="app-shell"
-      w="full"
-      h="full"
-      p="10px"
-      templateRows={temporaryOverride === null ? '41px minmax(0, 1fr)' : '41px 47px minmax(0, 1fr)'}
-      gap="20px"
-      overflow={stacked ? 'auto' : 'hidden'}
-      borderWidth="1px"
-      borderColor="border"
-      rounded="20px"
-      bg="bg"
-      _dark={{
-        borderWidth: '0',
-        gridTemplateRows:
-          temporaryOverride === null ? '37px minmax(0, 1fr)' : '37px 47px minmax(0, 1fr)'
-      }}
-    >
-      <TitleBar />
-      {temporaryOverride !== null && (
-        <Flex
-          data-part="override-banner"
-          w="full"
-          px="3"
-          py="8"
-          align="center"
-          gap="3"
-          rounded="lg"
-          bg="bg.inverted"
-          color="fg.inverted"
-          _dark={{
-            bg: 'bg.muted',
-            color: 'fg.muted'
+  const OverrideBanner = () => {
+    return temporaryOverride !== null ? (
+      <Flex
+        data-part="override-banner"
+        mx={2.5}
+        px="3"
+        py="3"
+        align="center"
+        gap="3"
+        rounded="lg"
+        bg="bg.inverted"
+        color="fg.inverted"
+        flex={'none'}
+        _dark={{
+          bg: 'bg.inverted',
+          color: 'fg.inverted'
+        }}
+      >
+        <CircleAlert />
+        <Stack flex="1" gap="0">
+          <Heading overflow="hidden" size="lg" textOverflow="ellipsis" whiteSpace="nowrap">
+            You have temporary overrides on{' '}
+            {product.configuration.profiles.find(
+              (profile) => profile.id === temporaryOverride.profileId
+            )?.name ?? 'profile'}
+          </Heading>
+          <Text
+            overflow="hidden"
+            fontFamily="mono"
+            fontSize="xs"
+            textOverflow="ellipsis"
+            whiteSpace="nowrap"
+            lineHeight={1}
+          >
+            The applied values differ from the saved profile
+          </Text>
+        </Stack>
+        <Button
+          size={'xs'}
+          variant={'subtle'}
+          onClick={() => void action(window.chromaShift.cancelPreview())}
+        >
+          Reset changes
+        </Button>
+        <Button
+          size={'xs'}
+          onClick={() => {
+            const profile = product.configuration.profiles.find(
+              (item) => item.id === temporaryOverride.profileId
+            )
+            if (profile !== undefined) {
+              void action(
+                window.chromaShift.confirmPreview(
+                  applyOverrideTargets(profile, temporaryOverride.targets),
+                  'preserve'
+                )
+              )
+            }
           }}
         >
-          <CircleAlert size={20} />
-          <Stack flex="1" gap="0">
-            <Heading overflow="hidden" size="lg" textOverflow="ellipsis" whiteSpace="nowrap">
-              You have temporary overrides on{' '}
-              {product.configuration.profiles.find(
-                (profile) => profile.id === temporaryOverride.profileId
-              )?.name ?? 'profile'}
-            </Heading>
-            <Text
-              overflow="hidden"
-              fontFamily="mono"
-              fontSize="xs"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-              lineHeight={1}
-            >
-              The applied values differ from the saved profile
-            </Text>
-          </Stack>
-          <Button
-            size={'xs'}
-            variant={'subtle'}
-            onClick={() => void action(window.chromaShift.cancelPreview())}
-          >
-            Reset changes
-          </Button>
-          <Button
-            size={'xs'}
-            onClick={() => {
-              const profile = product.configuration.profiles.find(
-                (item) => item.id === temporaryOverride.profileId
-              )
-              if (profile !== undefined) {
-                void action(
-                  window.chromaShift.confirmPreview(
-                    applyOverrideTargets(profile, temporaryOverride.targets),
-                    'preserve'
-                  )
+          Update profile
+        </Button>
+      </Flex>
+    ) : (
+      <></>
+    )
+  }
+
+  return (
+    <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
+      <TitleBar />
+      <OverrideBanner />
+      {error !== null && (
+        <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
+          <Alert.Indicator />
+          <Alert.Title width={'full'}>{error.message}</Alert.Title>
+          <CloseButton
+            size={'2xs'}
+            boxSize={'16px'}
+            padding={0}
+            aria-label="Dismiss error"
+            onClick={() => setError(null)}
+          />
+        </Alert.Root>
+      )}
+      <Flex data-part="app-body" overflow={'auto'} gap="4" flex={1} paddingX={4} paddingBottom={4}>
+        {inSettings ? (
+          <SettingsNav
+            page={view}
+            onSelect={(page) => void navigate(page)}
+            onBack={() => void navigate('profiles')}
+          />
+        ) : (
+          <ProfileList
+            profiles={product.configuration.profiles}
+            selectedId={shownProfile?.id ?? null}
+            activeId={activeProfileId}
+            editingProfileId={editing ? (shownProfile?.id ?? null) : null}
+            previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
+            automatic={product.activation.mode.kind === 'automatic'}
+            onSelect={(profile) => void selectProfile(profile)}
+            onCreate={() =>
+              void action(window.chromaShift.createProfile('New profile'), (profile) => {
+                setSelectedId(profile.id)
+                setDraft(profile)
+                setEditing(true)
+              })
+            }
+            onToggleAutomatic={(value) => {
+              if (value) void action(window.chromaShift.enableAutomatic())
+              else if (activeProfileId !== null) {
+                void action(window.chromaShift.activateProfile(activeProfileId))
+              }
+            }}
+            onOpenSettings={() => void navigate('settings')}
+            onEdit={(profile) => void beginEdit(profile)}
+            onPreview={(profile) => void previewProfile(profile)}
+            onDuplicate={(profile) =>
+              void action(window.chromaShift.duplicateProfile(profile.id), (copy) => {
+                setSelectedId(copy.id)
+                setDraft(copy)
+              })
+            }
+            onToggleEnabled={(profile) =>
+              void action(window.chromaShift.saveProfile({ ...profile, enabled: !profile.enabled }))
+            }
+            onDelete={(profile) => {
+              if (confirm(`Delete “${profile.name}”?`)) {
+                void action(window.chromaShift.deleteProfile(profile.id), () =>
+                  setSelectedId(DEFAULT_ID)
                 )
               }
             }}
-          >
-            Update profile
-          </Button>
-        </Flex>
-      )}
-      <Grid
-        data-part="app-body"
-        minW="0"
-        minH="0"
-        pl="10px"
-        templateColumns={stacked ? 'minmax(0, 1fr)' : 'auto minmax(0, 1fr)'}
-        templateRows={stacked ? 'auto minmax(520px, 1fr)' : undefined}
-        gap="10px"
-      >
-        <Box
-          as="aside"
-          data-part="sidebar"
-          w={stacked ? 'auto' : `${sidebarWidth}px`}
-          minW="0"
-          minH={stacked ? '260px' : '0'}
-          py="10px"
-          overflow="hidden"
-        >
-          {inSettings ? (
-            <SettingsNav
-              page={view}
-              onSelect={(page) => void navigate(page)}
-              onBack={() => void navigate('profiles')}
-            />
-          ) : (
-            <ProfileList
-              profiles={product.configuration.profiles}
-              selectedId={shownProfile?.id ?? null}
-              activeId={activeProfileId}
-              editingProfileId={editing ? (shownProfile?.id ?? null) : null}
-              previewingProfileId={
-                activeSession?.kind === 'preview' ? activeSession.profileId : null
-              }
-              automatic={product.activation.mode.kind === 'automatic'}
-              onSelect={(profile) => void selectProfile(profile)}
-              onCreate={() =>
-                void action(window.chromaShift.createProfile('New profile'), (profile) => {
-                  setSelectedId(profile.id)
-                  setDraft(profile)
-                  setEditing(true)
-                })
-              }
-              onToggleAutomatic={(value) => {
-                if (value) void action(window.chromaShift.enableAutomatic())
-                else if (activeProfileId !== null) {
-                  void action(window.chromaShift.activateProfile(activeProfileId))
-                }
-              }}
-              onOpenSettings={() => void navigate('settings')}
-              onEdit={(profile) => void beginEdit(profile)}
-              onPreview={(profile) => void previewProfile(profile)}
-              onDuplicate={(profile) =>
-                void action(window.chromaShift.duplicateProfile(profile.id), (copy) => {
-                  setSelectedId(copy.id)
-                  setDraft(copy)
-                })
-              }
-              onToggleEnabled={(profile) =>
-                void action(
-                  window.chromaShift.saveProfile({ ...profile, enabled: !profile.enabled })
-                )
-              }
-              onDelete={(profile) => {
-                if (confirm(`Delete “${profile.name}”?`)) {
-                  void action(window.chromaShift.deleteProfile(profile.id), () =>
-                    setSelectedId(DEFAULT_ID)
-                  )
-                }
-              }}
-              onReorder={(profileIds) =>
-                void action(window.chromaShift.reorderProfiles(profileIds))
-              }
-            />
-          )}
-        </Box>
-        <Box
+            onReorder={(profileIds) => void action(window.chromaShift.reorderProfiles(profileIds))}
+          />
+        )}
+        <Flex
           as="main"
           data-part="main-panel"
-          minW="0"
-          minH="0"
+          flex={1}
+          gap={2}
+          flexDir={'column'}
+          h="full"
+          minH="full"
+          p="20px"
           overflow="auto"
-          scrollbarWidth="thin"
+          rounded="xl"
+          bg={{ base: 'bg', _dark: 'bg.muted' }}
         >
-          {error !== null && (
-            <Flex
-              mb="10px"
-              px="11px"
-              py="9px"
-              align="center"
-              justify="space-between"
-              gap="10px"
-              rounded="6px"
-              bg="status.errorBg"
-              color="fg.error"
-              role="alert"
-            >
-              <Text>{error.message}</Text>
-              <IconButton variant="ghost" aria-label="Dismiss error" onClick={() => setError(null)}>
-                <X size={20} />
-              </IconButton>
-            </Flex>
-          )}
           {view === 'profiles' && (
-            <Box minW="0" h="full" minH="full">
+            <>
               {shownProfile === null ? (
                 <Empty title="No profile selected" />
               ) : (
@@ -445,15 +395,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   profile={shownProfile}
                   product={product}
                   expandedDisplayIds={expandedDisplayIds}
-                  onExpandDisplay={(displayId, expanded) =>
-                    setExpandedDisplayIds((current) =>
-                      expanded
-                        ? current.includes(displayId)
-                          ? current
-                          : [...current, displayId]
-                        : current.filter((id) => id !== displayId)
-                    )
-                  }
+                  onExpandedDisplaysChange={setExpandedDisplayIds}
                   editing={editing}
                   busy={busy}
                   dirty={dirty}
@@ -517,14 +459,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   onError={setError}
                 />
               )}
-            </Box>
+            </>
           )}
           {view === 'displays' && <DisplaysView product={product} onError={setError} />}
           {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
           {view === 'about' && <AboutPanel version={product.version} />}
-        </Box>
-      </Grid>
-    </Grid>
+        </Flex>
+      </Flex>
+    </VStack>
   )
 }
 

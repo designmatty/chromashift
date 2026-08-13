@@ -42,6 +42,7 @@ export function registerProductIpcHandlers(
   openAppPanel: (view?: AppPanelView) => void,
   hideMiniPanel: () => void,
   showMiniPanel: () => void,
+  openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
   setMiniPanelView: (view: MiniPanelView) => void = () => undefined
 ): void {
   const controller = (): ProductController => {
@@ -253,6 +254,17 @@ export function registerProductIpcHandlers(
   )
   register(
     ipc,
+    productIpcChannels.openMiniPanelDevTools,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (_request, event) => {
+      await openMiniPanelDevTools(event)
+      return null
+    }
+  )
+  register(
+    ipc,
     productIpcChannels.setMiniPanelView,
     setMiniPanelViewRequestSchema,
     voidResultSchema,
@@ -270,7 +282,7 @@ function register<TRequest, TValue>(
   requestSchema: z.ZodType<TRequest>,
   responseSchema: z.ZodType,
   assertTrustedRenderer: (event: IpcMainInvokeEvent) => void,
-  operation: (request: TRequest) => Promise<TValue>
+  operation: (request: TRequest, event: IpcMainInvokeEvent) => Promise<TValue>
 ): void {
   ipc.handle(channel, async (event, input: unknown): Promise<unknown> => {
     assertTrustedRenderer(event)
@@ -289,7 +301,7 @@ function register<TRequest, TValue>(
     }
 
     try {
-      return responseSchema.parse({ ok: true, value: await operation(request.data) })
+      return responseSchema.parse({ ok: true, value: await operation(request.data, event) })
     } catch (error) {
       return responseSchema.parse({ ok: false, error: mapProductError(error) })
     }

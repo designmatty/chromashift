@@ -73,9 +73,11 @@ Chakra components, style props, and semantic theme tokens. The composable Chakra
 Select collection and floating-positioning path added 11.44 KB gzip over the
 previous native-select build. The renderer no longer has an application-owned
 CSS file; the small emitted CSS asset contains the bundled Fontsource
-declarations. Because component declarations live in runtime JavaScript, the
-hard renderer budget is 320 KB gzip for all JavaScript and CSS, leaving 4.47 KB
-of measured headroom, or 1.1 MB raw for its largest JavaScript chunk.
+declarations. The later multi-expand Chakra Accordion and visual overhaul brought
+the measured renderer total to 344.12 KB gzip. Because component declarations
+live in runtime JavaScript, the hard renderer budget is 350 KB gzip for all
+JavaScript and CSS, leaving 5.88 KB of measured headroom, or 1.1 MB raw for its
+largest JavaScript chunk.
 
 Lazy app-panel and mini-panel entries do not materially change the app-panel
 payload, but the mini-panel initial JavaScript and CSS path drops to about
