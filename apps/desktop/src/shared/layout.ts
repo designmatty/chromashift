@@ -1,19 +1,13 @@
 /**
- * Pure geometry contracts shared by the main process (window sizing) and the
- * renderer (sidebar sizing and narrow-window overflow). Keeping these as plain
- * functions lets the supported minimum window size be tested without Electron.
+ * Pure geometry contracts for main-process window sizing. Keeping these as
+ * plain functions lets the supported minimum window size be tested without
+ * Electron.
  */
 
 export const MIN_WINDOW_WIDTH = 880
 export const MIN_WINDOW_HEIGHT = 600
 export const DEFAULT_WINDOW_WIDTH = 1044
 export const DEFAULT_WINDOW_HEIGHT = 629
-
-export const MIN_SIDEBAR_WIDTH = 190
-export const MAX_SIDEBAR_WIDTH = 360
-export const DEFAULT_SIDEBAR_WIDTH = 246
-/** The profile editor stops being usable below this, so the sidebar yields first. */
-export const MIN_EDITOR_WIDTH = 520
 
 export interface WindowBounds {
   x: number
@@ -27,29 +21,6 @@ export interface WorkArea {
   y: number
   width: number
   height: number
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(value, minimum), maximum)
-}
-
-/**
- * The sidebar keeps its persisted width until the editor would drop below its
- * minimum, then shrinks, and never goes under its own minimum.
- */
-export function resolveSidebarWidth(persistedWidth: number, windowWidth: number): number {
-  const requested = Number.isFinite(persistedWidth) ? persistedWidth : DEFAULT_SIDEBAR_WIDTH
-  const available = windowWidth - MIN_EDITOR_WIDTH
-  const ceiling = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, available))
-  return Math.round(clamp(requested, MIN_SIDEBAR_WIDTH, ceiling))
-}
-
-/**
- * Below this the sidebar and editor cannot both meet their minimums, so the
- * shell stacks them and the editor scrolls instead of clipping.
- */
-export function shouldStackPanels(windowWidth: number): boolean {
-  return windowWidth < MIN_SIDEBAR_WIDTH + MIN_EDITOR_WIDTH
 }
 
 function intersectionArea(bounds: WindowBounds, area: WorkArea): number {

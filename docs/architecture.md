@@ -70,7 +70,7 @@ The renderer uses Chakra UI v3 for accessible primitives, semantic theme tokens,
 and product layout. `src.tsx` is bootstrap-only; app composition, Profiles,
 Displays, Settings, and the mini panel live in focused modules under `app/`,
 `features/`, `components/`, and `hooks/`. Electron-specific drag regions,
-non-activating mini-panel geometry, and responsive panel composition use Chakra
+non-activating mini-panel geometry, and panel composition use Chakra
 style props or component-local Chakra `css`; there is no application-owned
 global stylesheet. Tailwind, shadcn, and Base UI were removed before the
 per-display UI redesign so the renderer has one styling system. The app panel

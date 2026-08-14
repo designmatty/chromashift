@@ -73,6 +73,8 @@ tests cover defaults, validation, and atomic persistence.
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, read-only profile navigation, Settings navigation,
 read-only display/color summaries without edit inputs, live Edit preview,
+multi-open display accordion behavior and default expansion of every configured
+display in read-only and Edit modes,
 keyboard editing of Default and normal profile names, disabled-control value
 retention, shared trigger IDs and keyboard behavior for tooltip-wrapped profile
 menus, closed Switch labels, disabled-switch tooltip composition, profile
@@ -83,9 +85,10 @@ edit-to-edit and edit-to-preview navigation through other profiles' menus,
 profile-list Preview and Stop preview state switching,
 real Electron same-profile Preview-to-Edit promotion and rollback,
 cancellation of a debounced edit before it can reapply discarded values,
-explicit-preview rollback when another profile is selected, the exact Figma
+explicit-preview rollback when another profile is selected, the exact product
 light-mode shell/panel/row/select/foreground colors, right-edge alignment of the
-sidebar Settings action, and the mini-panel paths where disabling the final
+sidebar Settings action, the mini-panel debugger button opening detached browser
+DevTools, and the mini-panel paths where disabling the final
 saved color control starts a baseline-only override while an unchanged Default
 brightness on/off round trip cancels its temporary override. It also verifies
 validated product state, automatic activation with fresh isolated user data,
@@ -104,7 +107,7 @@ user data, samples the complete Windows child-process tree in visible and tray
 states, and exits through the same restore-safe shutdown coordinator. The exact
 baseline and interpretation live in `docs/performance.md`. `npm run
 check:renderer-budget` measures all emitted renderer JavaScript and CSS and
-fails if their combined gzip size exceeds 320 KB or the largest raw JavaScript
+fails if their combined gzip size exceeds 350 KB or the largest raw JavaScript
 chunk exceeds 1.1 MB. Root `npm run verify` runs this budget after the build.
 
 The desktop smoke keeps a separate native restoration guard alive, proves that

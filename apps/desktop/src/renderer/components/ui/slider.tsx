@@ -19,31 +19,38 @@ export function Slider(props: SliderProps): React.JSX.Element {
       max={props.max}
       min={props.min}
       step={props.step}
-      thumbAlignment="center"
+      thumbAlignment="contain"
       value={props.value}
       w="full"
-      opacity={props.disabled ? '0.7' : '1'}
+      _disabled={{
+        opacity: 0.7
+      }}
       aria-label={props['aria-label'] === undefined ? undefined : [props['aria-label']]}
       onValueChange={(details) => props.onValueChange(details.value)}
     >
       <ChakraSlider.Control>
         <ChakraSlider.Track
-          h="25px"
+          h="20px"
           overflow="hidden"
-          rounded="4px"
-          bg={props.compact ? 'slider.compactTrack' : 'slider.track'}
+          rounded="sm"
+          bg={{ base: 'bg.muted', _dark: 'bg' }}
         >
-          <ChakraSlider.Range h="25px" bg="slider.fill" />
+          <ChakraSlider.Range bg={{ base: 'bg.inverted', _dark: 'colorPalette.600' }} />
         </ChakraSlider.Track>
         <ChakraSlider.Thumb
           index={0}
           w="16px"
-          h="25px"
-          borderWidth="1px"
-          borderColor="slider.thumbBorder"
-          rounded="4px"
-          bg="slider.thumb"
-          boxShadow="none"
+          h="26px"
+          visibility={'visible !important'}
+          borderColor={{ base: 'bg.inverted', _dark: 'transparent' }}
+          rounded="sm"
+          bg={{ base: 'bg', _dark: 'fg' }}
+          _disabled={{
+            borderColor: {
+              base: 'colorPalette.400',
+              _dark: 'transparent'
+            }
+          }}
         >
           <ChakraSlider.HiddenInput />
         </ChakraSlider.Thumb>

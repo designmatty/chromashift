@@ -1,4 +1,6 @@
 import { ArrowLeft, BadgeInfo, Eclipse, Monitor } from 'lucide-react'
+import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
+
 import { NavButton } from '@/components/layout/presentational'
 import type { AppPanelView } from '../../../shared/product-api.js'
 
@@ -18,13 +20,11 @@ export function SettingsNav({
   onBack(): void
 }): React.JSX.Element {
   return (
-    <Flex as="section" data-part="settings-nav" h="full" minH="0" direction="column" gap="10px">
-      <Flex as="header" h="20px" align="center" gap="10px" color="fg.muted" fontSize="14px">
-        <Text as="strong" fontWeight="500">
-          Settings
-        </Text>
-      </Flex>
-      <Stack as="nav" gap="10px">
+    <Flex as="aside" data-part="settings-nav" h="full" direction="column" gap="3" width={'245px'}>
+      <Text as="strong" fontWeight="500" color="fg.muted">
+        Settings
+      </Text>
+      <Stack as="nav" gap="3">
         <NavButton
           active={page === 'settings'}
           icon={<Eclipse />}
@@ -44,25 +44,12 @@ export function SettingsNav({
           onClick={() => onSelect('about')}
         />
       </Stack>
-      <Box as="footer" h="20px" mt="auto">
-        <Button
-          variant="plain"
-          h="20px"
-          p="0"
-          gap="10px"
-          color="inherit"
-          fontWeight="400"
-          aria-label="Back to profiles"
-          onClick={onBack}
-          _hover={{ bg: 'transparent' }}
-        >
-          <ArrowLeft size={20} />
-          <Text as="span" fontSize="14px">
-            Back
-          </Text>
+      <Box as="footer" mt="auto" position={'sticky'} bottom={0} bg={'bg.subtle'}>
+        <Button size={'xs'} aria-label="Back to profiles" onClick={onBack} borderRadius={'full'}>
+          <ArrowLeft />
+          <Text fontSize="sm">Back</Text>
         </Button>
       </Box>
     </Flex>
   )
 }
-import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'

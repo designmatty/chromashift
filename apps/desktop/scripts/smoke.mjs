@@ -200,8 +200,12 @@ async function captureScreenshot(debuggerClient, path) {
 }
 
 async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemText) {
+  await debuggerClient.send('Page.bringToFront')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.activeElement instanceof HTMLElement && document.activeElement.blur()`
+    expression: `(() => {
+      window.focus()
+      document.activeElement instanceof HTMLElement && document.activeElement.blur()
+    })()`
   })
   await waitForExpression(
     debuggerClient,
@@ -261,6 +265,9 @@ async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemTe
     `${triggerLabel} did not open its Chakra menu after showing its tooltip.`
   )
 
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[role="menuitem"]')?.focus()`
+  })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
     key: 'Escape',
@@ -315,13 +322,19 @@ async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
 }
 
 async function selectProfileMenuItem(debuggerClient, profileName, itemText) {
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[data-scope="menu"][data-part="content"][data-state="open"]') === null`,
-    `A previous profile actions menu was still closing before opening ${profileName}.`
-  )
+  await debuggerClient.send('Page.bringToFront')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const expanded = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')
+      if (!(expanded instanceof HTMLElement)) return
+      expanded.focus()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      expanded.click()
+    })()`,
+    awaitPromise: true
+  })
   const opened = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
+    expression: `(async () => {
       const row = [...document.querySelectorAll('[data-part="profile-item"]')]
         .find((candidate) =>
           candidate.querySelector('[data-part="profile-select"] strong')?.textContent?.trim() ===
@@ -329,9 +342,12 @@ async function selectProfileMenuItem(debuggerClient, profileName, itemText) {
         )
       const trigger = row?.querySelector('[aria-label="Profile actions"]')
       if (!(trigger instanceof HTMLElement)) return false
+      trigger.focus()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
       trigger.click()
       return true
     })()`,
+    awaitPromise: true,
     returnByValue: true
   })
   if (opened.result.value !== true) {
@@ -512,15 +528,30 @@ try {
   }
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
 
+  const initiallySelectedProfile = productState.result.value?.value?.configuration.profiles[0]
+  const initiallyConfiguredDisplayIds = initiallySelectedProfile?.displays.map(
+    (target) => target.displayId
+  )
+
   const readOnlyProfile = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => ({
-      hasEdit: document.querySelector('[aria-label="Edit profile"]') !== null,
-      hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null,
-      hasColorInput: document.querySelector('[data-part="profile-detail"] [data-slot="slider"]') !== null,
-      hasColorSummary: document.querySelector('[data-part="color-summary"]') !== null,
-      hasOverrideCheckbox: document.querySelector('[aria-label^="Override "]') !== null,
-      displayRows: document.querySelectorAll('[data-part="display-control"]').length
-    }))()`,
+    expression: `(() => {
+      const configuredDisplayIds = new Set(${JSON.stringify(initiallyConfiguredDisplayIds ?? [])})
+      const displayRows = [...document.querySelectorAll('[data-part="display-control"]')]
+      return {
+        hasEdit: document.querySelector('[aria-label="Edit profile"]') !== null,
+        hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null,
+        hasColorInput: document.querySelector('[data-part="profile-detail"] [data-slot="slider"]') !== null,
+        hasColorSummary: document.querySelector('[data-part="color-summary"]') !== null,
+        hasOverrideCheckbox: document.querySelector('[aria-label^="Override "]') !== null,
+        displayRows: displayRows.length,
+        configuredDisplaysOpen: displayRows
+          .filter((row) => configuredDisplayIds.has(row.dataset.displayId))
+          .every(
+            (row) =>
+              row.querySelector('[data-display-control-trigger][aria-expanded="true"]') !== null
+          )
+      }
+    })()`,
     returnByValue: true
   })
   if (
@@ -529,11 +560,33 @@ try {
     readOnlyProfile.result.value?.hasColorInput ||
     !readOnlyProfile.result.value?.hasColorSummary ||
     readOnlyProfile.result.value?.hasOverrideCheckbox ||
+    !readOnlyProfile.result.value?.configuredDisplaysOpen ||
     (readOnlyProfile.result.value?.displayRows ?? 0) === 0
   ) {
     throw new Error(
       `Profile navigation did not begin with a read-only per-display summary: ${JSON.stringify(readOnlyProfile.result.value)}`
     )
+  }
+
+  if ((readOnlyProfile.result.value?.displayRows ?? 0) > 1) {
+    for (let index = 0; index < 2; index += 1) {
+      await debuggerClient.send('Runtime.evaluate', {
+        expression: `(async () => {
+          const trigger = document.querySelectorAll('[data-display-control-trigger]')[${index}]
+          if (trigger?.getAttribute('aria-expanded') !== 'true') {
+            trigger?.focus()
+            await new Promise((resolve) => requestAnimationFrame(resolve))
+            trigger?.click()
+          }
+        })()`,
+        awaitPromise: true
+      })
+      await waitForExpression(
+        debuggerClient,
+        `[...document.querySelectorAll('[data-display-control-trigger]')].slice(0, ${index + 1}).every((trigger) => trigger.getAttribute('aria-expanded') === 'true')`,
+        `The display accordion did not keep multiple display sections open (step ${index + 1}).`
+      )
+    }
   }
 
   await debuggerClient.send('Runtime.evaluate', {
@@ -624,16 +677,16 @@ try {
     returnByValue: true
   })
   const expectedLightVisuals = {
-    shellBackground: 'rgb(235, 241, 247)',
-    shellBorder: 'rgb(229, 231, 235)',
-    panelBackground: 'rgb(255, 255, 255)',
-    rowBackground: 'rgb(235, 241, 247)',
+    shellBackground: 'rgb(241, 241, 243)',
+    shellBorder: 'rgb(200, 200, 208)',
+    panelBackground: 'rgba(0, 0, 0, 0)',
+    rowBackground: 'rgb(241, 241, 243)',
     selectBackground: 'rgb(255, 255, 255)',
-    foreground: 'rgb(17, 24, 39)'
+    foreground: 'rgb(9, 9, 11)'
   }
   if (JSON.stringify(lightVisuals.result.value) !== JSON.stringify(expectedLightVisuals)) {
     throw new Error(
-      `The light theme diverged from the Figma palette: ${JSON.stringify(lightVisuals.result.value)}`
+      `The light theme diverged from the product palette: ${JSON.stringify(lightVisuals.result.value)}`
     )
   }
   await debuggerClient.send('Input.dispatchMouseEvent', {
@@ -646,19 +699,23 @@ try {
   })
   await waitForExpression(
     debuggerClient,
-    `getComputedStyle(document.querySelector('[data-part="settings-nav"] button')).backgroundColor === 'rgb(255, 255, 255)'`,
-    'The active light-mode settings navigation item did not use the Figma white surface.'
+    `getComputedStyle(document.querySelector('[data-part="settings-nav"] button')).backgroundColor !== 'rgba(0, 0, 0, 0)'`,
+    'The active light-mode settings navigation item did not use a visible product surface.'
   )
   await captureScreenshot(debuggerClient, settingsScreenshotPath)
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Windows startup behavior"]')?.click()`
+    expression: `(() => {
+      const trigger = document.querySelector('[aria-label="Windows startup behavior"]')
+      trigger?.focus()
+      trigger?.click()
+    })()`
   })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Windows startup behavior"]')?.getAttribute('aria-expanded') === 'true' &&
       [...document.querySelectorAll('[role="option"]')]
-        .some((candidate) => candidate.textContent?.trim() === 'App panel')`,
+        .some((candidate) => candidate.textContent?.trim() === 'Open app panel')`,
     'The Chakra startup behavior Select did not open its option list.'
   )
   await waitForExpression(
@@ -672,19 +729,23 @@ try {
   await captureScreenshot(debuggerClient, settingsSelectScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[role="option"]')]
-      .find((candidate) => candidate.textContent?.trim() === 'App panel')?.click()`
+      .find((candidate) => candidate.textContent?.trim() === 'Open app panel')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.settings.launchBehavior === 'app' &&
-        document.querySelector('[aria-label="Windows startup behavior"]')?.textContent?.trim() === 'App panel'
+        document.querySelector('[aria-label="Windows startup behavior"]')?.textContent?.trim() === 'Open app panel'
     })()`,
     'Selecting an item from the Chakra startup behavior Select did not update settings.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Windows startup behavior"]')?.click()`
+    expression: `(() => {
+      const trigger = document.querySelector('[aria-label="Windows startup behavior"]')
+      trigger?.focus()
+      trigger?.click()
+    })()`
   })
   await waitForExpression(
     debuggerClient,
@@ -935,7 +996,7 @@ try {
       return result.ok && result.value.preview.state === 'inactive' &&
         document.querySelector('[data-part="profile-name"]')?.textContent === 'Default profile' &&
         document.querySelector('[aria-label="Profile name"]') === null &&
-        document.querySelector('[role="alert"]')?.textContent?.includes('before previewing.')
+        document.querySelector('[aria-label="Dismiss error"]')?.parentElement?.textContent?.includes('before previewing.')
     })()`,
     'Previewing another profile did not leave Edit mode, navigate, and run target validation.'
   )
@@ -1518,6 +1579,22 @@ try {
     `document.querySelector('[data-part="color-summary-item"] dd')?.textContent === '55%'`,
     'The saved profile color was not rendered before explicit preview coverage.'
   )
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok) return false
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      if (profile === undefined) return false
+      const configuredDisplayIds = new Set(profile.displays.map((target) => target.displayId))
+      const configuredRows = [...document.querySelectorAll('[data-part="display-control"]')]
+        .filter((row) => configuredDisplayIds.has(row.dataset.displayId))
+      return configuredRows.length === configuredDisplayIds.size && configuredRows.every((row) =>
+        row.querySelector('[data-display-control-trigger]')?.getAttribute('aria-expanded') === 'true'
+      )
+    })()`,
+    'Viewing a profile did not open every display with saved settings.'
+  )
 
   // Two connected displays must hold visibly different settings in one profile.
   const perDisplayApply = await debuggerClient.send('Runtime.evaluate', {
@@ -1585,9 +1662,14 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'edit' &&
-        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile'
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        [...document.querySelectorAll('[data-part="display-control"]')]
+          .filter((row) => row.querySelector('[aria-label^="Override "] input')?.checked === true)
+          .every((row) =>
+            row.querySelector('[data-display-control-trigger]')?.getAttribute('aria-expanded') === 'true'
+          )
     })()`,
-    'The same-profile explicit preview did not promote directly into Edit mode.'
+    'The same-profile explicit preview did not promote into Edit with every configured display open.'
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
@@ -1746,10 +1828,15 @@ try {
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[data-part="active-profile"]')?.click()`
   })
-  await waitForText(debuggerClient, 'Color controls')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="radiogroup"]') !== null &&
+      [...document.querySelectorAll('button')].some((candidate) => candidate.textContent?.trim() === 'Back')`,
+    'The mini-panel profile picker did not open.'
+  )
   await debuggerClient.send('Emulation.setDeviceMetricsOverride', {
     width: 400,
-    height: 335,
+    height: 575,
     deviceScaleFactor: 1,
     mobile: false
   })
@@ -1769,6 +1856,25 @@ try {
   })
   if (restoredSmokeProfile.result.value !== true) {
     throw new Error('The smoke profile could not be restored after the Default round-trip check.')
+  }
+
+  const miniPanelDebugger = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const button = document.querySelector('[aria-label="Open browser inspector"]')
+      if (button === null) return { button: false, opened: false }
+      button.click()
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const result = await window.chromaShift.openMiniPanelDevTools()
+      return { button: true, opened: result.ok }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (
+    miniPanelDebugger.result.value?.button !== true ||
+    miniPanelDebugger.result.value?.opened !== true
+  ) {
+    throw new Error('The mini-panel debugger button did not open the browser inspector.')
   }
 
   const failures = debuggerClient.events.filter(

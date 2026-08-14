@@ -1,65 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_SIDEBAR_WIDTH,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
-  MAX_SIDEBAR_WIDTH,
-  MIN_EDITOR_WIDTH,
-  MIN_SIDEBAR_WIDTH,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
   isOnAnyWorkArea,
-  resolveSidebarWidth,
-  resolveWindowBounds,
-  shouldStackPanels
+  resolveWindowBounds
 } from './layout.js'
 
 const primary = { x: 0, y: 0, width: 2560, height: 1400 }
 const secondary = { x: 2560, y: 0, width: 1920, height: 1080 }
-
-describe('sidebar sizing', () => {
-  it('keeps the persisted width when both panels fit', () => {
-    expect(resolveSidebarWidth(300, 1400)).toBe(300)
-  })
-
-  it('never returns less than the minimum sidebar width', () => {
-    expect(resolveSidebarWidth(40, 1400)).toBe(MIN_SIDEBAR_WIDTH)
-  })
-
-  it('never returns more than the maximum sidebar width', () => {
-    expect(resolveSidebarWidth(900, 2400)).toBe(MAX_SIDEBAR_WIDTH)
-  })
-
-  it('shrinks the sidebar before the editor drops below its minimum', () => {
-    const windowWidth = MIN_SIDEBAR_WIDTH + MIN_EDITOR_WIDTH + 30
-    const width = resolveSidebarWidth(MAX_SIDEBAR_WIDTH, windowWidth)
-
-    expect(width).toBe(MIN_SIDEBAR_WIDTH + 30)
-    expect(windowWidth - width).toBeGreaterThanOrEqual(MIN_EDITOR_WIDTH)
-  })
-
-  it('keeps both panels usable at the supported minimum window size', () => {
-    const width = resolveSidebarWidth(DEFAULT_SIDEBAR_WIDTH, MIN_WINDOW_WIDTH)
-
-    expect(width).toBe(DEFAULT_SIDEBAR_WIDTH)
-    expect(width).toBeGreaterThanOrEqual(MIN_SIDEBAR_WIDTH)
-    expect(MIN_WINDOW_WIDTH - width).toBeGreaterThanOrEqual(MIN_EDITOR_WIDTH)
-  })
-
-  it('falls back to a usable width for corrupt persisted values', () => {
-    expect(resolveSidebarWidth(Number.NaN, 1400)).toBe(DEFAULT_SIDEBAR_WIDTH)
-  })
-})
-
-describe('narrow-window overflow', () => {
-  it('keeps both panels side by side at the supported minimum window size', () => {
-    expect(shouldStackPanels(MIN_WINDOW_WIDTH)).toBe(false)
-  })
-
-  it('stacks the panels once they cannot both meet their minimums', () => {
-    expect(shouldStackPanels(MIN_SIDEBAR_WIDTH + MIN_EDITOR_WIDTH - 1)).toBe(true)
-  })
-})
 
 describe('window bounds recovery', () => {
   it('centers a default window when nothing is persisted', () => {

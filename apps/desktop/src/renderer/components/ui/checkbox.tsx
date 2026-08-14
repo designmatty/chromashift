@@ -20,31 +20,24 @@ export function Checkbox({
     <ChakraCheckbox.Root
       checked={checked}
       disabled={disabled}
-      size="sm"
-      minW="0"
+      size="lg"
       flex={children === undefined ? 'none' : '1'}
-      gap="10px"
+      gap={2}
       opacity="1"
       onCheckedChange={(details) => onCheckedChange?.(details.checked === true)}
       {...props}
     >
       <ChakraCheckbox.HiddenInput />
-      <ChakraCheckbox.Control
-        data-slot="checkbox"
-        boxSize="20px"
-        borderWidth="1px"
-        borderColor={checked ? 'checkbox.checkedBg' : 'border'}
-        rounded="4px"
-        bg={checked ? 'checkbox.checkedBg' : 'checkbox.bg'}
-        color={checked ? 'checkbox.checkedFg' : 'checkbox.bg'}
-        outline="none"
-        boxShadow="none"
-        _focusVisible={{ outline: 'none', boxShadow: 'none' }}
-      >
+      <ChakraCheckbox.Control data-slot="checkbox" boxSize="5" rounded="sm">
         <ChakraCheckbox.Indicator />
       </ChakraCheckbox.Control>
       {children !== undefined && (
-        <ChakraCheckbox.Label minW="0" opacity="1">
+        <ChakraCheckbox.Label
+          flex="1"
+          overflow="hidden"
+          color={checked ? 'fg' : 'fg.muted'}
+          fontWeight="500"
+        >
           {children}
         </ChakraCheckbox.Label>
       )}

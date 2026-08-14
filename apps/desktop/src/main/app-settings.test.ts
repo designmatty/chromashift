@@ -47,4 +47,11 @@ describe('AppSettingsRepository', () => {
 
     await expect(repository.get()).rejects.toThrow()
   })
+
+  it('ignores the removed sidebar width in existing settings', async () => {
+    const path = await settingsPath()
+    await writeFile(path, JSON.stringify({ ...defaultAppSettings, sidebarWidth: 300 }))
+
+    await expect(new AppSettingsRepository(path).get()).resolves.toEqual(defaultAppSettings)
+  })
 })

@@ -1,4 +1,4 @@
-import { Box, createListCollection, Heading, Portal, Select, Stack } from '@chakra-ui/react'
+import { createListCollection, Heading, Portal, Select, Stack } from '@chakra-ui/react'
 import { useMemo } from 'react'
 import { SettingsRow } from '@/components/layout/presentational'
 import { Switch } from '@/components/ui/switch'
@@ -12,11 +12,11 @@ interface SelectItem<T extends string> {
 
 const launchItems: SelectItem<'tray' | 'app'>[] = [
   { label: 'Minimized to tray', value: 'tray' },
-  { label: 'App panel', value: 'app' }
+  { label: 'Open app panel', value: 'app' }
 ]
 const closeItems: SelectItem<'tray' | 'shutdown'>[] = [
   { label: 'Minimize to tray', value: 'tray' },
-  { label: 'Shut down ChromaShift', value: 'shutdown' }
+  { label: 'Shut down app', value: 'shutdown' }
 ]
 const themeItems: SelectItem<'system' | 'light' | 'dark'>[] = [
   { label: 'Match system', value: 'system' },
@@ -37,20 +37,11 @@ export function SettingsPanel({
   }
 
   return (
-    <Stack
-      as="section"
-      h="full"
-      minH="full"
-      p="20px"
-      gap="17px"
-      overflow="hidden"
-      rounded="16px"
-      bg="bg.panel"
-    >
-      <Heading as="h1" minH="26px" fontSize="18px" fontWeight="700" lineHeight="23px">
+    <Stack as="section" h="full" minH="full" gap="4">
+      <Heading as="h1" size="lg">
         General Settings
       </Heading>
-      <Box overflow="hidden" rounded="6px" bg="bg.muted" css={{ '& > *': { borderRadius: 0 } }}>
+      <Stack direction="column" gap={0.5}>
         <SettingsRow
           title="Launch at start up"
           description="Start ChromaShift when you sign in to Windows"
@@ -72,23 +63,28 @@ export function SettingsPanel({
             onChange={(launchBehavior) => update({ ...settings, launchBehavior })}
           />
         </SettingsRow>
-      </Box>
-      <SettingsRow title="Close behavior" description="Choose what happens when you click close">
-        <SettingsSelect
-          ariaLabel="Close behavior"
-          value={settings.closeBehavior}
-          items={closeItems}
-          onChange={(closeBehavior) => update({ ...settings, closeBehavior })}
-        />
-      </SettingsRow>
-      <SettingsRow title="Theme" description="">
-        <SettingsSelect
-          ariaLabel="Theme"
-          value={settings.theme}
-          items={themeItems}
-          onChange={(theme) => update({ ...settings, theme })}
-        />
-      </SettingsRow>
+        <SettingsRow title="Close behavior" description="Choose what happens when you click close">
+          <SettingsSelect
+            ariaLabel="Close behavior"
+            value={settings.closeBehavior}
+            items={closeItems}
+            onChange={(closeBehavior) => update({ ...settings, closeBehavior })}
+          />
+        </SettingsRow>
+      </Stack>
+      <Stack direction="column" gap={0.5}>
+        <Heading as="h1" size="lg">
+          Appearance
+        </Heading>
+        <SettingsRow title="Theme" description="">
+          <SettingsSelect
+            ariaLabel="Theme"
+            value={settings.theme}
+            items={themeItems}
+            onChange={(theme) => update({ ...settings, theme })}
+          />
+        </SettingsRow>
+      </Stack>
     </Stack>
   )
 }
@@ -115,32 +111,21 @@ function SettingsSelect<T extends string>({
         if (nextValue !== undefined) onChange(nextValue as T)
       }}
       size="xs"
-      w="144px"
-      flex="none"
+      maxWidth="150px"
     >
       <Select.HiddenSelect />
       <Select.Label srOnly>{ariaLabel}</Select.Label>
       <Select.Control>
-        <Select.Trigger
-          aria-label={ariaLabel}
-          h="26px"
-          minH="26px"
-          px="10px"
-          borderColor="border"
-          rounded="6px"
-          bg="bg.select"
-          color="fg"
-          fontSize="12px"
-        >
+        <Select.Trigger aria-label={ariaLabel} bgColor={'bg'}>
           <Select.ValueText />
         </Select.Trigger>
-        <Select.IndicatorGroup pr="8px">
+        <Select.IndicatorGroup>
           <Select.Indicator color="fg.muted" />
         </Select.IndicatorGroup>
       </Select.Control>
       <Portal>
         <Select.Positioner>
-          <Select.Content bg="bg.select" borderColor="border" color="fg">
+          <Select.Content borderWidth={'1px'} borderColor="border" color="fg">
             {collection.items.map((item) => (
               <Select.Item item={item} key={item.value}>
                 <Select.ItemText>{item.label}</Select.ItemText>

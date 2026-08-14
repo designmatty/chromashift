@@ -21,6 +21,7 @@ import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { ActivationCoordinator } from './activation-coordinator.js'
 import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
 import { resolveApplicationDataPaths } from './application-data-path.js'
+import { applicationFriendlyName } from './application-friendly-name.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
 import { ElectronTrayMenu } from './electron-tray-menu.js'
@@ -114,6 +115,8 @@ function applyTitleBarOverlay(): void {
   if (mainWindow === undefined || mainWindow.isDestroyed()) return
   mainWindow.setTitleBarOverlay(titleBarOverlayOptions())
   mainWindow.setBackgroundColor(appPanelBackgroundColor())
+  // Blend Windows' resizable-frame accent into the app instead of drawing a second border.
+  if (process.platform === 'win32') mainWindow.setAccentColor(appPanelBackgroundColor())
 }
 
 /**
@@ -282,6 +285,7 @@ function createWindow(): BrowserWindow {
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarOverlayOptions(),
     backgroundColor: appPanelBackgroundColor(),
+    ...(process.platform === 'win32' ? { accentColor: appPanelBackgroundColor() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -482,7 +486,7 @@ function configureDesktopLifecycle(): Promise<void> {
         return {
           executableName: application.executable,
           executablePath: application.path,
-          friendlyName: application.title || basename(application.path, extname(application.path)),
+          friendlyName: applicationFriendlyName(application.title, application.path),
           iconDataUrl: await applicationIconDataUrl(application.path)
         }
       },
@@ -568,6 +572,24 @@ registerProductIpcHandlers(
   () => {
     mainWindow?.hide()
     miniPanelController.show()
+  },
+  async (event) => {
+    const contents = event.sender
+    if (contents.isDevToolsOpened()) {
+      contents.devToolsWebContents?.focus()
+      return
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('The browser inspector did not open.')),
+        5_000
+      )
+      contents.once('devtools-opened', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      contents.openDevTools({ mode: 'detach', activate: true })
+    })
   },
   (view) => miniPanelController.setView(view)
 )

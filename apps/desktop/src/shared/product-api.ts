@@ -33,6 +33,7 @@ export const productIpcChannels = {
   openAppPanel: 'application:open-app-panel',
   hideMiniPanel: 'application:hide-mini-panel',
   showMiniPanel: 'application:show-mini-panel',
+  openMiniPanelDevTools: 'application:open-mini-panel-dev-tools',
   setMiniPanelView: 'application:set-mini-panel-view',
   appPanelClosed: 'application:app-panel-closed',
   navigateAppPanel: 'application:navigate-app-panel',
@@ -91,8 +92,7 @@ export const appSettingsSchema = z.object({
     })
     .strict()
     .optional(),
-  windowMaximized: z.boolean().optional(),
-  sidebarWidth: z.number().int().positive().optional()
+  windowMaximized: z.boolean().optional()
 })
 
 export const productStateSchema = z.object({
@@ -238,6 +238,7 @@ export interface ChromaShiftApi {
   openAppPanel(view?: AppPanelView): Promise<ProductResult<null>>
   hideMiniPanel(): Promise<ProductResult<null>>
   showMiniPanel(): Promise<ProductResult<null>>
+  openMiniPanelDevTools(): Promise<ProductResult<null>>
   setMiniPanelView(view: MiniPanelView): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
