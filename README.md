@@ -68,8 +68,9 @@ Milestone 4 is complete:
 
 Milestone 5 is next and covers power/display transitions, bounded renderer and
 sidecar resilience, packaged-app security, diagnostics, and the release hardware
-matrix. The upcoming per-display UI plan also records the native title-bar
-overlay, persisted window geometry, and responsive-layout work.
+matrix. The completed per-display redesign also delivered the native title-bar
+overlay, persisted window geometry, and responsive-layout work; those are no longer
+pending Milestone 5 tasks.
 
 The repository will not be rebased onto a general Electron starter. See
 `AGENTS.md` for the reviewed starter-template decision and the authoritative

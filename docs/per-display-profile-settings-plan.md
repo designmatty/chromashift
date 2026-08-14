@@ -4,18 +4,19 @@ Status: implemented and validated
 Decision date: 2026-08-11
 UX confirmed: 2026-08-11
 
-This document records the agreed product direction and the cross-layer work
-required to replace the current one-color-object-per-profile model. The
-replacement mockups have been reviewed through the Figma MCP and the open
-interaction questions are answered in `Confirmed UX decisions` below.
+This document records the agreed product direction and completed cross-layer work
+that replaced the former one-color-object-per-profile model. The replacement
+mockups were reviewed through the Figma MCP and the interaction decisions are
+recorded in `Confirmed UX decisions` below.
 
 ## Design source and Figma MCP workflow
 
-The replacement designs will be authored in Figma. The implementation thread must
-use the connected Figma MCP as the primary design-inspection path rather than
-working from flattened screenshots alone.
+The replacement designs were authored in Figma. The implementation used the
+connected Figma MCP as the primary design-inspection path rather than working from
+flattened screenshots alone. Future changes to these surfaces must retain that
+workflow.
 
-Design references to fill in when the mockups are ready:
+Approved design references:
 
 | Reference                               | Value                                                                              |
 | --------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -28,7 +29,7 @@ Because the file publishes no variables or shared components, the implementation
 reuses the existing Chakra semantic tokens, `components/ui` adapters, and Lucide
 icons. Only spacing, sizing, hierarchy, and layout are taken from Figma.
 
-Before implementation, the agent must:
+For future design changes, the agent must:
 
 1. confirm the Figma MCP is installed, connected, and able to read the supplied
    file; if it is unavailable, pause UI implementation and ask the user to connect
@@ -54,10 +55,10 @@ measurements should inform spacing, sizing, hierarchy, and responsive behavior,
 but must not weaken renderer isolation, capability gating, baseline restoration,
 or non-activating mini-panel behavior.
 
-After implementation, capture the real app and mini panel at the same theme,
-scale, content, and state as the approved Figma frames. Compare hierarchy,
-spacing, typography, colors, controls, overflow, and window dimensions, then test
-the actual Windows interaction path in addition to the visual comparison.
+After a future implementation change, capture the real app and mini panel at the
+same theme, scale, content, and state as the approved Figma frames. Compare
+hierarchy, spacing, typography, colors, controls, overflow, and window dimensions,
+then test the actual Windows interaction path in addition to the visual comparison.
 
 ## Design-to-implementation mapping
 
@@ -89,7 +90,7 @@ These answers close the open questions below and are authoritative where they
 disagree with an individual frame.
 
 1. The display row checkbox in Edit mode means `this profile overrides this
-   display`, not `this display is assigned`. It is shown for Default and for
+display`, not `this display is assigned`. It is shown for Default and for
    application profiles alike. Clearing it removes that display's target and
    returns the display to its captured baseline. This preserves the rule that a
    connected Default display with no overrides stays at baseline.
@@ -116,9 +117,9 @@ disagree with an individual frame.
 
 ## Why change the model
 
-The current `ColorProfile` stores one shared `color` object and a list of display
-IDs. Every selected display receives the same normalized values. That is simple,
-but it cannot represent common multi-monitor requirements:
+The former version 1 `ColorProfile` stored one shared `color` object and a list of
+display IDs. Every selected display received the same normalized values. That was
+simple, but it could not represent common multi-monitor requirements:
 
 - two monitors can need different values for the same foreground application
 - a gaming display may need overrides while a secondary color-accurate display
@@ -140,8 +141,10 @@ preview, IPC, and renderer layers.
    compound from one profile or display state into another.
 4. The permanent Default profile is the fallback when no application-specific
    profile matches.
-5. Default implicitly covers every currently connected display. Its display list
-   is informational/configurational, not a set of assignment checkboxes.
+5. Default implicitly covers every currently connected display. Connected displays
+   are not optional activation assignments. In Edit mode, a display checkbox only
+   controls whether Default persists an override target; clearing it removes that
+   display's saved overrides and leaves the display at baseline.
 6. A connected display with no Default overrides stays at baseline. A newly
    connected display therefore receives no overrides automatically.
 7. Application profiles continue to target an explicit subset of displays, but
@@ -152,7 +155,7 @@ preview, IPC, and renderer layers.
    overrides. Remembered slider values may exist without becoming applied values.
 10. Capability, provider, and HDR availability are evaluated per display.
 
-## Proposed schema
+## Implemented schema
 
 Move `color` and `lastColorValues` from the profile root into each display target:
 
@@ -181,9 +184,9 @@ to that profile. For Default, the renderer enumerates all connected displays and
 joins any persisted target settings by stable ID. A connected Default display with
 no persisted target is equivalent to `{ color: {} }` and remains at baseline.
 
-The exact schema naming can change during implementation, but there must be one
-unambiguous source of applied color settings per `(profileId, displayId)` pair.
-Do not retain a second shared profile-level color fallback.
+The implemented schema provides one unambiguous source of applied color settings
+per `(profileId, displayId)` pair. Do not reintroduce a second shared profile-level
+color fallback.
 
 ## Persistence and migration
 
@@ -259,38 +262,34 @@ session:
 The typed product API should send complete validated target settings or a precise
 per-display patch. Do not create a generic renderer-controlled native command.
 
-## Full app UX requirements
+## Implemented full app UX
 
-The new mockups should define these interactions before renderer work begins:
+The renderer implements these approved interactions:
 
-- how users navigate between display cards/tabs inside one profile
-- how application-profile display assignment differs visually from selecting a
-  display to edit
-- how Default shows all connected displays without enable/disable checkboxes
-- how disconnected saved displays appear and can be removed
-- how mixed values are represented if multi-display editing is offered
-- whether and where `Copy settings to displays...` belongs
-- how per-display capability/HDR explanations appear beside controls
+- users navigate displays through a multi-expand accordion inside one profile
+- application profiles use target presence for display assignment, while Default
+  remains the implicit catch-all and uses the same checkbox only to add or remove
+  that display's persisted overrides
+- disconnected saved displays remain visible and can be removed in Edit mode
+- controls edit one display at a time, so mixed-value editing is not exposed
+- `Copy to` copies the selected display's settings to deliberate destinations
+- per-display capability and HDR availability appear inline beside each control
 
 Read-only mode must summarize settings by display without rendering editable
 inputs. Edit mode previews changes for the currently edited display. The Default
 profile should be labeled `Default` or `Fallback`, never `Global`, because its
 fallback activation role is distinct from applying identical settings globally.
 
-## Mini-panel UX requirements
+## Implemented mini-panel UX
 
-The current mini panel assumes one shared color object. The new design must choose
-an explicit interaction for per-display overrides; do not silently default all
-edits to the primary monitor.
+The mini panel exposes an explicit single-display selector for per-display
+overrides; it never silently defaults all edits to the primary monitor.
 
-The mockups should settle:
-
-- whether a compact display switcher is always visible
-- whether the panel can show one display at a time or a deliberate multi-display
-  selection
-- how mixed values and unsupported capabilities are represented
-- whether `Update profile` saves only the visible display or the complete draft
-- how Reset restores every display touched by the temporary override
+- the compact display switcher is always visible
+- the panel shows one deliberate display selection at a time
+- unsupported capabilities render as unavailable; mixed-value editing is not used
+- `Update profile` saves the complete temporary draft across touched displays
+- `Reset changes` restores every display touched by the temporary override
 
 The panel must remain pointer-oriented and non-activating on Windows. Any solution
 requiring text entry or keyboard focus belongs in the full app panel.
@@ -328,8 +327,9 @@ requiring text entry or keyboard focus belongs in the full app panel.
 ### Slice 5 - Full app UI (completed)
 
 - implement approved per-display navigation and summaries
-- make Default display membership implicit/read-only
-- implement display assignment only for application profiles
+- keep Default display membership implicit while its Edit-mode checkbox controls
+  only whether a persisted override target exists
+- use target presence as display assignment for application profiles
 - implement the approved header with Electron's hidden title bar and native
   `titleBarOverlay`; reserve the overlay rectangle and define explicit drag and
   interactive no-drag regions instead of drawing replacement caption buttons
@@ -364,8 +364,8 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - capability/HDR rejection is isolated to the affected display
 - Cancel and preview navigation restore every touched display exactly
 - duplication deep-copies all target settings and remembered values
-- renderer read-only and Edit views never conflate display assignment with display
-  selection
+- renderer read-only and Edit views never conflate Default override targets with
+  application-profile display assignment or accordion selection
 - title-bar overlay geometry does not cover editable controls and retains native
   minimize, maximize, close, keyboard, DPI, and Windows Snap behavior
 - responsive layout contracts keep the profile list and editor usable at the
@@ -380,7 +380,8 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - schedules, window-title rules, fullscreen triggers, or global profile hotkeys
 - a database or state-management library migration
 - high-frequency display polling
-- implementing UI before the replacement mockups are approved
+- changing the implemented UI without inspecting and reconciling approved Figma
+  states
 
 ## Exit criteria
 

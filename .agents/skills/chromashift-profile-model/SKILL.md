@@ -16,6 +16,7 @@ description: Use for profiles, persistence schemas and migrations, matching, act
 5. Preview must use the native service's existing immutable baseline, suspend
    automatic writes, and restore the exact prior automatic/manual target on
    cancel, navigation, reset, or failure.
-6. The pending per-display redesign is governed by
-   `docs/per-display-profile-settings-plan.md`; do not begin its UI until approved
-   Figma interactions settle the documented open questions.
+6. The shipped per-display model is governed by
+   `docs/per-display-profile-settings-plan.md`. Preserve its schema-v2 and
+   Default-profile semantics, and inspect the mapped Figma nodes before future UI
+   changes rather than treating the redesign as pending work.

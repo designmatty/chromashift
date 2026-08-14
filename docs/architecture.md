@@ -77,11 +77,11 @@ per-display UI redesign so the renderer has one styling system. The app panel
 and mini panel are separate lazy renderer entries. React Router remains deferred
 because the three app-panel views do not need URL navigation.
 
-The upcoming app-panel redesign may extend React content into the title-bar area
-with Electron's hidden title bar and native `titleBarOverlay`. Windows continues
-to own caption controls and Snap behavior; the renderer owns only the reserved
-header layout plus explicit drag/no-drag regions. A fully frameless window with
-replacement caption buttons remains out of scope.
+The shipped app-panel redesign extends React content into the title-bar area with
+Electron's hidden title bar and native `titleBarOverlay`. Windows continues to own
+caption controls and Snap behavior; the renderer owns only the reserved header
+layout plus explicit drag/no-drag regions. A fully frameless window with replacement
+caption buttons remains out of scope.
 
 The profile workspace supports CRUD, default/manual activation, multi-display
 targets, foreground-application assignment, and an Electron `.exe` picker. Its

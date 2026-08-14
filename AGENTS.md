@@ -1786,7 +1786,7 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-08:
+Current status on 2026-08-13:
 
 - Phase 0 — complete
 - Milestone 1 — complete
@@ -2043,7 +2043,7 @@ Focus on functionality before visual polish.
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
 
-### Redesign — Per-display profile settings (approved, in implementation)
+### Redesign — Per-display profile settings (implemented and validated)
 
 Color settings are stored independently per stable display ID inside a profile,
 not once per profile. `ProfileDisplayTarget` owns `color` and `lastColorValues`;
@@ -2062,8 +2062,10 @@ Default is the fallback when no application profile matches. It implicitly cover
 every connected display; a connected display with no Default overrides stays at
 baseline, so newly connected displays receive nothing automatically. The Edit-mode
 display checkbox means `this profile overrides this display`, and it applies to
-Default and application profiles alike. Label the fallback profile `Default`,
-never `Global`.
+Default and application profiles alike. For Default it controls whether a saved
+override target exists, not whether the display belongs to the catch-all profile;
+for an application profile, target presence also defines display assignment. Label
+the fallback profile `Default`, never `Global`.
 
 Use `docs/per-display-profile-settings-plan.md` as the source of truth for schema,
 migration, activation, preview, UX, testing, and exit criteria. Its
