@@ -7,6 +7,7 @@ import { DisplaysView } from '@/features/settings/displays-view'
 import { resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
+import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { SettingsNav } from '@/features/settings/settings-nav'
@@ -38,6 +39,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
+  const [profilePendingDeletion, setProfilePendingDeletion] = useState<ColorProfile | null>(null)
   const editPreviewGeneration = useRef(0)
   const pendingEditPreviews = useRef(new Set<Promise<unknown>>())
   const selected =
@@ -220,6 +222,29 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     await rollback
   }
 
+  function requestProfileDeletion(profile: ColorProfile): void {
+    // Let the Chakra menu close and restore focus to its trigger before opening
+    // the modal dialog. The trigger may disappear after deletion succeeds.
+    requestAnimationFrame(() => setProfilePendingDeletion(profile))
+  }
+
+  function confirmProfileDeletion(): void {
+    const profile = profilePendingDeletion
+    if (profile === null) return
+    void action(window.chromaShift.deleteProfile(profile.id), () => {
+      const deletedProfileWasSelected = selected?.id.toLowerCase() === profile.id.toLowerCase()
+      if (deletedProfileWasSelected) {
+        editPreviewGeneration.current += 1
+        if (editing) resetRememberedColorValues(selected)
+        setSelectedId(DEFAULT_ID)
+        setDraft(null)
+        setEditing(false)
+        setDirty(false)
+      }
+      setProfilePendingDeletion(null)
+    })
+  }
+
   const savedProfile = draft ?? selected
   // A temporary override replaces the saved values on the displays it touched, so
   // the read-only view shows what is actually applied right now.
@@ -363,13 +388,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             onToggleEnabled={(profile) =>
               void action(window.chromaShift.saveProfile({ ...profile, enabled: !profile.enabled }))
             }
-            onDelete={(profile) => {
-              if (confirm(`Delete “${profile.name}”?`)) {
-                void action(window.chromaShift.deleteProfile(profile.id), () =>
-                  setSelectedId(DEFAULT_ID)
-                )
-              }
-            }}
+            onDelete={requestProfileDeletion}
             onReorder={(profileIds) => void action(window.chromaShift.reorderProfiles(profileIds))}
           />
         )}
@@ -434,13 +453,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                       setDraft(copy)
                     })
                   }
-                  onDelete={() => {
-                    if (confirm(`Delete “${shownProfile.name}”?`)) {
-                      void action(window.chromaShift.deleteProfile(shownProfile.id), () =>
-                        setSelectedId(DEFAULT_ID)
-                      )
-                    }
-                  }}
+                  onDelete={() => requestProfileDeletion(shownProfile)}
                   onActiveChange={(active) =>
                     void action(
                       active
@@ -466,6 +479,12 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           {view === 'about' && <AboutPanel version={product.version} />}
         </Flex>
       </Flex>
+      <DeleteProfileDialog
+        profile={profilePendingDeletion}
+        busy={busy}
+        onCancel={() => setProfilePendingDeletion(null)}
+        onConfirm={confirmProfileDeletion}
+      />
     </VStack>
   )
 }

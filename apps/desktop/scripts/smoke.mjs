@@ -18,6 +18,7 @@ const settingsScreenshotPath = join(screenshotDirectory, 'settings.png')
 const settingsSelectScreenshotPath = join(screenshotDirectory, 'settings-select.png')
 const displaysScreenshotPath = join(screenshotDirectory, 'displays.png')
 const aboutScreenshotPath = join(screenshotDirectory, 'about.png')
+const deleteDialogScreenshotPath = join(screenshotDirectory, 'delete-profile-dialog.png')
 const miniPickerScreenshotPath = join(screenshotDirectory, 'mini-picker.png')
 const miniDefaultScreenshotPath = join(screenshotDirectory, 'mini-default-restored.png')
 const displayServicePath = resolve(
@@ -58,14 +59,14 @@ async function reservePort() {
   return address.port
 }
 
-async function waitForDebuggerTarget(port) {
+async function waitForDebuggerTarget(port, matches = () => true) {
   const deadline = Date.now() + timeoutMilliseconds
   while (Date.now() < deadline) {
     try {
       const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
       if (response.ok) {
         const targets = await response.json()
-        const page = targets.find((target) => target.type === 'page')
+        const page = targets.find((target) => target.type === 'page' && matches(target))
         if (page?.webSocketDebuggerUrl !== undefined) return page
       }
     } catch {
@@ -422,13 +423,14 @@ async function closeMainWindow(processId) {
       [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
       [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
       [DllImport("user32.dll")] private static extern int GetWindowText(IntPtr handle, StringBuilder text, int count);
+      [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr handle);
       [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
       public static bool CloseVisibleWindow(uint processId) {
         IntPtr target = IntPtr.Zero;
         EnumWindows((handle, parameter) => {
           uint owner;
           GetWindowThreadProcessId(handle, out owner);
-          if (owner != processId) return true;
+          if (owner != processId || !IsWindowVisible(handle)) return true;
           var title = new StringBuilder(256);
           GetWindowText(handle, title, title.Capacity);
           if (title.ToString() != "ChromaShift") return true;
@@ -500,7 +502,10 @@ electron.stderr.on('data', (data) => {
 let debuggerClient
 let smokeFailure
 try {
-  const target = await waitForDebuggerTarget(debuggingPort)
+  const target = await waitForDebuggerTarget(
+    debuggingPort,
+    (candidate) => !candidate.url.includes('panel=mini')
+  )
   debuggerClient = await connectToDebugger(target.webSocketDebuggerUrl)
   await debuggerClient.send('Runtime.enable')
   await debuggerClient.send('Page.enable')
@@ -527,6 +532,49 @@ try {
     throw new Error(`The product UI was incomplete:\n${ui.body}`)
   }
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
+
+  const miniPanelOpened = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => (await window.chromaShift.showMiniPanel()).ok)()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (miniPanelOpened.result.value !== true) {
+    throw new Error('The app panel could not open the real mini-panel window.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `document.visibilityState === 'hidden'`,
+    'Opening the mini panel did not hide the app panel.'
+  )
+  const miniTarget = await waitForDebuggerTarget(debuggingPort, (candidate) =>
+    candidate.url.includes('panel=mini')
+  )
+  const miniDebugger = await connectToDebugger(miniTarget.webSocketDebuggerUrl)
+  await miniDebugger.send('Runtime.enable')
+  await miniDebugger.send('Page.enable')
+  await miniDebugger.send('Log.enable')
+  await waitForText(miniDebugger, 'ChromaShift')
+  await waitForExpression(
+    miniDebugger,
+    `document.visibilityState === 'visible'`,
+    'The mini panel was not visible after the app panel handed off to it.'
+  )
+  await miniDebugger.send('Runtime.evaluate', {
+    expression: `window.chromaShift.openAppPanel('profiles')`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    miniDebugger,
+    `document.visibilityState === 'hidden'`,
+    'Opening the app panel did not hide the mini panel.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `document.visibilityState === 'visible'`,
+    'The app panel was not visible after the mini panel handed off to it.'
+  )
+  debuggerClient.events.push(...miniDebugger.events)
+  miniDebugger.close()
 
   const initiallySelectedProfile = productState.result.value?.value?.configuration.profiles[0]
   const initiallyConfiguredDisplayIds = initiallySelectedProfile?.displays.map(
@@ -1277,7 +1325,10 @@ try {
     windowsHide: true
   })
   await waitForExit(reopen)
-  const reopenedTarget = await waitForDebuggerTarget(debuggingPort)
+  const reopenedTarget = await waitForDebuggerTarget(
+    debuggingPort,
+    (candidate) => !candidate.url.includes('panel=mini')
+  )
   const reopenedDebugger = await connectToDebugger(reopenedTarget.webSocketDebuggerUrl)
   await reopenedDebugger.send('Runtime.enable')
   await reopenedDebugger.send('Page.enable')
@@ -1711,6 +1762,124 @@ try {
     'Navigating to another profile did not stop preview and restore manual activation.'
   )
 
+  const disposableProfile = await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.createProfile('Delete focus check')`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (disposableProfile.result.value?.ok !== true) {
+    throw new Error('Could not create a disposable profile for delete-focus coverage.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((candidate) => candidate.textContent?.trim() === 'Delete focus check')`,
+    'The disposable profile did not appear before delete-focus coverage.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
+      .find((candidate) => candidate.querySelector('strong')?.textContent?.trim() ===
+        'Delete focus check')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="profile-name"]')?.textContent === 'Delete focus check'`,
+    'The disposable profile could not be selected before delete-focus coverage.'
+  )
+  await selectMenuItem(debuggerClient, 'More profile actions', 'Delete profile')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]')?.textContent?.includes('Delete focus check') === true`,
+    'Profile deletion did not open the in-app confirmation dialog.'
+  )
+  await delay(300)
+  await captureScreenshot(debuggerClient, deleteDialogScreenshotPath)
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[role="alertdialog"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Delete profile')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `![...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((candidate) => candidate.textContent?.trim() === 'Delete focus check')`,
+    'The disposable profile was not deleted.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-scope="dialog"]') === null`,
+    'The profile deletion dialog did not finish closing.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.matches(
+      '[data-part="profile-item"][data-selected] [data-part="profile-select"]'
+    ) === true`,
+    'Profile deletion did not restore focus to the remaining selected profile.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') !== null`,
+    'The remaining profile did not enter Edit mode after deletion.'
+  )
+  const nameInputBounds = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const input = document.querySelector('[aria-label="Profile name"]')
+      if (!(input instanceof HTMLElement)) return null
+      const bounds = input.getBoundingClientRect()
+      return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+    })()`,
+    returnByValue: true
+  })
+  if (nameInputBounds.result.value === null) {
+    throw new Error('The profile name input was unavailable after deletion.')
+  }
+  await debuggerClient.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    button: 'left',
+    clickCount: 1,
+    x: nameInputBounds.result.value.x,
+    y: nameInputBounds.result.value.y
+  })
+  await debuggerClient.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    button: 'left',
+    clickCount: 1,
+    x: nameInputBounds.result.value.x,
+    y: nameInputBounds.result.value.y
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'a',
+    code: 'KeyA',
+    windowsVirtualKeyCode: 65,
+    modifiers: 2
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'a',
+    code: 'KeyA',
+    windowsVirtualKeyCode: 65,
+    modifiers: 2
+  })
+  await debuggerClient.send('Input.insertText', { text: 'Default after delete' })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === 'Default after delete'`,
+    'The profile name input did not accept keyboard text after another profile was deleted.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]') === null`,
+    'Delete-focus coverage did not leave Edit mode.'
+  )
+
   await debuggerClient.send('Runtime.evaluate', {
     expression: `history.replaceState({}, '', location.pathname + '?panel=mini')`
   })
@@ -1908,6 +2077,7 @@ try {
   globalThis.console.log(`Settings Select screenshot: ${settingsSelectScreenshotPath}`)
   globalThis.console.log(`Displays screenshot: ${displaysScreenshotPath}`)
   globalThis.console.log(`About screenshot: ${aboutScreenshotPath}`)
+  globalThis.console.log(`Delete dialog screenshot: ${deleteDialogScreenshotPath}`)
   globalThis.console.log(`Mini picker screenshot: ${miniPickerScreenshotPath}`)
   globalThis.console.log(`Mini Default restored screenshot: ${miniDefaultScreenshotPath}`)
 } catch (error) {

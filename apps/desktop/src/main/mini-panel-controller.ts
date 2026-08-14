@@ -30,17 +30,6 @@ export class MiniPanelController {
     private readonly releaseDelayMilliseconds = 5_000
   ) {}
 
-  public toggle(trayBounds: Rectangle): void {
-    this.#cancelRelease()
-    const panel = this.#window()
-    if (panel.isVisible()) {
-      panel.hide()
-      this.#scheduleRelease(panel)
-      return
-    }
-    this.show(trayBounds)
-  }
-
   public show(anchorBounds?: Rectangle): void {
     this.#cancelRelease()
     const panel = this.#window()
