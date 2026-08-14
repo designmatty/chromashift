@@ -262,6 +262,14 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         onClick={props.onSelect}
       >
         <ProfileIcon profile={props.profile} />
+        {props.active && (
+          <Box
+            boxSize="6px"
+            rounded="full"
+            bg={{ base: 'orange.solid', _dark: 'orange.solid' }}
+            aria-label="Active profile"
+          />
+        )}
         <Text
           as="strong"
           flex="1"
@@ -274,19 +282,6 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         >
           {props.profile.name}
         </Text>
-        {props.active && (
-          <Box
-            boxSize="6px"
-            rounded="full"
-            bg="orange.solid"
-            aria-label="Active profile"
-            transform={'translateX(15px)'}
-            transition={'transform'}
-            _groupHover={{
-              transform: 'translateX(0)'
-            }}
-          />
-        )}
       </Button>
       <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
         <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">

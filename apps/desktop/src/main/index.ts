@@ -28,6 +28,7 @@ import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
 import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
 import { MiniPanelController } from './mini-panel-controller.js'
+import { PanelController } from './panel-controller.js'
 import { registerProductIpcHandlers } from './product-ipc.js'
 import { ProductController } from './product-controller.js'
 import { PreviewSessionController } from './preview-session-controller.js'
@@ -74,6 +75,14 @@ const miniPanelController = new MiniPanelController(
   (position) => saveMiniPanelPosition(position),
   () => miniPanelHeightAdjustment()
 )
+const panelController = new PanelController(
+  () => mainWindow,
+  () => miniWindow,
+  () => windowController.open(),
+  () => mainWindow?.hide(),
+  (bounds) => miniPanelController.show(bounds),
+  () => miniPanelController.hide()
+)
 
 function saveMiniPanelPosition(position: { x: number; y: number }): void {
   const currentPosition = currentSettings.miniPanelPosition
@@ -98,8 +107,8 @@ function titleBarOverlayOptions(): { color: string; symbolColor: string; height:
     currentSettings.theme === 'dark' ||
     (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
   return {
-    color: dark ? '#111114' : '#ebf1f7',
-    symbolColor: dark ? '#e6e6ea' : '#1a1a1f',
+    color: dark ? '#111114' : '#f1f1f3',
+    symbolColor: dark ? '#f1f1f3' : '#111114',
     height: TITLE_BAR_HEIGHT
   }
 }
@@ -108,7 +117,7 @@ function appPanelBackgroundColor(): string {
   const dark =
     currentSettings.theme === 'dark' ||
     (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
-  return dark ? '#111114' : '#ebf1f7'
+  return dark ? '#111114' : '#f1f1f3'
 }
 
 function applyTitleBarOverlay(): void {
@@ -331,7 +340,6 @@ function createWindow(): BrowserWindow {
   window.on('move', () => scheduleWindowStateSave(window))
   window.on('maximize', () => scheduleWindowStateSave(window))
   window.on('unmaximize', () => scheduleWindowStateSave(window))
-  window.once('ready-to-show', () => window.show())
   if (process.env['ELECTRON_RENDERER_URL']) {
     void window.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -401,8 +409,7 @@ function createMiniWindow(): BrowserWindow {
 }
 
 function openWindow(view: AppPanelView = 'profiles'): void {
-  miniPanelController.hide()
-  windowController.open()
+  panelController.openAppPanel()
   const window = mainWindow
   if (window === undefined || window.webContents.isDestroyed()) return
   const navigate = (): void => window.webContents.send(productIpcChannels.navigateAppPanel, view)
@@ -436,7 +443,7 @@ function configureDesktopLifecycle(): Promise<void> {
     logger
   )
   const trayMenu = new ElectronTrayMenu(trayIconPath(), (bounds) =>
-    miniPanelController.toggle(bounds)
+    panelController.reopenLastPanel(bounds)
   )
   trayController = new TrayController(
     profileRepository,
@@ -569,10 +576,7 @@ registerProductIpcHandlers(
   () => shutdownCoordinator?.request('application') ?? Promise.resolve(false),
   openWindow,
   () => miniPanelController.hide(),
-  () => {
-    mainWindow?.hide()
-    miniPanelController.show()
-  },
+  () => panelController.openMiniPanel(),
   async (event) => {
     const contents = event.sender
     if (contents.isDevToolsOpened()) {
@@ -602,7 +606,7 @@ void app.whenReady().then(async () => {
   await startNativeService()
   await configureDesktopLifecycle()
   if (!app.getLoginItemSettings().wasOpenedAtLogin || currentSettings.launchBehavior === 'app') {
-    createWindow()
+    openWindow()
   }
   app.on('activate', () => openWindow())
 })

@@ -88,6 +88,9 @@ targets, foreground-application assignment, and an Electron `.exe` picker. Its
 controls derive support and provider explanations from each selected display's
 capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
 display view retains the hardware diagnostics needed for provider support.
+Profile deletion uses Chakra's renderer-modal `Dialog` so closing an overflow
+menu and removing its trigger cannot strand Windows keyboard focus outside the
+app.
 
 Live preview is an explicit activation session. It suspends automatic display
 writes while still remembering foreground changes and applies only validated
@@ -102,10 +105,12 @@ existing session in place: it retains the captured baseline and applied values a
 performs no restore, capture, or display write. A changed draft or different profile
 continues through the full restore-safe transition.
 
-Tray left-click opens a dedicated borderless mini-panel window. On Windows it is a
+Tray left-click reopens the last-used panel. If that panel is already visible, the
+full app is focused or the non-activating mini panel is raised to the popup-menu
+window level above the hidden-icons drawer. Opening either panel hides the other, so
+both product surfaces are never visible together. On Windows the mini panel remains a
 pointer-oriented, non-activating Electron surface: opening or interacting with it
-does not make ChromaShift the foreground application. It is raised at the popup-menu
-window level so it remains above the hidden-icons drawer. The panel has an explicit
+does not make ChromaShift the foreground application. The panel has an explicit
 close button, closes when the full app opens, and can be dragged by its header. A user
 position is persisted and clamped to a connected display; without one, the panel
 opens next to the tray. Quick color changes remain temporary while the panel is

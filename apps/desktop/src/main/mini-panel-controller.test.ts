@@ -46,7 +46,7 @@ const display = {
 describe('MiniPanelController', () => {
   afterEach(() => vi.useRealTimers())
 
-  it('positions above a bottom taskbar, shows without activation, and toggles closed', () => {
+  it('positions above a bottom taskbar and shows without activation', () => {
     vi.useFakeTimers()
     const { panel, calls, positions } = fakePanel()
     const controller = new MiniPanelController(
@@ -56,8 +56,8 @@ describe('MiniPanelController', () => {
     )
     const trayBounds: Rectangle = { x: 1840, y: 1040, width: 24, height: 24 }
 
-    controller.toggle(trayBounds)
-    controller.toggle(trayBounds)
+    controller.show(trayBounds)
+    controller.hide()
     vi.advanceTimersByTime(5_000)
 
     expect(positions).toEqual([[1512, 436]])
@@ -74,10 +74,10 @@ describe('MiniPanelController', () => {
     )
     const trayBounds: Rectangle = { x: 1840, y: 1040, width: 24, height: 24 }
 
-    controller.toggle(trayBounds)
-    controller.toggle(trayBounds)
+    controller.show(trayBounds)
+    controller.hide()
     vi.advanceTimersByTime(1_000)
-    controller.toggle(trayBounds)
+    controller.show(trayBounds)
     vi.advanceTimersByTime(5_000)
 
     expect(calls).not.toContain('destroy')
@@ -91,7 +91,7 @@ describe('MiniPanelController', () => {
       () => display
     )
 
-    controller.toggle({ x: -20, y: -24, width: 24, height: 24 })
+    controller.show({ x: -20, y: -24, width: 24, height: 24 })
 
     expect(positions).toEqual([[8, 8]])
   })
@@ -105,7 +105,7 @@ describe('MiniPanelController', () => {
       () => ({ x: 1900, y: -100 })
     )
 
-    controller.toggle({ x: 1840, y: 1040, width: 24, height: 24 })
+    controller.show({ x: 1840, y: 1040, width: 24, height: 24 })
 
     expect(positions).toEqual([[1512, 8]])
   })

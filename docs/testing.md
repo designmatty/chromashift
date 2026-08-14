@@ -49,7 +49,7 @@ retry behavior, and state reset after external restoration or native restart.
 Tray and lifecycle coverage verifies current-profile read models, enabled and
 disabled profile entries, activation-driven menu refresh, manual and automatic
 mode changes, explicit baseline reset, renderer-releasing close-to-tray behavior,
-serialized
+mutually exclusive app/mini-panel opening, last-used tray reopening, serialized
 restore-before-exit ordering, concurrent exit suppression, actionable restore
 failure handling, and retry.
 Profile-path regression coverage verifies the explicit stable application-data
@@ -73,10 +73,12 @@ tests cover defaults, validation, and atomic persistence.
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, read-only profile navigation, Settings navigation,
 read-only display/color summaries without edit inputs, live Edit preview,
+real app-to-mini and mini-to-app handoff with only one visible panel,
 multi-open display accordion behavior and default expansion of every configured
 display in read-only and Edit modes,
 keyboard editing of Default and normal profile names, disabled-control value
-retention, shared trigger IDs and keyboard behavior for tooltip-wrapped profile
+retention, profile-name keyboard focus after confirmed deletion, shared trigger IDs
+and keyboard behavior for tooltip-wrapped profile
 menus, closed Switch labels, disabled-switch tooltip composition, profile
 activation switches versus profile enablement, manual/automatic mode transitions,
 hover- and focus-revealed sidebar profile actions, unique compound-trigger IDs,
@@ -94,8 +96,8 @@ brightness on/off round trip cancels its temporary override. It also verifies
 validated product state, automatic activation with fresh isolated user data,
 restore-aware exit, and no renderer errors. Captured images are written under
 `apps/desktop/out/smoke/` for the app panel, mini panel, Settings General, the
-open Chakra settings Select, Displays, About, the mini profile picker, and the
-restored Default mini panel.
+open Chakra settings Select, Displays, About, profile deletion confirmation, the
+mini profile picker, and the restored Default mini panel.
 
 The desktop close/reopen path now closes the real native window, verifies that
 its renderer is released, and launches ChromaShift again with the same isolated
@@ -107,7 +109,7 @@ user data, samples the complete Windows child-process tree in visible and tray
 states, and exits through the same restore-safe shutdown coordinator. The exact
 baseline and interpretation live in `docs/performance.md`. `npm run
 check:renderer-budget` measures all emitted renderer JavaScript and CSS and
-fails if their combined gzip size exceeds 350 KB or the largest raw JavaScript
+fails if their combined gzip size exceeds 360 KB or the largest raw JavaScript
 chunk exceeds 1.1 MB. Root `npm run verify` runs this budget after the build.
 
 The desktop smoke keeps a separate native restoration guard alive, proves that

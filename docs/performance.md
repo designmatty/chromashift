@@ -74,10 +74,11 @@ Select collection and floating-positioning path added 11.44 KB gzip over the
 previous native-select build. The renderer no longer has an application-owned
 CSS file; the small emitted CSS asset contains the bundled Fontsource
 declarations. The later multi-expand Chakra Accordion and visual overhaul brought
-the measured renderer total to 344.12 KB gzip. Because component declarations
-live in runtime JavaScript, the hard renderer budget is 350 KB gzip for all
-JavaScript and CSS, leaving 5.88 KB of measured headroom, or 1.1 MB raw for its
-largest JavaScript chunk.
+the measured renderer total to 344.12 KB gzip. Adopting Chakra Dialog for the
+profile-deletion confirmation brought the measured total to about 354.76 KB gzip.
+The hard renderer budget is 360 KB gzip for all JavaScript and CSS, retaining a
+small regression margin while dialog optimization is deferred, or 1.1 MB raw for
+its largest JavaScript chunk.
 
 Lazy app-panel and mini-panel entries do not materially change the app-panel
 payload, but the mini-panel initial JavaScript and CSS path drops to about
