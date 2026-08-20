@@ -9,6 +9,7 @@ import {
   appSettingsResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
+  diagnosticLogEntriesResultSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
   commitSessionRequestSchema,
@@ -24,6 +25,7 @@ import {
   setDefaultProfileRequestSchema,
   voidResultSchema,
   type AppPanelView,
+  type DiagnosticLogEntry,
   type MiniPanelView,
   type ProductError
 } from '../shared/product-api.js'
@@ -43,7 +45,8 @@ export function registerProductIpcHandlers(
   hideMiniPanel: () => void,
   showMiniPanel: () => void,
   openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
-  setMiniPanelView: (view: MiniPanelView) => void = () => undefined
+  setMiniPanelView: (view: MiniPanelView) => void,
+  getDiagnostics: () => DiagnosticLogEntry[]
 ): void {
   const controller = (): ProductController => {
     const value = getController()
@@ -161,6 +164,14 @@ export function registerProductIpcHandlers(
     applicationSelectionsResultSchema,
     assertTrustedRenderer,
     async () => controller().listApplications()
+  )
+  register(
+    ipc,
+    productIpcChannels.getDiagnostics,
+    emptyRequestSchema,
+    diagnosticLogEntriesResultSchema,
+    assertTrustedRenderer,
+    async () => getDiagnostics()
   )
   register(
     ipc,

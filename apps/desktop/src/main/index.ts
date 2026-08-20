@@ -56,7 +56,7 @@ import {
 } from './renderer-recovery-controller.js'
 import { isSameDocumentNavigation, isTrustedRendererUrl } from './renderer-security.js'
 import { ShutdownCoordinator } from './shutdown-coordinator.js'
-import { describeError, PersistentJsonLogger } from './structured-logger.js'
+import { describeError, PersistentJsonLogger, readDiagnosticLog } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
@@ -88,9 +88,8 @@ const applicationDataPaths = resolveApplicationDataPaths(
   hasUserDataOverride ? app.getPath('userData') : undefined,
   developmentWorktreeRoot
 )
-const logger = new PersistentJsonLogger(
-  join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
-)
+const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
+const logger = new PersistentJsonLogger(diagnosticLogPath)
 const rendererRecoveryController = new RendererRecoveryController(logger)
 const settingsRepository = new AppSettingsRepository(applicationDataPaths.settingsPath)
 let currentSettings = defaultAppSettings
@@ -792,7 +791,8 @@ registerProductIpcHandlers(
       contents.openDevTools({ mode: 'detach', activate: true })
     })
   },
-  (view) => miniPanelController.setView(view)
+  (view) => miniPanelController.setView(view),
+  () => readDiagnosticLog(diagnosticLogPath)
 )
 
 void app.whenReady().then(async () => {

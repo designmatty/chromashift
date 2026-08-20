@@ -216,7 +216,10 @@ layout checks, smoke coverage, and signing hooks.
 
 Packaged Electron enables embedded ASAR integrity and ASAR-only application
 loading while disabling Node startup environment/inspector escape hatches. Main
-and native diagnostics are retained as bounded JSONL under user data. Development
+and native diagnostics are retained as bounded JSONL under user data. A typed,
+sender-validated renderer request reads only the latest bounded file tail and
+returns at most 250 validated entries; the renderer never receives a filesystem
+path or direct file access. Development
 launches derive a separate data directory from the canonical Git worktree root;
 explicit smoke overrides and the stable production/migration directories keep
 their existing precedence. Tag releases pass a serialized signed-build workflow

@@ -86,6 +86,9 @@ remain, per-surface renderer crash/oom/abnormal-exit circuits, and coalesced
 renderer-independent emergency restoration. Native tests cover the watchdog
 deadline/reset behavior and the background protocol reader that keeps lifecycle
 signals observable while stdin is idle.
+Diagnostic coverage verifies newline-delimited persistence, bounded newest-first
+reads, malformed-line rejection, typed response validation, and sender-validated
+preload access without exposing a filesystem primitive.
 Profile-path regression coverage verifies the explicit stable application-data
 location, isolated command-line overrides, exact legacy-file copying,
 non-overwrite behavior, and concurrent migration safety.
@@ -130,8 +133,10 @@ brightness on/off round trip cancels its temporary override. It also verifies
 validated product state, automatic activation with fresh isolated user data,
 restore-aware exit, and no renderer errors. Captured images are written under
 `apps/desktop/out/smoke/` for the app panel, mini panel, Settings General, the
-open Chakra settings Select, Displays, About, profile deletion confirmation, the
-mini profile picker, and the restored Default mini panel.
+open Chakra settings Select, Displays, Diagnostics, About, profile deletion
+confirmation, the mini profile picker, and the restored Default mini panel. The
+settings flow requires a live `ApplicationStarted` diagnostic entry and captures
+verbose event payloads in their collapsed state.
 
 The desktop close/reopen path now closes the real native window, verifies that
 its renderer is released, and launches ChromaShift again with the same isolated
@@ -162,6 +167,18 @@ restore-safe exit, uninstall, and profile-data survival. The smoke install uses
 isolated temporary install and user-data directories. `npm run release:preflight
 -- --tag v<version> --artifacts` additionally verifies tag/package/lockfile
 version agreement and exact x64 installer, block-map, and `latest.yml` metadata.
+
+## Milestone 5 automated closeout record (2026-08-20)
+
+On the current NVIDIA/two-display Windows host, the post-`f03c86a` closeout ran
+`npm run verify`, `npm run native:test:integration`, `npm run smoke:desktop`,
+`npm run smoke:desktop:crash`, `npm run smoke:desktop:native-recovery`, `npm run
+package:win`, and `npm run smoke:package` successfully. The package run validated
+the exact unsigned x64 installer, unpacked and installed application, external
+sidecar handshake/restoration, in-place upgrade, uninstall, and profile-data
+survival. This does not replace the pending suspend/resume, lock/unlock,
+resolution/refresh, driver-reset, AMD/mixed-GPU, signing-certificate, or installer
+reputation matrix.
 
 ## Phase 0 hardware record (2026-08-08)
 

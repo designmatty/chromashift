@@ -71,7 +71,10 @@ and its legacy migration paths are unchanged.
 Main-process and native-service diagnostics are written as rotated JSONL at
 `<user-data>\logs\main.jsonl` as well as the console. The log records startup,
 health/owner identities, profile matching and activation, per-display failures,
-transition/recovery decisions, and restoration/exit outcomes.
+transition/recovery decisions, and restoration/exit outcomes. The Diagnostics
+settings page reads a bounded tail through the narrow preload API and presents
+the latest 250 validated events newest-first; the sandboxed renderer has no file
+path or direct filesystem access.
 
 ## Code signing
 

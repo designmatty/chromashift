@@ -72,8 +72,9 @@ matrix. Slices 5.1 through 5.3 now have their implementation and automated cover
 transition/topology/baseline validation, hardened window persistence, helper
 health and heartbeat restoration, fail-closed bounded sidecar recovery, bounded
 renderer recreation, the global emergency restore shortcut, hardened Electron
-fuses/CSP/navigation, persistent diagnostics, worktree-isolated development data,
-and package security smoke. Slice 5.4's version/tag/artifact/update-manifest
+fuses/CSP/navigation, persistent diagnostics, a bounded in-app diagnostics browser,
+worktree-isolated development data, and package security smoke. Slice 5.4's
+version/tag/artifact/update-manifest
 preflight and serialized signed-release workflow are also implemented. Guarded
 SDR/HDR/SDR plus active-Edit DisplayPort and HDMI disconnect/reconnect sequences
 have passed on the G60SD. Disconnected profile targets remain persisted but stay

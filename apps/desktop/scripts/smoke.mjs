@@ -17,6 +17,7 @@ const miniScreenshotPath = join(screenshotDirectory, 'mini-panel.png')
 const settingsScreenshotPath = join(screenshotDirectory, 'settings.png')
 const settingsSelectScreenshotPath = join(screenshotDirectory, 'settings-select.png')
 const displaysScreenshotPath = join(screenshotDirectory, 'displays.png')
+const diagnosticsScreenshotPath = join(screenshotDirectory, 'diagnostics.png')
 const aboutScreenshotPath = join(screenshotDirectory, 'about.png')
 const deleteDialogScreenshotPath = join(screenshotDirectory, 'delete-profile-dialog.png')
 const miniPickerScreenshotPath = join(screenshotDirectory, 'mini-picker.png')
@@ -923,13 +924,20 @@ try {
     'The Chakra startup behavior Select did not restore the original smoke setting.'
   )
 
-  // Settings replaces the profile sidebar with its own General/Displays/About nav.
+  // Settings replaces the profile sidebar with its own settings-section navigation.
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Displays')?.click()`
   })
   await waitForText(debuggerClient, 'Restore original display settings')
   await captureScreenshot(debuggerClient, displaysScreenshotPath)
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Diagnostics')?.click()`
+  })
+  await waitForText(debuggerClient, 'Latest events from this ChromaShift data directory')
+  await waitForText(debuggerClient, 'ApplicationStarted')
+  await captureScreenshot(debuggerClient, diagnosticsScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'About')?.click()`
@@ -2278,6 +2286,7 @@ try {
   globalThis.console.log(`Settings screenshot: ${settingsScreenshotPath}`)
   globalThis.console.log(`Settings Select screenshot: ${settingsSelectScreenshotPath}`)
   globalThis.console.log(`Displays screenshot: ${displaysScreenshotPath}`)
+  globalThis.console.log(`Diagnostics screenshot: ${diagnosticsScreenshotPath}`)
   globalThis.console.log(`About screenshot: ${aboutScreenshotPath}`)
   globalThis.console.log(`Delete dialog screenshot: ${deleteDialogScreenshotPath}`)
   globalThis.console.log(`Mini picker screenshot: ${miniPickerScreenshotPath}`)

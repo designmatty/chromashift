@@ -2033,7 +2033,8 @@ Focus on functionality before visual polish.
   excluding ChromaShift, system/background windows, and duplicate executables;
   retain the `.exe` browser
 - add System/Light/Dark theme, launch-at-startup, login launch behavior, close
-  behavior, and Reset displays settings; diagnostics/log browsing remains M5
+  behavior, and Reset displays settings; diagnostics/log browsing is completed
+  in Slice 5.3
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
 
@@ -2121,6 +2122,8 @@ missing states before changing the product model.
 - dependency audit and current Electron security patch level
 - production Content Security Policy and Electron fuse review
 - structured logs sufficient to diagnose activation and restore failures
+- expose a bounded, sender-validated in-app browser for the latest structured
+  diagnostic events without giving the renderer filesystem access
 - isolate development data automatically per Git worktree while retaining
   explicit user-data overrides for smoke tests and intentional production-data
   migration checks
@@ -2561,6 +2564,9 @@ health/topology recovery before the full restore-safe desktop sequence. If a
 crashed helper may have owned baselines, restart remains fail-closed and the UI
 shows actionable recovery guidance without raw display identifiers; technical
 details stay in Diagnostics.
+The Diagnostics settings page reads only a bounded tail of the current JSONL log,
+validates at most 250 newest-first entries through the typed preload API, and
+keeps verbose payloads collapsed until the user opens them.
 
 ## Completed Phase 0 deliverables
 

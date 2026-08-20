@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  diagnosticLogEntriesResultSchema,
   openAppPanelRequestSchema,
   previewUpdateRequestSchema,
   productStateResultSchema,
@@ -18,6 +19,7 @@ describe('product API contracts', () => {
       }).success
     ).toBe(false)
     expect(openAppPanelRequestSchema.safeParse({ view: 'logs' }).success).toBe(false)
+    expect(openAppPanelRequestSchema.safeParse({ view: 'diagnostics' }).success).toBe(true)
     expect(openAppPanelRequestSchema.safeParse({ view: 'settings' }).success).toBe(true)
     expect(setMiniPanelViewRequestSchema.safeParse({ view: 'override' }).success).toBe(true)
     expect(setMiniPanelViewRequestSchema.safeParse({ view: 'large' }).success).toBe(false)
@@ -77,6 +79,19 @@ describe('product API contracts', () => {
       productStateResultSchema.safeParse({
         ok: false,
         error: { code: 'INTERNAL', message: 'untyped failure' }
+      }).success
+    ).toBe(false)
+    expect(
+      diagnosticLogEntriesResultSchema.safeParse({
+        ok: true,
+        value: [
+          {
+            timestamp: '2026-08-20T12:00:00.000Z',
+            level: 'debug',
+            eventName: 'Unexpected',
+            details: ''
+          }
+        ]
       }).success
     ).toBe(false)
   })
