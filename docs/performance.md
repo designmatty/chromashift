@@ -173,8 +173,8 @@ additional native Windows window handling.
 Decision: keep Electron. The existing shell already has mature TypeScript domain
 coverage, sandboxed and validated IPC, restore-safe DisplayService ownership,
 non-activating window behavior, renderer lifecycle optimization, and packaged
-desktop smoke. The upcoming UI and Milestone 5 hardening are lower risk in that
-shell. Keep Electron Builder; Electron Forge does not solve a current packaging
+desktop smoke. The completed UI and Milestone 5 hardening remained lower risk in
+that shell. Keep Electron Builder; Electron Forge does not solve a current packaging
 or lifecycle gap.
 
 Reconsider only if a future repeatable workload shows that Electron's tray floor

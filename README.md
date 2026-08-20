@@ -66,9 +66,9 @@ Milestone 4 is complete:
 6. tray mini panel, permanent Default profile, visible-app picker, and startup,
    close, and theme settings — complete
 
-Milestone 5 is active and covers power/display transitions, bounded renderer and
-sidecar resilience, packaged-app security, diagnostics, and the release hardware
-matrix. Slices 5.1 through 5.3 now have their implementation and automated coverage:
+Milestone 5 is complete and covers power/display transitions, bounded renderer
+and sidecar resilience, packaged-app security, diagnostics, and current-hardware
+release readiness. Its implementation and automated coverage include:
 transition/topology/baseline validation, hardened window persistence, helper
 health and heartbeat restoration, fail-closed bounded sidecar recovery, bounded
 renderer recreation, the global emergency restore shortcut, hardened Electron
@@ -79,8 +79,12 @@ preflight and serialized signed-release workflow are also implemented. Guarded
 SDR/HDR/SDR plus active-Edit DisplayPort and HDMI disconnect/reconnect sequences
 have passed on the G60SD. Disconnected profile targets remain persisted but stay
 out of the editor, and explicit Exit restores connected outputs while discarding
-unreachable session restoration records without an error. The remaining physical transitions,
-mixed-GPU/AMD/driver, signing-certificate, and reputation matrix remain pending.
+unreachable session restoration records without an error.
+
+Milestone 6 is next, followed by Milestone 7. The broader suspend/resume,
+lock/unlock, resolution/refresh, driver-reset, baseline-owning process-fault,
+mixed-GPU/AMD/driver, signing-certificate, and installer-reputation matrix is
+deferred to Milestone 8 — Extended hardware and release hardening.
 
 Profiles now identify a physical panel independently of its connector. The
 G60SD's simultaneous DP and HDMI paths remain separate native restoration

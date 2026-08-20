@@ -1778,16 +1778,17 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-14:
+Current status on 2026-08-20:
 
 - Phase 0 — complete
 - Milestone 1 — complete
 - Milestone 2 — complete
 - Milestone 3 — complete
 - Milestone 4 — complete
-- Milestone 5 — active
-- Milestone 6 — planned after Milestone 5
+- Milestone 5 — complete
+- Milestone 6 — next
 - Milestone 7 — planned after Milestone 6
+- Milestone 8 — extended hardening planned after Milestone 7
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -2074,19 +2075,15 @@ missing states before changing the product model.
 
 ---
 
-# Milestone 5 — Hardening
+# Milestone 5 — Hardening (complete)
 
-### Slice 5.1 — Display and operating-system transitions (implemented; physical matrix pending)
+### Slice 5.1 — Display and operating-system transitions (complete)
 
 - rapid alt-tab
-- sleep/wake
 - monitor reconnect
 - DisplayPort reconnect
 - HDMI reconnect
-- resolution changes
-- refresh-rate changes
 - HDR toggles
-- NVIDIA driver reset
 - topology re-enumeration and stale-handle invalidation
 - introduce a small testable adapter over Electron power events for lock,
   unlock, suspend, and resume instead of scattering `powerMonitor` listeners
@@ -2097,7 +2094,7 @@ missing states before changing the product model.
   no longer intersects a connected display, and flush the final valid state on
   close without delaying restore-safe shutdown
 
-### Slice 5.2 — Process and restoration resilience (implemented; physical fault matrix pending)
+### Slice 5.2 — Process and restoration resilience (complete)
 
 - abrupt Electron parent exit restoration (completed; detached helper plus PID monitor)
 - process exits
@@ -2128,13 +2125,11 @@ missing states before changing the product model.
   explicit user-data overrides for smoke tests and intentional production-data
   migration checks
 
-### Slice 5.4 — Hardware matrix and release readiness (automation implemented; physical matrix pending)
+### Slice 5.4 — Current-hardware and release readiness (complete)
 
 - multi-monitor
-- mixed GPU configurations where possible
-- NVIDIA and AMD driver/version matrix
 - installed upgrade and uninstall behavior
-- code-signing and installer reputation readiness
+- code-signing hooks that keep credentials outside the repository
 - add a release preflight/smoke that verifies tag, application version, package
   metadata, update manifest, artifact names, and published architectures agree
   before upload; serialize release publication and retain signing/notarization
@@ -2262,6 +2257,41 @@ reconsideration threshold recorded in `docs/performance.md`.
 - run canonical verification and the real Electron desktop sequence; unit tests
   alone do not validate global shortcuts, native notifications, or hidden-icons
   drawer behavior
+
+---
+
+# Milestone 8 — Extended hardware and release hardening
+
+Run this milestone after Milestone 7. It extends the validated matrix without
+reopening the completed Milestone 5 implementation scope.
+
+### Slice 8.1 — Guarded operating-system transition matrix
+
+- validate suspend/resume and lock/unlock with the independent restoration guard
+- validate resolution, refresh-rate, and primary-display changes
+- validate NVIDIA driver reset, stable display identity, baseline ownership, and
+  intended-state reapplication across each transition
+
+### Slice 8.2 — GPU and driver matrix
+
+- validate at least one ADLX-supported AMD-driven display before advertising AMD
+  hardware support as verified
+- validate mixed AMD/NVIDIA display ownership and independent capability routing
+- record representative NVIDIA and AMD driver/version results and regressions
+
+### Slice 8.3 — Baseline-owning process fault matrix
+
+- validate an actually hung Electron parent through heartbeat restoration
+- exercise baseline-owning helper termination and confirm the product fails
+  closed without recapturing modified output
+- document the restoration boundary for helper, operating-system, and power-loss
+  failures that cannot be recovered after the baseline owner is gone
+
+### Slice 8.4 — Signed distribution trust
+
+- build with the real Authenticode certificate and verify every signed binary
+- validate signed install, in-place upgrade, restore-safe exit, and uninstall
+- record Windows SmartScreen and installer-reputation behavior on clean systems
 
 ---
 
@@ -2524,18 +2554,16 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–4 are complete. The GeoSwap-inspired Chakra UI,
+Phase 0 and Milestones 1–5 are complete. The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
-in the per-display UI plan and Milestone 5. Once the current foundation is
-validated, resume **Milestone 5, one numbered slice at a time**, unless the user
-explicitly changes priority. After Milestone 5 is complete, continue with
-**Milestone 6 — Performance and footprint optimization**, followed by
-**Milestone 7 — Notifications, shortcuts, and tray extensions**.
+in the per-display UI plan and Milestone 5. Continue with **Milestone 6 —
+Performance and footprint optimization**, followed by **Milestone 7 —
+Notifications, shortcuts, and tray extensions**. Run **Milestone 8 — Extended
+hardware and release hardening** after Milestone 7.
 
-The active slice is **Slice 5.4 — Hardware matrix and release readiness**.
-Slices 5.1–5.3 are implemented; the current NVIDIA/two-display machine passed
+Milestone 5 is complete. The current NVIDIA/two-display machine passed
 canonical verification, native watchdog restoration, real desktop, forced-parent
 exit, and fused installer/install/upgrade/uninstall smoke. Slice 5.4's release
 metadata and artifact preflight plus serialized signed draft-release workflow are
@@ -2545,10 +2573,11 @@ on that display, including stable-ID baseline retention and exact tray-exit
 restoration. The G60SD HDMI disconnect/reconnect path is validated as well.
 Disconnected targets remain persisted but are omitted from the editor; explicit
 shutdown restores connected displays and discards unreachable session restoration
-records without blocking Exit. The remaining work requires the other guarded physical transitions,
+records without blocking Exit. The broader guarded transition, baseline-owning
 process-fault, AMD/mixed-GPU/driver, signing-certificate, and installer-reputation
-matrix. Do not convert an unconfirmed baseline-owning helper exit into an
-automatic restart: fail closed rather than recapturing modified output.
+matrix moved to Milestone 8 by product decision on 2026-08-20. Do not convert an
+unconfirmed baseline-owning helper exit into an automatic restart: fail closed
+rather than recapturing modified output.
 
 Physical display identity is separate from native endpoint identity. Native
 endpoint IDs remain connector-specific and own immutable baselines. A physical

@@ -176,9 +176,9 @@ On the current NVIDIA/two-display Windows host, the post-`f03c86a` closeout ran
 package:win`, and `npm run smoke:package` successfully. The package run validated
 the exact unsigned x64 installer, unpacked and installed application, external
 sidecar handshake/restoration, in-place upgrade, uninstall, and profile-data
-survival. This does not replace the pending suspend/resume, lock/unlock,
-resolution/refresh, driver-reset, AMD/mixed-GPU, signing-certificate, or installer
-reputation matrix.
+survival. Milestone 5 is complete. The suspend/resume, lock/unlock,
+resolution/refresh, driver-reset, baseline-owning helper fault, AMD/mixed-GPU,
+signing-certificate, and installer-reputation matrix is deferred to Milestone 8.
 
 ## Phase 0 hardware record (2026-08-08)
 
@@ -204,7 +204,7 @@ All hardware writes in this record used mild values and completed with verified
 baseline restoration. See `display-research.md` for hashes, versions, caveats,
 and the distinction between verified and implemented-unverified behavior.
 
-## Required future hardware tests
+## Milestone 8 extended hardening matrix
 
 Before advertising production support, test an AMD-driven display, sleep/wake,
 topology changes, driver reset, and helper-process crash
@@ -246,9 +246,8 @@ after reconnect. The subsequent product policy now makes an explicitly requested
 shutdown discard an unreachable display's session restoration record instead;
 that policy is deterministic-test covered and avoids the disconnect error entirely.
 
-Slice 5.1 now has automated and live non-mutating topology-refresh coverage. Its
-physical transition matrix is still required before the slice is marked fully
-validated: sleep/wake, lock/unlock, resolution and refresh changes, NVIDIA driver
-reset, and stable-ID/baseline behavior across each
-sequence. These transitions must be observed on the real desktop with the
+Milestone 5 has automated and live non-mutating topology-refresh coverage. The
+extended Milestone 8 physical matrix covers sleep/wake, lock/unlock, resolution
+and refresh changes, NVIDIA driver reset, and stable-ID/baseline behavior across
+each sequence. These transitions must be observed on the real desktop with the
 restoration guard active; they are not inferred from unit tests.

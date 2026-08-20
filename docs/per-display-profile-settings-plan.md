@@ -241,8 +241,8 @@ overridden target to an empty target restores the captured baseline. Duplicate
 stable display IDs remain invalid case-insensitively.
 
 Topology changes must rejoin settings by stable ID, never reuse stale handles, and
-leave unknown/new Default displays at baseline. The later Milestone 5 topology work
-must consume this same resolution path rather than introduce separate semantics.
+leave unknown/new Default displays at baseline. The completed Milestone 5 topology
+work consumes this same resolution path rather than introducing separate semantics.
 
 ## Preview and editing behavior
 
