@@ -9,6 +9,7 @@
     <RootNamespace>ChromaShift.DisplayService</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.10" />
     <PackageReference Include="System.Management" Version="10.0.10" />
     <PackageReference Include="Varun.NvAPIWrapper.Net" Version="9.0.3" />
   </ItemGroup>

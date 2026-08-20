@@ -15,7 +15,10 @@ export interface ShutdownApplicationPort {
 
 export interface ShutdownErrorPort {
   show(): void
-  showError(title: string, message: string): void
+  showError(
+    title: string,
+    message: string
+  ): Promise<'retry' | 'cancel' | void> | 'retry' | 'cancel' | void
 }
 
 export type ShutdownSource = 'tray' | 'application'
@@ -59,34 +62,37 @@ export class ShutdownCoordinator {
       source
     })
 
-    try {
-      await this.activation.waitForIdle()
-      if (this.native.running) await this.native.stop()
-      this.#state = 'complete'
-      this.logger.write({
-        level: 'information',
-        eventName: 'ApplicationExiting',
-        source,
-        baselineRestored: true
-      })
-      this.application.exit(0)
-      return true
-    } catch (error) {
-      this.#state = 'failed'
-      const details = describeError(error)
-      this.logger.write({
-        level: 'critical',
-        eventName: 'ApplicationExitBlocked',
-        source,
-        reason: 'baselineRestoreFailed',
-        ...details
-      })
-      this.errors.show()
-      this.errors.showError(
-        'ChromaShift could not restore your displays',
-        `${details.message}\n\nChromaShift is still running. Check the diagnostics window, then use Exit to retry. Do not force-close the application unless you have restored your display settings manually.`
-      )
-      return false
+    while (true) {
+      try {
+        await this.activation.waitForIdle()
+        if (this.native.running) await this.native.stop()
+        this.#state = 'complete'
+        this.logger.write({
+          level: 'information',
+          eventName: 'ApplicationExiting',
+          source,
+          baselineRestored: true
+        })
+        this.application.exit(0)
+        return true
+      } catch (error) {
+        this.#state = 'failed'
+        const details = describeError(error)
+        this.logger.write({
+          level: 'critical',
+          eventName: 'ApplicationExitBlocked',
+          source,
+          reason: 'baselineRestoreFailed',
+          ...details
+        })
+        this.errors.show()
+        const action = await this.errors.showError(
+          'Display settings need attention',
+          'ChromaShift could not restore one or more connected displays. You can try again now or keep ChromaShift running. Technical details are available in Diagnostics.'
+        )
+        if (action !== 'retry') return false
+        this.#state = 'restoring'
+      }
     }
   }
 }

@@ -6,6 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { fileURLToPath } from 'node:url'
+import { FuseV1Options, getCurrentFuseWire } from '@electron/fuses'
+import { FuseState } from '@electron/fuses/dist/constants.js'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
@@ -33,14 +35,39 @@ async function assertFile(path) {
   if (!(await stat(path)).isFile()) throw new Error(`Expected a file at ${path}.`)
 }
 
+async function assertProductionFuses(executablePath) {
+  const fuses = await getCurrentFuseWire(executablePath)
+  const expected = new Map([
+    [FuseV1Options.RunAsNode, FuseState.DISABLE],
+    [FuseV1Options.EnableCookieEncryption, FuseState.ENABLE],
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable, FuseState.DISABLE],
+    [FuseV1Options.EnableNodeCliInspectArguments, FuseState.DISABLE],
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation, FuseState.ENABLE],
+    [FuseV1Options.OnlyLoadAppFromAsar, FuseState.ENABLE],
+    [FuseV1Options.LoadBrowserProcessSpecificV8Snapshot, FuseState.DISABLE],
+    [FuseV1Options.GrantFileProtocolExtraPrivileges, FuseState.ENABLE]
+  ])
+  for (const [fuse, state] of expected) {
+    if (fuses[fuse] !== state) {
+      throw new Error(
+        `Packaged Electron fuse ${FuseV1Options[fuse]} was ${String(fuses[fuse])}; expected ${String(state)}.`
+      )
+    }
+  }
+}
+
 async function runProcess(executable, args, description, timeout = 120_000) {
   const child = spawn(executable, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => { stdout += chunk })
-  child.stderr.on('data', (chunk) => { stderr += chunk })
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk
+  })
   const code = await withTimeout(
     new Promise((resolveExit) => child.once('exit', resolveExit)),
     timeout,
@@ -60,7 +87,9 @@ async function smokeService(servicePath, label) {
   const lines = createInterface({ input: child.stdout })
   const pending = new Map()
   let readyResolve
-  const ready = new Promise((resolveReady) => { readyResolve = resolveReady })
+  const ready = new Promise((resolveReady) => {
+    readyResolve = resolveReady
+  })
   lines.on('line', (line) => {
     const message = JSON.parse(line)
     if (message.event === 'service.ready') readyResolve()
@@ -87,9 +116,30 @@ async function smokeService(servicePath, label) {
     await withTimeout(ready, timeoutMilliseconds, `${label} service readiness`)
     const info = await request('system.info')
     if (info.protocolVersion !== 1) throw new Error(`${label} returned the wrong protocol version.`)
+    await request('service.heartbeat')
+    const health = await request('service.health')
+    if (
+      health.protocolVersion !== info.protocolVersion ||
+      health.serviceVersion !== info.serviceVersion ||
+      health.watchdogArmed !== true ||
+      health.baselineCount !== 0
+    ) {
+      throw new Error(`${label} failed its health/version/watchdog handshake.`)
+    }
     const displayResult = await request('displays.list')
-    const display = displayResult.displays?.[0]
-    if (display === undefined) throw new Error(`${label} did not enumerate a display.`)
+    let display
+    for (const candidate of displayResult.displays ?? []) {
+      if (candidate.hdr) continue
+      const report = await request('display.capabilities', { displayId: candidate.id })
+      if (report.capabilities?.brightness?.supported === true) {
+        display = candidate
+        break
+      }
+    }
+    if (display === undefined) {
+      await request('service.shutdown')
+      throw new Error(`${label} did not enumerate an SDR display with brightness support.`)
+    }
     await request('baseline.capture', { displayId: display.id })
     const restored = await request('service.shutdown')
     if (!restored.displays?.some((result) => result.displayId === display.id && result.restored)) {
@@ -118,7 +168,7 @@ async function reservePort() {
     throw new Error('Could not reserve a debugging port.')
   }
   await new Promise((resolveClose, reject) =>
-    server.close((error) => error === undefined ? resolveClose() : reject(error))
+    server.close((error) => (error === undefined ? resolveClose() : reject(error)))
   )
   return address.port
 }
@@ -154,8 +204,12 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
   let exitIssued = false
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => { output += chunk })
-  child.stderr.on('data', (chunk) => { output += chunk })
+  child.stdout.on('data', (chunk) => {
+    output += chunk
+  })
+  child.stderr.on('data', (chunk) => {
+    output += chunk
+  })
   let socket
   try {
     const target = await waitForDebuggerTarget(port)
@@ -195,6 +249,7 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
       const evaluation = await send('Runtime.evaluate', {
         expression: `(async () => ({
           body: document.body.innerText,
+          csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content,
           ready: typeof window.chromaShift?.getState === 'function' &&
             (await window.chromaShift.getState()).ok
         }))()`,
@@ -208,6 +263,26 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
     }
     if (!productReady || !body.includes('Profiles')) {
       throw new Error(`${label} did not become ready.\n${body}\n${output}`)
+    }
+    const security = await send('Runtime.evaluate', {
+      expression: `({
+        csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content,
+        node: typeof globalThis.require,
+        preloadApi: Object.keys(window.chromaShift ?? {}).sort()
+      })`,
+      returnByValue: true
+    })
+    const policy = security.result.value?.csp
+    if (
+      typeof policy !== 'string' ||
+      !policy.includes("object-src 'none'") ||
+      !policy.includes("base-uri 'none'") ||
+      policy.includes('ws:')
+    ) {
+      throw new Error(`${label} did not enforce the production CSP: ${String(policy)}`)
+    }
+    if (security.result.value?.node !== 'undefined') {
+      throw new Error(`${label} exposed Node in the sandboxed renderer.`)
     }
     try {
       exitIssued = true
@@ -232,7 +307,10 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\n${output}`)
     }
     if (code !== 0) throw new Error(`${label} exited with code ${String(code)}.\n${output}`)
-    if (!output.includes('"eventName":"ApplicationExiting"') || !output.includes('"baselineRestored":true')) {
+    if (
+      !output.includes('"eventName":"ApplicationExiting"') ||
+      !output.includes('"baselineRestored":true')
+    ) {
       throw new Error(`${label} did not log confirmed restoration before exit.\n${output}`)
     }
     await delay(500)
@@ -247,7 +325,12 @@ const installedDirectory = join(temporaryRoot, 'installed')
 const unpackedUserData = join(temporaryRoot, 'unpacked-user-data')
 const installedUserData = join(temporaryRoot, 'installed-user-data')
 const unpackedApplication = join(unpackedDirectory, 'ChromaShift.exe')
-const unpackedService = join(unpackedDirectory, 'resources', 'display-service', 'DisplayService.exe')
+const unpackedService = join(
+  unpackedDirectory,
+  'resources',
+  'display-service',
+  'DisplayService.exe'
+)
 const unpackedAsar = join(unpackedDirectory, 'resources', 'app.asar')
 
 try {
@@ -255,9 +338,12 @@ try {
     assertFile(unpackedApplication),
     assertFile(unpackedService),
     assertFile(unpackedAsar),
-    assertFile(join(unpackedDirectory, 'resources', 'display-service', 'DisplayService.runtimeconfig.json')),
+    assertFile(
+      join(unpackedDirectory, 'resources', 'display-service', 'DisplayService.runtimeconfig.json')
+    ),
     assertFile(join(unpackedDirectory, 'resources', 'icon.png'))
   ])
+  await assertProductionFuses(unpackedApplication)
   await smokeService(unpackedService, 'unpacked')
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')
 
@@ -268,32 +354,41 @@ try {
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS install')
   const installedApplication = join(installedDirectory, 'ChromaShift.exe')
-  const installedService = join(installedDirectory, 'resources', 'display-service', 'DisplayService.exe')
+  const installedService = join(
+    installedDirectory,
+    'resources',
+    'display-service',
+    'DisplayService.exe'
+  )
   await Promise.all([assertFile(installedApplication), assertFile(installedService)])
+  await assertProductionFuses(installedApplication)
 
   await mkdir(installedUserData, { recursive: true })
   const configurationPath = join(installedUserData, 'profiles.json')
-  const configuration = '{\n  "schemaVersion": 2,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
+  const configuration =
+    '{\n  "schemaVersion": 2,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
   await writeFile(configurationPath, configuration)
   await smokeService(installedService, 'installed')
   await smokeApplication(installedApplication, installedUserData, 'installed app')
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS upgrade')
-  if (await readFile(configurationPath, 'utf8') !== configuration) {
+  if ((await readFile(configurationPath, 'utf8')) !== configuration) {
     throw new Error('The profile configuration changed during the upgrade.')
   }
 
   const uninstaller = join(installedDirectory, 'Uninstall ChromaShift.exe')
   await assertFile(uninstaller)
   await runProcess(uninstaller, ['/S'], 'NSIS uninstall')
-  if (await readFile(configurationPath, 'utf8') !== configuration) {
+  if ((await readFile(configurationPath, 'utf8')) !== configuration) {
     throw new Error('The profile configuration did not survive uninstall.')
   }
 
   globalThis.console.log('Packaged application smoke test passed.')
   globalThis.console.log(`Unpacked layout: ${unpackedDirectory}`)
   globalThis.console.log(`Installer: ${installer}`)
-  globalThis.console.log('External sidecar launch, IPC, baseline restoration, upgrade, and uninstall data safety: verified')
+  globalThis.console.log(
+    'External sidecar launch, IPC, baseline restoration, upgrade, and uninstall data safety: verified'
+  )
 } finally {
   await rm(temporaryRoot, {
     recursive: true,

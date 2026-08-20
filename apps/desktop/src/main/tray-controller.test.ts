@@ -59,7 +59,8 @@ function outcome(target: ActivationTarget): ActivationOutcome {
       changed: true,
       previousTarget: null
     },
-    failures: []
+    failures: [],
+    deferredDisplayIds: []
   }
 }
 

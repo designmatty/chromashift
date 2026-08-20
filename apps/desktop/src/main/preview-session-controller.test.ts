@@ -1,4 +1,5 @@
 import type { ColorProfile, ColorSettings } from '@chromashift/core'
+import { NativeServiceError } from '@chromashift/native-client'
 import type {
   BaselineCaptureResult,
   Display,
@@ -109,16 +110,25 @@ class FakeNative implements PreviewNativePort {
 
 class FakeActivation implements PreviewActivationPort {
   public readonly calls: string[] = []
+  public readonly retainedDisplayIds: Array<{
+    operation: 'cancel' | 'confirm'
+    displayIds: string[]
+  }> = []
   public beginPreview(): Promise<void> {
     this.calls.push('begin')
     return Promise.resolve()
   }
-  public cancelPreview(): Promise<void> {
+  public cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     this.calls.push('cancel')
+    this.retainedDisplayIds.push({ operation: 'cancel', displayIds: [...retainedDisplayIds] })
     return Promise.resolve()
   }
-  public confirmPreview(profileId: string): Promise<void> {
+  public confirmPreview(
+    profileId: string,
+    retainedDisplayIds: readonly string[] = []
+  ): Promise<void> {
     this.calls.push(`confirm:${profileId}`)
+    this.retainedDisplayIds.push({ operation: 'confirm', displayIds: [...retainedDisplayIds] })
     return Promise.resolve()
   }
 }
@@ -141,6 +151,29 @@ class DeferredApplyNative extends FakeNative {
     this.applyStarted()
     await this.applyReleasedPromise
     return { displayId, settings, applied: {} }
+  }
+}
+
+class DisconnectOnDemandNative extends FakeNative {
+  public disconnectOnNextApply = false
+
+  public override applyDisplaySettings(
+    displayId: string,
+    settings: DisplaySettings
+  ): Promise<DisplayApplyResult> {
+    if (this.disconnectOnNextApply) {
+      this.disconnectOnNextApply = false
+      this.displays = this.displays.filter((item) => item.id !== displayId)
+      return Promise.reject(
+        new NativeServiceError(
+          'DISPLAY_NOT_FOUND',
+          `Display not found: ${displayId}`,
+          'display.apply',
+          'test-request'
+        )
+      )
+    }
+    return super.applyDisplaySettings(displayId, settings)
   }
 }
 
@@ -293,6 +326,10 @@ describe('PreviewSessionController', () => {
     await expect(controller.cancel()).rejects.toThrow(/could not be restored/)
     expect(native.restored).toEqual([secondDisplay.id])
     expect(activation.calls).toEqual(['begin', 'cancel'])
+    expect(activation.retainedDisplayIds).toContainEqual({
+      operation: 'cancel',
+      displayIds: [display.id]
+    })
     expect(controller.state).toEqual({ state: 'inactive' })
   })
 
@@ -450,6 +487,160 @@ describe('PreviewSessionController', () => {
 
     expect(controller.state).toMatchObject({ state: 'active', kind: 'override' })
     expect(activation.calls).toEqual(['begin'])
+  })
+
+  it('revalidates capabilities and reapplies an active session after a display transition', async () => {
+    const native = new FakeNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(profile(), 'edit')
+
+    await expect(controller.reapplyAfterDisplayTransition()).resolves.toBe(true)
+
+    expect(native.captured).toEqual([display.id, display.id])
+    expect(native.applied.map((entry) => entry.settings.saturation)).toEqual([75, 75])
+  })
+
+  it('keeps an active edit deferred when its display disconnects during a transition', async () => {
+    const native = new FakeNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(profile(), 'edit')
+    native.displays = [secondDisplay]
+
+    await expect(controller.reapplyAfterDisplayTransition()).resolves.toBe(true)
+
+    expect(native.captured).toEqual([display.id])
+    expect(native.applied).toHaveLength(1)
+    expect(controller.state).toMatchObject({
+      state: 'active',
+      kind: 'edit',
+      targets: [{ displayId: display.id, color: { saturation: 75 } }]
+    })
+  })
+
+  it('keeps an active edit when the display disconnects between transition refresh and apply', async () => {
+    const native = new DisconnectOnDemandNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+    await controller.start(profile(), 'edit')
+    native.disconnectOnNextApply = true
+
+    await expect(controller.reapplyAfterDisplayTransition()).resolves.toBe(true)
+    await expect(controller.cancel()).resolves.toBeUndefined()
+
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(activation.retainedDisplayIds).toContainEqual({
+      operation: 'cancel',
+      displayIds: [display.id]
+    })
+  })
+
+  it('continues editing connected targets while another target is disconnected', async () => {
+    const native = new FakeNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(
+      profile([
+        { displayId: display.id, color: { saturation: 75 } },
+        { displayId: secondDisplay.id, color: { brightness: 30 } }
+      ]),
+      'edit'
+    )
+    native.displays = [secondDisplay]
+    await controller.reapplyAfterDisplayTransition()
+
+    await expect(
+      controller.update(
+        'gaming',
+        targets([display.id, { saturation: 75 }], [secondDisplay.id, { brightness: 45 }])
+      )
+    ).resolves.toBeUndefined()
+
+    expect(native.applied).toEqual([
+      { displayId: display.id, settings: { saturation: 75 } },
+      { displayId: secondDisplay.id, settings: { brightness: 30 } },
+      { displayId: secondDisplay.id, settings: { brightness: 30 } },
+      { displayId: secondDisplay.id, settings: { brightness: 45 } }
+    ])
+    expect(controller.state).toMatchObject({
+      targets: [
+        { displayId: display.id, color: { saturation: 75 } },
+        { displayId: secondDisplay.id, color: { brightness: 45 } }
+      ]
+    })
+  })
+
+  it('removes a disconnected target without attempting an unavailable restore', async () => {
+    const native = new FakeNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+    await controller.start(
+      profile([
+        { displayId: display.id, color: { saturation: 75 } },
+        { displayId: secondDisplay.id, color: { brightness: 30 } }
+      ]),
+      'edit'
+    )
+    native.displays = [secondDisplay]
+    await controller.reapplyAfterDisplayTransition()
+
+    await expect(
+      controller.update('gaming', targets([secondDisplay.id, { brightness: 30 }]))
+    ).resolves.toBeUndefined()
+    await expect(controller.cancel()).resolves.toBeUndefined()
+
+    expect(native.restored).toEqual([secondDisplay.id])
+    expect(activation.retainedDisplayIds).toContainEqual({
+      operation: 'cancel',
+      displayIds: [display.id]
+    })
+  })
+
+  it('cancels cleanly while a touched display is disconnected and retains its baseline', async () => {
+    const native = new FakeNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+    await controller.start(profile(), 'edit')
+    native.displays = [secondDisplay]
+
+    await expect(controller.cancel()).resolves.toBeUndefined()
+
+    expect(native.restored).toEqual([])
+    expect(activation.calls).toEqual(['begin', 'cancel'])
+    expect(activation.retainedDisplayIds).toContainEqual({
+      operation: 'cancel',
+      displayIds: [display.id]
+    })
+    expect(controller.state).toEqual({ state: 'inactive' })
+  })
+
+  it('saves cleanly while a touched display is disconnected and retains its baseline', async () => {
+    const native = new FakeNative()
+    const activation = new FakeActivation()
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+    await controller.start(profile(), 'edit')
+    native.displays = [secondDisplay]
+
+    await expect(controller.confirm('gaming')).resolves.toBeUndefined()
+
+    expect(native.restored).toEqual([])
+    expect(activation.calls).toEqual(['begin', 'confirm:gaming'])
+    expect(activation.retainedDisplayIds).toContainEqual({
+      operation: 'confirm',
+      displayIds: [display.id]
+    })
+    expect(controller.state).toEqual({ state: 'inactive' })
+  })
+
+  it('refuses to reapply a preview when HDR or topology removes its capability', async () => {
+    const native = new FakeNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(profile(), 'edit')
+    native.reports.set(display.id, report(display.id, false))
+
+    await expect(controller.reapplyAfterDisplayTransition()).rejects.toThrow(
+      'cannot preview Saturation'
+    )
+
+    expect(native.applied).toHaveLength(1)
   })
 
   it('restores touched displays when a session is saved while preserving activation', async () => {

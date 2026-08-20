@@ -1,52 +1,22 @@
+import { AbsoluteCenter, Accordion, Badge, Box, Button, Menu, Portal, Text } from '@chakra-ui/react'
+import { ChevronDown } from 'lucide-react'
 import {
-  AbsoluteCenter,
-  Accordion,
-  Badge,
-  Box,
-  Button,
-  IconButton,
-  Menu,
-  Portal,
-  Text
-} from '@chakra-ui/react'
-import { ChevronDown, Trash2 } from 'lucide-react'
-import {
-  findDisplayTarget,
   removeDisplayTarget,
   setDisplayTarget,
   type ColorProfile,
-  type ColorSettings,
-  type ProfileDisplayTarget
+  type ColorSettings
 } from '@chromashift/core'
-import type { Display } from '@chromashift/native-client/protocol'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { ProductState } from '../../../shared/product-api.js'
 import { ColorControls, ColorSummary } from './color-controls'
+import { buildDisplayRows, type DisplayRow } from './display-rows'
 
 /**
- * One row per display, connected first and then any saved-but-disconnected
- * target. Expanding a row selects that display for editing; the Edit-mode
- * checkbox controls whether this profile overrides the display at all.
+ * One row per connected display. Saved targets for absent displays remain in
+ * the profile but stay out of the normal editor until that display returns.
+ * Expanding a row selects that display for editing; the Edit-mode checkbox
+ * controls whether this profile overrides the display at all.
  */
-export interface DisplayRow {
-  displayId: string
-  display: Display | undefined
-  target: ProfileDisplayTarget | undefined
-}
-
-export function buildDisplayRows(profile: ColorProfile, product: ProductState): DisplayRow[] {
-  const connected = product.displays.map((display) => ({
-    displayId: display.id,
-    display,
-    target: findDisplayTarget(profile, display.id) ?? undefined
-  }))
-  const connectedIds = new Set(product.displays.map((display) => display.id.toLowerCase()))
-  const disconnected = profile.displays
-    .filter((target) => !connectedIds.has(target.displayId.toLowerCase()))
-    .map((target) => ({ displayId: target.displayId, display: undefined, target }))
-  return [...connected, ...disconnected]
-}
-
 export function DisplayControls({
   profile,
   product,
@@ -67,7 +37,7 @@ export function DisplayControls({
     return <Text color="fg.muted">No displays are connected.</Text>
   }
 
-  const copyTargets = rows.filter((row) => row.display !== undefined)
+  const copyTargets = rows
 
   return (
     <Accordion.Root
@@ -94,7 +64,7 @@ export function DisplayControls({
               <Accordion.ItemTrigger
                 data-display-control-trigger
                 ps={editing ? '11' : '3'}
-                pe={editing && row.display === undefined ? '11' : '3'}
+                pe="3"
                 gap={3}
                 color={overridden ? 'inherit' : 'fg.muted'}
                 textAlign="left"
@@ -108,10 +78,9 @@ export function DisplayControls({
                   textOverflow="ellipsis"
                   whiteSpace="nowrap"
                 >
-                  {row.display?.name ?? row.displayId}
+                  {row.display.name}
                 </Text>
-                {row.display?.primary === true && <Badge colorPalette={'blue'}>Primary</Badge>}
-                {row.display === undefined && <Badge>Disconnected</Badge>}
+                {row.display.primary && <Badge colorPalette={'blue'}>Primary</Badge>}
                 <Text
                   as="span"
                   overflow="hidden"
@@ -121,9 +90,7 @@ export function DisplayControls({
                   textOverflow="ellipsis"
                   whiteSpace="nowrap"
                 >
-                  {row.display === undefined
-                    ? 'Saved settings return when this display reconnects'
-                    : `${row.display.adapter.name} • ${row.display.connection}`}
+                  {`${row.display.adapter.name} • ${row.display.connection}`}
                 </Text>
                 <Accordion.ItemIndicator />
               </Accordion.ItemTrigger>
@@ -131,7 +98,7 @@ export function DisplayControls({
                 <AbsoluteCenter axis="vertical" insetStart="3">
                   <Checkbox
                     checked={overridden}
-                    aria-label={`Override ${row.display?.name ?? row.displayId}`}
+                    aria-label={`Override ${row.display.name}`}
                     onCheckedChange={(checked) => {
                       if (checked) {
                         onChange(setDisplayTarget(profile, { displayId: row.displayId, color: {} }))
@@ -144,23 +111,6 @@ export function DisplayControls({
                       }
                     }}
                   />
-                </AbsoluteCenter>
-              )}
-              {editing && row.display === undefined && (
-                <AbsoluteCenter axis="vertical" insetEnd="2">
-                  <IconButton
-                    variant="ghost"
-                    size="xs"
-                    aria-label={`Remove ${row.displayId}`}
-                    onClick={() => {
-                      onChange(removeDisplayTarget(profile, row.displayId))
-                      if (expanded) {
-                        onExpandedChange(expandedDisplayIds.filter((id) => id !== row.displayId))
-                      }
-                    }}
-                  >
-                    <Trash2 />
-                  </IconButton>
                 </AbsoluteCenter>
               )}
             </Box>
@@ -261,7 +211,7 @@ function CopyToMenu({
                   )
                 }
               >
-                {row.display?.name ?? row.displayId}
+                {row.display.name}
               </Menu.Item>
             ))}
           </Menu.Content>

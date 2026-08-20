@@ -64,7 +64,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (!editing && selected !== null) setDraft(structuredClone(selected))
   }, [selected, editing])
 
-  const selectedDisplayIds = selected?.displays.map((target) => target.displayId) ?? []
+  const connectedDisplayIds = new Set(product.displays.map((display) => display.id.toLowerCase()))
+  const selectedDisplayIds =
+    selected?.displays
+      .map((target) => target.displayId)
+      .filter((displayId) => connectedDisplayIds.has(displayId.toLowerCase())) ?? []
   const selectedDisplayIdsSignature = selectedDisplayIds.join('\u0000')
 
   // Viewing or editing a profile starts with every overridden display open.

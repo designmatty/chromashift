@@ -19,7 +19,8 @@ npm run smoke:package
 
 `npm run verify` is the canonical non-interactive Windows verification path. It
 runs formatting checks, lint, typechecking, deterministic TypeScript and native
-tests, and the full build. GitHub CI invokes this exact command. It intentionally
+tests, a high-severity dependency audit, release-metadata preflight, and the full
+build. GitHub CI invokes this exact command. It intentionally
 does not run the machine-specific native integration test, display-mutating
 desktop smoke, crash-restoration smoke, or package smoke because those require a
 suitable interactive Windows session and restoration guard.
@@ -39,7 +40,11 @@ process exit.
 machine-specific native client lifecycle test. It verifies readiness, foreground
 resolution, multi-display stable IDs, primary display detection, capability
 resolution and display state, explicit structured unknown-command errors,
-restore-aware shutdown, and ADLX availability on the current machine.
+restore-aware shutdown, ADLX availability on the current machine, and the real
+non-mutating `display.topology.refresh` display/capability snapshot. Its guarded
+watchdog case captures a real display baseline, applies a mild gamma transform,
+stops Electron-side heartbeats, observes the helper restore and exit, then starts
+a fresh helper and compares the exact restored gamma-ramp hash.
 
 Desktop activation coverage verifies app-data reads and atomic replacement,
 configuration gating, startup event buffering, foreground/default/baseline
@@ -51,7 +56,36 @@ disabled profile entries, activation-driven menu refresh, manual and automatic
 mode changes, explicit baseline reset, renderer-releasing close-to-tray behavior,
 mutually exclusive app/mini-panel opening, last-used tray reopening, serialized
 restore-before-exit ordering, concurrent exit suppression, actionable restore
-failure handling, and retry.
+failure handling, immediate user-requested retry, and non-blocking shutdown when
+an unreachable display's session restoration record is explicitly discarded.
+Milestone 5 transition coverage verifies that Electron power events are adapted
+without leaking Electron event names into product logic; lock/suspend pause
+writes; noisy resume and screen/native topology events coalesce; foreground
+changes are remembered while paused; topology refresh precedes reapply; active
+previews revalidate current capabilities; provider-ownership changes fail closed;
+and disconnected baselines remain retained. Activation and preview tests additionally
+cover disconnecting a saved target during Edit, suppressing native writes while it is
+absent, clean cancel/save handoff of the retained baseline, and restore/reapply after
+the same stable display ID reconnects. Renderer coverage verifies that connected
+displays remain editable while persisted disconnected targets are omitted without
+being deleted. Window-state tests cover debounced
+normal/maximized persistence, serialized concurrent settings writes, close-time
+flush, stale off-screen rejection, and startup recovery onto a connected work
+area.
+
+Physical-display identity tests cover trusted and placeholder EDID serials,
+DP/HDMI grouping, safe capability intersection, endpoint fanout, restore-result
+aggregation, and the idempotent profile-target rewrite. The real desktop and
+forced-parent-exit smoke prefer a multi-endpoint physical group when available;
+on the G60SD they verified that a single profile target modified both DP and HDMI
+endpoints and that both exact endpoint baselines returned after exit.
+Process-resilience coverage verifies the version/health/watchdog handshake,
+conservative baseline ownership tracking, topology-before-activation restart
+ordering, bounded sidecar recovery, fail-closed behavior when modified output may
+remain, per-surface renderer crash/oom/abnormal-exit circuits, and coalesced
+renderer-independent emergency restoration. Native tests cover the watchdog
+deadline/reset behavior and the background protocol reader that keeps lifecycle
+signals observable while stdin is idle.
 Profile-path regression coverage verifies the explicit stable application-data
 location, isolated command-line overrides, exact legacy-file copying,
 non-overwrite behavior, and concurrent migration safety.
@@ -120,11 +154,14 @@ verifies detached-helper parent-process monitoring and crash restoration.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
 publishing a self-contained `DisplayService`. `npm run smoke:package` validates
-the exact external sidecar and ASAR layout, starts the helper directly, exercises
-NDJSON IPC, captures and restores a baseline, launches both unpacked and installed
-apps, and verifies install, in-place upgrade, restore-safe exit, uninstall, and
-profile-data survival. The smoke install uses isolated temporary install and
-user-data directories.
+the exact external sidecar and ASAR layout and production fuse wire, starts the
+helper directly, verifies the health/watchdog handshake, exercises NDJSON IPC,
+captures and restores a baseline, validates production CSP and renderer sandboxing,
+launches both unpacked and installed apps, and verifies install, in-place upgrade,
+restore-safe exit, uninstall, and profile-data survival. The smoke install uses
+isolated temporary install and user-data directories. `npm run release:preflight
+-- --tag v<version> --artifacts` additionally verifies tag/package/lockfile
+version agreement and exact x64 installer, block-map, and `latest.yml` metadata.
 
 ## Phase 0 hardware record (2026-08-08)
 
@@ -152,8 +189,49 @@ and the distinction between verified and implemented-unverified behavior.
 
 ## Required future hardware tests
 
-Before advertising production support, test an AMD-driven display, HDR-on
-capability behavior, cable reconnect, sleep/wake, topology changes, driver reset,
-helper-process crash recovery, and heartbeat recovery for a hung Electron parent.
-These are intentionally recorded as hardening work rather than silently treated
-as Phase 0 successes.
+Before advertising production support, test an AMD-driven display, sleep/wake,
+topology changes, driver reset, and helper-process crash
+recovery. The guarded SDR/HDR/SDR sequence passed on the G60SD on 2026-08-14:
+each transition refreshed topology before activation, retained the same stable
+display ID and validated baseline owner, performed no provider write while HDR
+was active, reapplied the saved profile after SDR returned, refreshed the
+renderer capability state in both directions, and restored the exact original
+gamma hash on tray exit. Heartbeat timeout restoration is automated and
+hardware-verified on the current NVIDIA/two-display host, but suspend/resume and
+an actually hung Electron parent remain part of the guarded physical matrix.
+
+`npm run smoke:desktop:native-recovery` force-terminates the exact baseline-free
+DisplayService child owned by the smoke Electron process, then requires the
+bounded version/health/topology handshake to recover before running the full
+desktop and dual-endpoint restoration sequence. This passed on 2026-08-14. A
+helper exit that may own a baseline still fails closed; its dialog uses concise
+recovery guidance while raw display IDs remain in Diagnostics only.
+
+The guarded DisplayPort hot-unplug sequence also passed on the G60SD on
+2026-08-14. The cable was removed during active Edit; topology retained the
+immutable baseline as disconnected, Edit remained active, and Cancel handed the
+baseline back to automatic activation without a restore request or user error.
+Activation deferred the saved target while absent. Reconnect resolved the same
+stable ID, validated ownership, reapplied the saved profile, and tray Exit
+restored the exact pre-session gamma hash. The unplug/cancel/reconnect interval
+contained no `DISPLAY_NOT_FOUND`, transition, activation, or restore failure.
+
+The guarded HDMI cycle also passed on the G60SD on 2026-08-14. HDMI enumerated
+with stable ID
+`display:b361c05e6dea55c2141cae01b55b5cf220158a717afb90612a60a15add79c3b7`;
+an Edit preview changed the gamma ramp from
+`3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf` to
+`1bbef12e9ac2806eef6de7e91afe9e37ad1c4067a5b061b7f29f9094221faff0`.
+After disconnect and reconnect, the same HDMI ID returned and exact baseline
+restoration was independently verified. The run also verified that a failed
+shutdown kept its helper alive beyond the watchdog deadline and could be retried
+after reconnect. The subsequent product policy now makes an explicitly requested
+shutdown discard an unreachable display's session restoration record instead;
+that policy is deterministic-test covered and avoids the disconnect error entirely.
+
+Slice 5.1 now has automated and live non-mutating topology-refresh coverage. Its
+physical transition matrix is still required before the slice is marked fully
+validated: sleep/wake, lock/unlock, resolution and refresh changes, NVIDIA driver
+reset, and stable-ID/baseline behavior across each
+sequence. These transitions must be observed on the real desktop with the
+restoration guard active; they are not inferred from unit tests.

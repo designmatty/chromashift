@@ -16,7 +16,11 @@ import {
   foregroundApplicationsResultSchema,
   displayListResultSchema,
   displayCapabilitiesResultSchema,
+  displayTopologyRefreshResultSchema,
+  heartbeatResultSchema,
   restoreAllResultSchema,
+  serviceBaselinesRestoredDataSchema,
+  serviceHealthSchema,
   systemInfoSchema,
   type BaselineCaptureResult,
   type DisplayApplyResult,
@@ -25,11 +29,14 @@ import {
   type Display,
   type DisplayCapabilities,
   type DisplayCapabilityReport,
+  type DisplayTopologyRefreshResult,
+  type HeartbeatResult,
   type DisplayRestoreResult,
   type DisplaySettings,
   type DisplayState,
   type NativeResponse,
   type RestoreAllResult,
+  type ServiceHealth,
   type SystemInfo
 } from './protocol.js'
 
@@ -45,6 +52,7 @@ export interface NativeClientOptions {
   detached?: boolean
   requestTimeoutMs?: number
   startupTimeoutMs?: number
+  heartbeatIntervalMs?: number
 }
 
 interface ResolvedNativeClientOptions {
@@ -53,6 +61,7 @@ interface ResolvedNativeClientOptions {
   detached: boolean
   requestTimeoutMs: number
   startupTimeoutMs: number
+  heartbeatIntervalMs: number
 }
 
 export interface NativeClientEvents {
@@ -83,8 +92,11 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   readonly #pending = new Map<string, PendingRequest>()
   #process?: ChildProcessWithoutNullStreams
   #lines?: Interface
+  #diagnostics?: Interface
   #readyAnnounced = false
   #startupError?: Error
+  #heartbeatTimer?: NodeJS.Timeout
+  readonly #potentialBaselineDisplayIds = new Set<string>()
 
   constructor(options: NativeClientOptions) {
     super()
@@ -93,12 +105,17 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       detached: false,
       requestTimeoutMs: 5_000,
       startupTimeoutMs: 10_000,
+      heartbeatIntervalMs: 2_000,
       ...options
     }
   }
 
   get running(): boolean {
     return this.#process !== undefined && this.#process.exitCode === null
+  }
+
+  get potentialBaselineDisplayIds(): readonly string[] {
+    return [...this.#potentialBaselineDisplayIds]
   }
 
   async start(): Promise<SystemInfo> {
@@ -116,21 +133,26 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     this.#startupError = undefined
     this.#lines = createInterface({ input: child.stdout })
     this.#lines.on('line', (line) => this.#handleLine(line))
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (chunk: string) => this.emit('diagnostic', chunk.trimEnd()))
+    this.#diagnostics = createInterface({ input: child.stderr })
+    this.#diagnostics.on('line', (line) => this.emit('diagnostic', line))
     child.once('error', (error) => {
       this.#startupError = error
       this.#fail(error)
       this.emit('failure', error)
     })
     child.once('exit', (code, signal) => {
-      this.#fail(new Error(`DisplayService exited (code=${String(code)}, signal=${String(signal)})`))
+      this.#fail(
+        new Error(`DisplayService exited (code=${String(code)}, signal=${String(signal)})`)
+      )
       this.emit('exit', code, signal)
     })
 
     try {
       await this.#waitForReady()
-      return await this.getSystemInfo()
+      const info = await this.getSystemInfo()
+      await this.sendHeartbeat()
+      this.#startHeartbeat()
+      return info
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error))
       if (child.exitCode === null && !child.killed) child.kill()
@@ -143,14 +165,21 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     return systemInfoSchema.parse(await this.request('system.info'))
   }
 
+  async getServiceHealth(): Promise<ServiceHealth> {
+    return serviceHealthSchema.parse(await this.request('service.health'))
+  }
+
+  async sendHeartbeat(): Promise<HeartbeatResult> {
+    return heartbeatResultSchema.parse(await this.request('service.heartbeat'))
+  }
+
   async getForegroundApplication(): Promise<ForegroundApplication | null> {
     return foregroundCurrentResultSchema.parse(await this.request('foreground.current')).application
   }
 
   async getVisibleApplications(): Promise<ForegroundApplication[]> {
-    return foregroundApplicationsResultSchema.parse(
-      await this.request('applications.list')
-    ).applications
+    return foregroundApplicationsResultSchema.parse(await this.request('applications.list'))
+      .applications
   }
 
   async getDisplays(): Promise<Display[]> {
@@ -163,9 +192,11 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
   async getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
     const params = displayRequestSchema.parse({ displayId })
-    return displayCapabilitiesResultSchema.parse(
-      await this.request('display.capabilities', params)
-    )
+    return displayCapabilitiesResultSchema.parse(await this.request('display.capabilities', params))
+  }
+
+  async refreshDisplayTopology(): Promise<DisplayTopologyRefreshResult> {
+    return displayTopologyRefreshResultSchema.parse(await this.request('display.topology.refresh'))
   }
 
   async getDisplayState(displayId: string): Promise<DisplayState> {
@@ -175,7 +206,9 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
   async captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
     const params = displayRequestSchema.parse({ displayId })
-    return baselineCaptureResultSchema.parse(await this.request('baseline.capture', params))
+    const result = baselineCaptureResultSchema.parse(await this.request('baseline.capture', params))
+    this.#potentialBaselineDisplayIds.add(displayId)
+    return result
   }
 
   async applyDisplaySettings(
@@ -186,16 +219,24 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       displayId,
       settings: displaySettingsSchema.parse(settings)
     })
-    return displayApplyResultSchema.parse(await this.request('display.apply', params))
+    const result = displayApplyResultSchema.parse(await this.request('display.apply', params))
+    this.#potentialBaselineDisplayIds.add(displayId)
+    return result
   }
 
   async restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {
     const params = displayRequestSchema.parse({ displayId })
-    return displayRestoreResultSchema.parse(await this.request('display.restore', params))
+    const result = displayRestoreResultSchema.parse(await this.request('display.restore', params))
+    if (result.restored || result.reason === 'baselineNotCaptured') {
+      this.#potentialBaselineDisplayIds.delete(displayId)
+    }
+    return result
   }
 
   async restoreAllBaselines(): Promise<RestoreAllResult> {
-    return restoreAllResultSchema.parse(await this.request('baseline.restoreAll'))
+    const result = restoreAllResultSchema.parse(await this.request('baseline.restoreAll'))
+    this.#recordRestoration(result)
+    return result
   }
 
   async request(command: string, params?: Record<string, unknown>): Promise<unknown> {
@@ -221,26 +262,49 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   }
 
   async stop(): Promise<void> {
+    this.#stopHeartbeat()
     if (!this.running || this.#process === undefined) {
+      if (this.#potentialBaselineDisplayIds.size > 0) {
+        throw new Error(
+          'DisplayService is unavailable and baseline restoration cannot be confirmed.'
+        )
+      }
       return
     }
 
     const child = this.#process
-    await this.request('service.shutdown')
-    await new Promise<void>((resolve) => {
-      if (child.exitCode !== null) {
-        resolve()
-        return
-      }
-      const timeout = setTimeout(() => {
-        if (child.exitCode === null) child.kill()
-        resolve()
-      }, this.#options.requestTimeoutMs)
-      child.once('exit', () => {
-        clearTimeout(timeout)
-        resolve()
+    try {
+      const restoration = restoreAllResultSchema.parse(await this.request('service.shutdown'))
+      this.#recordRestoration(restoration)
+      await new Promise<void>((resolve) => {
+        if (child.exitCode !== null) {
+          resolve()
+          return
+        }
+        const timeout = setTimeout(() => {
+          if (child.exitCode === null) child.kill()
+          resolve()
+        }, this.#options.requestTimeoutMs)
+        child.once('exit', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
       })
-    })
+    } catch (error) {
+      // A failed restore deliberately leaves the helper alive so a disconnected
+      // display can return and the same immutable baseline can be retried. Keep
+      // its watchdog fed while Electron shows the actionable shutdown error.
+      if (this.running) {
+        this.#startHeartbeat()
+        void this.sendHeartbeat().catch((heartbeatError: unknown) => {
+          this.emit(
+            'diagnostic',
+            `DisplayService heartbeat after failed shutdown failed: ${String(heartbeatError)}`
+          )
+        })
+      }
+      throw error
+    }
   }
 
   #handleLine(line: string): void {
@@ -271,6 +335,10 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
     const event = parsed.data as NativeEvent
     if (event.event === 'service.ready') this.#readyAnnounced = true
+    if (event.event === 'service.baselinesRestored') {
+      const restoration = serviceBaselinesRestoredDataSchema.safeParse(event.data)
+      if (restoration.success) this.#recordRestoration(restoration.data)
+    }
     this.emit('event', event)
   }
 
@@ -309,7 +377,31 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     })
   }
 
+  #startHeartbeat(): void {
+    this.#stopHeartbeat()
+    if (this.#options.heartbeatIntervalMs <= 0) return
+    this.#heartbeatTimer = setInterval(() => {
+      void this.sendHeartbeat().catch((error: unknown) => {
+        this.emit('diagnostic', `DisplayService heartbeat failed: ${String(error)}`)
+      })
+    }, this.#options.heartbeatIntervalMs)
+  }
+
+  #stopHeartbeat(): void {
+    if (this.#heartbeatTimer !== undefined) clearInterval(this.#heartbeatTimer)
+    this.#heartbeatTimer = undefined
+  }
+
+  #recordRestoration(result: RestoreAllResult): void {
+    for (const display of result.displays) {
+      if (display.restored || display.reason === 'baselineNotCaptured' || display.discarded) {
+        this.#potentialBaselineDisplayIds.delete(display.displayId)
+      }
+    }
+  }
+
   #fail(error: Error): void {
+    this.#stopHeartbeat()
     for (const request of this.#pending.values()) {
       clearTimeout(request.timeout)
       request.reject(error)
@@ -317,6 +409,8 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
     this.#pending.clear()
     this.#lines?.close()
     this.#lines = undefined
+    this.#diagnostics?.close()
+    this.#diagnostics = undefined
     this.#process = undefined
     this.#readyAnnounced = false
   }

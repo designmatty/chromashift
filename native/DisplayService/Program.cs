@@ -9,6 +9,7 @@ Console.InputEncoding = System.Text.Encoding.UTF8;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var protocol = new ProtocolWriter(Console.Out);
+var input = new ProtocolInputReader(Console.In);
 var foregroundApplications = new ForegroundApplicationService();
 using var foregroundWatcher = new ForegroundWindowWatcher(
     foregroundApplications,
@@ -28,6 +29,18 @@ using var foregroundWatcher = new ForegroundWindowWatcher(
     });
 await foregroundWatcher.StartAsync();
 
+using var topologyWatcher = new DisplayTopologyWatcher(async reason =>
+{
+    await protocol.WriteEventAsync("displayTopologyChanged", new { reason });
+    await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+    {
+        level = "information",
+        eventName = "DisplayTopologyChanged",
+        reason
+    }));
+});
+topologyWatcher.Start();
+
 var displays = new DisplayRegistry();
 foreach (var display in displays.List())
 {
@@ -36,6 +49,7 @@ foreach (var display in displays.List())
         level = "information",
         eventName = "DisplayDetected",
         display.Id,
+        display.PhysicalId,
         display.Name,
         display.WindowsDisplayName,
         adapter = display.Adapter.Name,
@@ -48,7 +62,18 @@ using var nvidia = new NvidiaColorProvider();
 using var amd = new AmdAdlxProvider();
 var baselines = new BaselineManager(displays, gamma, nvidia, amd);
 var capabilities = new CapabilityResolver(gamma, nvidia, amd);
-var processor = new CommandProcessor(protocol, foregroundApplications, displays, baselines, capabilities);
+using var heartbeat = new HeartbeatWatchdog(TimeSpan.FromSeconds(10));
+var serviceInstanceId = Guid.NewGuid().ToString("D");
+var baselineOwnerId = Guid.NewGuid().ToString("D");
+var processor = new CommandProcessor(
+    protocol,
+    foregroundApplications,
+    displays,
+    baselines,
+    capabilities,
+    heartbeat,
+    serviceInstanceId,
+    baselineOwnerId);
 var parentProcessId = ParentProcessMonitor.ParseParentProcessId(args);
 using var parentProcess = parentProcessId is int processId
     ? ParentProcessMonitor.TryOpen(processId)
@@ -72,8 +97,20 @@ try
 {
     while (!processor.ShutdownRequested)
     {
-        var readLine = Console.In.ReadLineAsync();
-        if (parentExited is not null && await Task.WhenAny(readLine, parentExited) == parentExited)
+        var readLine = input.ReadLineAsync();
+        var completed = parentExited is null
+            ? await Task.WhenAny(readLine, heartbeat.Expired)
+            : await Task.WhenAny(readLine, parentExited, heartbeat.Expired);
+        if (completed == heartbeat.Expired)
+        {
+            await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                level = "critical",
+                eventName = "HeartbeatTimedOut"
+            }));
+            break;
+        }
+        if (parentExited is not null && completed == parentExited)
         {
             await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
             {
@@ -92,7 +129,20 @@ try
 }
 finally
 {
-    _ = baselines.RestoreAll();
+    var restoration = baselines.RestoreAll();
+    try
+    {
+        await protocol.WriteEventAsync("service.baselinesRestored", restoration);
+    }
+    catch (Exception exception)
+    {
+        await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            level = "warning",
+            eventName = "BaselineRestoreAcknowledgementFailed",
+            message = exception.Message
+        }));
+    }
 }
 
 await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new

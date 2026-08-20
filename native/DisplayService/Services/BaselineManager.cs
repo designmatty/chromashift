@@ -19,13 +19,14 @@ internal sealed class BaselineManager(
     {
         lock (_sync)
         {
+            var display = FindDisplay(displayId);
+            EnsureDisplayWritesSafe(display);
             if (_baselines.TryGetValue(displayId, out var existing))
             {
                 return Describe(existing, "alreadyCaptured");
             }
 
-            var display = FindDisplay(displayId);
-            var ramp = display.Adapter.Vendor != "amd" && !display.Hdr && gamma.IsSupported(display.WindowsDisplayName)
+            var ramp = display.Adapter.Vendor != "amd" && gamma.IsSupported(display.WindowsDisplayName)
                 ? ReadGamma(display)
                 : null;
             var nvidiaState = nvidia.GetState(display);
@@ -34,7 +35,12 @@ internal sealed class BaselineManager(
             {
                 throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", $"No controllable capabilities were found for {display.Name}.");
             }
-            var entry = new BaselineEntry(display.Id, display.WindowsDisplayName, ramp, nvidiaState, amdState);
+            var entry = new BaselineEntry(
+                new BaselineOwner(display.Id, display.Adapter.Vendor, display.Adapter.DeviceId),
+                display.WindowsDisplayName,
+                ramp,
+                nvidiaState,
+                amdState);
             _baselines.Add(display.Id, entry);
             Log("BaselineCaptured", display, ramp?.GetHash());
             return Describe(entry, "captured");
@@ -83,6 +89,7 @@ internal sealed class BaselineManager(
                 _ = Capture(displayId);
                 baseline = _baselines[displayId];
             }
+            EnsureBaselineOwnership(display, baseline);
 
             try
             {
@@ -184,6 +191,7 @@ internal sealed class BaselineManager(
             }
 
             var display = FindDisplay(displayId);
+            EnsureBaselineOwnership(display, baseline);
             RestoreEntry(display, baseline);
             _baselines.Remove(displayId);
             Log("BaselineRestored", display, baseline.GammaRamp?.GetHash());
@@ -191,7 +199,7 @@ internal sealed class BaselineManager(
         }
     }
 
-    internal object RestoreAll(bool failOnError = false)
+    internal object RestoreAll(bool failOnError = false, bool discardDisconnected = false)
     {
         lock (_sync)
         {
@@ -201,10 +209,39 @@ internal sealed class BaselineManager(
             {
                 try
                 {
+                    var display = FindDisplay(displayId);
+                    if (display.Hdr)
+                    {
+                        results.Add(new { displayId, restored = false, reason = "hdrActive" });
+                        failures.Add($"{displayId}: restoration is deferred while HDR is active");
+                        Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            level = "information",
+                            eventName = "BaselineRestoreDeferred",
+                            displayId,
+                            reason = "hdrActive"
+                        }));
+                        continue;
+                    }
                     results.Add(Restore(displayId));
+                }
+                catch (DisplayOperationException exception)
+                {
+                    if (TryDiscardDisconnectedBaseline(displayId, discardDisconnected, results)) continue;
+                    results.Add(new { displayId, restored = false, code = exception.Code, error = exception.Message });
+                    failures.Add($"{displayId}: {exception.Message}");
+                    Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        level = "critical",
+                        eventName = "BaselineRestoreFailed",
+                        displayId,
+                        code = exception.Code,
+                        message = exception.Message
+                    }));
                 }
                 catch (Exception exception)
                 {
+                    if (TryDiscardDisconnectedBaseline(displayId, discardDisconnected, results)) continue;
                     results.Add(new { displayId, restored = false, error = exception.Message });
                     failures.Add($"{displayId}: {exception.Message}");
                     Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
@@ -227,6 +264,40 @@ internal sealed class BaselineManager(
     internal bool HasBaseline(string displayId)
     {
         lock (_sync) return _baselines.ContainsKey(displayId);
+    }
+
+    internal static bool ShouldDiscardDisconnectedBaseline(bool discardDisconnected, bool connected) =>
+        discardDisconnected && !connected;
+
+    internal int Count
+    {
+        get { lock (_sync) return _baselines.Count; }
+    }
+
+    internal IReadOnlyList<BaselineTopologyValidation> ValidateTopology(
+        IReadOnlyList<DisplayDescriptor> connectedDisplays)
+    {
+        lock (_sync)
+        {
+            var connectedById = connectedDisplays.ToDictionary(display => display.Id, StringComparer.Ordinal);
+            return _baselines.Values.Select(baseline =>
+            {
+                if (!connectedById.TryGetValue(baseline.Owner.DisplayId, out var display))
+                {
+                    return new BaselineTopologyValidation(
+                        baseline.Owner.DisplayId,
+                        "disconnected",
+                        "notConnected");
+                }
+
+                return new BaselineTopologyValidation(
+                    baseline.Owner.DisplayId,
+                    "connected",
+                    BaselineOwnership.IsValid(baseline.Owner, display)
+                        ? "validated"
+                        : "providerChanged");
+            }).ToArray();
+        }
     }
 
     private GammaRamp ReadGamma(DisplayDescriptor display)
@@ -266,6 +337,7 @@ internal sealed class BaselineManager(
 
     private void RestoreEntry(DisplayDescriptor display, BaselineEntry baseline)
     {
+        EnsureDisplayWritesSafe(display);
         var failures = new List<string>();
         if (baseline.GammaRamp is not null)
         {
@@ -310,6 +382,48 @@ internal sealed class BaselineManager(
         }
     }
 
+    private bool TryDiscardDisconnectedBaseline(
+        string displayId,
+        bool discardDisconnected,
+        List<object> results)
+    {
+        bool connected;
+        try
+        {
+            connected = displays.List().Any(display => display.Id == displayId);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (!ShouldDiscardDisconnectedBaseline(discardDisconnected, connected)) return false;
+        _baselines.Remove(displayId);
+        results.Add(new
+        {
+            displayId,
+            restored = false,
+            reason = "displayDisconnected",
+            discarded = true
+        });
+        Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            level = "information",
+            eventName = "DisconnectedBaselineDiscarded",
+            displayId
+        }));
+        return true;
+    }
+
+    private static void EnsureBaselineOwnership(DisplayDescriptor display, BaselineEntry baseline)
+    {
+        if (BaselineOwnership.IsValid(baseline.Owner, display)) return;
+        throw new DisplayOperationException(
+            "BASELINE_OWNERSHIP_CHANGED",
+            $"The captured baseline for {display.Name} belongs to a different display provider. " +
+            "ChromaShift will retain it and refuse to recapture modified output.");
+    }
+
     private void TryRestoreAfterFailedApply(DisplayDescriptor display, BaselineEntry baseline)
     {
         try
@@ -349,9 +463,18 @@ internal sealed class BaselineManager(
         }
     }
 
+    internal static void EnsureDisplayWritesSafe(DisplayDescriptor display)
+    {
+        if (!display.Hdr) return;
+        throw new DisplayOperationException(
+            "HDR_UNSAFE",
+            $"Display baseline capture and writes are disabled while HDR is active on {display.Name}; " +
+            "HDR provider behavior has not been validated.");
+    }
+
     private static object Describe(BaselineEntry entry, string state) => new
     {
-        displayId = entry.DisplayId,
+        displayId = entry.Owner.DisplayId,
         state,
         gammaRampHash = entry.GammaRamp?.GetHash(),
         nvidiaSaturation = entry.Nvidia.Saturation.Current,
@@ -376,7 +499,7 @@ internal sealed class BaselineManager(
         }));
 
     private sealed record BaselineEntry(
-        string DisplayId,
+        BaselineOwner Owner,
         string WindowsDisplayName,
         GammaRamp? GammaRamp,
         NvidiaDisplayState Nvidia,

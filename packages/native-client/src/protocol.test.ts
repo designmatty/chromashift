@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   displayApplyRequestSchema,
+  displaySchema,
   displayRestoreResultSchema,
   displayStateSchema,
   foregroundCurrentResultSchema,
@@ -12,6 +13,28 @@ import {
 } from './protocol.js'
 
 describe('native protocol', () => {
+  it('keeps endpoint and physical display identities distinct', () => {
+    expect(
+      displaySchema.parse({
+        id: 'display:endpoint',
+        physicalId: 'display:physical',
+        name: 'Panel',
+        windowsDisplayName: '\\\\.\\DISPLAY1',
+        monitorDevicePath: 'monitor-path',
+        manufacturer: 'SAM',
+        productCode: '75CB',
+        serialNumber: 'HNAY301023',
+        adapter: { id: 'adapter', name: 'GPU', vendor: 'nvidia', deviceId: 'device' },
+        connection: 'DisplayPort',
+        primary: true,
+        hdr: false,
+        advancedColorSupported: true,
+        bitsPerColorChannel: 10,
+        refreshRate: 360
+      })
+    ).toMatchObject({ id: 'display:endpoint', physicalId: 'display:physical' })
+  })
+
   it('accepts a request with structured parameters', () => {
     expect(
       nativeRequestSchema.parse({
@@ -23,9 +46,7 @@ describe('native protocol', () => {
   })
 
   it('rejects malformed response envelopes', () => {
-    expect(
-      nativeMessageSchema.safeParse({ id: '42', ok: false, error: null }).success
-    ).toBe(false)
+    expect(nativeMessageSchema.safeParse({ id: '42', ok: false, error: null }).success).toBe(false)
   })
 
   it('accepts unavailable AMD diagnostics with omitted version fields', () => {
@@ -64,15 +85,19 @@ describe('native protocol', () => {
   })
 
   it('validates visible top-level application results', () => {
-    expect(foregroundApplicationsResultSchema.parse({
-      applications: [{
-        pid: 42,
-        executable: 'example.exe',
-        path: 'C:\\Example\\example.exe',
-        title: 'Example',
-        monitorDeviceName: '\\\\.\\DISPLAY1'
-      }]
-    }).applications).toHaveLength(1)
+    expect(
+      foregroundApplicationsResultSchema.parse({
+        applications: [
+          {
+            pid: 42,
+            executable: 'example.exe',
+            path: 'C:\\Example\\example.exe',
+            title: 'Example',
+            monitorDeviceName: '\\\\.\\DISPLAY1'
+          }
+        ]
+      }).applications
+    ).toHaveLength(1)
   })
 
   it('validates product-level display settings before they cross the native boundary', () => {
@@ -139,9 +164,22 @@ describe('native protocol', () => {
       restoreAllResultSchema.parse({
         displays: [
           { displayId: 'display:abc', restored: true, gammaRampHash: 'hash' },
-          { displayId: 'display:def', restored: false, error: 'restore failed' }
+          { displayId: 'display:def', restored: false, error: 'restore failed' },
+          { displayId: 'display:hdr', restored: false, reason: 'hdrActive' },
+          {
+            displayId: 'display:gone',
+            restored: false,
+            reason: 'displayDisconnected',
+            discarded: true
+          },
+          {
+            displayId: 'display:unsafe',
+            restored: false,
+            code: 'HDR_UNSAFE',
+            error: 'restore deferred'
+          }
         ]
       }).displays
-    ).toHaveLength(2)
+    ).toHaveLength(5)
   })
 })

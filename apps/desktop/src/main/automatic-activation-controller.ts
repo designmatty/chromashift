@@ -11,10 +11,7 @@ import {
   type ForegroundApplication as NativeForegroundApplication,
   type NativeEvent
 } from '@chromashift/native-client'
-import {
-  ActivationCoordinator,
-  type ActivationOutcome
-} from './activation-coordinator.js'
+import { ActivationCoordinator, type ActivationOutcome } from './activation-coordinator.js'
 import { describeError, type StructuredLogger } from './structured-logger.js'
 
 export class AutomaticActivationController {
@@ -26,12 +23,15 @@ export class AutomaticActivationController {
   #mode: ActivationMode = automaticActivationMode
   #currentTarget: ActivationTarget | null = null
   #previewing = false
+  #systemTransitioning = false
 
   public constructor(
     private readonly repository: ProfileRepository,
     private readonly coordinator: ActivationCoordinator,
     private readonly logger: StructuredLogger,
-    private readonly ignoreApplication: (application: NativeForegroundApplication) => boolean = () => false
+    private readonly ignoreApplication: (
+      application: NativeForegroundApplication
+    ) => boolean = () => false
   ) {}
 
   public get enabled(): boolean {
@@ -128,29 +128,33 @@ export class AutomaticActivationController {
     }
 
     this.#currentApplication = parsed.data.application
-    if (this.#previewing) return Promise.resolve()
+    if (this.#previewing || this.#systemTransitioning) return Promise.resolve()
     return this.#activateCurrentApplication()
   }
 
   public async beginPreview(): Promise<void> {
     if (!this.#enabled) throw new Error('Display preview is not available.')
+    if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     if (this.#previewing) throw new Error('A display preview is already active.')
     this.#previewing = true
     await this.coordinator.waitForIdle()
   }
 
-  public async cancelPreview(): Promise<void> {
+  public async cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     if (!this.#previewing) return
     this.#previewing = false
-    await this.coordinator.resetAfterExternalRestore()
+    await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
     await this.#activateCurrentApplication()
   }
 
-  public async confirmPreview(profileId: string): Promise<void> {
+  public async confirmPreview(
+    profileId: string,
+    retainedDisplayIds: readonly string[] = []
+  ): Promise<void> {
     if (!this.#previewing) throw new Error('No display preview is active.')
     this.#mode = manualActivationMode(profileId)
     this.#previewing = false
-    await this.coordinator.resetAfterExternalRestore()
+    await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
     const outcome = await this.#activateCurrentApplication()
     if (outcome.status === 'failed' || outcome.status === 'partialFailure') {
       throw new Error(outcome.failures.map((failure) => failure.message).join(' '))
@@ -158,13 +162,14 @@ export class AutomaticActivationController {
   }
 
   public async refreshAfterConfigurationChange(): Promise<void> {
-    if (!this.#enabled || this.#previewing) return
+    if (!this.#enabled || this.#previewing || this.#systemTransitioning) return
     await this.coordinator.resetAfterExternalRestore()
     await this.#activateCurrentApplication()
   }
 
   public async selectManualProfile(profileId: string): Promise<ActivationOutcome> {
     if (!this.#enabled) throw new Error('Profile activation is not available.')
+    if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     const profile = await this.repository.findById(profileId)
     if (profile === null) throw new Error(`Profile ${profileId} does not exist.`)
     if (!profile.enabled) throw new Error(`Profile ${profile.name} is disabled.`)
@@ -181,6 +186,7 @@ export class AutomaticActivationController {
 
   public async enableAutomatic(): Promise<ActivationOutcome> {
     if (!this.#enabled) throw new Error('Automatic activation is not available.')
+    if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     this.#mode = automaticActivationMode
     this.logger.write({
       level: 'information',
@@ -198,7 +204,8 @@ export class AutomaticActivationController {
       level: outcome.status === 'activated' ? 'information' : 'error',
       eventName: 'TrayBaselineResetCompleted',
       status: outcome.status,
-      failures: outcome.failures
+      failures: outcome.failures,
+      deferredDisplayIds: outcome.deferredDisplayIds
     })
     return outcome
   }
@@ -218,6 +225,19 @@ export class AutomaticActivationController {
 
   public waitForIdle(): Promise<void> {
     return this.coordinator.waitForIdle()
+  }
+
+  public async beginSystemTransition(): Promise<void> {
+    this.#systemTransitioning = true
+    await this.coordinator.waitForIdle()
+  }
+
+  public async completeSystemTransition(reapply: boolean, resumeWrites = true): Promise<void> {
+    await this.coordinator.resetForDisplayTransition()
+    if (!resumeWrites) return
+    this.#systemTransitioning = false
+    if (!reapply || !this.#enabled || this.#previewing) return
+    await this.#activateCurrentApplication()
   }
 
   async #activateCurrentApplication(): Promise<ActivationOutcome> {

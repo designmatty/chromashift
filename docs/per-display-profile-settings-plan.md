@@ -270,7 +270,7 @@ The renderer implements these approved interactions:
 - application profiles use target presence for display assignment, while Default
   remains the implicit catch-all and uses the same checkbox only to add or remove
   that display's persisted overrides
-- disconnected saved displays remain visible and can be removed in Edit mode
+- disconnected saved displays remain persisted but are omitted from normal UI
 - controls edit one display at a time, so mixed-value editing is not exposed
 - `Copy to` copies the selected display's settings to deliberate destinations
 - per-display capability and HDR availability appear inline beside each control
@@ -361,6 +361,8 @@ requiring text entry or keyboard focus belongs in the full app panel.
 - switching profiles restores displays removed from the desired override set
 - Default leaves new/unconfigured displays at baseline
 - disconnected target settings survive persistence and reconnect by stable ID
+- disconnecting a touched display during Edit defers rollback without discarding its
+  baseline or surfacing `DISPLAY_NOT_FOUND`, then retries after reconnect
 - capability/HDR rejection is isolated to the affected display
 - Cancel and preview navigation restore every touched display exactly
 - duplication deep-copies all target settings and remembered values

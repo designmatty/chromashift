@@ -13,9 +13,9 @@ async function settingsPath(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(directories.splice(0).map((directory) =>
-    rm(directory, { recursive: true, force: true })
-  ))
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+  )
 })
 
 describe('AppSettingsRepository', () => {
@@ -53,5 +53,17 @@ describe('AppSettingsRepository', () => {
     await writeFile(path, JSON.stringify({ ...defaultAppSettings, sidebarWidth: 300 }))
 
     await expect(new AppSettingsRepository(path).get()).resolves.toEqual(defaultAppSettings)
+  })
+
+  it('serializes concurrent saves so the newest settings win on disk', async () => {
+    const path = await settingsPath()
+    const repository = new AppSettingsRepository(path)
+    const first = { ...defaultAppSettings, theme: 'light' as const }
+    const second = { ...defaultAppSettings, theme: 'dark' as const }
+
+    await Promise.all([repository.save(first), repository.save(second)])
+
+    await expect(readFile(path, 'utf8')).resolves.toBe(`${JSON.stringify(second, null, 2)}\n`)
+    await expect(repository.get()).resolves.toEqual(second)
   })
 })

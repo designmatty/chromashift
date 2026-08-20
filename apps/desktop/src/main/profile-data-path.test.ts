@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveApplicationDataPaths } from './application-data-path.js'
+import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
 import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
 
 const directories: string[] = []
@@ -14,9 +14,9 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(directories.splice(0).map((directory) =>
-    rm(directory, { recursive: true, force: true })
-  ))
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+  )
 })
 
 describe('profile application-data path', () => {
@@ -46,6 +46,28 @@ describe('profile application-data path', () => {
       legacyProfileConfigurationPaths: []
     })
   })
+
+  it('isolates development data by canonical Git worktree without importing production data', async () => {
+    const worktree = await temporaryDirectory()
+    await mkdir(join(worktree, '.git'))
+
+    const root = findGitWorktreeRoot([join(worktree, 'apps', 'desktop')])
+    const paths = resolveApplicationDataPaths('C:\\Users\\test\\AppData\\Roaming', undefined, root)
+
+    expect(root).toBe(worktree)
+    expect(paths.userDataDirectory).toMatch(
+      /^C:\\Users\\test\\AppData\\Roaming\\ChromaShift-development\\.+-[a-f0-9]{12}$/
+    )
+    expect(paths.profileConfigurationPath).toBe(join(paths.userDataDirectory, 'profiles.json'))
+    expect(paths.legacyProfileConfigurationPaths).toEqual([])
+  })
+
+  it('keeps an explicit override ahead of development worktree isolation', async () => {
+    const worktree = await temporaryDirectory()
+    const paths = resolveApplicationDataPaths('C:\\AppData', 'D:\\explicit', worktree)
+
+    expect(paths.userDataDirectory).toBe('D:\\explicit')
+  })
 })
 
 describe('migrateLegacyProfileConfiguration', () => {
@@ -57,9 +79,9 @@ describe('migrateLegacyProfileConfiguration', () => {
     await mkdir(join(root, 'legacy'), { recursive: true })
     await writeFile(legacyPath, contents)
 
-    await expect(
-      migrateLegacyProfileConfiguration(destinationPath, [legacyPath])
-    ).resolves.toBe(legacyPath)
+    await expect(migrateLegacyProfileConfiguration(destinationPath, [legacyPath])).resolves.toBe(
+      legacyPath
+    )
     await expect(readFile(destinationPath, 'utf8')).resolves.toBe(contents)
     await expect(readFile(legacyPath, 'utf8')).resolves.toBe(contents)
   })

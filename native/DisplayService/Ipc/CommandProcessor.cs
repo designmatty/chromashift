@@ -9,7 +9,10 @@ internal sealed class CommandProcessor(
     ForegroundApplicationService foregroundApplications,
     DisplayRegistry displays,
     BaselineManager baselines,
-    CapabilityResolver capabilities)
+    CapabilityResolver capabilities,
+    HeartbeatWatchdog heartbeat,
+    string serviceInstanceId,
+    string baselineOwnerId)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,6 +20,7 @@ internal sealed class CommandProcessor(
     };
 
     internal bool ShutdownRequested { get; private set; }
+    private int _topologyGeneration;
 
     internal async Task ProcessLineAsync(string line)
     {
@@ -89,6 +93,72 @@ internal sealed class CommandProcessor(
                     displays = displays.List()
                 });
                 break;
+            case "service.health":
+                await protocol.WriteSuccessAsync(request.Id!, new
+                {
+                    status = "healthy",
+                    protocolVersion = ProtocolWriter.ProtocolVersion,
+                    serviceVersion = typeof(CommandProcessor).Assembly.GetName().Version?.ToString() ?? "unknown",
+                    processId = Environment.ProcessId,
+                    serviceInstanceId,
+                    baselineOwnerId,
+                    baselineCount = baselines.Count,
+                    watchdogArmed = heartbeat.Armed
+                });
+                break;
+            case "service.heartbeat":
+                heartbeat.RecordHeartbeat();
+                await protocol.WriteSuccessAsync(request.Id!, new
+                {
+                    receivedAtUtc = DateTimeOffset.UtcNow
+                });
+                break;
+            case "display.topology.refresh":
+                {
+                    var connectedDisplays = displays.List();
+                    var reports = connectedDisplays.Select(display =>
+                    {
+                        var amdState = capabilities.GetAmdState(display);
+                        return new
+                        {
+                            displayId = display.Id,
+                            capabilities = capabilities.Get(display),
+                            nativeState = new
+                            {
+                                nvidia = capabilities.GetNvidiaState(display),
+                                amd = new
+                                {
+                                    amdState.Brightness,
+                                    amdState.Contrast,
+                                    amdState.Saturation,
+                                    amdState.Hue,
+                                    amdState.ColorTemperature,
+                                    gammaRampHash = amdState.GammaRamp?.GetHash(),
+                                    amdState.GammaReason
+                                }
+                            }
+                        };
+                    }).ToArray();
+                    var baselineValidation = baselines.ValidateTopology(connectedDisplays);
+                    var generation = Interlocked.Increment(ref _topologyGeneration);
+                    await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+                    {
+                        level = "information",
+                        eventName = "DisplayTopologyRefreshed",
+                        generation,
+                        displayIds = connectedDisplays.Select(display => display.Id),
+                        baselines = baselineValidation,
+                        nativeHandles = "reacquiredPerOperation"
+                    }));
+                    await protocol.WriteSuccessAsync(request.Id!, new
+                    {
+                        generation,
+                        displays = connectedDisplays,
+                        capabilityReports = reports,
+                        baselines = baselineValidation
+                    });
+                    break;
+                }
             case "display.state":
                 await protocol.WriteSuccessAsync(request.Id!, baselines.ReadState(GetParameters<DisplayRequest>(request).DisplayId));
                 break;
@@ -148,7 +218,9 @@ internal sealed class CommandProcessor(
                 await protocol.WriteSuccessAsync(request.Id!, baselines.RestoreAll());
                 break;
             case "service.shutdown":
-                await protocol.WriteSuccessAsync(request.Id!, baselines.RestoreAll(failOnError: true));
+                await protocol.WriteSuccessAsync(
+                    request.Id!,
+                    baselines.RestoreAll(failOnError: true, discardDisconnected: true));
                 ShutdownRequested = true;
                 break;
             default:
