@@ -3,7 +3,11 @@
 import { createInterface } from 'node:readline'
 
 const displayId = 'display:test'
+const serviceInstanceId = '11111111-1111-4111-8111-111111111111'
+const baselineOwnerId = '22222222-2222-4222-8222-222222222222'
 const channel = Array.from({ length: 256 }, (_, index) => index * 257)
+let heartbeatCount = 0
+let shutdownAttempts = 0
 
 function write(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -44,6 +48,25 @@ lines.on('line', (line) => {
         }
       })
       break
+    case 'service.health':
+      succeed(request.id, {
+        status: 'healthy',
+        protocolVersion: 1,
+        serviceVersion: 'test',
+        processId: process.pid,
+        serviceInstanceId,
+        baselineOwnerId,
+        baselineCount: 0,
+        watchdogArmed: true
+      })
+      break
+    case 'service.heartbeat':
+      heartbeatCount += 1
+      succeed(request.id, { receivedAtUtc: new Date().toISOString() })
+      break
+    case 'test.heartbeat-count':
+      succeed(request.id, { heartbeatCount })
+      break
     case 'display.state':
       if (request.params?.displayId === 'display:malformed') {
         succeed(request.id, { displayId: 'display:malformed' })
@@ -57,6 +80,18 @@ lines.on('line', (line) => {
       } else {
         fail(request.id, 'BAD_TEST_REQUEST', 'display.state params were incorrect')
       }
+      break
+    case 'display.topology.refresh':
+      if (request.params !== undefined) {
+        fail(request.id, 'BAD_TEST_REQUEST', 'display.topology.refresh must omit params')
+        break
+      }
+      succeed(request.id, {
+        generation: 1,
+        displays: [],
+        capabilityReports: [],
+        baselines: [{ displayId, state: 'connected', ownership: 'validated' }]
+      })
       break
     case 'baseline.capture':
       if (request.params?.displayId !== displayId) {
@@ -114,6 +149,13 @@ lines.on('line', (line) => {
       })
       succeed(request.id, {})
       break
+    case 'test.topology-event':
+      write({
+        event: 'displayTopologyChanged',
+        data: { reason: 'displaySettingsChanged' }
+      })
+      succeed(request.id, {})
+      break
     case 'test.timeout':
       break
     case 'test.exit':
@@ -123,7 +165,18 @@ lines.on('line', (line) => {
       fail(request.id, 'TEST_NATIVE_ERROR', 'Native test failure')
       break
     case 'service.shutdown':
-      succeed(request.id, { displays: [] })
+      shutdownAttempts += 1
+      if (process.argv.includes('--shutdown-error-once') && shutdownAttempts === 1) {
+        fail(request.id, 'BASELINE_RESTORE_FAILED', 'A display is disconnected')
+        break
+      }
+      succeed(request.id, {
+        displays: process.argv.includes('--discard-disconnected-on-shutdown')
+          ? [{ displayId, restored: false, reason: 'displayDisconnected', discarded: true }]
+          : process.argv.includes('--shutdown-error-once')
+            ? [{ displayId, restored: true, gammaRampHash: 'test-hash' }]
+            : []
+      })
       setImmediate(() => process.exit(0))
       break
     default:

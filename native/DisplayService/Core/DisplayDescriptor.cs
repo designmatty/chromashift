@@ -2,6 +2,7 @@ namespace ChromaShift.DisplayService.Core;
 
 internal sealed record DisplayDescriptor(
     string Id,
+    string PhysicalId,
     string Name,
     string WindowsDisplayName,
     string MonitorDevicePath,

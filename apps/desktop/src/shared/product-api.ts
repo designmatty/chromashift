@@ -24,6 +24,7 @@ export const productIpcChannels = {
   restoreBaseline: 'product:restore-baseline',
   pickApplication: 'product:pick-application',
   listApplications: 'product:list-applications',
+  getDiagnostics: 'product:get-diagnostics',
   updateSettings: 'product:update-settings',
   startPreview: 'product:start-preview',
   updatePreview: 'product:update-preview',
@@ -134,7 +135,13 @@ export function productResultSchema<T extends z.ZodType>(valueSchema: T) {
 }
 
 export const emptyRequestSchema = z.object({}).strict()
-export const appPanelViewSchema = z.enum(['profiles', 'displays', 'settings', 'about'])
+export const appPanelViewSchema = z.enum([
+  'profiles',
+  'displays',
+  'settings',
+  'diagnostics',
+  'about'
+])
 export const openAppPanelRequestSchema = z.object({ view: appPanelViewSchema.optional() }).strict()
 export const miniPanelViewSchema = z.enum(['controls', 'override', 'picker'])
 export const setMiniPanelViewRequestSchema = z.object({ view: miniPanelViewSchema }).strict()
@@ -197,6 +204,17 @@ export const applicationSelectionResultSchema = productResultSchema(
 export const applicationSelectionsResultSchema = productResultSchema(
   z.array(applicationSelectionSchema)
 )
+export const diagnosticLogEntrySchema = z
+  .object({
+    timestamp: z.string().min(1),
+    level: z.enum(['information', 'warning', 'error', 'critical']),
+    eventName: z.string().min(1).max(200),
+    details: z.string().max(20_000)
+  })
+  .strict()
+export const diagnosticLogEntriesResultSchema = productResultSchema(
+  z.array(diagnosticLogEntrySchema).max(250)
+)
 export const appSettingsRequestSchema = z.object({ settings: appSettingsSchema }).strict()
 export const appSettingsResultSchema = productResultSchema(appSettingsSchema)
 
@@ -205,6 +223,7 @@ export type PreviewState = z.infer<typeof previewStateSchema>
 export type PreviewTarget = z.infer<typeof previewTargetSchema>
 export type ProductError = z.infer<typeof productErrorSchema>
 export type ApplicationSelection = z.infer<typeof applicationSelectionSchema>
+export type DiagnosticLogEntry = z.infer<typeof diagnosticLogEntrySchema>
 export type AppSettings = z.infer<typeof appSettingsSchema>
 export type AppPanelView = z.infer<typeof appPanelViewSchema>
 export type MiniPanelView = z.infer<typeof miniPanelViewSchema>
@@ -223,6 +242,7 @@ export interface ChromaShiftApi {
   restoreBaseline(): Promise<ProductResult<null>>
   pickApplication(): Promise<ProductResult<ApplicationSelection | null>>
   listApplications(): Promise<ProductResult<ApplicationSelection[]>>
+  getDiagnostics(): Promise<ProductResult<DiagnosticLogEntry[]>>
   updateSettings(settings: AppSettings): Promise<ProductResult<AppSettings>>
   startPreview(
     profile: ColorProfile,

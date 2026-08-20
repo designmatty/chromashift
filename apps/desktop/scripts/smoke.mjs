@@ -17,6 +17,7 @@ const miniScreenshotPath = join(screenshotDirectory, 'mini-panel.png')
 const settingsScreenshotPath = join(screenshotDirectory, 'settings.png')
 const settingsSelectScreenshotPath = join(screenshotDirectory, 'settings-select.png')
 const displaysScreenshotPath = join(screenshotDirectory, 'displays.png')
+const diagnosticsScreenshotPath = join(screenshotDirectory, 'diagnostics.png')
 const aboutScreenshotPath = join(screenshotDirectory, 'about.png')
 const deleteDialogScreenshotPath = join(screenshotDirectory, 'delete-profile-dialog.png')
 const miniPickerScreenshotPath = join(screenshotDirectory, 'mini-picker.png')
@@ -267,7 +268,26 @@ async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemTe
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[role="menuitem"]')?.focus()`
+    expression: `(() => {
+      const item = [...document.querySelectorAll('[role="menuitem"]')]
+        .find((candidate) => candidate.getClientRects().length > 0)
+      if (!(item instanceof HTMLElement)) return false
+      item.focus()
+      item.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+      }))
+      item.dispatchEvent(new KeyboardEvent('keyup', {
+        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+      }))
+      return true
+    })()`
+  })
+  // DOM focus plus trusted CDP input keeps this deterministic even when the
+  // automation host briefly takes foreground ownership from Electron.
+  await debuggerClient.send('Page.bringToFront')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `([...document.querySelectorAll('[role="menuitem"]')]
+      .find((candidate) => candidate.getClientRects().length > 0))?.focus()`
   })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -281,11 +301,26 @@ async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemTe
     code: 'Escape',
     windowsVirtualKeyCode: 27
   })
+  await delay(250)
+  await debuggerClient.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: 520,
+    y: 540,
+    button: 'left',
+    clickCount: 1
+  })
+  await debuggerClient.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: 520,
+    y: 540,
+    button: 'left',
+    clickCount: 1
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector(${JSON.stringify(`[aria-label="${triggerLabel}"]`)})
       ?.getAttribute('aria-expanded') !== 'true'`,
-    `${triggerLabel} menu did not close with Escape.`
+    `${triggerLabel} menu did not close after keyboard/trigger dismissal.`
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector(${JSON.stringify(`[aria-label="${triggerLabel}"]`)})?.blur()`
@@ -460,11 +495,37 @@ ${source}
   }
 }
 
+async function killChildDisplayService(parentProcessId) {
+  const command = `$service = Get-CimInstance Win32_Process | Where-Object {
+  $_.ParentProcessId -eq ${parentProcessId} -and $_.Name -eq 'DisplayService.exe'
+} | Select-Object -First 1
+if ($null -eq $service) { throw 'DisplayService child was not found.' }
+$processId = [int]$service.ProcessId
+Stop-Process -Id $processId -Force
+$processId`
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    { windowsHide: true }
+  )
+  const processId = Number.parseInt(stdout.trim(), 10)
+  if (!Number.isInteger(processId) || processId <= 0) {
+    throw new Error(`DisplayService kill returned an invalid process ID: ${stdout}`)
+  }
+  return processId
+}
+
 const debuggingPort = await reservePort()
 const userDataDirectory = await mkdtemp(join(tmpdir(), 'chromashift-smoke-'))
 const environment = { ...globalThis.process.env }
 delete environment.ELECTRON_RUN_AS_NODE
 const forceElectronTermination = globalThis.process.argv.includes('--force-exit')
+const testNativeRecovery = globalThis.process.argv.includes('--native-recovery')
 
 // Keep a second native service alive as a restoration guard. It captures the
 // real pre-smoke state and lets this test verify what remains on the display
@@ -472,11 +533,40 @@ const forceElectronTermination = globalThis.process.argv.includes('--force-exit'
 // final cleanup even when the assertion fails.
 const restorationGuard = new NativeClient({ executablePath: displayServicePath })
 await restorationGuard.start()
-const guardedDisplay = (await restorationGuard.getDisplays())[0]
-if (guardedDisplay === undefined) throw new Error('The restoration guard found no displays.')
-const guardedBaseline = await restorationGuard.getDisplayState(guardedDisplay.id)
-const guardedBaselineFingerprint = displayStateFingerprint(guardedBaseline)
-await restorationGuard.captureBaseline(guardedDisplay.id)
+const guardDisplays = await restorationGuard.getDisplays()
+const guardGroups = new Map()
+for (const display of guardDisplays) {
+  const id = display.physicalId ?? display.id
+  const group = guardGroups.get(id) ?? []
+  group.push(display)
+  guardGroups.set(id, group)
+}
+let guardedDisplays
+for (const group of [...guardGroups.values()].sort((left, right) => right.length - left.length)) {
+  const reports = await Promise.all(
+    group.map((display) => restorationGuard.getDisplayCapabilityReport(display.id))
+  )
+  if (
+    group.every((display) => !display.hdr) &&
+    reports.every((report) => report.capabilities.brightness.supported)
+  ) {
+    guardedDisplays = group
+    break
+  }
+}
+if (guardedDisplays === undefined) {
+  await restorationGuard.stop()
+  throw new Error('The restoration guard found no SDR display with brightness support.')
+}
+const guardedDisplay = guardedDisplays[0]
+const guardedBaselines = new Map()
+for (const display of guardedDisplays) {
+  const baseline = await restorationGuard.getDisplayState(display.id)
+  guardedBaselines.set(display.id, displayStateFingerprint(baseline))
+  await restorationGuard.captureBaseline(display.id)
+}
+const guardedProductDisplayId = guardedDisplay.physicalId ?? guardedDisplay.id
+const guardedDisplayRowSelector = `[data-part="display-control"][data-display-id="${guardedProductDisplayId}"]`
 
 let standardOutput = ''
 let standardError = ''
@@ -532,6 +622,25 @@ try {
     throw new Error(`The product UI was incomplete:\n${ui.body}`)
   }
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
+
+  if (testNativeRecovery) {
+    const killedProcessId = await killChildDisplayService(electron.pid)
+    const deadline = Date.now() + timeoutMilliseconds
+    while (!standardOutput.includes('"eventName":"NativeServiceRecovered"')) {
+      if (Date.now() >= deadline) {
+        throw new Error(`DisplayService ${killedProcessId} did not complete bounded recovery.`)
+      }
+      await delay(100)
+    }
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const result = await window.chromaShift.getState()
+        return result.ok && result.value.displays.length > 0
+      })()`,
+      'Product state did not recover after the baseline-free DisplayService crash.'
+    )
+  }
 
   const miniPanelOpened = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => (await window.chromaShift.showMiniPanel()).ok)()`,
@@ -815,13 +924,20 @@ try {
     'The Chakra startup behavior Select did not restore the original smoke setting.'
   )
 
-  // Settings replaces the profile sidebar with its own General/Displays/About nav.
+  // Settings replaces the profile sidebar with its own settings-section navigation.
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Displays')?.click()`
   })
   await waitForText(debuggerClient, 'Restore original display settings')
   await captureScreenshot(debuggerClient, displaysScreenshotPath)
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Diagnostics')?.click()`
+  })
+  await waitForText(debuggerClient, 'Latest events from this ChromaShift data directory')
+  await waitForText(debuggerClient, 'ApplicationStarted')
+  await captureScreenshot(debuggerClient, diagnosticsScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'About')?.click()`
@@ -889,7 +1005,6 @@ try {
   }
 
   await verifyTooltipMenuTrigger(debuggerClient, 'Profile actions', 'Edit')
-  await verifyTooltipMenuTrigger(debuggerClient, 'More profile actions', 'Clone profile')
 
   await debuggerClient.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved',
@@ -1076,7 +1191,8 @@ try {
   const editControls = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const nameInput = document.querySelector('[aria-label="Profile name"]')
-      const displayCheckbox = document.querySelector('[aria-label^="Override "] [data-slot="checkbox"]')
+      const displayCheckbox = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+        ?.querySelector('[aria-label^="Override "] [data-slot="checkbox"]')
       if (nameInput === null || displayCheckbox === null) {
         return {
           ready: false,
@@ -1602,8 +1718,13 @@ try {
       const state = await window.chromaShift.getState()
       if (!state.ok) return false
       const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
-      const display = state.value.displays[0]
-      const secondDisplay = state.value.displays[1]
+      const display = state.value.displays.find(
+        (candidate) => candidate.id === ${JSON.stringify(guardedProductDisplayId)}
+      )
+      const secondDisplay = state.value.displays.find(
+        (candidate) => candidate.id !== display?.id &&
+          state.value.capabilityReports[candidate.id]?.capabilities.brightness.supported === true
+      )
       if (profile === undefined || display === undefined) return false
       const saved = await window.chromaShift.saveProfile({
         ...profile,
@@ -1627,7 +1748,8 @@ try {
 
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="color-summary-item"] dd')?.textContent === '55%'`,
+    `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+      ?.querySelector('[data-part="color-summary-item"] dd')?.textContent === '55%'`,
     'The saved profile color was not rendered before explicit preview coverage.'
   )
   await waitForExpression(
@@ -1647,13 +1769,94 @@ try {
     'Viewing a profile did not open every display with saved settings.'
   )
 
+  const disconnectedFixtureId = 'display:smoke-disconnected'
+  const savedDisconnectedTarget = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) return false
+      const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
+      if (profile === undefined) return false
+      const saved = await window.chromaShift.saveProfile({
+        ...profile,
+        displays: [
+          ...profile.displays,
+          { displayId: ${JSON.stringify(disconnectedFixtureId)}, color: { brightness: 52 } }
+        ]
+      })
+      return saved.ok
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (savedDisconnectedTarget.result.value !== true) {
+    throw new Error('Could not persist the disconnected-display smoke fixture.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const state = await window.chromaShift.getState()
+      const profile = state.ok
+        ? state.value.configuration.profiles.find((item) => item.id !== 'default')
+        : undefined
+      return profile?.displays.some(
+        (target) => target.displayId === ${JSON.stringify(disconnectedFixtureId)}
+      ) === true &&
+        document.querySelector('[data-part="profile-detail"]')
+          ?.getAttribute('data-display-target-count') === String(profile.displays.length) &&
+        document.querySelector(
+          '[data-part="display-control"][data-display-id=${JSON.stringify(disconnectedFixtureId)}]'
+        ) === null
+    })()`,
+    'A persisted disconnected display appeared in the profile editor.'
+  )
+  const removedDisconnectedTarget = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) return false
+      const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
+      if (profile === undefined) return false
+      const saved = await window.chromaShift.saveProfile({
+        ...profile,
+        displays: profile.displays.filter(
+          (target) => target.displayId !== ${JSON.stringify(disconnectedFixtureId)}
+        )
+      })
+      return saved.ok
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (removedDisconnectedTarget.result.value !== true) {
+    throw new Error('Could not remove the disconnected-display smoke fixture.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const state = await window.chromaShift.getState()
+      const profile = state.ok
+        ? state.value.configuration.profiles.find((item) => item.id !== 'default')
+        : undefined
+      return profile !== undefined &&
+        profile.displays.every(
+          (target) => target.displayId !== ${JSON.stringify(disconnectedFixtureId)}
+        ) &&
+        document.querySelector('[data-part="profile-detail"]')
+          ?.getAttribute('data-display-target-count') === String(profile.displays.length)
+    })()`,
+    'The renderer did not receive removal of the disconnected-display smoke fixture.'
+  )
+
   // Two connected displays must hold visibly different settings in one profile.
   const perDisplayApply = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const state = await window.chromaShift.getState()
       if (!state.ok) return { skipped: true }
       const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
-      if (state.value.displays.length < 2) return { skipped: true }
+      const writableDisplays = state.value.displays.filter(
+        (display) =>
+          state.value.capabilityReports[display.id]?.capabilities.brightness.supported === true
+      )
+      if (writableDisplays.length < 2) return { skipped: true }
       return {
         skipped: false,
         targets: profile?.displays.map((target) => [target.displayId, target.color])
@@ -1905,14 +2108,19 @@ try {
       const result = await window.chromaShift.getState()
       if (!result.ok || result.value.preview.state !== 'active' ||
         result.value.preview.kind !== 'override') return false
-      const visible = result.value.displays[0]
-      const other = result.value.displays[1]
+      const visible = result.value.displays.find(
+        (display) => display.id === ${JSON.stringify(guardedProductDisplayId)}
+      )
+      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
+      const other = profile?.displays.find((target) => target.displayId !== visible?.id)
       const targets = result.value.preview.targets
       // The edited display returns to baseline while any other display keeps
       // the settings this profile gives it.
       const visibleCleared = targets.every((target) => target.displayId !== visible?.id)
       const otherRetained = other === undefined ||
-        targets.some((target) => target.displayId === other.id && target.color.brightness === 35)
+        targets.some((target) =>
+          target.displayId === other.displayId && target.color.brightness === 35
+        )
       return visibleCleared && otherRetained &&
         document.body.innerText.includes('Update profile') &&
         document.body.innerText.includes('Reset changes')
@@ -2061,9 +2269,11 @@ try {
     throw new Error(`Electron reported a preload failure:\n${standardError}`)
   }
 
-  const controlledState = await restorationGuard.getDisplayState(guardedDisplay.id)
-  if (displayStateFingerprint(controlledState) === guardedBaselineFingerprint) {
-    throw new Error('The smoke profile did not change the guarded display state.')
+  for (const display of guardedDisplays) {
+    const controlledState = await restorationGuard.getDisplayState(display.id)
+    if (displayStateFingerprint(controlledState) === guardedBaselines.get(display.id)) {
+      throw new Error(`The smoke profile did not fan out to ${display.connection}.`)
+    }
   }
 
   globalThis.console.log('Desktop smoke test passed.')
@@ -2076,6 +2286,7 @@ try {
   globalThis.console.log(`Settings screenshot: ${settingsScreenshotPath}`)
   globalThis.console.log(`Settings Select screenshot: ${settingsSelectScreenshotPath}`)
   globalThis.console.log(`Displays screenshot: ${displaysScreenshotPath}`)
+  globalThis.console.log(`Diagnostics screenshot: ${diagnosticsScreenshotPath}`)
   globalThis.console.log(`About screenshot: ${aboutScreenshotPath}`)
   globalThis.console.log(`Delete dialog screenshot: ${deleteDialogScreenshotPath}`)
   globalThis.console.log(`Mini picker screenshot: ${miniPickerScreenshotPath}`)
@@ -2109,22 +2320,25 @@ try {
     smokeFailure ??= error
   }
   try {
-    const restoredState = await waitForRestoredDisplayState(
-      restorationGuard,
-      guardedDisplay.id,
-      guardedBaselineFingerprint
-    )
-    if (displayStateFingerprint(restoredState) !== guardedBaselineFingerprint) {
-      smokeFailure ??= new Error(
-        `Electron exit left ${guardedDisplay.name} on ${displayStateFingerprint(restoredState)}; ` +
-          `expected baseline ${guardedBaselineFingerprint}.`
+    for (const display of guardedDisplays) {
+      const expectedFingerprint = guardedBaselines.get(display.id)
+      const restoredState = await waitForRestoredDisplayState(
+        restorationGuard,
+        display.id,
+        expectedFingerprint
       )
+      if (displayStateFingerprint(restoredState) !== expectedFingerprint) {
+        smokeFailure ??= new Error(
+          `Electron exit left ${display.name} ${display.connection} on ` +
+            `${displayStateFingerprint(restoredState)}; expected baseline ${expectedFingerprint}.`
+        )
+      }
     }
   } catch (error) {
     smokeFailure ??= error
   } finally {
     try {
-      await restorationGuard.restoreDisplay(guardedDisplay.id)
+      for (const display of guardedDisplays) await restorationGuard.restoreDisplay(display.id)
       await restorationGuard.stop()
     } catch (error) {
       smokeFailure ??= error

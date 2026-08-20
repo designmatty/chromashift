@@ -473,10 +473,7 @@ Conceptually:
 ```json
 {
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ]
+  "workspaces": ["apps/*", "packages/*"]
 }
 ```
 
@@ -518,28 +515,28 @@ Conceptually:
 
 ```ts
 export interface ProfileDisplayTarget {
-  displayId: string;
+  displayId: string
 
   color: {
-    brightness?: number;
-    contrast?: number;
-    gamma?: number;
-    saturation?: number;
-    hue?: number;
-    colorTemperature?: number;
-  };
+    brightness?: number
+    contrast?: number
+    gamma?: number
+    saturation?: number
+    hue?: number
+    colorTemperature?: number
+  }
 
-  lastColorValues?: ColorSettings;
+  lastColorValues?: ColorSettings
 }
 
 export interface ColorProfile {
-  id: string;
-  name: string;
-  enabled: boolean;
+  id: string
+  name: string
+  enabled: boolean
 
-  applications: ApplicationRule[];
+  applications: ApplicationRule[]
 
-  displays: ProfileDisplayTarget[];
+  displays: ProfileDisplayTarget[]
 }
 ```
 
@@ -600,22 +597,22 @@ Conceptually:
 
 ```ts
 interface Display {
-  id: string;
+  id: string
 
-  name: string;
+  name: string
 
   adapter: {
-    vendor: "nvidia" | "amd" | "intel" | "unknown";
-    name: string;
-  };
+    vendor: 'nvidia' | 'amd' | 'intel' | 'unknown'
+    name: string
+  }
 
-  connection?: string;
+  connection?: string
 
-  primary: boolean;
+  primary: boolean
 
-  hdr: boolean;
+  hdr: boolean
 
-  capabilities: DisplayCapabilities;
+  capabilities: DisplayCapabilities
 }
 ```
 
@@ -696,27 +693,22 @@ Conceptually:
 
 ```ts
 interface Capability {
-  supported: boolean;
+  supported: boolean
 
-  provider:
-    | "windows"
-    | "nvidia"
-    | "amd"
-    | "intel"
-    | "unknown";
+  provider: 'windows' | 'nvidia' | 'amd' | 'intel' | 'unknown'
 
-  min?: number;
-  max?: number;
-  default?: number;
+  min?: number
+  max?: number
+  default?: number
 }
 
 interface DisplayCapabilities {
-  brightness: Capability;
-  contrast: Capability;
-  gamma: Capability;
-  saturation: Capability;
-  hue: Capability;
-  colorTemperature: Capability;
+  brightness: Capability
+  contrast: Capability
+  gamma: Capability
+  saturation: Capability
+  hue: Capability
+  colorTemperature: Capability
 }
 ```
 
@@ -1124,13 +1116,13 @@ Expose a narrow typed API.
 Example:
 
 ```ts
-window.displayProfiles.getDisplays();
+window.displayProfiles.getDisplays()
 
-window.displayProfiles.getProfiles();
+window.displayProfiles.getProfiles()
 
-window.displayProfiles.activateProfile(profileId);
+window.displayProfiles.activateProfile(profileId)
 
-window.displayProfiles.restoreBaseline();
+window.displayProfiles.restoreBaseline()
 ```
 
 Keep `contextIsolation` enabled.
@@ -1707,19 +1699,19 @@ Maintain this in:
 
 Example:
 
-| Capability | Windows | NVIDIA | AMD |
-|---|---|---|---|
-| Adapter detection | Verified | Verified | Verified |
-| Display enumeration | Verified | Verified | Verified |
-| HDR detection | Verified | N/A | N/A |
-| Brightness | Gamma transform | TBD | ADLX |
-| Contrast | Gamma transform | TBD | ADLX |
-| Gamma | Gamma ramp | TBD | ADLX |
-| Saturation | — | NVAPI DVC | ADLX |
-| Hue | — | NVAPI | ADLX |
-| Color temperature | — | TBD | ADLX |
-| State read | Verified | TBD | TBD |
-| Restoration | Verified | TBD | TBD |
+| Capability          | Windows         | NVIDIA    | AMD      |
+| ------------------- | --------------- | --------- | -------- |
+| Adapter detection   | Verified        | Verified  | Verified |
+| Display enumeration | Verified        | Verified  | Verified |
+| HDR detection       | Verified        | N/A       | N/A      |
+| Brightness          | Gamma transform | TBD       | ADLX     |
+| Contrast            | Gamma transform | TBD       | ADLX     |
+| Gamma               | Gamma ramp      | TBD       | ADLX     |
+| Saturation          | —               | NVAPI DVC | ADLX     |
+| Hue                 | —               | NVAPI     | ADLX     |
+| Color temperature   | —               | TBD       | ADLX     |
+| State read          | Verified        | TBD       | TBD      |
+| Restoration         | Verified        | TBD       | TBD      |
 
 Use:
 
@@ -1786,14 +1778,17 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-13:
+Current status on 2026-08-20:
 
 - Phase 0 — complete
 - Milestone 1 — complete
 - Milestone 2 — complete
 - Milestone 3 — complete
 - Milestone 4 — complete
-- Milestone 5 — next
+- Milestone 5 — complete
+- Milestone 6 — next
+- Milestone 7 — planned after Milestone 6
+- Milestone 8 — extended hardening planned after Milestone 7
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -2039,7 +2034,8 @@ Focus on functionality before visual polish.
   excluding ChromaShift, system/background windows, and duplicate executables;
   retain the `.exe` browser
 - add System/Light/Dark theme, launch-at-startup, login launch behavior, close
-  behavior, and Reset displays settings; diagnostics/log browsing remains M5
+  behavior, and Reset displays settings; diagnostics/log browsing is completed
+  in Slice 5.3
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
 
@@ -2079,19 +2075,15 @@ missing states before changing the product model.
 
 ---
 
-# Milestone 5 — Hardening
+# Milestone 5 — Hardening (complete)
 
-### Slice 5.1 — Display and operating-system transitions
+### Slice 5.1 — Display and operating-system transitions (complete)
 
 - rapid alt-tab
-- sleep/wake
 - monitor reconnect
 - DisplayPort reconnect
 - HDMI reconnect
-- resolution changes
-- refresh-rate changes
 - HDR toggles
-- NVIDIA driver reset
 - topology re-enumeration and stale-handle invalidation
 - introduce a small testable adapter over Electron power events for lock,
   unlock, suspend, and resume instead of scattering `powerMonitor` listeners
@@ -2102,7 +2094,7 @@ missing states before changing the product model.
   no longer intersects a connected display, and flush the final valid state on
   close without delaying restore-safe shutdown
 
-### Slice 5.2 — Process and restoration resilience
+### Slice 5.2 — Process and restoration resilience (complete)
 
 - abrupt Electron parent exit restoration (completed; detached helper plus PID monitor)
 - process exits
@@ -2120,28 +2112,186 @@ missing states before changing the product model.
   captured-baseline owner and must never recapture already modified output as a
   new baseline
 
-### Slice 5.3 — Packaged application security and diagnostics
+### Slice 5.3 — Packaged application security and diagnostics (implemented and package-smoke verified)
 
 - packaged sidecar launch and restoration paths
 - IPC sender validation and navigation/external-URL policy
 - dependency audit and current Electron security patch level
 - production Content Security Policy and Electron fuse review
 - structured logs sufficient to diagnose activation and restore failures
+- expose a bounded, sender-validated in-app browser for the latest structured
+  diagnostic events without giving the renderer filesystem access
 - isolate development data automatically per Git worktree while retaining
   explicit user-data overrides for smoke tests and intentional production-data
   migration checks
 
-### Slice 5.4 — Hardware matrix and release readiness
+### Slice 5.4 — Current-hardware and release readiness (complete)
 
 - multi-monitor
-- mixed GPU configurations where possible
-- NVIDIA and AMD driver/version matrix
 - installed upgrade and uninstall behavior
-- code-signing and installer reputation readiness
+- code-signing hooks that keep credentials outside the repository
 - add a release preflight/smoke that verifies tag, application version, package
   metadata, update manifest, artifact names, and published architectures agree
   before upload; serialize release publication and retain signing/notarization
   hooks even while credentials are absent
+
+---
+
+# Milestone 6 — Performance and footprint optimization
+
+Optimize only from repeatable measurements. Reliability, exact baseline
+restoration, native-provider coverage, renderer sandboxing, Windows interaction
+behavior, and package security take precedence over a smaller benchmark number.
+Keep Electron as the production shell unless new measurements cross the
+reconsideration threshold recorded in `docs/performance.md`.
+
+### Slice 6.1 — Establish footprint baselines and budgets
+
+- measure the complete process tree in app-panel, mini-panel, hidden-to-tray,
+  and post-renderer-release states after startup has settled
+- record private memory, working set, process count, idle CPU, startup time,
+  renderer bundle sizes, installer size, unpacked size, `app.asar` size, and the
+  external `DisplayService` footprint
+- separate repeatable product costs from machine-, driver-, and Electron-specific
+  overhead; run comparable samples and record the test environment
+- define regression budgets and explicit success criteria in
+  `docs/performance.md`; do not declare this milestone complete from a single
+  favorable sample or Task Manager snapshot
+
+### Slice 6.2 — Minimize steady-state memory
+
+- retain no renderer while ChromaShift is operating only as a tray utility;
+  preserve the existing short mini-panel grace period only if measurements show
+  that its responsiveness benefit justifies its cost
+- lazy-load app- and mini-panel code and data, eliminate duplicate long-lived
+  state, timers, listeners, and caches, and keep background work event-driven
+- profile Electron main, renderer, utility, native helper, and .NET allocations
+  independently before selecting changes
+- keep automatic activation, the tray, emergency restore, logging, helper
+  heartbeats, and baseline ownership available in the minimum-memory tray state
+- add repeatable regression coverage for leaks across repeated open, close,
+  preview, profile-switch, and app/mini handoff cycles
+
+### Slice 6.3 — Minimize install and distribution size
+
+- audit production dependencies, emitted renderer chunks, source maps, assets,
+  Electron locales, architecture targets, ASAR contents, and duplicated native
+  files; remove only content proven unnecessary at runtime
+- measure the Electron application and self-contained .NET helper separately so
+  the dominant contributors are visible
+- evaluate supported .NET publish options such as trimming, single-file output,
+  ReadyToRun settings, and framework-dependent deployment only through measured
+  prototypes; reject any option that weakens cold-start behavior, NVAPI/ADLX
+  loading, offline installation, diagnostics, or restore-safe recovery
+- retain x64 packaging, required Electron runtime files, both NVIDIA and AMD
+  provider support, ASAR integrity, production fuses, and the external sidecar
+  boundary
+- regenerate the exact installer with `npm run package:win` before recording its
+  size; never infer installer size from `package:dir` or stale release output
+
+### Slice 6.4 — Validate and enforce the optimized baseline
+
+- compare before/after measurements on the same Windows host and publish the
+  results, tradeoffs, retained files, and rejected experiments in
+  `docs/performance.md`
+- run canonical verification, repeated renderer lifecycle tests, real desktop
+  smoke, memory measurement, package generation, and installed package smoke
+- verify app/mini panel behavior, automatic switching, native helper liveness,
+  baseline restoration, crash restoration, install/upgrade/uninstall, and user
+  data preservation after optimization
+- turn stable memory, renderer, and package-size limits into automated regression
+  gates where the measurement is deterministic enough for CI
+
+---
+
+# Milestone 7 — Notifications, shortcuts, and tray extensions
+
+### Slice 7.1 — Native profile-change notifications
+
+- add an opt-in setting for native Windows notifications when the effective
+  profile changes
+- identify the successfully selected profile and whether the transition came
+  from automatic activation, a manual selection, or a shortcut
+- notify only after a real activation transition completes; suppress duplicate
+  focus events and avoid claiming full success when display application is only
+  partially successful
+- keep notification delivery in Electron main so it does not require an app- or
+  mini-panel renderer to remain alive
+
+### Slice 7.2 — Configurable global profile shortcuts
+
+- allow shortcuts for specific profiles, Default, previous enabled profile, and
+  next enabled profile
+- make shortcut ordering deterministic, skip disabled profiles, and preserve the
+  existing rule that an explicit profile selection establishes a manual override
+- provide a shortcut that disables ChromaShift display control by restoring the
+  captured original settings and pausing automatic writes; provide an explicit
+  shortcut or toggle action to re-enable normal profile resolution
+- register shortcuts in Electron main, validate and persist bindings, detect
+  collisions or operating-system registration failures, and never depend on a
+  renderer being open
+- unregister stale bindings on edits and shutdown, and surface actionable errors
+  without disturbing the last valid shortcut configuration
+
+### Slice 7.3 — Explicit tray panel actions
+
+- add separate `Open app panel` and `Open mini panel` actions to the tray context
+  menu, including when the icon is opened from the Windows hidden-icons drawer
+- retain tray left-click reopening the last-used panel
+- route both context actions through the shared panel controller so opening one
+  surface hides the other
+- preserve native app-panel focus and caption behavior plus the mini panel's
+  non-activating, pointer-oriented, position-clamped behavior
+
+### Slice 7.4 — Settings, state integration, and validation
+
+- expose notification preferences and shortcut bindings through the existing
+  validated settings and preload boundaries
+- make paused/restored display-control state visible in the tray, app panel, and
+  mini panel, with an obvious path back to automatic activation
+- keep notifications, tray actions, and shortcuts synchronized with profile
+  creation, rename, disablement, deletion, and activation-state changes
+- cover settings persistence, shortcut conflicts, previous/next ordering,
+  Default selection, restore/pause/resume behavior, notification deduplication,
+  renderer-free operation, and real Windows tray interactions
+- run canonical verification and the real Electron desktop sequence; unit tests
+  alone do not validate global shortcuts, native notifications, or hidden-icons
+  drawer behavior
+
+---
+
+# Milestone 8 — Extended hardware and release hardening
+
+Run this milestone after Milestone 7. It extends the validated matrix without
+reopening the completed Milestone 5 implementation scope.
+
+### Slice 8.1 — Guarded operating-system transition matrix
+
+- validate suspend/resume and lock/unlock with the independent restoration guard
+- validate resolution, refresh-rate, and primary-display changes
+- validate NVIDIA driver reset, stable display identity, baseline ownership, and
+  intended-state reapplication across each transition
+
+### Slice 8.2 — GPU and driver matrix
+
+- validate at least one ADLX-supported AMD-driven display before advertising AMD
+  hardware support as verified
+- validate mixed AMD/NVIDIA display ownership and independent capability routing
+- record representative NVIDIA and AMD driver/version results and regressions
+
+### Slice 8.3 — Baseline-owning process fault matrix
+
+- validate an actually hung Electron parent through heartbeat restoration
+- exercise baseline-owning helper termination and confirm the product fails
+  closed without recapturing modified output
+- document the restoration boundary for helper, operating-system, and power-loss
+  failures that cannot be recovered after the baseline owner is gone
+
+### Slice 8.4 — Signed distribution trust
+
+- build with the real Authenticode certificate and verify every signed binary
+- validate signed install, in-place upgrade, restore-safe exit, and uninstall
+- record Windows SmartScreen and installer-reputation behavior on clean systems
 
 ---
 
@@ -2213,9 +2363,9 @@ Emergency restore is available.
 
 ---
 
-# Post-MVP
+# Deferred beyond Milestones 6 and 7
 
-Architect for but do not initially build:
+Architect for but do not schedule yet:
 
 - Intel support
 - DDC/CI
@@ -2226,14 +2376,12 @@ Architect for but do not initially build:
 - application-running rules
 - schedules
 - HDR profiles
-- global profile hotkeys
 - RGB channel controls
 - color temperature on additional vendors
 - ICC integration
 - profile import/export
 - profile sharing
 - per-game automatic discovery
-- startup with Windows
 - automatic updates
 - LUT editor
 - gamma curve visualization
@@ -2406,15 +2554,48 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–4 are complete. The GeoSwap-inspired Chakra UI,
+Phase 0 and Milestones 1–5 are complete. The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
-in the per-display UI plan and Milestone 5. Once the current foundation is
-validated, resume **Milestone 5, one numbered slice at a time**, unless the user
-explicitly changes priority.
+in the per-display UI plan and Milestone 5. Continue with **Milestone 6 —
+Performance and footprint optimization**, followed by **Milestone 7 —
+Notifications, shortcuts, and tray extensions**. Run **Milestone 8 — Extended
+hardware and release hardening** after Milestone 7.
 
-The next slice is **Slice 5.1 — Display and operating-system transitions**.
+Milestone 5 is complete. The current NVIDIA/two-display machine passed
+canonical verification, native watchdog restoration, real desktop, forced-parent
+exit, and fused installer/install/upgrade/uninstall smoke. Slice 5.4's release
+metadata and artifact preflight plus serialized signed draft-release workflow are
+implemented. The guarded SDR/HDR/SDR recovery sequence is hardware-validated on
+the G60SD. Active-Edit DisplayPort hot-unplug/cancel/reconnect is also validated
+on that display, including stable-ID baseline retention and exact tray-exit
+restoration. The G60SD HDMI disconnect/reconnect path is validated as well.
+Disconnected targets remain persisted but are omitted from the editor; explicit
+shutdown restores connected displays and discards unreachable session restoration
+records without blocking Exit. The broader guarded transition, baseline-owning
+process-fault, AMD/mixed-GPU/driver, signing-certificate, and installer-reputation
+matrix moved to Milestone 8 by product decision on 2026-08-20. Do not convert an
+unconfirmed baseline-owning helper exit into an automatic restart: fail closed
+rather than recapturing modified output.
+
+Physical display identity is separate from native endpoint identity. Native
+endpoint IDs remain connector-specific and own immutable baselines. A physical
+ID is derived only from a trustworthy EDID manufacturer and serial; otherwise it
+falls back to the endpoint ID. Profiles and normal UI use the physical ID,
+capabilities are intersected across current endpoints, and writes fan out while
+restore remains endpoint-specific. The dual-connected G60SD DP/HDMI paths are
+hardware-validated under this model. See `docs/physical-display-identity.md`.
+
+The real `smoke:desktop:native-recovery` path force-terminates only the smoke
+Electron process's baseline-free DisplayService child and verifies bounded
+health/topology recovery before the full restore-safe desktop sequence. If a
+crashed helper may have owned baselines, restart remains fail-closed and the UI
+shows actionable recovery guidance without raw display identifiers; technical
+details stay in Diagnostics.
+The Diagnostics settings page reads only a bounded tail of the current JSONL log,
+validates at most 250 newest-first entries through the typed preload API, and
+keeps verbose payloads collapsed until the user opens them.
 
 ## Completed Phase 0 deliverables
 

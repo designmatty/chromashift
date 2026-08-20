@@ -2,38 +2,61 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   nativeTheme,
+  powerMonitor,
   screen,
   type IpcMainInvokeEvent,
   type OpenDialogOptions
 } from 'electron'
 import { basename, extname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import {
   describeMigrationNotice,
   JsonProfileRepository,
   type ProfileRepository
 } from '@chromashift/core'
-import { NativeClient, foregroundApplicationChangedDataSchema } from '@chromashift/native-client'
+import {
+  NativeClient,
+  PROTOCOL_VERSION,
+  displayTopologyChangedDataSchema,
+  foregroundApplicationChangedDataSchema
+} from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { ActivationCoordinator } from './activation-coordinator.js'
+import { AppWindowStateController } from './app-window-state-controller.js'
 import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
-import { resolveApplicationDataPaths } from './application-data-path.js'
+import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
 import { applicationFriendlyName } from './application-friendly-name.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
+import { DisplayTransitionController } from './display-transition-controller.js'
+import { EmergencyRestoreController } from './emergency-restore-controller.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
 import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
 import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
 import { MiniPanelController } from './mini-panel-controller.js'
+import { NativeServiceRecoveryController } from './native-service-recovery-controller.js'
+import {
+  nativeRecoveryTerminalMessage,
+  nativeRecoveryTerminalTitle
+} from './native-recovery-user-message.js'
 import { PanelController } from './panel-controller.js'
+import { PhysicalDisplayClient } from './physical-display-client.js'
+import { rewriteProfilesForPhysicalDisplays } from './physical-display-profile-rewrite.js'
 import { registerProductIpcHandlers } from './product-ipc.js'
 import { ProductController } from './product-controller.js'
 import { PreviewSessionController } from './preview-session-controller.js'
+import { PowerEventAdapter } from './power-event-adapter.js'
+import {
+  RendererRecoveryController,
+  type RendererExitReason,
+  type RendererSurface
+} from './renderer-recovery-controller.js'
+import { isSameDocumentNavigation, isTrustedRendererUrl } from './renderer-security.js'
 import { ShutdownCoordinator } from './shutdown-coordinator.js'
-import { describeError, JsonConsoleLogger } from './structured-logger.js'
+import { describeError, PersistentJsonLogger, readDiagnosticLog } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
@@ -42,24 +65,53 @@ app.disableHardwareAcceleration()
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined
 let nativeClient: NativeClient | undefined
+let physicalDisplayClient: PhysicalDisplayClient | undefined
 let profileRepository: ProfileRepository | undefined
 let automaticActivation: AutomaticActivationController | undefined
 let trayController: TrayController | undefined
 let shutdownCoordinator: ShutdownCoordinator | undefined
 let productController: ProductController | undefined
 let previewController: PreviewSessionController | undefined
+let displayTransitionController: DisplayTransitionController | undefined
+let powerEventAdapter: PowerEventAdapter | undefined
+let nativeRecoveryController: NativeServiceRecoveryController | undefined
+let emergencyRestoreController: EmergencyRestoreController | undefined
 let productStateBroadcastPending = false
-let windowStateSaveTimer: NodeJS.Timeout | undefined
 const TITLE_BAR_HEIGHT = 37
-const logger = new JsonConsoleLogger()
+const EMERGENCY_RESTORE_SHORTCUT = 'CommandOrControl+Alt+Shift+R'
 const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
+const developmentWorktreeRoot = app.isPackaged
+  ? undefined
+  : findGitWorktreeRoot([process.cwd(), app.getAppPath()])
 const applicationDataPaths = resolveApplicationDataPaths(
   app.getPath('appData'),
-  hasUserDataOverride ? app.getPath('userData') : undefined
+  hasUserDataOverride ? app.getPath('userData') : undefined,
+  developmentWorktreeRoot
 )
+const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
+const logger = new PersistentJsonLogger(diagnosticLogPath)
+const rendererRecoveryController = new RendererRecoveryController(logger)
 const settingsRepository = new AppSettingsRepository(applicationDataPaths.settingsPath)
 let currentSettings = defaultAppSettings
+const appWindowStateController = new AppWindowStateController(
+  () => currentSettings,
+  (settings) => {
+    currentSettings = settings
+  },
+  (settings) => settingsRepository.save(settings),
+  () => screen.getAllDisplays().map((display) => display.workArea),
+  logger
+)
 if (!hasUserDataOverride) app.setPath('userData', applicationDataPaths.userDataDirectory)
+logger.write({
+  level: 'information',
+  eventName: 'ApplicationStarted',
+  processId: process.pid,
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  userDataDirectory: applicationDataPaths.userDataDirectory,
+  developmentWorktreeRoot
+})
 const ownsSingleInstanceLock = app.requestSingleInstanceLock()
 if (!ownsSingleInstanceLock) app.quit()
 const windowController = new WindowController(
@@ -128,42 +180,6 @@ function applyTitleBarOverlay(): void {
   if (process.platform === 'win32') mainWindow.setAccentColor(appPanelBackgroundColor())
 }
 
-/**
- * Window geometry changes arrive in bursts while dragging or resizing, so the
- * write is debounced and skipped entirely while maximized bounds are transient.
- */
-function scheduleWindowStateSave(window: BrowserWindow): void {
-  if (windowStateSaveTimer !== undefined) clearTimeout(windowStateSaveTimer)
-  windowStateSaveTimer = setTimeout(() => {
-    windowStateSaveTimer = undefined
-    if (window.isDestroyed() || window.isMinimized()) return
-    const maximized = window.isMaximized()
-    const bounds = maximized ? currentSettings.windowBounds : window.getNormalBounds()
-    if (
-      maximized === (currentSettings.windowMaximized ?? false) &&
-      bounds?.x === currentSettings.windowBounds?.x &&
-      bounds?.y === currentSettings.windowBounds?.y &&
-      bounds?.width === currentSettings.windowBounds?.width &&
-      bounds?.height === currentSettings.windowBounds?.height
-    ) {
-      return
-    }
-
-    currentSettings = {
-      ...currentSettings,
-      windowMaximized: maximized,
-      ...(bounds === undefined ? {} : { windowBounds: bounds })
-    }
-    void settingsRepository.save(currentSettings).catch((error: unknown) => {
-      logger.write({
-        level: 'warning',
-        eventName: 'WindowStateSaveFailed',
-        ...describeError(error)
-      })
-    })
-  }, 400)
-}
-
 function servicePath(): string {
   return resolveDisplayServicePath({
     isPackaged: app.isPackaged,
@@ -183,15 +199,54 @@ function trayIconPath(): string {
 function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
   const senderUrl = event.senderFrame?.url
   if (senderUrl === undefined) throw new Error('Renderer IPC sender is unavailable.')
-  const developmentUrl = process.env['ELECTRON_RENDERER_URL']
-  if (developmentUrl !== undefined) {
-    if (new URL(senderUrl).origin === new URL(developmentUrl).origin) return
-  } else {
-    const expected = new URL(pathToFileURL(join(__dirname, '../renderer/index.html')).toString())
-    const actual = new URL(senderUrl)
-    if (actual.protocol === expected.protocol && actual.pathname === expected.pathname) return
-  }
+  if (
+    isTrustedRendererUrl(
+      senderUrl,
+      join(__dirname, '../renderer/index.html'),
+      process.env['ELECTRON_RENDERER_URL']
+    )
+  )
+    return
   throw new Error(`Renderer IPC sender is not trusted: ${senderUrl}`)
+}
+
+function recordNativeDiagnostic(message: string): void {
+  try {
+    const parsed = JSON.parse(message) as unknown
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'eventName' in parsed &&
+      typeof parsed.eventName === 'string'
+    ) {
+      const { level, eventName, ...details } = parsed as Record<string, unknown>
+      logger.write({
+        ...details,
+        level:
+          level === 'warning' || level === 'error' || level === 'critical' ? level : 'information',
+        eventName: String(eventName)
+      })
+      return
+    }
+  } catch {
+    // Preserve non-JSON native diagnostics as structured messages below.
+  }
+  logger.write({ level: 'warning', eventName: 'NativeServiceDiagnostic', message })
+}
+
+function handleRendererExit(
+  surface: RendererSurface,
+  window: BrowserWindow,
+  reason: RendererExitReason,
+  recreate: () => void
+): void {
+  if (shutdownCoordinator?.exiting === true) return
+  const wasVisible = window.isVisible()
+  if (!window.isDestroyed()) window.destroy()
+  if (!wasVisible) return
+  rendererRecoveryController.handle(surface, reason, recreate, (message) => {
+    dialog.showErrorBox('ChromaShift renderer stopped', message)
+  })
 }
 
 async function startNativeService(): Promise<void> {
@@ -227,15 +282,23 @@ async function startNativeService(): Promise<void> {
         }
       }
     )
-    const coordinator = new ActivationCoordinator(profileRepository, nativeClient, logger)
+    const physicalClient = new PhysicalDisplayClient(nativeClient)
+    physicalDisplayClient = physicalClient
+    const coordinator = new ActivationCoordinator(profileRepository, physicalClient, logger)
     automaticActivation = new AutomaticActivationController(
       profileRepository,
       coordinator,
       logger,
       (application) => application?.pid === process.pid
     )
-    nativeClient.on('diagnostic', (message) => console.error(`[DisplayService] ${message}`))
+    nativeClient.on('diagnostic', recordNativeDiagnostic)
     nativeClient.on('event', (event) => {
+      if (event.event === 'displayTopologyChanged') {
+        const parsed = displayTopologyChangedDataSchema.safeParse(event.data)
+        if (parsed.success) {
+          displayTransitionController?.handleDisplayEvent('nativeDisplaySettingsChanged')
+        }
+      }
       if (event.event === 'foregroundApplicationChanged') {
         const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
         if (parsed.success) scheduleProductStateBroadcast()
@@ -249,16 +312,58 @@ async function startNativeService(): Promise<void> {
       })
     })
     nativeClient.on('exit', () => {
-      void automaticActivation?.handleNativeServiceExit().catch((error: unknown) => {
+      const recovery = nativeRecoveryController
+      const handling =
+        recovery === undefined
+          ? (automaticActivation?.handleNativeServiceExit() ?? Promise.resolve())
+          : recovery.handleExit()
+      void handling.catch((error: unknown) => {
         logger.write({
           level: 'error',
-          eventName: 'ActivationStateResetFailed',
+          eventName: 'NativeServiceExitHandlingFailed',
           ...describeError(error)
         })
       })
       if (shutdownCoordinator?.exiting !== true) scheduleProductStateBroadcast()
     })
-    await nativeClient.start()
+    const info = await nativeClient.start()
+    const health = await nativeClient.getServiceHealth()
+    if (
+      info.protocolVersion !== PROTOCOL_VERSION ||
+      health.protocolVersion !== PROTOCOL_VERSION ||
+      info.serviceVersion !== health.serviceVersion ||
+      !health.watchdogArmed
+    ) {
+      throw new Error('DisplayService failed its startup health/version handshake.')
+    }
+    logger.write({
+      level: 'information',
+      eventName: 'NativeServiceHealthVerified',
+      processId: health.processId,
+      serviceVersion: health.serviceVersion,
+      serviceInstanceId: health.serviceInstanceId,
+      baselineOwnerId: health.baselineOwnerId,
+      watchdogArmed: health.watchdogArmed
+    })
+    try {
+      const identityRewrite = await rewriteProfilesForPhysicalDisplays(
+        profileRepository,
+        await physicalClient.getDisplays()
+      )
+      if (identityRewrite.rewrittenProfiles > 0) {
+        logger.write({
+          level: identityRewrite.discardedConflicts > 0 ? 'warning' : 'information',
+          eventName: 'ProfileDisplayIdentityRewritten',
+          ...identityRewrite
+        })
+      }
+    } catch (error) {
+      logger.write({
+        level: 'warning',
+        eventName: 'ProfileDisplayIdentityRewriteFailed',
+        ...describeError(error)
+      })
+    }
     const currentApplication = await nativeClient.getForegroundApplication()
     try {
       await automaticActivation.start(currentApplication)
@@ -304,13 +409,22 @@ function createWindow(): BrowserWindow {
   })
   mainWindow = window
   window.webContents.on('preload-error', (_event, preloadPath, error) => {
-    console.error(`Preload script failed: ${preloadPath}`, error)
+    logger.write({
+      level: 'error',
+      eventName: 'PreloadFailed',
+      preloadPath,
+      ...describeError(error)
+    })
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    handleRendererExit('appPanel', window, details.reason as RendererExitReason, () => openWindow())
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {
-    if (url !== window.webContents.getURL()) event.preventDefault()
+    if (!isSameDocumentNavigation(window.webContents.getURL(), url)) event.preventDefault()
   })
   window.on('close', (event) => {
+    appWindowStateController.flush(window)
     const wasExiting = shutdownCoordinator?.exiting === true
     if (!wasExiting && currentSettings.closeBehavior === 'shutdown') {
       event.preventDefault()
@@ -336,10 +450,10 @@ function createWindow(): BrowserWindow {
     if (mainWindow === window) mainWindow = undefined
   })
   if (currentSettings.windowMaximized === true) window.maximize()
-  window.on('resize', () => scheduleWindowStateSave(window))
-  window.on('move', () => scheduleWindowStateSave(window))
-  window.on('maximize', () => scheduleWindowStateSave(window))
-  window.on('unmaximize', () => scheduleWindowStateSave(window))
+  window.on('resize', () => appWindowStateController.schedule(window))
+  window.on('move', () => appWindowStateController.schedule(window))
+  window.on('maximize', () => appWindowStateController.schedule(window))
+  window.on('unmaximize', () => appWindowStateController.schedule(window))
   if (process.env['ELECTRON_RENDERER_URL']) {
     void window.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -394,11 +508,21 @@ function createMiniWindow(): BrowserWindow {
     }
   })
   panel.webContents.on('preload-error', (_event, preloadPath, error) => {
-    console.error(`Mini-panel preload script failed: ${preloadPath}`, error)
+    logger.write({
+      level: 'error',
+      eventName: 'MiniPanelPreloadFailed',
+      preloadPath,
+      ...describeError(error)
+    })
+  })
+  panel.webContents.on('render-process-gone', (_event, details) => {
+    handleRendererExit('miniPanel', panel, details.reason as RendererExitReason, () =>
+      miniPanelController.show()
+    )
   })
   panel.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   panel.webContents.on('will-navigate', (event, url) => {
-    if (url !== panel.webContents.getURL()) event.preventDefault()
+    if (!isSameDocumentNavigation(panel.webContents.getURL(), url)) event.preventDefault()
   })
   if (process.env['ELECTRON_RENDERER_URL']) {
     void panel.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=mini`)
@@ -426,6 +550,7 @@ if (ownsSingleInstanceLock) {
 function configureDesktopLifecycle(): Promise<void> {
   if (
     nativeClient === undefined ||
+    physicalDisplayClient === undefined ||
     automaticActivation === undefined ||
     profileRepository === undefined
   ) {
@@ -438,7 +563,18 @@ function configureDesktopLifecycle(): Promise<void> {
     app,
     {
       show: () => openWindow(),
-      showError: (title, message) => dialog.showErrorBox(title, message)
+      showError: async (title, message) => {
+        const result = await dialog.showMessageBox({
+          type: 'warning',
+          title,
+          message,
+          buttons: ['Try again', 'Keep ChromaShift running'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true
+        })
+        return result.response === 0 ? 'retry' : 'cancel'
+      }
     },
     logger
   )
@@ -454,12 +590,72 @@ function configureDesktopLifecycle(): Promise<void> {
     logger
   )
   automaticActivation.subscribe(() => scheduleProductStateBroadcast())
-  previewController = new PreviewSessionController(nativeClient, automaticActivation, () =>
+  previewController = new PreviewSessionController(physicalDisplayClient, automaticActivation, () =>
     scheduleProductStateBroadcast()
+  )
+  nativeRecoveryController = new NativeServiceRecoveryController(
+    nativeClient,
+    automaticActivation,
+    () => shutdownCoordinator?.exiting === true,
+    {
+      recovered: () => {
+        scheduleProductStateBroadcast()
+        void trayController?.refresh()
+      },
+      terminal: () => {
+        openWindow()
+        dialog.showErrorBox(nativeRecoveryTerminalTitle, nativeRecoveryTerminalMessage)
+      }
+    },
+    logger
+  )
+  emergencyRestoreController = new EmergencyRestoreController(
+    previewController,
+    automaticActivation,
+    logger
+  )
+  if (
+    !globalShortcut.register(EMERGENCY_RESTORE_SHORTCUT, () => {
+      void emergencyRestoreController?.request().then((restored) => {
+        if (!restored) {
+          dialog.showErrorBox(
+            'Emergency restore failed',
+            'ChromaShift could not confirm that every captured display baseline was restored.'
+          )
+        }
+        scheduleProductStateBroadcast()
+      })
+    })
+  ) {
+    logger.write({
+      level: 'warning',
+      eventName: 'EmergencyRestoreShortcutUnavailable',
+      shortcut: EMERGENCY_RESTORE_SHORTCUT
+    })
+  }
+  displayTransitionController = new DisplayTransitionController(
+    nativeClient,
+    automaticActivation,
+    previewController,
+    logger,
+    750,
+    () => {
+      productController?.invalidateHardwareCache()
+      scheduleProductStateBroadcast()
+    }
+  )
+  powerEventAdapter = new PowerEventAdapter(powerMonitor)
+  powerEventAdapter.start((event) => displayTransitionController?.handlePowerEvent(event))
+  screen.on('display-added', () => displayTransitionController?.handleDisplayEvent('displayAdded'))
+  screen.on('display-removed', () =>
+    displayTransitionController?.handleDisplayEvent('displayRemoved')
+  )
+  screen.on('display-metrics-changed', () =>
+    displayTransitionController?.handleDisplayEvent('displayMetricsChanged')
   )
   productController = new ProductController(
     profileRepository,
-    nativeClient,
+    physicalDisplayClient,
     automaticActivation,
     previewController,
     {
@@ -595,7 +791,8 @@ registerProductIpcHandlers(
       contents.openDevTools({ mode: 'detach', activate: true })
     })
   },
-  (view) => miniPanelController.setView(view)
+  (view) => miniPanelController.setView(view),
+  () => readDiagnosticLog(diagnosticLogPath)
 )
 
 void app.whenReady().then(async () => {
@@ -621,4 +818,10 @@ app.on('before-quit', (event) => {
   void shutdownCoordinator.request('application')
 })
 
-app.on('will-quit', () => trayController?.dispose())
+app.on('will-quit', () => {
+  appWindowStateController.dispose()
+  powerEventAdapter?.dispose()
+  displayTransitionController?.dispose()
+  globalShortcut.unregister(EMERGENCY_RESTORE_SHORTCUT)
+  trayController?.dispose()
+})

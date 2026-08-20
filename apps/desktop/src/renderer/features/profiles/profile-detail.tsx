@@ -65,7 +65,11 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   )
 
   return (
-    <Stack as="section" data-part="profile-detail">
+    <Stack
+      as="section"
+      data-part="profile-detail"
+      data-display-target-count={profile.displays.length}
+    >
       <Flex as="header" align="center" gap={3}>
         {props.editing ? (
           <>

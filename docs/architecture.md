@@ -59,6 +59,42 @@ failures are logged and returned as partial outcomes while remaining displays
 continue; failed transitions reset deduplication so a later event can retry.
 External restoration and native-service exit also reset activation state.
 
+HDR is a quiescent activation state, not a failed profile transition. Electron
+checks the current display snapshot before capture or apply, defers every target
+on an HDR display, and suppresses duplicate foreground retries. The helper also
+rejects capture and every provider write as defense in depth. If HDR becomes
+active after ChromaShift captured an SDR baseline, that immutable baseline stays
+owned and is not recaptured or released; restore-all reports `hdrActive`, and the
+next validated HDR-off topology transition restores or reapplies it. Topology
+resets invalidate target deduplication without discarding baseline ownership.
+
+Display and power transitions use a second coordinator around that same activation
+queue. Electron lock/suspend notifications pause new writes immediately; unlock,
+resume, Electron screen changes, and the native Windows display-settings event are
+debounced into one `display.topology.refresh`. The helper re-enumerates active
+displays, reacquires provider handles, resolves current capabilities/HDR, and
+validates every retained immutable baseline against the stable display ID and
+adapter provider. Only a validated snapshot can reapply the intended
+automatic/manual target or active preview. A disconnected baseline is retained during
+the running session for safe reconnect/restoration; a provider-ownership mismatch
+fails closed and is never recaptured from potentially modified output. Saved targets
+for disconnected displays remain in profile persistence but are omitted from the
+normal editor and are quiescent rather than failed activations: Electron issues no
+capture, apply, or restore request until the stable display ID returns. If a display
+disconnects during Edit or Preview, the session keeps that target, teardown hands its
+retained baseline ownership back to activation without showing a restore failure, and
+the next validated reconnect transition restores or reapplies the intended state.
+
+Display identity has two layers. The native service keeps a unique endpoint ID
+for each active Windows/GPU connector path because baseline ownership and restore
+must remain independently addressable. It also reports a physical ID derived
+from a trustworthy EDID manufacturer and serial, falling back to the endpoint ID
+rather than risking an incorrect merge. Electron presents and persists one
+profile target per physical ID, intersects capabilities across its current
+endpoints, and fans capture/apply/restore out to every endpoint. An idempotent
+startup rewrite converts currently resolvable connector-era targets once. See
+`docs/physical-display-identity.md`.
+
 The renderer uses centralized Zod request and response contracts shared by
 renderer, preload, and main. Preload exposes capability-oriented methods rather
 than a generic IPC invoke. Main validates the sender and input for every
@@ -138,11 +174,38 @@ acceleration is disabled because this utility has no GPU-heavy renderer work and
 the measured Windows private-memory reduction is material;
 `docs/performance.md` records the benchmark and the conditions that would
 require revisiting this decision.
+Main-window normal bounds and maximized state are persisted through a debounced,
+serialized settings writer. Geometry that no longer intersects a connected work
+area is rejected, startup recenters stale bounds, and close synchronously captures
+the final valid state while its atomic disk write remains independent of
+restore-safe display shutdown.
+
+DisplayService liveness is a restoration contract rather than a generic process
+restart. Electron sends two-second heartbeats after a version/health handshake;
+the helper's independent ten-second watchdog restores every retained baseline
+and exits if Electron is alive but unresponsive. The client conservatively tracks
+every display that may have a native baseline. A watchdog-restored exit clears
+that ownership through a final validated protocol event, after which bounded
+backoff may start a new helper, repeat the health handshake, refresh topology,
+and resume activation. If a helper disappears while baseline ownership is still
+possible, recovery stops and surfaces a terminal error: a new helper must never
+capture already modified output as baseline.
+
+Renderer recovery is separately bounded per app and mini-panel surface for
+`crashed`, `oom`, and `abnormal-exit` states. Only a surface that was visible is
+recreated, and it hydrates from main-owned product state; three failures in one
+minute open the circuit instead of forming a reload loop. The global
+`Ctrl+Alt+Shift+R` shortcut remains main-process owned and requests preview
+rollback plus automatic-activation baseline restoration without relying on a
+renderer.
 Tray Exit and other
 application quit requests share one shutdown coordinator, which waits for queued
-activation work and requires `service.shutdown` to confirm restoration before
-allowing Electron to exit. A restore failure reopens the product window and keeps the
-application and helper alive so Exit can be retried.
+activation work and requires `service.shutdown` to restore every connected display
+before allowing Electron to exit. Explicit shutdown discards restoration records for
+displays that are no longer connected, so ordinary monitor removal neither blocks Exit
+nor surfaces an error; saved profile targets are unaffected. A genuine connected-display
+restore failure reopens the product window and presents concise retry/cancel guidance
+while technical details remain in Diagnostics.
 
 Windows packages use ASAR for application code and a self-contained .NET publish
 under `resources/display-service`. Packaged resolution uses only
@@ -150,6 +213,18 @@ under `resources/display-service`. Packaged resolution uses only
 Profile JSON stays in Electron's per-user application-data directory and the NSIS
 uninstaller is configured not to delete it. See `packaging.md` for commands,
 layout checks, smoke coverage, and signing hooks.
+
+Packaged Electron enables embedded ASAR integrity and ASAR-only application
+loading while disabling Node startup environment/inspector escape hatches. Main
+and native diagnostics are retained as bounded JSONL under user data. A typed,
+sender-validated renderer request reads only the latest bounded file tail and
+returns at most 250 validated entries; the renderer never receives a filesystem
+path or direct file access. Development
+launches derive a separate data directory from the canonical Git worktree root;
+explicit smoke overrides and the stable production/migration directories keep
+their existing precedence. Tag releases pass a serialized signed-build workflow
+whose preflight makes package, lockfile, tag, x64 artifact, block map, and update
+manifest versions agree before a draft release can be created.
 
 The profile configuration path is pinned explicitly to
 `%APPDATA%\ChromaShift\profiles.json` so package metadata changes cannot move it
@@ -202,7 +277,17 @@ Milestone 4
 Milestone 5
   -> operating-system and process resilience
   -> packaged-app security
-  -> hardware matrix and release readiness
+  -> current-hardware and automated release readiness
+
+Milestone 6
+  -> performance and footprint optimization
+
+Milestone 7
+  -> notifications, shortcuts, and tray extensions
+
+Milestone 8
+  -> extended OS/GPU/process-fault matrix
+  -> signed distribution trust and reputation
 ```
 
 This order keeps product behavior and restoration reliability ahead of UI

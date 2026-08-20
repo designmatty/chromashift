@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { DisplaysView } from '@/features/settings/displays-view'
+import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
 import { resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
@@ -64,7 +65,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (!editing && selected !== null) setDraft(structuredClone(selected))
   }, [selected, editing])
 
-  const selectedDisplayIds = selected?.displays.map((target) => target.displayId) ?? []
+  const connectedDisplayIds = new Set(product.displays.map((display) => display.id.toLowerCase()))
+  const selectedDisplayIds =
+    selected?.displays
+      .map((target) => target.displayId)
+      .filter((displayId) => connectedDisplayIds.has(displayId.toLowerCase())) ?? []
   const selectedDisplayIdsSignature = selectedDisplayIds.join('\u0000')
 
   // Viewing or editing a profile starts with every overridden display open.
@@ -476,6 +481,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           )}
           {view === 'displays' && <DisplaysView product={product} onError={setError} />}
           {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
+          {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
           {view === 'about' && <AboutPanel version={product.version} />}
         </Flex>
       </Flex>
@@ -489,7 +495,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   )
 }
 
-const appPanelViews: AppPanelView[] = ['profiles', 'displays', 'settings', 'about']
+const appPanelViews: AppPanelView[] = ['profiles', 'displays', 'settings', 'diagnostics', 'about']
 
 function readLastView(): AppPanelView {
   const remembered = localStorage.getItem(LAST_VIEW_KEY)

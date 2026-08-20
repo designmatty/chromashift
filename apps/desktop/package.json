@@ -13,9 +13,10 @@
     "check:renderer-budget": "node scripts/check-renderer-budget.mjs",
     "package:dir": "electron-builder --win dir --x64 --publish never",
     "package:win": "electron-builder --win nsis --x64 --publish never",
+    "package:release": "electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true",
     "measure:memory": "node scripts/measure-memory.mjs",
     "smoke:package": "node scripts/package-smoke.mjs",
-    "test": "vitest run src/main src/shared",
+    "test": "vitest run src/main src/shared src/renderer/features/profiles/display-rows.test.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
@@ -33,11 +34,12 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "43.3.0",
+    "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",

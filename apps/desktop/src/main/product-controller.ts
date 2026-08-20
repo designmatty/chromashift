@@ -85,6 +85,10 @@ export class ProductController {
     return this.#composeState(this.#hardwareCache.displays, this.#hardwareCache.capabilityReports)
   }
 
+  public invalidateHardwareCache(): void {
+    this.#hardwareCache = null
+  }
+
   async #composeState(
     displays: Display[],
     capabilityReports: Record<string, DisplayCapabilityReport>
@@ -248,7 +252,16 @@ export class ProductController {
   }
 
   public async updateSettings(settings: AppSettings): Promise<AppSettings> {
-    const saved = await this.settings.save(settings)
+    const current = await this.settings.get()
+    // Window placement belongs to Electron main. A renderer can hold an older
+    // product snapshot while the user moves a window, so never let that stale
+    // hidden metadata overwrite the latest main-owned geometry.
+    const saved = await this.settings.save({
+      ...settings,
+      miniPanelPosition: current.miniPanelPosition,
+      windowBounds: current.windowBounds,
+      windowMaximized: current.windowMaximized
+    })
     this.settings.apply(saved)
     this.refresh.stateChanged()
     return saved

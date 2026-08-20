@@ -2,6 +2,18 @@ appId: com.chromashift.desktop
 productName: ChromaShift
 copyright: Copyright © 2026 ChromaShift
 asar: true
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  # ChromaShift still loads its local renderer from file://. Keep only the
+  # privileges required by that reviewed architecture until a custom protocol
+  # has a concrete containment requirement and test suite.
+  grantFileProtocolExtraPrivileges: true
 
 directories:
   output: release
@@ -15,8 +27,8 @@ extraResources:
   - from: ../../native/DisplayService/bin/Release/net10.0-windows/win-x64/publish
     to: display-service
     filter:
-      - "**/*"
-      - "!**/*.pdb"
+      - '**/*'
+      - '!**/*.pdb'
   - from: build/icon.png
     to: icon.png
 
@@ -29,6 +41,11 @@ win:
   executableName: ChromaShift
   artifactName: ChromaShift-${version}-${arch}-setup.${ext}
   signAndEditExecutable: true
+
+publish:
+  - provider: github
+    owner: designmatty
+    repo: chromashift
 
 nsis:
   oneClick: false

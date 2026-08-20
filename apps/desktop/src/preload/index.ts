@@ -9,6 +9,7 @@ import {
   appSettingsResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
+  diagnosticLogEntriesResultSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
   setMiniPanelViewRequestSchema,
@@ -85,6 +86,13 @@ const api: ChromaShiftApi = {
       productIpcChannels.listApplications,
       emptyRequestSchema,
       applicationSelectionsResultSchema,
+      {}
+    ),
+  getDiagnostics: () =>
+    invoke(
+      productIpcChannels.getDiagnostics,
+      emptyRequestSchema,
+      diagnosticLogEntriesResultSchema,
       {}
     ),
   updateSettings: (settings) =>

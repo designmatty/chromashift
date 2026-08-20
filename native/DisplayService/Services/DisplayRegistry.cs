@@ -43,9 +43,11 @@ internal sealed partial class DisplayRegistry
             var stableMaterial = serial is not null
                 ? $"edid|{manufacturer}|{productCode}|{serial}"
                 : $"path|{target.MonitorDevicePath}";
+            var endpointId = CreateStableId(stableMaterial);
 
             displays.Add(new DisplayDescriptor(
-                CreateStableId(stableMaterial),
+                endpointId,
+                PhysicalDisplayIdentity.Create(endpointId, manufacturer, serial),
                 name,
                 source.ViewGdiDeviceName,
                 target.MonitorDevicePath,

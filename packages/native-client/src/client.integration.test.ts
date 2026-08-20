@@ -1,9 +1,13 @@
 import { fileURLToPath } from 'node:url'
+import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NativeClient, NativeServiceError } from './client.js'
 
 const executablePath = fileURLToPath(
-  new URL('../../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe', import.meta.url)
+  new URL(
+    '../../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe',
+    import.meta.url
+  )
 )
 
 let client: NativeClient | undefined
@@ -22,6 +26,13 @@ describe('DisplayService lifecycle', () => {
     expect(info.protocolVersion).toBe(1)
     expect(info.processId).toBeGreaterThan(0)
     expect(info.operatingSystem).toContain('Windows')
+    const health = await client.getServiceHealth()
+    expect(health).toMatchObject({
+      status: 'healthy',
+      protocolVersion: 1,
+      baselineCount: 0,
+      watchdogArmed: true
+    })
     const foreground = await client.getForegroundApplication()
     if (foreground !== null) {
       expect(foreground.pid).toBeGreaterThan(0)
@@ -39,6 +50,13 @@ describe('DisplayService lifecycle', () => {
     expect(capabilityReport.capabilities.gamma.max).toBe(2.8)
     expect(capabilityReport.capabilities.saturation.provider).toBe('nvidia')
     expect(capabilityReport.nativeState.nvidia.saturation.current).toBeTypeOf('number')
+    const topology = await client.refreshDisplayTopology()
+    expect(topology.generation).toBe(1)
+    expect(topology.displays.map((display) => display.id)).toEqual(
+      displays.map((display) => display.id)
+    )
+    expect(topology.capabilityReports).toHaveLength(displays.length)
+    expect(topology.baselines).toEqual([])
     const displayState = await client.getDisplayState(displays[0]!.id)
     expect(displayState.displayId).toBe(displays[0]!.id)
     const unknownCommand = client.request('unknown.command')
@@ -51,4 +69,35 @@ describe('DisplayService lifecycle', () => {
     await client.stop()
     expect(client.running).toBe(false)
   })
+
+  it('restores a captured baseline and exits when Electron heartbeats stop', async () => {
+    client = new NativeClient({ executablePath, heartbeatIntervalMs: 0 })
+    await client.start()
+    const displays = await client.getDisplays()
+    const candidateReports = await Promise.all(
+      displays.map(async (display) => ({
+        display,
+        report: await client!.getDisplayCapabilityReport(display.id)
+      }))
+    )
+    const candidate = candidateReports.find(
+      ({ display, report }) => !display.hdr && report.capabilities.gamma.supported
+    )
+    if (candidate === undefined) return
+
+    const baseline = await client.getDisplayState(candidate.display.id)
+    await client.captureBaseline(candidate.display.id)
+    const changed = await client.applyDisplaySettings(candidate.display.id, { gamma: 1.02 })
+    expect(changed.applied.gammaRampHash).toBeDefined()
+    const exited = once(client, 'exit')
+
+    await expect(exited).resolves.toEqual([0, null])
+    expect(client.potentialBaselineDisplayIds).toEqual([])
+
+    client = new NativeClient({ executablePath })
+    await client.start()
+    const restored = await client.getDisplayState(candidate.display.id)
+    expect(restored.provider).toBe(baseline.provider)
+    expect(restored.gammaRampHash).toBe(baseline.gammaRampHash)
+  }, 20_000)
 })

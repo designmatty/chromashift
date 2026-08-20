@@ -26,8 +26,8 @@ export interface PreviewNativePort {
 
 export interface PreviewActivationPort {
   beginPreview(): Promise<void>
-  cancelPreview(): Promise<void>
-  confirmPreview(profileId: string): Promise<void>
+  cancelPreview(retainedDisplayIds?: readonly string[]): Promise<void>
+  confirmPreview(profileId: string, retainedDisplayIds?: readonly string[]): Promise<void>
 }
 
 export class PreviewValidationError extends Error {
@@ -56,6 +56,13 @@ interface ActivePreview {
   touched: Map<string, string>
   /** Capability checks already passed, keyed by lowercased display ID. */
   validated: Map<string, Set<ColorSettingName>>
+  /** Desired targets currently absent from the native display snapshot. */
+  disconnected: Set<string>
+}
+
+interface RestoreTouchedResult {
+  failures: string[]
+  retainedDisplayIds: string[]
 }
 
 /**
@@ -109,28 +116,37 @@ export class PreviewSessionController {
 
     const applied = new Map<string, DisplayColorTarget>()
     const touched = new Map<string, string>()
+    const disconnected = new Set<string>()
     try {
       for (const target of targets) {
-        await this.native.captureBaseline(target.displayId)
-        touched.set(target.displayId.toLowerCase(), target.displayId)
-      }
-      for (const target of targets) {
-        await this.native.applyDisplaySettings(target.displayId, target.color)
-        applied.set(target.displayId.toLowerCase(), target)
-      }
-    } catch (error) {
-      for (const displayId of touched.values()) {
+        const key = target.displayId.toLowerCase()
         try {
-          await this.native.restoreDisplay(displayId)
-        } catch {
-          // Reported through the activation rollback below.
+          await this.native.captureBaseline(target.displayId)
+          touched.set(key, target.displayId)
+        } catch (error) {
+          if (!this.#isDisplayDisconnected(error)) throw error
+          disconnected.add(key)
         }
       }
-      await this.activation.cancelPreview()
+      for (const target of targets) {
+        const key = target.displayId.toLowerCase()
+        if (!disconnected.has(key)) {
+          try {
+            await this.native.applyDisplaySettings(target.displayId, target.color)
+          } catch (error) {
+            if (!this.#isDisplayDisconnected(error)) throw error
+            disconnected.add(key)
+          }
+        }
+        applied.set(key, target)
+      }
+    } catch (error) {
+      const rollback = await this.#restoreDisplayIds(touched.values())
+      await this.activation.cancelPreview(rollback.retainedDisplayIds)
       throw error
     }
 
-    this.#active = { profileId: profile.id, kind, applied, touched, validated }
+    this.#active = { profileId: profile.id, kind, applied, touched, validated, disconnected }
     this.onStateChanged(this.state)
   }
 
@@ -141,24 +157,56 @@ export class PreviewSessionController {
   async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
     const active = this.#requireActive(profileId)
     const desired = targets.filter((target) => hasColorOverrides(target.color))
-    await this.#validateTargets(desired, active.validated)
+    const connectedDesired = desired.filter(
+      (target) => !active.disconnected.has(target.displayId.toLowerCase())
+    )
+    await this.#validateTargets(connectedDesired, active.validated, undefined, true)
+    for (const target of connectedDesired) {
+      if (!this.#isTargetValidated(target, active.validated)) {
+        active.disconnected.add(target.displayId.toLowerCase())
+      }
+    }
 
     const desiredKeys = new Set(desired.map((target) => target.displayId.toLowerCase()))
     for (const [key, target] of [...active.applied]) {
       if (desiredKeys.has(key)) continue
-      await this.native.restoreDisplay(target.displayId)
+      if (!active.disconnected.has(key)) {
+        try {
+          await this.native.restoreDisplay(target.displayId)
+        } catch (error) {
+          if (!this.#isDisplayDisconnected(error)) throw error
+          active.disconnected.add(key)
+        }
+      }
       active.applied.delete(key)
+      active.disconnected.delete(key)
     }
 
     for (const target of desired) {
       const key = target.displayId.toLowerCase()
       const current = active.applied.get(key)
       if (current !== undefined && sameColorSettings(current.color, target.color)) continue
-      if (current === undefined) {
-        await this.native.captureBaseline(target.displayId)
-        active.touched.set(key, target.displayId)
+      if (active.disconnected.has(key)) {
+        active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
+        continue
       }
-      await this.native.applyDisplaySettings(target.displayId, target.color)
+      if (current === undefined) {
+        try {
+          await this.native.captureBaseline(target.displayId)
+          active.touched.set(key, target.displayId)
+        } catch (error) {
+          if (!this.#isDisplayDisconnected(error)) throw error
+          active.disconnected.add(key)
+        }
+      }
+      if (!active.disconnected.has(key)) {
+        try {
+          await this.native.applyDisplaySettings(target.displayId, target.color)
+        } catch (error) {
+          if (!this.#isDisplayDisconnected(error)) throw error
+          active.disconnected.add(key)
+        }
+      }
       active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
     }
 
@@ -175,21 +223,24 @@ export class PreviewSessionController {
 
   async #complete(profileId: string, activation: 'manual' | 'preserve'): Promise<void> {
     this.#requireActive(profileId)
-    const failures = await this.#restoreTouched()
+    const rollback = await this.#restoreTouched()
     this.#active = null
     try {
-      if (activation === 'manual') await this.activation.confirmPreview(profileId)
-      else await this.activation.cancelPreview()
+      if (activation === 'manual') {
+        await this.activation.confirmPreview(profileId, rollback.retainedDisplayIds)
+      } else {
+        await this.activation.cancelPreview(rollback.retainedDisplayIds)
+      }
     } finally {
       this.onStateChanged(this.state)
     }
-    if (failures.length > 0) throw new PreviewRestoreError(failures)
+    if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
   }
 
   public async cancel(): Promise<void> {
     return this.#enqueue(async () => {
-      const failures = await this.#teardown()
-      if (failures.length > 0) throw new PreviewRestoreError(failures)
+      const rollback = await this.#teardown()
+      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
     })
   }
 
@@ -203,33 +254,106 @@ export class PreviewSessionController {
     await this.#enqueue(() => this.#teardown())
   }
 
+  public reapplyAfterDisplayTransition(): Promise<boolean> {
+    return this.#enqueue(async () => {
+      const active = this.#active
+      if (active === null) return false
+
+      const displays = await this.native.getDisplays()
+      const connectedDisplayIds = new Set(displays.map((display) => display.id.toLowerCase()))
+      active.disconnected.clear()
+      for (const target of active.applied.values()) {
+        if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
+          active.disconnected.add(target.displayId.toLowerCase())
+        }
+      }
+      const targets = [...active.applied.values()].filter((target) =>
+        connectedDisplayIds.has(target.displayId.toLowerCase())
+      )
+      active.validated.clear()
+      await this.#validateTargets(targets, active.validated, displays, true)
+      for (const target of targets) {
+        if (!this.#isTargetValidated(target, active.validated)) continue
+        try {
+          await this.native.captureBaseline(target.displayId)
+          active.touched.set(target.displayId.toLowerCase(), target.displayId)
+          await this.native.applyDisplaySettings(target.displayId, target.color)
+        } catch (error) {
+          if (!this.#isDisplayDisconnected(error)) throw error
+          const key = target.displayId.toLowerCase()
+          active.validated.delete(key)
+          active.disconnected.add(key)
+        }
+      }
+      this.onStateChanged(this.state)
+      return true
+    })
+  }
+
   /**
    * Restores every display this session wrote and returns control to the
    * activation controller, which reasserts the correct automatic/manual target.
    */
-  async #teardown(): Promise<string[]> {
-    if (this.#active === null) return []
-    const failures = await this.#restoreTouched()
+  async #teardown(): Promise<RestoreTouchedResult> {
+    if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
+    const rollback = await this.#restoreTouched()
     this.#active = null
     try {
-      await this.activation.cancelPreview()
+      await this.activation.cancelPreview(rollback.retainedDisplayIds)
     } finally {
       this.onStateChanged(this.state)
     }
-    return failures
+    return rollback
   }
 
-  async #restoreTouched(): Promise<string[]> {
-    if (this.#active === null) return []
+  async #restoreTouched(): Promise<RestoreTouchedResult> {
+    if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
+    return this.#restoreDisplayIds(this.#active.touched.values())
+  }
+
+  async #restoreDisplayIds(displayIds: Iterable<string>): Promise<RestoreTouchedResult> {
     const failures: string[] = []
-    for (const displayId of this.#active.touched.values()) {
+    const retainedDisplayIds: string[] = []
+    let connectedDisplayIds: Set<string> | undefined
+    try {
+      connectedDisplayIds = new Set(
+        (await this.native.getDisplays()).map((display) => display.id.toLowerCase())
+      )
+    } catch {
+      // Enumeration failure must not suppress a restore attempt.
+    }
+
+    for (const displayId of displayIds) {
+      if (connectedDisplayIds !== undefined && !connectedDisplayIds.has(displayId.toLowerCase())) {
+        retainedDisplayIds.push(displayId)
+        continue
+      }
       try {
-        await this.native.restoreDisplay(displayId)
+        const result = await this.native.restoreDisplay(displayId)
+        if (result.restored || result.reason === 'baselineNotCaptured') continue
+        if (
+          result.code === 'DISPLAY_NOT_FOUND' ||
+          result.code === 'HDR_UNSAFE' ||
+          result.reason === 'hdrActive'
+        ) {
+          retainedDisplayIds.push(displayId)
+        } else {
+          failures.push(
+            `${displayId}: ${result.error ?? `Display was not restored: ${result.reason ?? 'unknown reason'}.`}`
+          )
+          retainedDisplayIds.push(displayId)
+        }
       } catch (error) {
-        failures.push(`${displayId}: ${describeError(error).message}`)
+        const details = describeError(error)
+        if (details.code === 'DISPLAY_NOT_FOUND' || details.code === 'HDR_UNSAFE') {
+          retainedDisplayIds.push(displayId)
+        } else {
+          failures.push(`${displayId}: ${details.message}`)
+          retainedDisplayIds.push(displayId)
+        }
       }
     }
-    return failures
+    return { failures, retainedDisplayIds }
   }
 
   #enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -256,7 +380,9 @@ export class PreviewSessionController {
    */
   async #validateTargets(
     targets: readonly DisplayColorTarget[],
-    validated: Map<string, Set<ColorSettingName>>
+    validated: Map<string, Set<ColorSettingName>>,
+    knownDisplays?: readonly Display[],
+    deferDisconnected = false
   ): Promise<void> {
     const pending = targets
       .map((target) => ({
@@ -268,17 +394,24 @@ export class PreviewSessionController {
       .filter((entry) => entry.settings.length > 0)
     if (pending.length === 0) return
 
-    const displays = await this.native.getDisplays()
+    const displays = knownDisplays ?? (await this.native.getDisplays())
     const displayMap = new Map(displays.map((display) => [display.id.toLowerCase(), display]))
 
     for (const { target, settings } of pending) {
       const key = target.displayId.toLowerCase()
       const display = displayMap.get(key)
       if (display === undefined) {
+        if (deferDisconnected) continue
         throw new PreviewValidationError(`Display ${target.displayId} is no longer connected.`)
       }
 
-      const report = await this.native.getDisplayCapabilityReport(display.id)
+      let report: DisplayCapabilityReport
+      try {
+        report = await this.native.getDisplayCapabilityReport(display.id)
+      } catch (error) {
+        if (deferDisconnected && this.#isDisplayDisconnected(error)) continue
+        throw error
+      }
       for (const setting of settings) {
         const capability = report.capabilities[setting]
         if (!capability.supported) {
@@ -301,6 +434,18 @@ export class PreviewSessionController {
       for (const setting of settings) known.add(setting)
       validated.set(key, known)
     }
+  }
+
+  #isTargetValidated(
+    target: DisplayColorTarget,
+    validated: Map<string, Set<ColorSettingName>>
+  ): boolean {
+    const known = validated.get(target.displayId.toLowerCase())
+    return known !== undefined && settingNames(target.color).every((setting) => known.has(setting))
+  }
+
+  #isDisplayDisconnected(error: unknown): boolean {
+    return describeError(error).code === 'DISPLAY_NOT_FOUND'
   }
 
   #requireActive(profileId: string): ActivePreview {

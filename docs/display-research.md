@@ -7,19 +7,19 @@ because no active monitor is attached to the AMD adapter.
 
 ## Environment
 
-| Item | Tested result |
-|---|---|
-| Windows | Microsoft Windows NT 10.0.26200.0 |
-| Node / npm | 24.11.1 / 11.6.2 |
-| .NET SDK | 10.0.302 |
-| Electron | 43.3.0 |
-| NVIDIA GPU | GeForce RTX 5090, WMI driver `32.0.16.1088` (NVIDIA 610.88) |
-| AMD GPU | Radeon(TM) Graphics, WMI driver `32.0.21036.18` |
-| AMD ADLX | SDK headers 1.5.0.124; installed runtime 1.4.0.121 |
-| Primary display | Samsung Odyssey G60SD, DP, serial HNAY301023, 359.999 Hz |
-| Secondary display | ASUS VG278, DP, serial JCLMQS152284, 144.001 Hz |
-| Active adapter paths | Both displays driven by NVIDIA; AMD iGPU has no active display |
-| HDR | Both displays report advanced-color support, HDR disabled during tests |
+| Item                 | Tested result                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows              | Microsoft Windows NT 10.0.26200.0                                                                                                      |
+| Node / npm           | 24.11.1 / 11.6.2                                                                                                                       |
+| .NET SDK             | 10.0.302                                                                                                                               |
+| Electron             | 43.3.0                                                                                                                                 |
+| NVIDIA GPU           | GeForce RTX 5090, WMI driver `32.0.16.1088` (NVIDIA 610.88)                                                                            |
+| AMD GPU              | Radeon(TM) Graphics, WMI driver `32.0.21036.18`                                                                                        |
+| AMD ADLX             | SDK headers 1.5.0.124; installed runtime 1.4.0.121                                                                                     |
+| Primary display      | Samsung Odyssey G60SD, DP, serial HNAY301023, 359.999 Hz                                                                               |
+| Secondary display    | ASUS VG278, DP, serial JCLMQS152284, 144.001 Hz                                                                                        |
+| Active adapter paths | Both displays driven by NVIDIA; AMD iGPU has no active display                                                                         |
+| HDR                  | Both displays report advanced-color support; G60SD HDR enabled for live gating/transition validation on 2026-08-14, VG278 remained SDR |
 
 ## Toolchain and setup
 
@@ -39,21 +39,21 @@ installed matching Node/npm/.NET versions work identically. Root scripts expose
 mapping, read-back, and restoration paths exist, but matching hardware was not
 available for a write test.
 
-| Capability | Windows | NVIDIA | AMD |
-|---|---|---|---|
-| Adapter detection | Verified | Verified | Verified |
-| Display enumeration | Verified | Verified | Implemented, unverified |
-| Stable display identity | Verified across repeated enumeration | Verified mapping to both GDI sources | Implemented, unverified |
-| HDR detection | Verified in SDR state | N/A | N/A |
-| Brightness | Verified gamma transform | Verified through Windows ramp | Implemented, unverified (ADLX) |
-| Contrast | Verified gamma transform | Verified through Windows ramp | Implemented, unverified (ADLX) |
-| Gamma | Verified exact ramp read/write/restore | Verified through Windows ramp | Implemented, unverified (ADLX LUT) |
-| Saturation | Unsupported | Verified (NVAPI DVC) | Implemented, unverified (ADLX) |
-| Hue | Unsupported | Verified (private NVAPI) | Implemented, unverified (ADLX) |
-| Color temperature | Unsupported | Unsupported | Implemented, unverified (ADLX) |
-| Capability/range reporting | Verified | Verified | Implemented, unverified |
-| State read | Verified | Verified | ADLX initialized; no AMD display |
-| Exact restoration | Verified | Verified | Implemented, unverified |
+| Capability                 | Windows                                    | NVIDIA                               | AMD                                |
+| -------------------------- | ------------------------------------------ | ------------------------------------ | ---------------------------------- |
+| Adapter detection          | Verified                                   | Verified                             | Verified                           |
+| Display enumeration        | Verified                                   | Verified                             | Implemented, unverified            |
+| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Implemented, unverified            |
+| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | N/A                                |
+| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Implemented, unverified (ADLX)     |
+| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Implemented, unverified (ADLX)     |
+| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Implemented, unverified (ADLX LUT) |
+| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Implemented, unverified (ADLX)     |
+| Hue                        | Unsupported                                | Verified (private NVAPI)             | Implemented, unverified (ADLX)     |
+| Color temperature          | Unsupported                                | Unsupported                          | Implemented, unverified (ADLX)     |
+| Capability/range reporting | Verified                                   | Verified                             | Implemented, unverified            |
+| State read                 | Verified                                   | Verified                             | ADLX initialized; no AMD display   |
+| Exact restoration          | Verified                                   | Verified                             | Implemented, unverified            |
 
 ## Windows findings
 
@@ -111,9 +111,17 @@ an interface disappears, re-query handles and ranges, and include driver-version
 regression tests. Before distributing the MVP, perform an LGPL compliance/legal
 review and decide whether to retain this wrapper or own the minimal interop.
 
-HDR was not enabled during the write test. NVIDIA DVC/hue under HDR therefore
-remains unverified and should be capability-disabled until tested rather than
-inferred from the SDR result.
+NVIDIA DVC/hue writes under HDR remain deliberately untested. With HDR enabled
+on the G60SD, ChromaShift detected the state and reported every Windows and
+NVIDIA color capability unsupported; profile apply requests failed closed with
+`HDR_UNSAFE` before mutation. The first live toggle also exposed repeated profile
+attempts and an SDR-baseline restore attempt while HDR was active, so it did not
+establish NVIDIA HDR write safety. Slice 5.1 now treats HDR as a deferred
+activation state, retains the immutable SDR baseline, and waits for HDR-off
+before restoring or reapplying it. A guarded post-fix SDR/HDR/SDR sequence then
+confirmed this behavior: HDR activation performed no provider writes, the
+baseline owner remained validated through both topology refreshes, and returning
+to SDR reapplied the saved profile without recapturing the baseline.
 
 ## AMD findings
 
@@ -164,32 +172,83 @@ explicit per-display restore, restore-all, and partial-apply rollback use the
 same verified path.
 
 Parent-exit monitoring and EOF cover graceful shutdown and tested abrupt Electron
-termination. They are not a complete watchdog: a hung Electron parent, abrupt
-helper crash, power loss, or OS termination may still prevent cleanup. A heartbeat
-or stronger supervisor remains required during hardening.
+termination. Milestone 5 added a two-second Electron heartbeat and independent
+ten-second helper watchdog; a guarded integration test verified exact gamma-ramp
+restoration after heartbeat loss. Abrupt helper crash, power loss, or OS
+termination may still prevent cleanup because the process that owns the in-memory
+baseline cannot restore after it has already disappeared.
 
 ## Multi-monitor and topology findings
 
 Both active DisplayPort monitors enumerate independently with distinct stable
 IDs, serials, refresh rates, primary state, GDI source mappings, and NVAPI
-handles. Repeated enumeration returned the same IDs. Physical cable reconnect,
-sleep/wake, primary changes, HDR toggles, and driver reset were not performed in
-this spike; those are Milestone 5 tests. The providers do not cache native
-display handles across calls, which avoids blindly reusing stale handles.
+handles. Repeated enumeration returned the same IDs. An HDR-on transition was
+observed on the G60SD with its stable ID preserved and the VG278 remaining SDR.
+The 2026-08-14 guarded SDR/HDR/SDR transition advanced topology generations,
+reacquired handles, kept the captured G60SD baseline ownership `validated`, and
+returned the renderer from saved numeric values to muted `unavailable` labels
+and back without losing profile data. The first SDR application captured gamma
+hash `3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf`
+once, both SDR legs produced the same verified applied hash
+`438a956c38ec12ad82d0f75c9c2fc30191dce214d6c64ace5e9e5b0aad02ec86`,
+and tray exit restored the original hash.
+
+The same display then passed a guarded DisplayPort hot-unplug cycle during an
+active Edit session. Topology generation 1 retained its baseline as
+`disconnected`/`notConnected`; preview remained active, and Cancel transferred
+the retained display ID back to activation without calling restore. The saved
+Default target became `displayDisconnected`/deferred with no native capture or
+apply. Generation 2 resolved the same stable display ID and ownership
+`validated`, then reapplied hash
+`438a956c38ec12ad82d0f75c9c2fc30191dce214d6c64ace5e9e5b0aad02ec86`.
+No `DISPLAY_NOT_FOUND`, transition, activation, or restore failure occurred in
+the unplug/cancel/reconnect interval, and tray exit restored the original
+`3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf`
+hash. The providers do not cache native display handles across calls, which
+avoids blindly reusing stale handles.
+
+The G60SD then passed a guarded HDMI disconnect/reconnect cycle. HDMI exposed
+stable ID
+`display:b361c05e6dea55c2141cae01b55b5cf220158a717afb90612a60a15add79c3b7`;
+an active Edit moved its gamma hash from
+`3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf` to
+`1bbef12e9ac2806eef6de7e91afe9e37ad1c4067a5b061b7f29f9094221faff0`.
+The first shutdown attempt while the output was absent exposed the former
+`DISPLAY_NOT_FOUND` blocking path. Its non-blocking dialog kept the helper alive
+beyond the ten-second watchdog, HDMI returned with the same ID, and retry restored
+the exact original hash. A fresh independent helper then confirmed the VG278 DP,
+G60SD HDMI, and G60SD DP outputs all had that original ramp. Explicit shutdown now
+discards an absent output's in-memory restoration record instead of presenting
+that error; persisted profile targets remain intact and reconnect normally.
+
+The G60SD reports connector-specific EDID product codes (`75CB` on DP and `75C2`
+on HDMI) despite the same serial. ChromaShift now preserves those as independent
+native endpoint IDs while deriving shared physical ID
+`display:4b518baf6fd688294cc0ddb625742692dfcb5cd16422ae9e80a565902d150c10`
+from manufacturer `SAM` and serial `HNAY301023`. Profiles and normal UI use that
+physical ID; native baseline ownership remains endpoint-specific. With both
+paths connected, real desktop and forced-exit smoke confirmed one profile write
+reached both endpoints and both exact baselines were restored. Sleep/wake,
+primary changes, and driver reset are deferred to the Milestone 8 extended
+hardening matrix.
 
 ## Known limitations and failures
 
 - Windows gamma is a legacy global facility with documented overwrite and HDR
   limitations; read-back reduces but cannot remove those risks.
-- HDR-on behavior is not hardware-validated. Windows gamma is disabled in HDR;
-  NVIDIA private controls should also remain disabled until explicitly tested.
+- HDR-on detection, capability shutdown, deferred activation, SDR recovery, and
+  exact exit restoration are hardware-validated on the G60SD. Provider writes
+  under HDR remain intentionally unsupported and untested.
 - NVIDIA DVC and hue depend on undocumented/private interfaces and an LGPL-3.0
   wrapper that needs distribution review.
 - No AMD-driven monitor was available. The ADLX implementation is not a claim of
   AMD hardware validation.
-- Stable IDs were verified across enumeration, not physical reconnect cycles.
-- Parent-exit and EOF restoration are not a heartbeat watchdog and cannot recover
-  from every possible native-service or OS failure.
+- The G60SD endpoint IDs are verified independently across DisplayPort and HDMI
+  reconnect, and both map to one hardware-verified physical profile ID. Panels
+  without trustworthy EDID serials intentionally remain endpoint-specific; other
+  adapter and monitor combinations remain unverified.
+- Parent-exit, EOF, and heartbeat restoration cannot recover from every possible
+  native-service, power, or OS failure.
 
 ## Recommended production architecture
 
@@ -198,15 +257,15 @@ should continue owning profiles, matching, persistence, activation precedence,
 and user-facing errors. `DisplayService` should remain limited to enumeration,
 events, validated native reads/writes, and baseline restoration.
 
-| Product capability | Recommended provider |
-|---|---|
-| Display/adapter/connection/HDR discovery | Windows DisplayConfig + WMI EDID metadata |
-| Foreground application | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook |
-| NVIDIA brightness/contrast/gamma | Guarded Windows gamma ramp in SDR only |
-| NVIDIA saturation/hue | Narrow private-NVAPI adapter, subject to compatibility and license decision |
-| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation |
-| AMD gamma | Official ADLX re-gamma LUT after hardware validation |
-| Unsupported/unknown adapters | Report unsupported; never guess a vendor range or silently no-op |
+| Product capability                                 | Recommended provider                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                                   |
+| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                       |
+| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                      |
+| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter, subject to compatibility and license decision |
+| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation             |
+| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation                        |
+| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op            |
 
 Proceed to core-domain work only after accepting these Phase 0 constraints:
 
@@ -216,7 +275,8 @@ Proceed to core-domain work only after accepting these Phase 0 constraints:
    decision before MVP distribution.
 3. AMD must be tested on at least one ADLX-supported, AMD-driven monitor before
    AMD support is advertised as verified.
-4. Topology invalidation and a real heartbeat watchdog belong in hardening before
-   calling restoration crash-safe.
+4. Topology invalidation and heartbeat restoration are implemented; the
+   Milestone 8 physical transition/fault matrix still gates any broad crash-safe
+   claim.
 
 No polished profile UI should begin until these findings are reviewed.

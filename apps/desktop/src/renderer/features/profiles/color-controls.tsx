@@ -46,7 +46,7 @@ export function resetRememberedColorValues(profile: ColorProfile | null): void {
 
 export interface ControlSupport {
   available: boolean
-  /** Short inline status shown in the value slot when the control is unavailable. */
+  /** Short inline status shown beside the control when it is unavailable. */
   status: string
   reason: string
   provider: string
@@ -261,19 +261,22 @@ export function ColorSummary({
       {controls.map((control) => {
         const support = controlSupport(control.key, display, report)
         const value = color[control.key]
+        const showValueBadge = support.available && value !== undefined
         const valueElement = (
           <Box
             as="dd"
-            w={value === undefined ? 'auto' : '60px'}
-            px={value === undefined ? '0' : '10px'}
+            w={showValueBadge ? '60px' : 'auto'}
+            px={showValueBadge ? '10px' : '0'}
             rounded="md"
-            bg={value === undefined ? 'transparent' : 'bg.muted'}
+            bg={showValueBadge ? 'bg.muted' : 'transparent'}
             fontFamily="mono"
-            fontSize={value === undefined ? 'xs' : 'md'}
-            textAlign="center"
+            fontSize={showValueBadge ? 'md' : 'xs'}
+            lineHeight="short"
+            textAlign={showValueBadge ? 'center' : 'right'}
+            whiteSpace="nowrap"
             tabIndex={support.available ? undefined : 0}
             _dark={{
-              bg: value === undefined ? 'transparent' : 'bg.emphasized'
+              bg: showValueBadge ? 'bg.emphasized' : 'transparent'
             }}
           >
             {!support.available
@@ -289,7 +292,7 @@ export function ColorSummary({
               as="dt"
               flex="1"
               overflow="hidden"
-              color={value === undefined ? 'fg.muted' : 'fg'}
+              color={!support.available || value === undefined ? 'fg.muted' : 'fg'}
               fontSize="md"
               fontWeight="500"
               textOverflow="ellipsis"

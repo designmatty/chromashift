@@ -61,10 +61,7 @@ export const nativeEventSchema = z.object({
   data: z.unknown()
 })
 
-export const nativeMessageSchema = z.union([
-  nativeResponseSchema,
-  nativeEventSchema
-])
+export const nativeMessageSchema = z.union([nativeResponseSchema, nativeEventSchema])
 
 export const systemInfoSchema = z.object({
   protocolVersion: z.number().int(),
@@ -82,6 +79,21 @@ export const systemInfoSchema = z.object({
       error: z.string().nullable().optional()
     })
   })
+})
+
+export const serviceHealthSchema = z.object({
+  status: z.literal('healthy'),
+  protocolVersion: z.number().int(),
+  serviceVersion: z.string().min(1),
+  processId: z.number().int().positive(),
+  serviceInstanceId: z.string().uuid(),
+  baselineOwnerId: z.string().uuid(),
+  baselineCount: z.number().int().nonnegative(),
+  watchdogArmed: z.boolean()
+})
+
+export const heartbeatResultSchema = z.object({
+  receivedAtUtc: z.string().min(1)
 })
 
 export const foregroundApplicationSchema = z.object({
@@ -104,6 +116,10 @@ export const foregroundApplicationChangedDataSchema = z.object({
   application: foregroundApplicationSchema
 })
 
+export const displayTopologyChangedDataSchema = z.object({
+  reason: z.literal('displaySettingsChanged')
+})
+
 export const displayAdapterSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -113,6 +129,8 @@ export const displayAdapterSchema = z.object({
 
 export const displaySchema = z.object({
   id: displayIdSchema,
+  physicalId: displayIdSchema.optional(),
+  endpointIds: z.array(displayIdSchema).min(1).optional(),
   name: z.string().min(1),
   windowsDisplayName: z.string().min(1),
   monitorDevicePath: z.string().min(1),
@@ -181,9 +199,20 @@ export const displayCapabilitiesResultSchema = z.object({
   nativeState: nativeDisplayStateSchema
 })
 
-const gammaRampChannelSchema = z
-  .array(z.number().int().min(0).max(65_535))
-  .length(256)
+export const baselineTopologyValidationSchema = z.object({
+  displayId: displayIdSchema,
+  state: z.enum(['connected', 'disconnected']),
+  ownership: z.enum(['validated', 'providerChanged', 'notConnected'])
+})
+
+export const displayTopologyRefreshResultSchema = z.object({
+  generation: z.number().int().positive(),
+  displays: z.array(displaySchema),
+  capabilityReports: z.array(displayCapabilitiesResultSchema),
+  baselines: z.array(baselineTopologyValidationSchema)
+})
+
+const gammaRampChannelSchema = z.array(z.number().int().min(0).max(65_535)).length(256)
 
 export const gammaRampSchema = z.object({
   red: gammaRampChannelSchema,
@@ -252,7 +281,9 @@ const unrestoredDisplayResultSchema = z
     displayId: displayIdSchema,
     restored: z.literal(false),
     reason: z.string().min(1).optional(),
-    error: z.string().min(1).optional()
+    code: z.string().min(1).optional(),
+    error: z.string().min(1).optional(),
+    discarded: z.boolean().optional()
   })
   .refine((result) => result.reason !== undefined || result.error !== undefined, {
     message: 'An unrestored display requires a reason or error.'
@@ -267,15 +298,21 @@ export const restoreAllResultSchema = z.object({
   displays: z.array(displayRestoreResultSchema)
 })
 
+export const serviceBaselinesRestoredDataSchema = restoreAllResultSchema
+
 export type NativeRequest = z.infer<typeof nativeRequestSchema>
 export type NativeResponse = z.infer<typeof nativeResponseSchema>
 export type NativeEvent = z.infer<typeof nativeEventSchema>
 export type SystemInfo = z.infer<typeof systemInfoSchema>
+export type ServiceHealth = z.infer<typeof serviceHealthSchema>
+export type HeartbeatResult = z.infer<typeof heartbeatResultSchema>
 export type ForegroundApplication = z.infer<typeof foregroundApplicationSchema>
 export type Display = z.infer<typeof displaySchema>
 export type Capability = z.infer<typeof capabilitySchema>
 export type DisplayCapabilities = z.infer<typeof displayCapabilitiesSchema>
 export type DisplayCapabilityReport = z.infer<typeof displayCapabilitiesResultSchema>
+export type BaselineTopologyValidation = z.infer<typeof baselineTopologyValidationSchema>
+export type DisplayTopologyRefreshResult = z.infer<typeof displayTopologyRefreshResultSchema>
 export type DisplaySettings = z.infer<typeof displaySettingsSchema>
 export type GammaRamp = z.infer<typeof gammaRampSchema>
 export type DisplayState = z.infer<typeof displayStateSchema>

@@ -11,6 +11,8 @@ export const defaultAppSettings: AppSettings = {
 
 export class AppSettingsRepository {
   #settings: AppSettings | null = null
+  #writeTail: Promise<void> = Promise.resolve()
+  #saveRevision = 0
 
   public constructor(private readonly filePath: string) {}
 
@@ -27,9 +29,27 @@ export class AppSettingsRepository {
 
   public async save(settings: AppSettings): Promise<AppSettings> {
     const validated = appSettingsSchema.parse(settings)
-    await new AppDataProfileConfigurationStorage(this.filePath)
-      .write(`${JSON.stringify(validated, null, 2)}\n`)
+    const previous = this.#settings
+    const revision = ++this.#saveRevision
+    // Readers must observe the newest full snapshot while its serialized atomic
+    // write is pending, otherwise a concurrent UI settings change can erase
+    // freshly captured window geometry.
     this.#settings = validated
+    const write = this.#writeTail.then(() =>
+      new AppDataProfileConfigurationStorage(this.filePath).write(
+        `${JSON.stringify(validated, null, 2)}\n`
+      )
+    )
+    this.#writeTail = write.then(
+      () => undefined,
+      () => undefined
+    )
+    try {
+      await write
+    } catch (error) {
+      if (revision === this.#saveRevision) this.#settings = previous
+      throw error
+    }
     return { ...validated }
   }
 }

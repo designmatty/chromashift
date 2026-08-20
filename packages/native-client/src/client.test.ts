@@ -29,6 +29,13 @@ describe('NativeClient activation command surface', () => {
     const native = createClient()
     await native.start()
 
+    await expect(native.getServiceHealth()).resolves.toMatchObject({
+      status: 'healthy',
+      protocolVersion: 1,
+      baselineCount: 0,
+      watchdogArmed: true
+    })
+
     const state = await native.getDisplayState('display:test')
     expect(state.provider).toBe('windows')
     if (state.provider === 'windows') {
@@ -39,6 +46,7 @@ describe('NativeClient activation command surface', () => {
       displayId: 'display:test',
       state: 'captured'
     })
+    expect(native.potentialBaselineDisplayIds).toEqual(['display:test'])
     await expect(
       native.applyDisplaySettings('display:test', { gamma: 1.1, saturation: 75 })
     ).resolves.toMatchObject({
@@ -49,10 +57,23 @@ describe('NativeClient activation command surface', () => {
       displayId: 'display:test',
       restored: true
     })
+    expect(native.potentialBaselineDisplayIds).toEqual([])
     await expect(native.restoreAllBaselines()).resolves.toMatchObject({
       displays: [
         { displayId: 'display:test', restored: true },
         { displayId: 'display:missing', restored: false, reason: 'baselineNotCaptured' }
+      ]
+    })
+    await expect(native.refreshDisplayTopology()).resolves.toEqual({
+      generation: 1,
+      displays: [],
+      capabilityReports: [],
+      baselines: [
+        {
+          displayId: 'display:test',
+          state: 'connected',
+          ownership: 'validated'
+        }
       ]
     })
   })
@@ -61,9 +82,7 @@ describe('NativeClient activation command surface', () => {
     const native = createClient()
     await native.start()
 
-    await expect(
-      native.applyDisplaySettings('display:test', { saturation: 101 })
-    ).rejects.toThrow()
+    await expect(native.applyDisplaySettings('display:test', { saturation: 101 })).rejects.toThrow()
     await expect(native.getDisplayState('display:malformed')).rejects.toThrow()
   })
 
@@ -91,6 +110,21 @@ describe('NativeClient activation command surface', () => {
       {
         event: 'foregroundApplicationChanged',
         data: { application: { executable: 'game.exe' } }
+      }
+    ])
+  })
+
+  it('forwards native display-topology signals', async () => {
+    const native = createClient()
+    await native.start()
+    const eventReceived = once(native, 'event')
+
+    await native.request('test.topology-event')
+
+    await expect(eventReceived).resolves.toEqual([
+      {
+        event: 'displayTopologyChanged',
+        data: { reason: 'displaySettingsChanged' }
       }
     ])
   })
@@ -125,5 +159,48 @@ describe('NativeClient activation command surface', () => {
     await expect(native.request('test.exit')).rejects.toThrow('DisplayService exited')
     await expect(exited).resolves.toEqual([23, null])
     expect(native.running).toBe(false)
+  })
+
+  it('keeps heartbeats running when shutdown restoration fails so exit can be retried', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--shutdown-error-once'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000,
+      heartbeatIntervalMs: 20
+    })
+    await client.start()
+    await client.captureBaseline('display:test')
+
+    await expect(client.stop()).rejects.toMatchObject({
+      code: 'BASELINE_RESTORE_FAILED',
+      command: 'service.shutdown'
+    })
+    expect(client.running).toBe(true)
+    expect(client.potentialBaselineDisplayIds).toEqual(['display:test'])
+
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    const heartbeatResult = await client.request('test.heartbeat-count')
+    expect(heartbeatResult).toEqual({ heartbeatCount: expect.any(Number) })
+    expect((heartbeatResult as { heartbeatCount: number }).heartbeatCount).toBeGreaterThanOrEqual(2)
+
+    await expect(client.stop()).resolves.toBeUndefined()
+    expect(client.potentialBaselineDisplayIds).toEqual([])
+    expect(client.running).toBe(false)
+  })
+
+  it('releases client ownership when shutdown discards a disconnected baseline', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--discard-disconnected-on-shutdown'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000
+    })
+    await client.start()
+    await client.captureBaseline('display:test')
+
+    await expect(client.stop()).resolves.toBeUndefined()
+    expect(client.potentialBaselineDisplayIds).toEqual([])
+    expect(client.running).toBe(false)
   })
 })

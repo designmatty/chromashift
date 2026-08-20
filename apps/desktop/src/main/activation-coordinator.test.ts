@@ -8,6 +8,7 @@ import {
 import {
   NativeServiceError,
   type BaselineCaptureResult,
+  type Display,
   type DisplayApplyResult,
   type DisplayRestoreResult,
   type DisplaySettings,
@@ -49,14 +50,37 @@ class FakeNativeActivationPort implements NativeActivationPort {
   public readonly calls: NativeCall[] = []
   public readonly failApplyDisplayIds = new Set<string>()
   public readonly failRestoreAllDisplayIds = new Set<string>()
+  public readonly hdrDisplayIds = new Set<string>()
+  public readonly disconnectedDisplayIds = new Set<string>()
+  public readonly disconnectOnApplyDisplayIds = new Set<string>()
   public maxConcurrentCalls = 0
   readonly #capturedDisplayIds = new Set<string>()
   #activeCalls = 0
 
   public constructor(private readonly delayMs = 0) {}
 
+  public async getDisplays(): Promise<Display[]> {
+    const displayIds = new Set([
+      'display:one',
+      'display:two',
+      'display:three',
+      ...this.hdrDisplayIds
+    ])
+    return [...displayIds]
+      .filter((displayId) => !this.disconnectedDisplayIds.has(displayId))
+      .map((displayId) => testDisplay(displayId, this.hdrDisplayIds.has(displayId)))
+  }
+
   public captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
     return this.#call({ operation: 'capture', displayId }, async () => {
+      if (this.disconnectedDisplayIds.has(displayId)) {
+        throw new NativeServiceError(
+          'DISPLAY_NOT_FOUND',
+          `Display not found: ${displayId}`,
+          'baseline.capture',
+          'test-request'
+        )
+      }
       const alreadyCaptured = this.#capturedDisplayIds.has(displayId)
       this.#capturedDisplayIds.add(displayId)
       return { displayId, state: alreadyCaptured ? 'alreadyCaptured' : 'captured' }
@@ -68,6 +92,17 @@ class FakeNativeActivationPort implements NativeActivationPort {
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     return this.#call({ operation: 'apply', displayId, settings }, async () => {
+      if (this.disconnectOnApplyDisplayIds.delete(displayId)) {
+        this.disconnectedDisplayIds.add(displayId)
+      }
+      if (this.disconnectedDisplayIds.has(displayId)) {
+        throw new NativeServiceError(
+          'DISPLAY_NOT_FOUND',
+          `Display not found: ${displayId}`,
+          'display.apply',
+          'test-request'
+        )
+      }
       if (this.failApplyDisplayIds.has(displayId)) {
         throw new NativeServiceError(
           'CAPABILITY_UNSUPPORTED',
@@ -82,6 +117,22 @@ class FakeNativeActivationPort implements NativeActivationPort {
 
   public restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {
     return this.#call({ operation: 'restore', displayId }, async () => {
+      if (this.disconnectedDisplayIds.has(displayId)) {
+        throw new NativeServiceError(
+          'DISPLAY_NOT_FOUND',
+          `Display not found: ${displayId}`,
+          'display.restore',
+          'test-request'
+        )
+      }
+      if (this.hdrDisplayIds.has(displayId)) {
+        throw new NativeServiceError(
+          'HDR_UNSAFE',
+          `HDR is active on ${displayId}`,
+          'display.restore',
+          'test-request'
+        )
+      }
       const restored = this.#capturedDisplayIds.delete(displayId)
       return restored
         ? { displayId, restored: true }
@@ -92,6 +143,17 @@ class FakeNativeActivationPort implements NativeActivationPort {
   public restoreAllBaselines(): Promise<RestoreAllResult> {
     return this.#call({ operation: 'restoreAll' }, async () => {
       const displays = [...this.#capturedDisplayIds].map((displayId) => {
+        if (this.disconnectedDisplayIds.has(displayId)) {
+          return {
+            displayId,
+            restored: false as const,
+            code: 'DISPLAY_NOT_FOUND',
+            error: `Display not found: ${displayId}`
+          }
+        }
+        if (this.hdrDisplayIds.has(displayId)) {
+          return { displayId, restored: false as const, reason: 'hdrActive' }
+        }
         if (this.failRestoreAllDisplayIds.has(displayId)) {
           return { displayId, restored: false as const, error: `Restore failed on ${displayId}` }
         }
@@ -114,6 +176,30 @@ class FakeNativeActivationPort implements NativeActivationPort {
     } finally {
       this.#activeCalls -= 1
     }
+  }
+}
+
+function testDisplay(id: string, hdr = false): Display {
+  return {
+    id,
+    name: id,
+    windowsDisplayName: '\\\\.\\DISPLAY1',
+    monitorDevicePath: `monitor:${id}`,
+    manufacturer: 'TST',
+    productCode: '0001',
+    serialNumber: id,
+    adapter: {
+      id: 'adapter:test',
+      name: 'Test adapter',
+      vendor: 'nvidia',
+      deviceId: 'PCI\\VEN_10DE'
+    },
+    connection: 'DisplayPort',
+    primary: id === 'display:one',
+    hdr,
+    advancedColorSupported: true,
+    bitsPerColorChannel: 10,
+    refreshRate: 240
   }
 }
 
@@ -400,10 +486,7 @@ describe('ActivationCoordinator', () => {
 
     await coordinator.activate(application('Browser.exe'))
 
-    expect(native.calls.map((call) => call.displayId)).toEqual([
-      'display:one',
-      'display:one'
-    ])
+    expect(native.calls.map((call) => call.displayId)).toEqual(['display:one', 'display:one'])
   })
 
   it('serializes rapid foreground changes without interleaving native writes', async () => {
@@ -427,9 +510,7 @@ describe('ActivationCoordinator', () => {
     ])
     expect(native.maxConcurrentCalls).toBe(1)
     expect(
-      native.calls
-        .filter((call) => call.operation === 'apply')
-        .map((call) => call.displayId)
+      native.calls.filter((call) => call.operation === 'apply').map((call) => call.displayId)
     ).toEqual(['display:one', 'display:one', 'display:two'])
   })
 
@@ -470,6 +551,210 @@ describe('ActivationCoordinator', () => {
         code: 'CAPABILITY_UNSUPPORTED'
       })
     )
+  })
+
+  it('defers an HDR target without capture or writes and reapplies after HDR turns off', async () => {
+    const native = new FakeNativeActivationPort()
+    native.hdrDisplayIds.add('display:one')
+    const logger = new RecordingLogger()
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile])),
+      native,
+      logger
+    )
+
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'skipped'
+    })
+    expect(native.calls).toEqual([])
+
+    native.hdrDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+    expect(logger.events).toContainEqual(
+      expect.objectContaining({
+        eventName: 'DisplaySettingDeferred',
+        displayId: 'display:one',
+        reason: 'hdrActive'
+      })
+    )
+  })
+
+  it('defers a disconnected profile target without native writes and applies it after reconnect', async () => {
+    const native = new FakeNativeActivationPort()
+    native.disconnectedDisplayIds.add('display:one')
+    const logger = new RecordingLogger()
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile])),
+      native,
+      logger
+    )
+
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+    expect(native.calls).toEqual([])
+
+    native.disconnectedDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+    expect(logger.events).toContainEqual(
+      expect.objectContaining({
+        eventName: 'DisplaySettingDeferred',
+        displayId: 'display:one',
+        reason: 'displayDisconnected'
+      })
+    )
+  })
+
+  it('defers a target that disconnects between enumeration and apply', async () => {
+    const native = new FakeNativeActivationPort()
+    native.disconnectOnApplyDisplayIds.add('display:one')
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile])),
+      native,
+      new RecordingLogger()
+    )
+
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+
+    native.disconnectedDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('GameA.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'capture',
+      'apply'
+    ])
+  })
+
+  it('retains and restores a baseline when its display disconnects before a profile switch', async () => {
+    const native = new FakeNativeActivationPort()
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile, gameBProfile])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('GameA.exe'))
+    native.disconnectedDisplayIds.add('display:one')
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('GameB.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'capture',
+      'apply'
+    ])
+
+    native.disconnectedDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('GameB.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'capture',
+      'apply',
+      'restore',
+      'capture',
+      'apply'
+    ])
+  })
+
+  it('defers restore-all for a disconnected display and retries after reconnect', async () => {
+    const native = new FakeNativeActivationPort()
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('GameA.exe'))
+    native.disconnectedDisplayIds.add('display:one')
+    await coordinator.resetAfterExternalRestore(['display:one'])
+    await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
+      status: 'skipped',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+
+    native.disconnectedDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'restoreAll',
+      'restoreAll'
+    ])
+  })
+
+  it('retains an SDR baseline through HDR and restores it once HDR turns off', async () => {
+    const native = new FakeNativeActivationPort()
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([gameAProfile])),
+      native,
+      new RecordingLogger()
+    )
+
+    await coordinator.activate(application('GameA.exe'))
+    native.hdrDisplayIds.add('display:one')
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
+      status: 'skipped',
+      deferredDisplayIds: ['display:one'],
+      failures: []
+    })
+    await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
+      status: 'skipped'
+    })
+
+    native.hdrDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: []
+    })
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'restoreAll',
+      'restoreAll'
+    ])
   })
 
   it('invalidates duplicate suppression after external restore and native restart', async () => {
@@ -537,14 +822,8 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 describe('AutomaticActivationController', () => {
   it('buffers foreground events until configuration is validated and then enables automation', async () => {
     const native = new FakeNativeActivationPort()
-    const profileRepository = repository(
-      configuration([defaultProfile, gameAProfile], 'default')
-    )
-    const coordinator = new ActivationCoordinator(
-      profileRepository,
-      native,
-      new RecordingLogger()
-    )
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const coordinator = new ActivationCoordinator(profileRepository, native, new RecordingLogger())
     const controller = new AutomaticActivationController(
       profileRepository,
       coordinator,
@@ -567,11 +846,7 @@ describe('AutomaticActivationController', () => {
     const native = new FakeNativeActivationPort()
     const logger = new RecordingLogger()
     const coordinator = new ActivationCoordinator(profileRepository, native, logger)
-    const controller = new AutomaticActivationController(
-      profileRepository,
-      coordinator,
-      logger
-    )
+    const controller = new AutomaticActivationController(profileRepository, coordinator, logger)
 
     await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
     await expect(controller.start(null)).rejects.toThrow('not valid JSON')
@@ -586,11 +861,7 @@ describe('AutomaticActivationController', () => {
   it('disables and resets activation state on native exit before a restart', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([gameAProfile]))
-    const coordinator = new ActivationCoordinator(
-      profileRepository,
-      native,
-      new RecordingLogger()
-    )
+    const coordinator = new ActivationCoordinator(profileRepository, native, new RecordingLogger())
     const controller = new AutomaticActivationController(
       profileRepository,
       coordinator,
@@ -607,14 +878,8 @@ describe('AutomaticActivationController', () => {
 
   it('supports manual profile selection, automatic mode, and an explicit baseline reset', async () => {
     const native = new FakeNativeActivationPort()
-    const profileRepository = repository(
-      configuration([defaultProfile, gameAProfile], 'default')
-    )
-    const coordinator = new ActivationCoordinator(
-      profileRepository,
-      native,
-      new RecordingLogger()
-    )
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const coordinator = new ActivationCoordinator(profileRepository, native, new RecordingLogger())
     const controller = new AutomaticActivationController(
       profileRepository,
       coordinator,
@@ -641,17 +906,13 @@ describe('AutomaticActivationController', () => {
       mode: { kind: 'automatic' },
       currentTarget: { kind: 'baseline' }
     })
-    expect(
-      native.calls.filter((call) => call.operation === 'apply')
-    ).toHaveLength(3)
+    expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(3)
     expect(native.calls.at(-1)).toEqual({ operation: 'restoreAll' })
   })
 
   it('suspends writes during preview and applies the latest foreground target on rollback', async () => {
     const native = new FakeNativeActivationPort()
-    const profileRepository = repository(
-      configuration([defaultProfile, gameAProfile], 'default')
-    )
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
     const controller = new AutomaticActivationController(
       profileRepository,
       new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
@@ -672,11 +933,37 @@ describe('AutomaticActivationController', () => {
     ).toEqual([50, 75])
   })
 
+  it('preserves a preview-owned baseline while its display is disconnected', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([gameAProfile]))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('GameA.exe'))
+
+    await controller.beginPreview()
+    native.disconnectedDisplayIds.add('display:one')
+    await controller.cancelPreview(['display:one'])
+
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+
+    native.disconnectedDisplayIds.clear()
+    await controller.beginSystemTransition()
+    await controller.completeSystemTransition(true)
+
+    expect(native.calls.map((call) => call.operation)).toEqual([
+      'capture',
+      'apply',
+      'capture',
+      'apply'
+    ])
+  })
+
   it('ignores ChromaShift foreground events so saving restores the external application profile', async () => {
     const native = new FakeNativeActivationPort()
-    const profileRepository = repository(
-      configuration([defaultProfile, gameAProfile], 'default')
-    )
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
     const controller = new AutomaticActivationController(
       profileRepository,
       new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
@@ -695,6 +982,50 @@ describe('AutomaticActivationController', () => {
         .filter((call) => call.operation === 'apply')
         .map((call) => call.settings?.saturation)
     ).toEqual([75, 75])
+  })
+
+  it('buffers foreground changes during an OS transition and force-reapplies the latest target', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('Browser.exe'))
+
+    await controller.beginSystemTransition()
+    await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
+    expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(1)
+
+    await controller.completeSystemTransition(true)
+
+    expect(
+      native.calls
+        .filter((call) => call.operation === 'apply')
+        .map((call) => call.settings?.saturation)
+    ).toEqual([50, 75])
+    expect(controller.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-a' })
+  })
+
+  it('keeps profile writes blocked when topology ownership validation fails', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([gameAProfile]))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('GameA.exe'))
+    await controller.beginSystemTransition()
+    await controller.completeSystemTransition(false, false)
+
+    await expect(controller.selectManualProfile('game-a')).rejects.toThrow(
+      'display transition is in progress'
+    )
+    await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
+
+    expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(1)
   })
 
   it('retains failed baseline resets so a later transition retries stale displays', async () => {
