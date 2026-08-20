@@ -18,6 +18,23 @@ Read `docs/architecture.md` and the task-relevant focused skill before changing
 one of those surfaces. Keep durable product and architecture decisions here;
 keep procedural detail in the focused skills and docs rather than duplicating it.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub for `designmatty/chromashift`. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the five default label roles. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Domain documentation uses the single-context layout. See
+`docs/agents/domain.md`.
+
 # Windows Display Profile Manager
 
 ## Objective
