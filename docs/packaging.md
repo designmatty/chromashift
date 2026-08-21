@@ -47,6 +47,15 @@ bundles main-process workspace and third-party dependencies, so the package does
 not copy `node_modules`. Electron ships only the `en-US` locale because the
 current product UI is English-only.
 
+The Windows package also removes Electron's DirectX 12 shader compiler pair and
+Vulkan SwiftShader files after extraction and before signing. ChromaShift
+disables hardware acceleration, and its software GPU process explicitly uses
+ANGLE's D3D11 WARP path with `d3dcompiler_47.dll`, `libGLESv2.dll`, and
+`libEGL.dll`. Packaged process-module inspection and repeated app/mini/tray/reopen
+runs found no load of `dxcompiler.dll`, `dxil.dll`, `vk_swiftshader.dll`, or
+`vulkan-1.dll`. Package smoke requires the five pruned runtime files to remain
+absent.
+
 Production code resolves the helper only from
 `process.resourcesPath/display-service/DisplayService.exe`. Development uses
 the debug build or an explicit `CHROMASHIFT_DISPLAY_SERVICE_PATH`; production

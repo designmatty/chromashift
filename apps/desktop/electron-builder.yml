@@ -19,6 +19,8 @@ directories:
   output: release
   buildResources: build
 
+afterPack: ./scripts/prune-electron-runtime.mjs
+
 files:
   - out/main/**/*
   - out/preload/**/*

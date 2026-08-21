@@ -165,7 +165,8 @@ verifies detached-helper parent-process monitoring and crash restoration.
 publishing a self-contained single-file `DisplayService`. The package
 command also checks separate budgets for the unpacked app, ASAR, helper, locales,
 and installer. `npm run smoke:package` validates
-the exact external sidecar and ASAR layout and production fuse wire, starts the
+the exact external sidecar and ASAR layout, the absence of unused DirectX 12 and
+Vulkan shader runtime files, and the production fuse wire. It starts the
 helper directly, verifies the health/watchdog handshake, exercises NDJSON IPC,
 captures and restores a baseline, validates production CSP and renderer sandboxing,
 launches both unpacked and installed apps, and verifies install, in-place upgrade,

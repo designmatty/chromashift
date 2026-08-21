@@ -154,8 +154,8 @@ installed helper file.
 
 | Artifact or layout   |        Before |      After |       Change |
 | -------------------- | ------------: | ---------: | -----------: |
-| NSIS installer       |    146.09 MiB | 112.39 MiB |       -23.1% |
-| Unpacked install     | about 566 MiB | 376.35 MiB | about -33.5% |
+| NSIS installer       |    146.09 MiB | 104.27 MiB |       -28.6% |
+| Unpacked install     | about 566 MiB | 344.35 MiB | about -39.2% |
 | `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
 | DisplayService files |     77.87 MiB |  71.35 MiB |        -8.4% |
 | Chromium locales     |     46.65 MiB |   0.54 MiB |       -98.8% |
@@ -167,6 +167,14 @@ also grew to 118.67 MiB. The final uncompressed single-file layout therefore has
 the smaller download and lower long-lived runtime cost, at the expense of 35 MiB
 in the installed directory.
 
+Electron's DirectX 12 shader compiler pair and Vulkan SwiftShader files added
+another 32.01 MiB to the installed directory. ChromaShift's
+disabled-hardware-acceleration path uses ANGLE D3D11 WARP and did not load these
+files during packaged process-module inspection. A Windows-only post-pack hook
+now removes the five unused files before signing. This cuts 32.00 MiB from the
+installed directory and 8.12 MiB from the installer compared with the first
+Milestone 6 package. The package smoke test guards the pruned layout.
+
 ## Milestone 6 packaged runtime
 
 Opening the mini panel previously hid the app window but retained its renderer.
@@ -175,12 +183,12 @@ host. The app panel now hides immediately, then closes through its normal
 preview-safe lifecycle after the mini panel receives the handoff. Reopening the
 app recreates its renderer through the existing single-instance path.
 
-The final packaged measurement reported 606 ms startup, 382 ms app-to-mini, and
-617 ms app reopen. Median private memory was 213.32 MiB with the app visible,
-216.79 MiB with the mini panel visible, 127.41 MiB tray-only, and 201.46 MiB after
+The final packaged measurement reported 665 ms startup, 607 ms app-to-mini, and
+663 ms app reopen. Median private memory was 215.21 MiB with the app visible,
+210.71 MiB with the mini panel visible, 127.27 MiB tray-only, and 200.85 MiB after
 reopening the app. The app renderer was absent after the mini handoff. Median
-idle CPU was 1.2% in the mini state and 0% in the visible, tray, and reopened
-states. The local performance gate allows 2 seconds for startup/reopen, 1.5
+idle CPU was 0% in every measured state. The local performance gate allows 2
+seconds for startup/reopen, 1.5
 seconds for mini open, 230 MiB for renderer-visible states, 150 MiB tray-only,
 and 5% of one CPU core to tolerate scheduler-scale sampling noise while still
 catching persistent background work.

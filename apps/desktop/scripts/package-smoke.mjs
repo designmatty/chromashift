@@ -35,6 +35,16 @@ async function assertFile(path) {
   if (!(await stat(path)).isFile()) throw new Error(`Expected a file at ${path}.`)
 }
 
+async function pathExists(path) {
+  try {
+    await access(path)
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+}
+
 async function assertProductionFuses(executablePath) {
   const fuses = await getCurrentFuseWire(executablePath)
   const expected = new Map([
@@ -343,6 +353,17 @@ try {
   const serviceFiles = await readdir(join(unpackedDirectory, 'resources', 'display-service'))
   if (serviceFiles.length !== 1 || serviceFiles[0] !== 'DisplayService.exe') {
     throw new Error(`Unexpected packaged DisplayService files: ${serviceFiles.join(', ')}`)
+  }
+  for (const unusedRuntimeFile of [
+    'dxcompiler.dll',
+    'dxil.dll',
+    'vk_swiftshader.dll',
+    'vk_swiftshader_icd.json',
+    'vulkan-1.dll'
+  ]) {
+    if (await pathExists(join(unpackedDirectory, unusedRuntimeFile))) {
+      throw new Error(`Unused Electron runtime file was packaged: ${unusedRuntimeFile}`)
+    }
   }
   await assertProductionFuses(unpackedApplication)
   await smokeService(unpackedService, 'unpacked')
