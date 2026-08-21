@@ -221,6 +221,14 @@ warnings are narrowly scoped in a linker attributes file. Native integration,
 real gamma apply/watchdog restoration, desktop smoke, and exact installed-package
 smoke all passed with the 14.01 MiB helper.
 
+NativeAOT was also tested and rejected. The NVAPI wrapper produced `IL3053` AOT
+compatibility and `IL2104` trim errors before native linking. Those warnings flag
+third-party code that may require native code the AOT compiler cannot predict.
+Suppressing them would turn a deterministic build failure into a possible
+provider failure at runtime, which is the wrong trade for display restoration.
+The partially trimmed, JIT-capable helper remains the smallest validated publish
+model.
+
 The remaining 285.43 MiB unpacked footprint is dominated by the 215.18 MiB Electron
 executable, followed by Chromium's 19.37 MiB license bundle, 10.37 MiB ICU data,
 and the ANGLE/Chromium runtime used by the packaged app. Further material
@@ -285,6 +293,7 @@ shell. The Tauri port remains useful as a runnable benchmark, not a roadmap item
 - [.NET single-file deployment](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
 - [.NET trimming options](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/trimming-options)
 - [.NET System.Text.Json source generation](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
+- [.NET NativeAOT compatibility warning IL3053](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/warnings/il3053)
 - [System.Management trimming incompatibility](https://github.com/dotnet/runtime/issues/57406)
 - [T3 Code reviewed reference](https://github.com/pingdotgg/t3code/tree/560d4a4560ddb5f42c8f8e0e35fa7827c0e46f80)
 - [Tauri Windows prerequisites and WebView2](https://v2.tauri.app/start/prerequisites/)
