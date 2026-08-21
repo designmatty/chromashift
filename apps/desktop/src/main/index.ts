@@ -63,6 +63,7 @@ import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
 app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-software-rasterizer')
 
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined

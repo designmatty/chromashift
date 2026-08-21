@@ -67,7 +67,9 @@ ANGLE's D3D11 WARP path with `d3dcompiler_47.dll`, `libGLESv2.dll`, and
 `libEGL.dll`. Packaged process-module inspection and repeated app/mini/tray/reopen
 runs found no load of `dxcompiler.dll`, `dxil.dll`, `vk_swiftshader.dll`, or
 `vulkan-1.dll`. Package smoke requires the five pruned runtime files to remain
-absent.
+absent. Chromium's software-rasterizer fallback is also disabled while the app
+has no WebGL or GPU-heavy surface; real desktop smoke and packaged performance
+cover that rendering decision.
 
 Production code resolves the helper only from
 `process.resourcesPath/display-service/DisplayService.exe`. Development uses

@@ -195,7 +195,7 @@ app-to-mini and app-reopen latency, visible/mini/tray/reopened private memory,
 idle CPU, and release of the app renderer during the mini-panel handoff. The
 closeout ran `npm run verify`, `npm run native:test:integration`, `npm run
 smoke:desktop`, `npm run package:win`, `npm run smoke:package`, and the packaged
-performance gate. The exact installer was 84.70 MiB, its unpacked layout was
+performance gate. The exact installer was 84.69 MiB, its unpacked layout was
 285.43 MiB, and the trimmed external helper was 14.01 MiB. Exact results and the
 package comparison are recorded in `docs/performance.md`.
 

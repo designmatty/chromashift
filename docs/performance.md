@@ -153,7 +153,7 @@ smoke requires exactly one installed helper file.
 
 | Artifact or layout   |        Before |      After |       Change |
 | -------------------- | ------------: | ---------: | -----------: |
-| NSIS installer       |    146.09 MiB |  84.70 MiB |       -42.0% |
+| NSIS installer       |    146.09 MiB |  84.69 MiB |       -42.0% |
 | Unpacked install     | about 566 MiB | 285.43 MiB | about -49.6% |
 | `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
 | DisplayService files |     77.87 MiB |  14.01 MiB |       -82.0% |
@@ -192,15 +192,24 @@ host. The app panel now hides immediately, then closes through its normal
 preview-safe lifecycle after the mini panel receives the handoff. Reopening the
 app recreates its renderer through the existing single-instance path.
 
-The final packaged measurement reported 739 ms startup, 382 ms app-to-mini, and
-634 ms app reopen. Median private memory was 207.77 MiB with the app visible,
-207.73 MiB with the mini panel visible, 123.68 MiB tray-only, and 199.24 MiB after
+The final packaged measurement reported 792 ms startup, 598 ms app-to-mini, and
+668 ms app reopen. Median private memory was 201.69 MiB with the app visible,
+203.04 MiB with the mini panel visible, 121.30 MiB tray-only, and 196.53 MiB after
 reopening the app. The app renderer was absent after the mini handoff. Median
 idle CPU was 0% in every measured state. The local performance gate allows 2
 seconds for startup/reopen, 1.5
 seconds for mini open, 230 MiB for renderer-visible states, 150 MiB tray-only,
 and 5% of one CPU core to tolerate scheduler-scale sampling noise while still
 catching persistent background work.
+
+Chromium's `disable-software-rasterizer` switch keeps the existing GPU process
+but reduced its private memory on this host. Compared with the preceding package,
+total private memory fell by about 6 MiB with the app visible, 5 MiB in the mini
+panel, and 2 to 3 MiB in the tray and reopened states. Two packaged runs stayed
+inside the latency budgets, and the full real-desktop smoke rendered every app
+and mini-panel capture without errors. Keep this switch coupled to the existing
+no-GPU-heavy-surface policy; remove it if a future renderer needs WebGL or another
+software-rasterized 3D fallback.
 
 The helper now uses partial trimming. Source-generated `System.Text.Json`
 metadata replaced reflection-based protocol serialization, keeping app-owned
