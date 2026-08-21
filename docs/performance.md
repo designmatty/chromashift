@@ -202,6 +202,13 @@ warnings are narrowly scoped in a linker attributes file. Native integration,
 real gamma apply/watchdog restoration, desktop smoke, and exact installed-package
 smoke all passed with the 14.01 MiB helper.
 
+The remaining unpacked footprint is dominated by the 215.18 MiB Electron
+executable, followed by Chromium's 19.37 MiB license bundle, 10.37 MiB ICU data,
+and the ANGLE/Chromium runtime used by the packaged app. Further material
+reduction is therefore a shell or Electron-runtime decision, not another
+application-asset cleanup. The existing Electron-versus-Tauri decision below
+defines the evidence required to revisit that boundary.
+
 ## Electron versus Tauri
 
 Electron still has a fixed idle floor after the renderer is gone: Electron main,

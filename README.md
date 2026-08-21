@@ -83,10 +83,12 @@ unreachable session restoration records without an error.
 
 Milestone 6 is complete. Packaging now excludes development artifacts and
 redundant bundled dependencies, ships only the English Chromium locale, and
-publishes DisplayService as a self-contained single file. Package and packaged
-runtime budgets guard installer size, installed footprint, startup and panel
-latency, private memory, renderer release, and idle CPU. Opening the mini panel
-also releases the hidden app renderer after the handoff. Milestone 7 follows.
+publishes DisplayService as a self-contained, partially trimmed single file. The
+final x64 NSIS installer is 85.24 MiB, its unpacked layout is 287.00 MiB, and the
+external helper is 14.01 MiB. Package and packaged runtime budgets guard
+installer size, installed footprint, startup and panel latency, private memory,
+renderer release, and idle CPU. Opening the mini panel also releases the hidden
+app renderer after the handoff. Milestone 7 follows.
 The broader suspend/resume,
 lock/unlock, resolution/refresh, driver-reset, baseline-owning process-fault,
 mixed-GPU/AMD/driver, signing-certificate, and installer-reputation matrix is
