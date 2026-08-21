@@ -338,11 +338,12 @@ try {
     assertFile(unpackedApplication),
     assertFile(unpackedService),
     assertFile(unpackedAsar),
-    assertFile(
-      join(unpackedDirectory, 'resources', 'display-service', 'DisplayService.runtimeconfig.json')
-    ),
     assertFile(join(unpackedDirectory, 'resources', 'icon.png'))
   ])
+  const serviceFiles = await readdir(join(unpackedDirectory, 'resources', 'display-service'))
+  if (serviceFiles.length !== 1 || serviceFiles[0] !== 'DisplayService.exe') {
+    throw new Error(`Unexpected packaged DisplayService files: ${serviceFiles.join(', ')}`)
+  }
   await assertProductionFuses(unpackedApplication)
   await smokeService(unpackedService, 'unpacked')
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')

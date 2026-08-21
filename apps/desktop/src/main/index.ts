@@ -131,7 +131,16 @@ const panelController = new PanelController(
   () => mainWindow,
   () => miniWindow,
   () => windowController.open(),
-  () => mainWindow?.hide(),
+  () => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed()) return
+    window.hide()
+    // Let the renderer receive the successful handoff response, then release
+    // it through the same close lifecycle used by close-to-tray.
+    setTimeout(() => {
+      if (mainWindow === window && !window.isDestroyed() && !window.isVisible()) window.close()
+    }, 250)
+  },
   (bounds) => miniPanelController.show(bounds),
   () => miniPanelController.hide()
 )

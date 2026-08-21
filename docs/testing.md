@@ -147,6 +147,10 @@ the existing process without starting a second DisplayService owner.
 user data, samples the complete Windows child-process tree in visible and tray
 states, and exits through the same restore-safe shutdown coordinator. The exact
 baseline and interpretation live in `docs/performance.md`. `npm run
+measure:performance` first builds the unpacked production package, then checks
+packaged startup, app-to-mini and app-reopen latency, per-state private memory,
+renderer release, and idle CPU against explicit budgets. These host-sensitive
+budgets are a local release gate rather than part of generic CI. `npm run
 check:renderer-budget` measures all emitted renderer JavaScript and CSS and
 fails if their combined gzip size exceeds 360 KB or the largest raw JavaScript
 chunk exceeds 1.1 MB. Root `npm run verify` runs this budget after the build.
@@ -158,7 +162,9 @@ but forcibly terminates Electron instead of requesting a graceful exit; this
 verifies detached-helper parent-process monitoring and crash restoration.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
-publishing a self-contained `DisplayService`. `npm run smoke:package` validates
+publishing a self-contained single-file `DisplayService`. The package
+command also checks separate budgets for the unpacked app, ASAR, helper, locales,
+and installer. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout and production fuse wire, starts the
 helper directly, verifies the health/watchdog handshake, exercises NDJSON IPC,
 captures and restores a baseline, validates production CSP and renderer sandboxing,
@@ -179,6 +185,16 @@ sidecar handshake/restoration, in-place upgrade, uninstall, and profile-data
 survival. Milestone 5 is complete. The suspend/resume, lock/unlock,
 resolution/refresh, driver-reset, baseline-owning helper fault, AMD/mixed-GPU,
 signing-certificate, and installer-reputation matrix is deferred to Milestone 8.
+
+## Milestone 6 automated closeout record (2026-08-20)
+
+Package budgets now cover the installer, unpacked application, ASAR,
+DisplayService, and locales. The packaged performance gate covers startup,
+app-to-mini and app-reopen latency, visible/mini/tray/reopened private memory,
+idle CPU, and release of the app renderer during the mini-panel handoff. The
+closeout runs `npm run verify`, `npm run measure:performance`, `npm run
+smoke:desktop`, `npm run package:win`, and `npm run smoke:package`; exact results
+and the package comparison are recorded in `docs/performance.md`.
 
 ## Phase 0 hardware record (2026-08-08)
 

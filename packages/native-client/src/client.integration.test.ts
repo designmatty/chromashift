@@ -3,12 +3,14 @@ import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NativeClient, NativeServiceError } from './client.js'
 
-const executablePath = fileURLToPath(
-  new URL(
-    '../../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe',
-    import.meta.url
+const executablePath =
+  process.env['CHROMASHIFT_DISPLAY_SERVICE_PATH'] ??
+  fileURLToPath(
+    new URL(
+      '../../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe',
+      import.meta.url
+    )
   )
-)
 
 let client: NativeClient | undefined
 

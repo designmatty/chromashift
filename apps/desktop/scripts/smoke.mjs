@@ -78,6 +78,22 @@ async function waitForDebuggerTarget(port, matches = () => true) {
   throw new Error('Electron did not expose a renderer debugging target.')
 }
 
+async function waitForNoDebuggerTarget(port, matches) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    try {
+      const response = await globalThis.fetch(`http://127.0.0.1:${port}/json/list`)
+      if (!response.ok) return
+      const targets = await response.json()
+      if (!targets.some((target) => target.type === 'page' && matches(target))) return
+    } catch {
+      return
+    }
+    await delay(100)
+  }
+  throw new Error('Electron retained a renderer after its release deadline.')
+}
+
 async function connectToDebugger(url) {
   const socket = new globalThis.WebSocket(url)
   await withTimeout(
@@ -650,11 +666,7 @@ try {
   if (miniPanelOpened.result.value !== true) {
     throw new Error('The app panel could not open the real mini-panel window.')
   }
-  await waitForExpression(
-    debuggerClient,
-    `document.visibilityState === 'hidden'`,
-    'Opening the mini panel did not hide the app panel.'
-  )
+  await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
   const miniTarget = await waitForDebuggerTarget(debuggingPort, (candidate) =>
     candidate.url.includes('panel=mini')
   )
@@ -662,7 +674,12 @@ try {
   await miniDebugger.send('Runtime.enable')
   await miniDebugger.send('Page.enable')
   await miniDebugger.send('Log.enable')
-  await waitForText(miniDebugger, 'ChromaShift')
+  await waitForExpression(
+    miniDebugger,
+    `document.readyState === 'complete' &&
+      document.querySelector('[data-part="mini-panel"]') !== null`,
+    'The mini panel UI did not finish rendering.'
+  )
   await waitForExpression(
     miniDebugger,
     `document.visibilityState === 'visible'`,
@@ -677,13 +694,24 @@ try {
     `document.visibilityState === 'hidden'`,
     'Opening the app panel did not hide the mini panel.'
   )
+  const recreatedAppTarget = await waitForDebuggerTarget(
+    debuggingPort,
+    (candidate) => !candidate.url.includes('panel=mini')
+  )
+  const recreatedAppDebugger = await connectToDebugger(recreatedAppTarget.webSocketDebuggerUrl)
+  await recreatedAppDebugger.send('Runtime.enable')
+  await recreatedAppDebugger.send('Page.enable')
+  await recreatedAppDebugger.send('Log.enable')
+  await waitForUi(recreatedAppDebugger)
   await waitForExpression(
-    debuggerClient,
+    recreatedAppDebugger,
     `document.visibilityState === 'visible'`,
     'The app panel was not visible after the mini panel handed off to it.'
   )
-  debuggerClient.events.push(...miniDebugger.events)
+  recreatedAppDebugger.events.push(...debuggerClient.events, ...miniDebugger.events)
+  debuggerClient.close()
   miniDebugger.close()
+  debuggerClient = recreatedAppDebugger
 
   const initiallySelectedProfile = productState.result.value?.value?.configuration.profiles[0]
   const initiallyConfiguredDisplayIds = initiallySelectedProfile?.displays.map(

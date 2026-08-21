@@ -20,8 +20,14 @@ directories:
   buildResources: build
 
 files:
-  - out/**/*
+  - out/main/**/*
+  - out/preload/**/*
+  - out/renderer/**/*
   - package.json
+  - '!node_modules/**/*'
+
+electronLanguages:
+  - en-US
 
 extraResources:
   - from: ../../native/DisplayService/bin/Release/net10.0-windows/win-x64/publish

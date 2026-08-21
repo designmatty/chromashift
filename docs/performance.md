@@ -139,6 +139,58 @@ is event-driven and is not the first optimization target. NativeAOT or trimming
 may be investigated separately, but System.Management and vendor interop need
 compatibility validation before changing its publish model.
 
+## Milestone 6 package footprint
+
+The 2026-08-20 installed build exposed two avoidable packaging costs. The broad
+`out/**/*` rule copied 77.36 MiB of UI-stack benchmark output and other smoke
+artifacts into ASAR. Electron Builder also copied production dependency trees
+that Vite had already bundled. Together they made `app.asar` 142.70 MiB.
+
+The package now allowlists only compiled main, preload, and renderer output,
+bundles main-process dependencies, excludes `node_modules`, and keeps only the
+English Chromium locale. DisplayService remains self-contained and untrimmed and
+uses a single-file publish. The sidecar package smoke requires exactly one
+installed helper file.
+
+| Artifact or layout   |        Before |      After |       Change |
+| -------------------- | ------------: | ---------: | -----------: |
+| NSIS installer       |    146.09 MiB | 112.39 MiB |       -23.1% |
+| Unpacked install     | about 566 MiB | 376.35 MiB | about -33.5% |
+| `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
+| DisplayService files |     77.87 MiB |  71.35 MiB |        -8.4% |
+| Chromium locales     |     46.65 MiB |   0.54 MiB |       -98.8% |
+
+Internal .NET single-file compression was measured and rejected. It reduced the
+installed helper from 71.35 MiB to 36.30 MiB, but raised the helper's steady
+private memory from 14.33 MiB to 37.87 MiB. The already compressed NSIS installer
+also grew to 118.67 MiB. The final uncompressed single-file layout therefore has
+the smaller download and lower long-lived runtime cost, at the expense of 35 MiB
+in the installed directory.
+
+## Milestone 6 packaged runtime
+
+Opening the mini panel previously hid the app window but retained its renderer.
+The handoff reached 319.41 MiB private memory and 629.44 MiB working set on this
+host. The app panel now hides immediately, then closes through its normal
+preview-safe lifecycle after the mini panel receives the handoff. Reopening the
+app recreates its renderer through the existing single-instance path.
+
+The final packaged measurement reported 606 ms startup, 382 ms app-to-mini, and
+617 ms app reopen. Median private memory was 213.32 MiB with the app visible,
+216.79 MiB with the mini panel visible, 127.41 MiB tray-only, and 201.46 MiB after
+reopening the app. The app renderer was absent after the mini handoff. Median
+idle CPU was 1.2% in the mini state and 0% in the visible, tray, and reopened
+states. The local performance gate allows 2 seconds for startup/reopen, 1.5
+seconds for mini open, 230 MiB for renderer-visible states, 150 MiB tray-only,
+and 5% of one CPU core to tolerate scheduler-scale sampling noise while still
+catching persistent background work.
+
+Trimming is deferred. A trial publish produced 23 trim-analysis errors around
+reflection-based JSON serialization. Resolving those warnings requires
+source-generated protocol serialization and another native-provider validation
+pass. Suppressing the warnings would trade display-restoration confidence for a
+smaller helper and is not acceptable.
+
 ## Electron versus Tauri
 
 Electron still has a fixed idle floor after the renderer is gone: Electron main,
@@ -192,6 +244,8 @@ shell. The Tauri port remains useful as a runnable benchmark, not a roadmap item
 - [Astryx project](https://astryx.atmeta.com/)
 - [Electron performance guidance](https://www.electronjs.org/docs/latest/tutorial/performance)
 - [Electron process metrics API](https://www.electronjs.org/docs/latest/api/app#appgetappmetrics)
+- [.NET single-file deployment](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
+- [.NET trimming options](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/trimming-options)
 - [T3 Code reviewed reference](https://github.com/pingdotgg/t3code/tree/560d4a4560ddb5f42c8f8e0e35fa7827c0e46f80)
 - [Tauri Windows prerequisites and WebView2](https://v2.tauri.app/start/prerequisites/)
 - [Tauri external sidecars](https://v2.tauri.app/develop/sidecar/)

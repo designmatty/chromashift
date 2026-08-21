@@ -81,7 +81,13 @@ have passed on the G60SD. Disconnected profile targets remain persisted but stay
 out of the editor, and explicit Exit restores connected outputs while discarding
 unreachable session restoration records without an error.
 
-Milestone 6 is next, followed by Milestone 7. The broader suspend/resume,
+Milestone 6 is complete. Packaging now excludes development artifacts and
+redundant bundled dependencies, ships only the English Chromium locale, and
+publishes DisplayService as a self-contained single file. Package and packaged
+runtime budgets guard installer size, installed footprint, startup and panel
+latency, private memory, renderer release, and idle CPU. Opening the mini panel
+also releases the hidden app renderer after the handoff. Milestone 7 follows.
+The broader suspend/resume,
 lock/unlock, resolution/refresh, driver-reset, baseline-owning process-fault,
 mixed-GPU/AMD/driver, signing-certificate, and installer-reputation matrix is
 deferred to Milestone 8 — Extended hardware and release hardening.

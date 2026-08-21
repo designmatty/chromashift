@@ -12,12 +12,18 @@ Run from the repository root:
 ```powershell
 npm run package:dir
 npm run package:win
+npm run check:package-budget
 npm run smoke:package
 ```
 
 `package:dir` produces `apps/desktop/release/win-unpacked`. `package:win` also
 produces `apps/desktop/release/ChromaShift-<version>-x64-setup.exe` and its block
 map plus `latest.yml`. Release output is generated and ignored by Git.
+
+Both package commands run the footprint checker after Electron Builder. The
+unpacked app, ASAR, DisplayService, locales, and NSIS installer have separate
+budgets so a copied benchmark directory, loose production dependencies, extra
+locales, or a publish-layout regression fails the build.
 
 ## Packaged layout
 
@@ -28,10 +34,18 @@ resources/
   icon.png
   display-service/
     DisplayService.exe
-    DisplayService.runtimeconfig.json
-    NvAPIWrapper.dll
-    ...self-contained .NET runtime files
 ```
+
+`DisplayService.exe` is a self-contained .NET single-file publish. It keeps every
+provider assembly and the .NET runtime and is not trimmed. Internal .NET bundle
+compression is deliberately disabled: NSIS compresses the distributable more
+effectively, while leaving the long-lived helper payload uncompressed avoids a
+measured private-memory penalty at runtime.
+
+Only compiled main, preload, and renderer output enters ASAR. Electron Vite
+bundles main-process workspace and third-party dependencies, so the package does
+not copy `node_modules`. Electron ships only the `en-US` locale because the
+current product UI is English-only.
 
 Production code resolves the helper only from
 `process.resourcesPath/display-service/DisplayService.exe`. Development uses
