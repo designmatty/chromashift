@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<linker>
+  <!-- These reflection paths belong to copied third-party provider assemblies.
+       The app-owned protocol serializer remains fully trim analyzed. -->
+  <assembly fullname="NvAPIWrapper">
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2026</argument>
+      <property name="Scope">member</property><property name="Target">M:NvAPIWrapper.DRS.SettingInfo.get_KnownValueType</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2067</argument>
+      <property name="Scope">member</property><property name="Target">M:NvAPIWrapper.Native.Helpers.ExtensionMethods.Instantiate``1(System.Type)</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2070</argument>
+      <property name="Scope">member</property><property name="Target">M:NvAPIWrapper.Native.Helpers.ExtensionMethods.Instantiate``1(System.Type)</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2075</argument>
+      <property name="Scope">member</property><property name="Target">M:NvAPIWrapper.DRS.SettingInfo.ResolveKnownValueName(System.Object)</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2075</argument>
+      <property name="Scope">type</property><property name="Target">T:NvAPIWrapper.Native.Helpers.ExtensionMethods.&lt;&gt;c__1`1</property>
+    </attribute>
+    <attribute fullname="System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessageAttribute">
+      <argument>ILLink</argument><argument>IL2075</argument>
+      <property name="Scope">type</property><property name="Target">T:NvAPIWrapper.Native.Helpers.ExtensionMethods.&lt;&gt;c__3`1</property>
+    </attribute>
+  </assembly>
+</linker>

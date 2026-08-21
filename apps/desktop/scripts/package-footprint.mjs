@@ -11,11 +11,11 @@ const check = process.argv.includes('--check')
 const requireInstaller = process.argv.includes('--installer')
 
 const limits = {
-  unpacked: 355 * 1024 * 1024,
+  unpacked: 300 * 1024 * 1024,
   asar: 8 * 1024 * 1024,
-  displayService: 80 * 1024 * 1024,
+  displayService: 20 * 1024 * 1024,
   locales: 2 * 1024 * 1024,
-  installer: 110 * 1024 * 1024
+  installer: 90 * 1024 * 1024
 }
 
 async function exists(path) {

@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using ChromaShift.DisplayService.Core;
+using ChromaShift.DisplayService.Ipc;
+using System.Text.Json.Nodes;
 
 namespace ChromaShift.DisplayService.Services;
 
@@ -91,13 +93,13 @@ internal sealed class ForegroundWindowWatcher : IDisposable
         catch (Exception exception)
         {
             _started.TrySetException(exception);
-            Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            NativeLog.Write(new JsonObject
             {
-                level = "error",
-                eventName = "ProviderError",
-                provider = "windows.foreground",
-                message = exception.Message
-            }));
+                ["level"] = "error",
+                ["eventName"] = "ProviderError",
+                ["provider"] = "windows.foreground",
+                ["message"] = exception.Message
+            });
         }
         finally
         {
@@ -145,13 +147,13 @@ internal sealed class ForegroundWindowWatcher : IDisposable
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            NativeLog.Write(new JsonObject
             {
-                level = "error",
-                eventName = "ProviderError",
-                provider = "windows.foreground",
-                message = exception.Message
-            }));
+                ["level"] = "error",
+                ["eventName"] = "ProviderError",
+                ["provider"] = "windows.foreground",
+                ["message"] = exception.Message
+            });
         }
     }
 

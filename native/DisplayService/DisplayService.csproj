@@ -8,11 +8,15 @@
     <AssemblyName>DisplayService</AssemblyName>
     <RootNamespace>ChromaShift.DisplayService</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.10" />
-    <PackageReference Include="System.Management" Version="10.0.10" />
     <PackageReference Include="Varun.NvAPIWrapper.Net" Version="9.0.3" />
+    <_ILLinkSuppressions Include="$(MSBuildProjectDirectory)\ILLink.LinkAttributes.xml"
+                         Condition="'$(PublishTrimmed)' == 'true'" />
+    <TrimmerRootAssembly Include="NvAPIWrapper" Condition="'$(PublishTrimmed)' == 'true'" />
   </ItemGroup>
 </Project>

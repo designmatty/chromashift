@@ -1,14 +1,13 @@
 using System.ComponentModel;
-using System.Management;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using ChromaShift.DisplayService.Core;
+using Microsoft.Win32;
 
 namespace ChromaShift.DisplayService.Services;
 
-internal sealed partial class DisplayRegistry
+internal sealed class DisplayRegistry
 {
     private const uint QueryOnlyActivePaths = 0x00000002;
     private const int ErrorSuccess = 0;
@@ -174,49 +173,82 @@ internal sealed partial class DisplayRegistry
     private static Dictionary<string, MonitorEdid> ReadMonitorEdid()
     {
         var result = new Dictionary<string, MonitorEdid>(StringComparer.OrdinalIgnoreCase);
-        using var searcher = new ManagementObjectSearcher(
-            "root\\wmi",
-            "SELECT InstanceName, ManufacturerName, ProductCodeID, SerialNumberID, UserFriendlyName FROM WmiMonitorID");
-        foreach (ManagementObject monitor in searcher.Get())
+        using var displayKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\DISPLAY");
+        if (displayKey is null)
         {
-            using (monitor)
+            return result;
+        }
+
+        foreach (var hardwareId in displayKey.GetSubKeyNames())
+        {
+            using var hardwareKey = displayKey.OpenSubKey(hardwareId);
+            if (hardwareKey is null)
             {
-                var instance = monitor["InstanceName"] as string;
-                if (instance is null)
+                continue;
+            }
+
+            foreach (var instanceId in hardwareKey.GetSubKeyNames())
+            {
+                using var parameters = hardwareKey.OpenSubKey($@"{instanceId}\Device Parameters");
+                if (parameters?.GetValue("EDID") is not byte[] edid || edid.Length < 128)
                 {
                     continue;
                 }
-                result[NormalizeWmiInstance(instance)] = new MonitorEdid(
-                    DecodeWmiCharacters(monitor["ManufacturerName"]),
-                    DecodeWmiCharacters(monitor["ProductCodeID"]),
-                    DecodeWmiCharacters(monitor["SerialNumberID"]),
-                    DecodeWmiCharacters(monitor["UserFriendlyName"]));
+
+                result[$"{hardwareId}|{instanceId}".ToLowerInvariant()] = ParseMonitorEdid(edid);
             }
         }
+
         return result;
     }
 
-    private static string DecodeWmiCharacters(object? value)
+    internal static MonitorEdid ParseMonitorEdid(byte[] edid)
     {
-        return value is ushort[] characters
-            ? new string(characters.Where(character => character != 0).Select(character => (char)character).ToArray()).Trim()
-            : string.Empty;
+        ArgumentOutOfRangeException.ThrowIfLessThan(edid.Length, 128);
+
+        var serial = ReadEdidDescriptor(edid, 0xFF);
+        if (string.IsNullOrEmpty(serial))
+        {
+            var numericSerial = BitConverter.ToUInt32(edid, 12);
+            serial = numericSerial == 0 ? string.Empty : numericSerial.ToString();
+        }
+
+        return new MonitorEdid(
+            DecodeEdidManufacturer(edid),
+            BitConverter.ToUInt16(edid, 10).ToString("X4"),
+            serial,
+            ReadEdidDescriptor(edid, 0xFC));
+    }
+
+    private static string DecodeEdidManufacturer(byte[] edid)
+    {
+        var value = (edid[8] << 8) | edid[9];
+        Span<char> manufacturer = stackalloc char[3];
+        manufacturer[0] = (char)(((value >> 10) & 0x1F) + 'A' - 1);
+        manufacturer[1] = (char)(((value >> 5) & 0x1F) + 'A' - 1);
+        manufacturer[2] = (char)((value & 0x1F) + 'A' - 1);
+        return manufacturer.ToString();
+    }
+
+    private static string ReadEdidDescriptor(byte[] edid, byte descriptorType)
+    {
+        for (var offset = 54; offset + 18 <= edid.Length && offset < 126; offset += 18)
+        {
+            if (edid[offset] != 0 || edid[offset + 1] != 0 || edid[offset + 3] != descriptorType)
+            {
+                continue;
+            }
+
+            return Encoding.ASCII.GetString(edid, offset + 5, 13).Trim('\0', '\r', '\n', ' ');
+        }
+
+        return string.Empty;
     }
 
     private static string NormalizeTargetPath(string path)
     {
         var parts = path.Split('#');
         return parts.Length >= 3 ? $"{parts[1]}|{parts[2]}".ToLowerInvariant() : path.ToLowerInvariant();
-    }
-
-    private static string NormalizeWmiInstance(string instance)
-    {
-        var parts = instance.Split('\\');
-        if (parts.Length < 3)
-        {
-            return instance.ToLowerInvariant();
-        }
-        return $"{parts[1]}|{WmiSuffix().Replace(parts[2], string.Empty)}".ToLowerInvariant();
     }
 
     private static string CreateStableId(string material)
@@ -272,10 +304,7 @@ internal sealed partial class DisplayRegistry
         }
     }
 
-    [GeneratedRegex(@"_\d+$", RegexOptions.CultureInvariant)]
-    private static partial Regex WmiSuffix();
-
-    private sealed record MonitorEdid(string Manufacturer, string ProductCode, string SerialNumber, string FriendlyName);
+    internal sealed record MonitorEdid(string Manufacturer, string ProductCode, string SerialNumber, string FriendlyName);
     private sealed record AdvancedColorState(bool Supported, bool Enabled, uint BitsPerColorChannel);
     private sealed record AdapterState(DisplayAdapterDescriptor Descriptor, bool Primary);
     [DllImport("user32.dll")]

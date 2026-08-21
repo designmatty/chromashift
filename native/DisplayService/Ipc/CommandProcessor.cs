@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ChromaShift.DisplayService.Core;
 using ChromaShift.DisplayService.Services;
 
@@ -14,11 +15,6 @@ internal sealed class CommandProcessor(
     string serviceInstanceId,
     string baselineOwnerId)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     internal bool ShutdownRequested { get; private set; }
     private int _topologyGeneration;
 
@@ -27,7 +23,7 @@ internal sealed class CommandProcessor(
         RequestEnvelope? request;
         try
         {
-            request = JsonSerializer.Deserialize<RequestEnvelope>(line, JsonOptions);
+            request = NativeJson.Deserialize<RequestEnvelope>(line);
         }
         catch (JsonException exception)
         {
@@ -66,96 +62,88 @@ internal sealed class CommandProcessor(
         switch (request.Command)
         {
             case "system.info":
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    protocolVersion = ProtocolWriter.ProtocolVersion,
-                    serviceVersion = typeof(CommandProcessor).Assembly.GetName().Version?.ToString() ?? "unknown",
-                    operatingSystem = Environment.OSVersion.VersionString,
-                    processId = Environment.ProcessId,
-                    providers = new { amd = capabilities.GetAmdDiagnostics() }
+                    ["protocolVersion"] = ProtocolWriter.ProtocolVersion,
+                    ["serviceVersion"] = typeof(CommandProcessor).Assembly.GetName().Version?.ToString() ?? "unknown",
+                    ["operatingSystem"] = Environment.OSVersion.VersionString,
+                    ["processId"] = Environment.ProcessId,
+                    ["providers"] = new JsonObject
+                    {
+                        ["amd"] = NativeJson.ToNode(capabilities.GetAmdDiagnostics())
+                    }
                 });
                 break;
             case "foreground.current":
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    application = foregroundApplications.GetCurrent()
+                    ["application"] = NativeJson.ToNode(foregroundApplications.GetCurrent())
                 });
                 break;
             case "applications.list":
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    applications = foregroundApplications.ListVisible()
+                    ["applications"] = NativeJson.ToNode(foregroundApplications.ListVisible())
                 });
                 break;
             case "displays.list":
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    displays = displays.List()
+                    ["displays"] = NativeJson.ToNode(displays.List())
                 });
                 break;
             case "service.health":
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    status = "healthy",
-                    protocolVersion = ProtocolWriter.ProtocolVersion,
-                    serviceVersion = typeof(CommandProcessor).Assembly.GetName().Version?.ToString() ?? "unknown",
-                    processId = Environment.ProcessId,
-                    serviceInstanceId,
-                    baselineOwnerId,
-                    baselineCount = baselines.Count,
-                    watchdogArmed = heartbeat.Armed
+                    ["status"] = "healthy",
+                    ["protocolVersion"] = ProtocolWriter.ProtocolVersion,
+                    ["serviceVersion"] = typeof(CommandProcessor).Assembly.GetName().Version?.ToString() ?? "unknown",
+                    ["processId"] = Environment.ProcessId,
+                    ["serviceInstanceId"] = serviceInstanceId,
+                    ["baselineOwnerId"] = baselineOwnerId,
+                    ["baselineCount"] = baselines.Count,
+                    ["watchdogArmed"] = heartbeat.Armed
                 });
                 break;
             case "service.heartbeat":
                 heartbeat.RecordHeartbeat();
-                await protocol.WriteSuccessAsync(request.Id!, new
+                await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                 {
-                    receivedAtUtc = DateTimeOffset.UtcNow
+                    ["receivedAtUtc"] = DateTimeOffset.UtcNow
                 });
                 break;
             case "display.topology.refresh":
                 {
                     var connectedDisplays = displays.List();
-                    var reports = connectedDisplays.Select(display =>
+                    var reports = new JsonArray();
+                    foreach (var display in connectedDisplays)
                     {
                         var amdState = capabilities.GetAmdState(display);
-                        return new
+                        reports.Add((JsonNode?)new JsonObject
                         {
-                            displayId = display.Id,
-                            capabilities = capabilities.Get(display),
-                            nativeState = new
-                            {
-                                nvidia = capabilities.GetNvidiaState(display),
-                                amd = new
-                                {
-                                    amdState.Brightness,
-                                    amdState.Contrast,
-                                    amdState.Saturation,
-                                    amdState.Hue,
-                                    amdState.ColorTemperature,
-                                    gammaRampHash = amdState.GammaRamp?.GetHash(),
-                                    amdState.GammaReason
-                                }
-                            }
-                        };
-                    }).ToArray();
+                            ["displayId"] = display.Id,
+                            ["capabilities"] = NativeJson.ToNode(capabilities.Get(display)),
+                            ["nativeState"] = NativeStateNode(capabilities.GetNvidiaState(display), amdState)
+                        });
+                    }
                     var baselineValidation = baselines.ValidateTopology(connectedDisplays);
                     var generation = Interlocked.Increment(ref _topologyGeneration);
-                    await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+                    await NativeLog.WriteAsync(new JsonObject
                     {
-                        level = "information",
-                        eventName = "DisplayTopologyRefreshed",
-                        generation,
-                        displayIds = connectedDisplays.Select(display => display.Id),
-                        baselines = baselineValidation,
-                        nativeHandles = "reacquiredPerOperation"
-                    }));
-                    await protocol.WriteSuccessAsync(request.Id!, new
+                        ["level"] = "information",
+                        ["eventName"] = "DisplayTopologyRefreshed",
+                        ["generation"] = generation,
+                        ["displayIds"] = new JsonArray(
+                            connectedDisplays.Select(display => (JsonNode?)display.Id).ToArray()),
+                        ["baselines"] = NativeJson.ToNode(baselineValidation),
+                        ["nativeHandles"] = "reacquiredPerOperation"
+                    });
+                    await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                     {
-                        generation,
-                        displays = connectedDisplays,
-                        capabilityReports = reports,
-                        baselines = baselineValidation
+                        ["generation"] = generation,
+                        ["displays"] = NativeJson.ToNode(connectedDisplays),
+                        ["capabilityReports"] = reports,
+                        ["baselines"] = NativeJson.ToNode(baselineValidation)
                     });
                     break;
                 }
@@ -169,31 +157,18 @@ internal sealed class CommandProcessor(
                         ?? throw new DisplayOperationException("DISPLAY_NOT_FOUND", $"Display not found: {displayId}");
                     var amdState = capabilities.GetAmdState(display);
                     var resolvedCapabilities = capabilities.Get(display);
-                    await Console.Error.WriteLineAsync(JsonSerializer.Serialize(new
+                    await NativeLog.WriteAsync(new JsonObject
                     {
-                        level = "information",
-                        eventName = "DisplayCapabilityResolved",
-                        displayId,
-                        capabilities = resolvedCapabilities
-                    }));
-                    await protocol.WriteSuccessAsync(request.Id!, new
+                        ["level"] = "information",
+                        ["eventName"] = "DisplayCapabilityResolved",
+                        ["displayId"] = displayId,
+                        ["capabilities"] = NativeJson.ToNode(resolvedCapabilities)
+                    });
+                    await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                     {
-                        displayId,
-                        capabilities = resolvedCapabilities,
-                        nativeState = new
-                        {
-                            nvidia = capabilities.GetNvidiaState(display),
-                            amd = new
-                            {
-                                amdState.Brightness,
-                                amdState.Contrast,
-                                amdState.Saturation,
-                                amdState.Hue,
-                                amdState.ColorTemperature,
-                                gammaRampHash = amdState.GammaRamp?.GetHash(),
-                                amdState.GammaReason
-                            }
-                        }
+                        ["displayId"] = displayId,
+                        ["capabilities"] = NativeJson.ToNode(resolvedCapabilities),
+                        ["nativeState"] = NativeStateNode(capabilities.GetNvidiaState(display), amdState)
                     });
                     break;
                 }
@@ -236,21 +211,32 @@ internal sealed class CommandProcessor(
             throw new DisplayOperationException("INVALID_REQUEST", $"{request.Command} requires params.");
         }
 
-        return request.Params.Value.Deserialize<T>(JsonOptions)
+        return NativeJson.Deserialize<T>(request.Params.Value.GetRawText())
             ?? throw new DisplayOperationException("INVALID_REQUEST", $"{request.Command} params are invalid.");
     }
 
     private static void LogFailure(string command, string code, string message) =>
-        Console.Error.WriteLine(JsonSerializer.Serialize(new
+        NativeLog.Write(new JsonObject
         {
-            level = "error",
-            eventName = "DisplaySettingFailed",
-            command,
-            code,
-            message
-        }));
+            ["level"] = "error",
+            ["eventName"] = "DisplaySettingFailed",
+            ["command"] = command,
+            ["code"] = code,
+            ["message"] = message
+        });
 
-    private sealed record RequestEnvelope(string? Id, string? Command, JsonElement? Params);
-    private sealed record DisplayRequest(string DisplayId);
-    private sealed record DisplayApplyRequest(string DisplayId, DisplaySettings? Settings);
+    private static JsonObject NativeStateNode(NvidiaDisplayState nvidia, AmdDisplayState amd) => new()
+    {
+        ["nvidia"] = NativeJson.ToNode(nvidia),
+        ["amd"] = new JsonObject
+        {
+            ["brightness"] = NativeJson.ToNode(amd.Brightness),
+            ["contrast"] = NativeJson.ToNode(amd.Contrast),
+            ["saturation"] = NativeJson.ToNode(amd.Saturation),
+            ["hue"] = NativeJson.ToNode(amd.Hue),
+            ["colorTemperature"] = NativeJson.ToNode(amd.ColorTemperature),
+            ["gammaRampHash"] = amd.GammaRamp?.GetHash(),
+            ["gammaReason"] = amd.GammaReason
+        }
+    };
 }

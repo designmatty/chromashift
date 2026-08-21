@@ -134,10 +134,9 @@ acceleration accounts for roughly 80 MiB of the private-memory improvement by
 reducing the GPU process footprint; it does not eliminate Chromium's software
 GPU process.
 
-DisplayService itself measured around 17 MiB private and 52 MiB working set. It
-is event-driven and is not the first optimization target. NativeAOT or trimming
-may be investigated separately, but System.Management and vendor interop need
-compatibility validation before changing its publish model.
+DisplayService itself measured around 15–18 MiB private and 45–50 MiB working
+set after trimming. It remains event-driven; the publish optimization reduced
+disk and installer size without increasing its steady runtime footprint.
 
 ## Milestone 6 package footprint
 
@@ -148,16 +147,16 @@ that Vite had already bundled. Together they made `app.asar` 142.70 MiB.
 
 The package now allowlists only compiled main, preload, and renderer output,
 bundles main-process dependencies, excludes `node_modules`, and keeps only the
-English Chromium locale. DisplayService remains self-contained and untrimmed and
-uses a single-file publish. The sidecar package smoke requires exactly one
-installed helper file.
+English Chromium locale. DisplayService remains self-contained, uses a partially
+trimmed single-file publish, and stays external to ASAR. The sidecar package
+smoke requires exactly one installed helper file.
 
 | Artifact or layout   |        Before |      After |       Change |
 | -------------------- | ------------: | ---------: | -----------: |
-| NSIS installer       |    146.09 MiB | 104.27 MiB |       -28.6% |
-| Unpacked install     | about 566 MiB | 344.35 MiB | about -39.2% |
+| NSIS installer       |    146.09 MiB |  85.24 MiB |       -41.7% |
+| Unpacked install     | about 566 MiB | 287.00 MiB | about -49.3% |
 | `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
-| DisplayService files |     77.87 MiB |  71.35 MiB |        -8.4% |
+| DisplayService files |     77.87 MiB |  14.01 MiB |       -82.0% |
 | Chromium locales     |     46.65 MiB |   0.54 MiB |       -98.8% |
 
 Internal .NET single-file compression was measured and rejected. It reduced the
@@ -183,9 +182,9 @@ host. The app panel now hides immediately, then closes through its normal
 preview-safe lifecycle after the mini panel receives the handoff. Reopening the
 app recreates its renderer through the existing single-instance path.
 
-The final packaged measurement reported 665 ms startup, 607 ms app-to-mini, and
-663 ms app reopen. Median private memory was 215.21 MiB with the app visible,
-210.71 MiB with the mini panel visible, 127.27 MiB tray-only, and 200.85 MiB after
+The final packaged measurement reported 716 ms startup, 412 ms app-to-mini, and
+635 ms app reopen. Median private memory was 205.87 MiB with the app visible,
+210.50 MiB with the mini panel visible, 122.89 MiB tray-only, and 196.21 MiB after
 reopening the app. The app renderer was absent after the mini handoff. Median
 idle CPU was 0% in every measured state. The local performance gate allows 2
 seconds for startup/reopen, 1.5
@@ -193,11 +192,15 @@ seconds for mini open, 230 MiB for renderer-visible states, 150 MiB tray-only,
 and 5% of one CPU core to tolerate scheduler-scale sampling noise while still
 catching persistent background work.
 
-Trimming is deferred. A trial publish produced 23 trim-analysis errors around
-reflection-based JSON serialization. Resolving those warnings requires
-source-generated protocol serialization and another native-provider validation
-pass. Suppressing the warnings would trade display-restoration confidence for a
-smaller helper and is not acceptable.
+The helper now uses partial trimming. Source-generated `System.Text.Json`
+metadata replaced reflection-based protocol serialization, keeping app-owned
+linker warnings fatal. The first trimmed hardware trial exposed the known
+`System.Management` WMI incompatibility before service readiness, so EDID lookup
+was moved to the underlying Windows display registry rather than suppressing the
+failure. The copied NVAPI wrapper is rooted and its remaining third-party linker
+warnings are narrowly scoped in a linker attributes file. Native integration,
+real gamma apply/watchdog restoration, desktop smoke, and exact installed-package
+smoke all passed with the 14.01 MiB helper.
 
 ## Electron versus Tauri
 
@@ -254,6 +257,8 @@ shell. The Tauri port remains useful as a runnable benchmark, not a roadmap item
 - [Electron process metrics API](https://www.electronjs.org/docs/latest/api/app#appgetappmetrics)
 - [.NET single-file deployment](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
 - [.NET trimming options](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/trimming-options)
+- [.NET System.Text.Json source generation](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
+- [System.Management trimming incompatibility](https://github.com/dotnet/runtime/issues/57406)
 - [T3 Code reviewed reference](https://github.com/pingdotgg/t3code/tree/560d4a4560ddb5f42c8f8e0e35fa7827c0e46f80)
 - [Tauri Windows prerequisites and WebView2](https://v2.tauri.app/start/prerequisites/)
 - [Tauri external sidecars](https://v2.tauri.app/develop/sidecar/)

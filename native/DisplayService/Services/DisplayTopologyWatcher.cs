@@ -1,4 +1,5 @@
-using System.Text.Json;
+using System.Text.Json.Nodes;
+using ChromaShift.DisplayService.Ipc;
 using Microsoft.Win32;
 
 namespace ChromaShift.DisplayService.Services;
@@ -35,13 +36,13 @@ internal sealed class DisplayTopologyWatcher(Func<string, Task> onChanged) : IDi
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(JsonSerializer.Serialize(new
+            NativeLog.Write(new JsonObject
             {
-                level = "error",
-                eventName = "ProviderError",
-                provider = "windows.displayTopology",
-                message = exception.Message
-            }));
+                ["level"] = "error",
+                ["eventName"] = "ProviderError",
+                ["provider"] = "windows.displayTopology",
+                ["message"] = exception.Message
+            });
         }
     }
 }

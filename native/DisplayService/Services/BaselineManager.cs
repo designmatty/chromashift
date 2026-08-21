@@ -3,6 +3,8 @@ using ChromaShift.DisplayService.Providers.Windows;
 using ChromaShift.DisplayService.Providers.Nvidia;
 using ChromaShift.DisplayService.Providers.Amd;
 using System.ComponentModel;
+using System.Text.Json.Nodes;
+using ChromaShift.DisplayService.Ipc;
 
 namespace ChromaShift.DisplayService.Services;
 
@@ -15,7 +17,7 @@ internal sealed class BaselineManager(
     private readonly Dictionary<string, BaselineEntry> _baselines = new(StringComparer.Ordinal);
     private readonly Lock _sync = new();
 
-    internal object Capture(string displayId)
+    internal JsonObject Capture(string displayId)
     {
         lock (_sync)
         {
@@ -47,7 +49,7 @@ internal sealed class BaselineManager(
         }
     }
 
-    internal object ReadState(string displayId)
+    internal JsonObject ReadState(string displayId)
     {
         lock (_sync)
         {
@@ -55,25 +57,31 @@ internal sealed class BaselineManager(
             if (display.Adapter.Vendor == "amd")
             {
                 var state = amd.GetState(display);
-                return new
+                return new JsonObject
                 {
-                    displayId,
-                    provider = "amd",
-                    gammaRampHash = state.GammaRamp?.GetHash(),
-                    brightness = state.Brightness.Current,
-                    contrast = state.Contrast.Current,
-                    saturation = state.Saturation.Current,
-                    hue = state.Hue.Current,
-                    colorTemperature = state.ColorTemperature.Current
+                    ["displayId"] = displayId,
+                    ["provider"] = "amd",
+                    ["gammaRampHash"] = state.GammaRamp?.GetHash(),
+                    ["brightness"] = state.Brightness.Current,
+                    ["contrast"] = state.Contrast.Current,
+                    ["saturation"] = state.Saturation.Current,
+                    ["hue"] = state.Hue.Current,
+                    ["colorTemperature"] = state.ColorTemperature.Current
                 };
             }
             EnsureGammaSafe(display);
             var ramp = ReadGamma(display);
-            return new { displayId, provider = "windows", gammaRamp = ramp, gammaRampHash = ramp.GetHash() };
+            return new JsonObject
+            {
+                ["displayId"] = displayId,
+                ["provider"] = "windows",
+                ["gammaRamp"] = NativeJson.ToNode(ramp),
+                ["gammaRampHash"] = ramp.GetHash()
+            };
         }
     }
 
-    internal object Apply(string displayId, DisplaySettings settings)
+    internal JsonObject Apply(string displayId, DisplaySettings settings)
     {
         lock (_sync)
         {
@@ -161,11 +169,19 @@ internal sealed class BaselineManager(
                 }
 
                 Log("DisplaySettingApplied", display, gammaHash);
-                return new
+                return new JsonObject
                 {
-                    displayId,
-                    settings,
-                    applied = new { gammaRampHash = gammaHash, brightness, contrast, saturation, hue, colorTemperature }
+                    ["displayId"] = displayId,
+                    ["settings"] = NativeJson.ToNode(settings),
+                    ["applied"] = new JsonObject
+                    {
+                        ["gammaRampHash"] = gammaHash,
+                        ["brightness"] = brightness,
+                        ["contrast"] = contrast,
+                        ["saturation"] = saturation,
+                        ["hue"] = hue,
+                        ["colorTemperature"] = colorTemperature
+                    }
                 };
             }
             catch (ArgumentOutOfRangeException exception)
@@ -181,13 +197,13 @@ internal sealed class BaselineManager(
         }
     }
 
-    internal object Restore(string displayId)
+    internal JsonObject Restore(string displayId)
     {
         lock (_sync)
         {
             if (!_baselines.TryGetValue(displayId, out var baseline))
             {
-                return new { displayId, restored = false, reason = "baselineNotCaptured" };
+                return RestoreResult(displayId, restored: false, reason: "baselineNotCaptured");
             }
 
             var display = FindDisplay(displayId);
@@ -195,15 +211,15 @@ internal sealed class BaselineManager(
             RestoreEntry(display, baseline);
             _baselines.Remove(displayId);
             Log("BaselineRestored", display, baseline.GammaRamp?.GetHash());
-            return new { displayId, restored = true, gammaRampHash = baseline.GammaRamp?.GetHash() };
+            return RestoreResult(displayId, restored: true, gammaRampHash: baseline.GammaRamp?.GetHash());
         }
     }
 
-    internal object RestoreAll(bool failOnError = false, bool discardDisconnected = false)
+    internal JsonObject RestoreAll(bool failOnError = false, bool discardDisconnected = false)
     {
         lock (_sync)
         {
-            var results = new List<object>();
+            var results = new JsonArray();
             var failures = new List<string>();
             foreach (var displayId in _baselines.Keys.ToArray())
             {
@@ -212,52 +228,56 @@ internal sealed class BaselineManager(
                     var display = FindDisplay(displayId);
                     if (display.Hdr)
                     {
-                        results.Add(new { displayId, restored = false, reason = "hdrActive" });
+                        results.Add((JsonNode?)RestoreResult(displayId, restored: false, reason: "hdrActive"));
                         failures.Add($"{displayId}: restoration is deferred while HDR is active");
-                        Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                        NativeLog.Write(new JsonObject
                         {
-                            level = "information",
-                            eventName = "BaselineRestoreDeferred",
-                            displayId,
-                            reason = "hdrActive"
-                        }));
+                            ["level"] = "information",
+                            ["eventName"] = "BaselineRestoreDeferred",
+                            ["displayId"] = displayId,
+                            ["reason"] = "hdrActive"
+                        });
                         continue;
                     }
-                    results.Add(Restore(displayId));
+                    results.Add((JsonNode?)Restore(displayId));
                 }
                 catch (DisplayOperationException exception)
                 {
                     if (TryDiscardDisconnectedBaseline(displayId, discardDisconnected, results)) continue;
-                    results.Add(new { displayId, restored = false, code = exception.Code, error = exception.Message });
-                    failures.Add($"{displayId}: {exception.Message}");
-                    Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        level = "critical",
-                        eventName = "BaselineRestoreFailed",
+                    results.Add((JsonNode?)RestoreResult(
                         displayId,
-                        code = exception.Code,
-                        message = exception.Message
-                    }));
+                        restored: false,
+                        code: exception.Code,
+                        error: exception.Message));
+                    failures.Add($"{displayId}: {exception.Message}");
+                    NativeLog.Write(new JsonObject
+                    {
+                        ["level"] = "critical",
+                        ["eventName"] = "BaselineRestoreFailed",
+                        ["displayId"] = displayId,
+                        ["code"] = exception.Code,
+                        ["message"] = exception.Message
+                    });
                 }
                 catch (Exception exception)
                 {
                     if (TryDiscardDisconnectedBaseline(displayId, discardDisconnected, results)) continue;
-                    results.Add(new { displayId, restored = false, error = exception.Message });
+                    results.Add((JsonNode?)RestoreResult(displayId, restored: false, error: exception.Message));
                     failures.Add($"{displayId}: {exception.Message}");
-                    Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                    NativeLog.Write(new JsonObject
                     {
-                        level = "critical",
-                        eventName = "BaselineRestoreFailed",
-                        displayId,
-                        message = exception.Message
-                    }));
+                        ["level"] = "critical",
+                        ["eventName"] = "BaselineRestoreFailed",
+                        ["displayId"] = displayId,
+                        ["message"] = exception.Message
+                    });
                 }
             }
             if (failOnError && failures.Count > 0)
             {
                 throw new DisplayOperationException("BASELINE_RESTORE_FAILED", string.Join("; ", failures));
             }
-            return new { displays = results };
+            return new JsonObject { ["displays"] = results };
         }
     }
 
@@ -385,7 +405,7 @@ internal sealed class BaselineManager(
     private bool TryDiscardDisconnectedBaseline(
         string displayId,
         bool discardDisconnected,
-        List<object> results)
+        JsonArray results)
     {
         bool connected;
         try
@@ -399,19 +419,17 @@ internal sealed class BaselineManager(
 
         if (!ShouldDiscardDisconnectedBaseline(discardDisconnected, connected)) return false;
         _baselines.Remove(displayId);
-        results.Add(new
-        {
+        results.Add((JsonNode?)RestoreResult(
             displayId,
-            restored = false,
-            reason = "displayDisconnected",
-            discarded = true
-        });
-        Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            restored: false,
+            reason: "displayDisconnected",
+            discarded: true));
+        NativeLog.Write(new JsonObject
         {
-            level = "information",
-            eventName = "DisconnectedBaselineDiscarded",
-            displayId
-        }));
+            ["level"] = "information",
+            ["eventName"] = "DisconnectedBaselineDiscarded",
+            ["displayId"] = displayId
+        });
         return true;
     }
 
@@ -432,13 +450,13 @@ internal sealed class BaselineManager(
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            NativeLog.Write(new JsonObject
             {
-                level = "critical",
-                eventName = "BaselineRestoreFailed",
-                displayId = display.Id,
-                message = exception.Message
-            }));
+                ["level"] = "critical",
+                ["eventName"] = "BaselineRestoreFailed",
+                ["displayId"] = display.Id,
+                ["message"] = exception.Message
+            });
         }
     }
 
@@ -472,31 +490,49 @@ internal sealed class BaselineManager(
             "HDR provider behavior has not been validated.");
     }
 
-    private static object Describe(BaselineEntry entry, string state) => new
+    private static JsonObject Describe(BaselineEntry entry, string state) => new()
     {
-        displayId = entry.Owner.DisplayId,
-        state,
-        gammaRampHash = entry.GammaRamp?.GetHash(),
-        nvidiaSaturation = entry.Nvidia.Saturation.Current,
-        nvidiaHue = entry.Nvidia.Hue.Current,
-        amdBrightness = entry.Amd.Brightness.Current,
-        amdContrast = entry.Amd.Contrast.Current,
-        amdSaturation = entry.Amd.Saturation.Current,
-        amdHue = entry.Amd.Hue.Current,
-        amdColorTemperature = entry.Amd.ColorTemperature.Current,
-        amdGammaRampHash = entry.Amd.GammaRamp?.GetHash()
+        ["displayId"] = entry.Owner.DisplayId,
+        ["state"] = state,
+        ["gammaRampHash"] = entry.GammaRamp?.GetHash(),
+        ["nvidiaSaturation"] = entry.Nvidia.Saturation.Current,
+        ["nvidiaHue"] = entry.Nvidia.Hue.Current,
+        ["amdBrightness"] = entry.Amd.Brightness.Current,
+        ["amdContrast"] = entry.Amd.Contrast.Current,
+        ["amdSaturation"] = entry.Amd.Saturation.Current,
+        ["amdHue"] = entry.Amd.Hue.Current,
+        ["amdColorTemperature"] = entry.Amd.ColorTemperature.Current,
+        ["amdGammaRampHash"] = entry.Amd.GammaRamp?.GetHash()
     };
 
     private static void Log(string eventName, DisplayDescriptor display, string? gammaRampHash) =>
-        Console.Error.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+        NativeLog.Write(new JsonObject
         {
-            level = "information",
-            eventName,
-            displayId = display.Id,
-            displayName = display.Name,
-            provider = "windows",
-            gammaRampHash
-        }));
+            ["level"] = "information",
+            ["eventName"] = eventName,
+            ["displayId"] = display.Id,
+            ["displayName"] = display.Name,
+            ["provider"] = "windows",
+            ["gammaRampHash"] = gammaRampHash
+        });
+
+    private static JsonObject RestoreResult(
+        string displayId,
+        bool restored,
+        string? reason = null,
+        string? code = null,
+        string? error = null,
+        string? gammaRampHash = null,
+        bool? discarded = null) => new()
+    {
+        ["displayId"] = displayId,
+        ["restored"] = restored,
+        ["reason"] = reason,
+        ["code"] = code,
+        ["error"] = error,
+        ["gammaRampHash"] = gammaRampHash,
+        ["discarded"] = discarded
+    };
 
     private sealed record BaselineEntry(
         BaselineOwner Owner,

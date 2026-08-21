@@ -36,11 +36,16 @@ resources/
     DisplayService.exe
 ```
 
-`DisplayService.exe` is a self-contained .NET single-file publish. It keeps every
-provider assembly and the .NET runtime and is not trimmed. Internal .NET bundle
-compression is deliberately disabled: NSIS compresses the distributable more
-effectively, while leaving the long-lived helper payload uncompressed avoids a
-measured private-memory penalty at runtime.
+`DisplayService.exe` is a self-contained, partially trimmed .NET single-file
+publish. Protocol JSON uses source-generated metadata so application-owned code
+remains trim analyzed. The copied NVAPI provider assembly is rooted because its
+reflection paths cannot be inferred by the linker; narrowly scoped linker
+suppressions document only that dependency's known warnings. EDID discovery
+reads the Windows display registry instead of `System.Management`, whose WMI
+implementation is not compatible with trimming. Internal .NET bundle compression
+is deliberately disabled: NSIS compresses the distributable more effectively,
+while leaving the long-lived helper payload uncompressed avoids a measured
+private-memory penalty at runtime.
 
 Only compiled main, preload, and renderer output enters ASAR. Electron Vite
 bundles main-process workspace and third-party dependencies, so the package does
