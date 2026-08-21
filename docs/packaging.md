@@ -31,7 +31,6 @@ locales, or a publish-layout regression fails the build.
 ChromaShift.exe
 resources/
   app.asar
-  icon.png
   display-service/
     DisplayService.exe
 ```
@@ -51,6 +50,15 @@ Only compiled main, preload, and renderer output enters ASAR. Electron Vite
 bundles main-process workspace and third-party dependencies, so the package does
 not copy `node_modules`. Electron ships only the `en-US` locale because the
 current product UI is English-only.
+
+ChromaShift has no audio or video playback feature, so Electron Builder replaces
+the stock FFmpeg library with Electron's official non-proprietary codec build.
+The package footprint checker caps `ffmpeg.dll` at 2 MiB to prevent the stock
+media library from returning unnoticed.
+
+The packaged tray icon comes from the icon already embedded in
+`ChromaShift.exe`; development still loads `build/icon.png`. This avoids copying
+the same PNG into `resources` solely to render a 16-pixel tray image.
 
 The Windows package also removes Electron's DirectX 12 shader compiler pair and
 Vulkan SwiftShader files after extraction and before signing. ChromaShift

@@ -14,6 +14,7 @@ const limits = {
   unpacked: 300 * 1024 * 1024,
   asar: 8 * 1024 * 1024,
   displayService: 20 * 1024 * 1024,
+  ffmpeg: 2 * 1024 * 1024,
   locales: 2 * 1024 * 1024,
   installer: 90 * 1024 * 1024
 }
@@ -62,6 +63,7 @@ const paths = {
   displayService: fileURLToPath(
     new globalThis.URL('../release/win-unpacked/resources/display-service/', import.meta.url)
   ),
+  ffmpeg: fileURLToPath(new globalThis.URL('../release/win-unpacked/ffmpeg.dll', import.meta.url)),
   locales: fileURLToPath(new globalThis.URL('../release/win-unpacked/locales/', import.meta.url))
 }
 

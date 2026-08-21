@@ -348,7 +348,7 @@ try {
     assertFile(unpackedApplication),
     assertFile(unpackedService),
     assertFile(unpackedAsar),
-    assertFile(join(unpackedDirectory, 'resources', 'icon.png'))
+    assertFile(join(unpackedDirectory, 'ffmpeg.dll'))
   ])
   const serviceFiles = await readdir(join(unpackedDirectory, 'resources', 'display-service'))
   if (serviceFiles.length !== 1 || serviceFiles[0] !== 'DisplayService.exe') {
@@ -364,6 +364,9 @@ try {
     if (await pathExists(join(unpackedDirectory, unusedRuntimeFile))) {
       throw new Error(`Unused Electron runtime file was packaged: ${unusedRuntimeFile}`)
     }
+  }
+  if (await pathExists(join(unpackedDirectory, 'resources', 'icon.png'))) {
+    throw new Error('The packaged tray icon duplicates the icon embedded in ChromaShift.exe.')
   }
   await assertProductionFuses(unpackedApplication)
   await smokeService(unpackedService, 'unpacked')

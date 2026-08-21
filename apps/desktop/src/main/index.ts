@@ -4,10 +4,12 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  nativeImage,
   nativeTheme,
   powerMonitor,
   screen,
   type IpcMainInvokeEvent,
+  type NativeImage,
   type OpenDialogOptions
 } from 'electron'
 import { basename, extname, join, resolve } from 'node:path'
@@ -199,10 +201,9 @@ function servicePath(): string {
   })
 }
 
-function trayIconPath(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'icon.png')
-    : resolve(app.getAppPath(), 'build', 'icon.png')
+async function loadTrayIcon(): Promise<NativeImage> {
+  if (app.isPackaged) return app.getFileIcon(process.execPath, { size: 'small' })
+  return nativeImage.createFromPath(resolve(app.getAppPath(), 'build', 'icon.png'))
 }
 
 function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
@@ -556,7 +557,7 @@ if (ownsSingleInstanceLock) {
   })
 }
 
-function configureDesktopLifecycle(): Promise<void> {
+async function configureDesktopLifecycle(): Promise<void> {
   if (
     nativeClient === undefined ||
     physicalDisplayClient === undefined ||
@@ -587,7 +588,7 @@ function configureDesktopLifecycle(): Promise<void> {
     },
     logger
   )
-  const trayMenu = new ElectronTrayMenu(trayIconPath(), (bounds) =>
+  const trayMenu = new ElectronTrayMenu(await loadTrayIcon(), (bounds) =>
     panelController.reopenLastPanel(bounds)
   )
   trayController = new TrayController(

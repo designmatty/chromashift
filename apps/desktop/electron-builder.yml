@@ -31,14 +31,16 @@ files:
 electronLanguages:
   - en-US
 
+# ChromaShift has no audio or video playback surface. Use Electron's official
+# non-proprietary codec build instead of shipping unused media codecs.
+downloadAlternateFFmpeg: true
+
 extraResources:
   - from: ../../native/DisplayService/bin/Release/net10.0-windows/win-x64/publish
     to: display-service
     filter:
       - '**/*'
       - '!**/*.pdb'
-  - from: build/icon.png
-    to: icon.png
 
 win:
   target:

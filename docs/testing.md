@@ -163,8 +163,8 @@ verifies detached-helper parent-process monitoring and crash restoration.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
 publishing a self-contained, partially trimmed single-file `DisplayService`. The package
-command also checks separate budgets for the unpacked app, ASAR, helper, locales,
-and installer. `npm run smoke:package` validates
+command also checks separate budgets for the unpacked app, ASAR, helper, FFmpeg,
+locales, and installer. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout, the absence of unused DirectX 12 and
 Vulkan shader runtime files, and the production fuse wire. It starts the
 helper directly, verifies the health/watchdog handshake, exercises NDJSON IPC,
@@ -190,13 +190,13 @@ signing-certificate, and installer-reputation matrix is deferred to Milestone 8.
 ## Milestone 6 automated closeout record (2026-08-21)
 
 Package budgets now cover the installer, unpacked application, ASAR,
-DisplayService, and locales. The packaged performance gate covers startup,
+DisplayService, FFmpeg, and locales. The packaged performance gate covers startup,
 app-to-mini and app-reopen latency, visible/mini/tray/reopened private memory,
 idle CPU, and release of the app renderer during the mini-panel handoff. The
 closeout ran `npm run verify`, `npm run native:test:integration`, `npm run
 smoke:desktop`, `npm run package:win`, `npm run smoke:package`, and the packaged
-performance gate. The exact installer was 85.24 MiB, its unpacked layout was
-287.00 MiB, and the trimmed external helper was 14.01 MiB. Exact results and the
+performance gate. The exact installer was 84.70 MiB, its unpacked layout was
+285.43 MiB, and the trimmed external helper was 14.01 MiB. Exact results and the
 package comparison are recorded in `docs/performance.md`.
 
 ## Phase 0 hardware record (2026-08-08)

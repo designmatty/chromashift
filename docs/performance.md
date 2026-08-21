@@ -153,8 +153,8 @@ smoke requires exactly one installed helper file.
 
 | Artifact or layout   |        Before |      After |       Change |
 | -------------------- | ------------: | ---------: | -----------: |
-| NSIS installer       |    146.09 MiB |  85.24 MiB |       -41.7% |
-| Unpacked install     | about 566 MiB | 287.00 MiB | about -49.3% |
+| NSIS installer       |    146.09 MiB |  84.70 MiB |       -42.0% |
+| Unpacked install     | about 566 MiB | 285.43 MiB | about -49.6% |
 | `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
 | DisplayService files |     77.87 MiB |  14.01 MiB |       -82.0% |
 | Chromium locales     |     46.65 MiB |   0.54 MiB |       -98.8% |
@@ -174,6 +174,16 @@ now removes the five unused files before signing. This cuts 32.00 MiB from the
 installed directory and 8.12 MiB from the installer compared with the first
 Milestone 6 package. The package smoke test guards the pruned layout.
 
+ChromaShift does not play audio or video. Electron Builder now swaps the stock
+2.93 MiB FFmpeg library for Electron's 1.59 MiB non-proprietary codec build, and
+the footprint checker gives that file its own 2 MiB limit. The packaged tray also
+extracts the icon already embedded in `ChromaShift.exe` instead of copying the
+same 0.23 MiB PNG into resources. These two changes remove another 1.57 MiB from
+the installed layout and 0.54 MiB from the installer. Setting Electron Builder's
+compression level to `maximum` produced the same byte-for-byte 85.24 MiB
+installer as the default level before these cuts, so the package keeps the
+faster default compression setting.
+
 ## Milestone 6 packaged runtime
 
 Opening the mini panel previously hid the app window but retained its renderer.
@@ -182,9 +192,9 @@ host. The app panel now hides immediately, then closes through its normal
 preview-safe lifecycle after the mini panel receives the handoff. Reopening the
 app recreates its renderer through the existing single-instance path.
 
-The final packaged measurement reported 716 ms startup, 412 ms app-to-mini, and
-635 ms app reopen. Median private memory was 205.87 MiB with the app visible,
-210.50 MiB with the mini panel visible, 122.89 MiB tray-only, and 196.21 MiB after
+The final packaged measurement reported 739 ms startup, 382 ms app-to-mini, and
+634 ms app reopen. Median private memory was 207.77 MiB with the app visible,
+207.73 MiB with the mini panel visible, 123.68 MiB tray-only, and 199.24 MiB after
 reopening the app. The app renderer was absent after the mini handoff. Median
 idle CPU was 0% in every measured state. The local performance gate allows 2
 seconds for startup/reopen, 1.5
@@ -202,7 +212,7 @@ warnings are narrowly scoped in a linker attributes file. Native integration,
 real gamma apply/watchdog restoration, desktop smoke, and exact installed-package
 smoke all passed with the 14.01 MiB helper.
 
-The remaining unpacked footprint is dominated by the 215.18 MiB Electron
+The remaining 285.43 MiB unpacked footprint is dominated by the 215.18 MiB Electron
 executable, followed by Chromium's 19.37 MiB license bundle, 10.37 MiB ICU data,
 and the ANGLE/Chromium runtime used by the packaged app. Further material
 reduction is therefore a shell or Electron-runtime decision, not another
@@ -262,6 +272,7 @@ shell. The Tauri port remains useful as a runnable benchmark, not a roadmap item
 - [Astryx project](https://astryx.atmeta.com/)
 - [Electron performance guidance](https://www.electronjs.org/docs/latest/tutorial/performance)
 - [Electron process metrics API](https://www.electronjs.org/docs/latest/api/app#appgetappmetrics)
+- [Electron Builder alternate FFmpeg and compression options](https://www.electron.build/docs/configuration/)
 - [.NET single-file deployment](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
 - [.NET trimming options](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/trimming-options)
 - [.NET System.Text.Json source generation](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
