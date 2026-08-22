@@ -160,8 +160,10 @@ The Milestone 7 desktop sequence records a Toggle ChromaShift binding through
 the real Shortcuts settings UI, closes every renderer, emits the accelerator
 through Windows `keybd_event`, and observes main-process dispatch plus native
 notification creation. The installed-package sequence also requires Electron to
-report that Windows showed the native notification. Reopening the app and mini
-panel verifies persisted
+report that Windows showed the native notification, physically opens Windows
+Notification Center from the primary taskbar, clicks the newest profile-change
+card, and verifies that the app panel selects the notification's profile.
+Reopening the app and mini panel verifies persisted
 Paused state, readable intended target, disabled color writes, and Resume before
 the restoration guard compares exact pre-run and post-run display state. The
 same smoke retains app/mini mutual exclusion, native caption, focus,
@@ -235,9 +237,10 @@ native notification API, verified persisted Paused/Resume behavior in both
 panels, and restored both displays exactly. The development executable was not
 registered for visual notification delivery, and ChromaShift reported that
 operating-system rejection accurately. The installed package subsequently
-produced a confirmed native notification delivery. Clicking that real Windows
-notification remains the milestone's final platform gate because Do Not Disturb
-was enabled on the validation host. Windows UI Automation opened the
+produced a confirmed native notification delivery. With notifications enabled,
+the package smoke opened the real Windows Notification Center, physically
+clicked the `Notification gate activated` card, and verified that the app panel
+routed to the `Notification gate` profile. Windows UI Automation opened the
 real hidden-icons drawer,
 verified the approved tray-menu order, and invoked both explicit panel commands;
 the mini remained non-activating and mutually exclusive with the app panel. A

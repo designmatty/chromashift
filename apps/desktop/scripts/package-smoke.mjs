@@ -92,7 +92,7 @@ async function runProcess(executable, args, description, timeout = 120_000) {
   return { stdout, stderr }
 }
 
-async function pressToggleShortcut() {
+async function pressNotificationShortcut() {
   const command = `
 Add-Type -TypeDefinition @'
 using System;
@@ -116,6 +116,52 @@ foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 2, [UIn
       globalThis.Buffer.from(command, 'utf16le').toString('base64')
     ],
     'installed global shortcut dispatch'
+  )
+}
+
+async function clickNewestWindowsNotification(expectedText) {
+  const command = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftPackagePointer {
+  [DllImport("user32.dll")]
+  public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")]
+  public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$expected = ${JSON.stringify(expectedText)}
+$primary = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+[ChromaShiftPackagePointer]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
+[ChromaShiftPackagePointer]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 250
+$clockX = $primary.Right - 40
+$taskbarY = $primary.Bottom - 24
+[ChromaShiftPackagePointer]::SetCursorPos($clockX, $taskbarY) | Out-Null
+[ChromaShiftPackagePointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+[ChromaShiftPackagePointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 750
+$notificationX = $primary.Right - 220
+$notificationY = $primary.Top + 115
+[ChromaShiftPackagePointer]::SetCursorPos($notificationX, $notificationY) | Out-Null
+[ChromaShiftPackagePointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+[ChromaShiftPackagePointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+Write-Output "Clicked newest notification '$expected' at $notificationX,$notificationY."
+`
+  await runProcess(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    'installed notification click',
+    30_000
   )
 }
 
@@ -331,24 +377,30 @@ async function smokeApplication(
       const configured = await send('Runtime.evaluate', {
         expression: `(async () => {
           const state = await window.chromaShift.getState()
-          if (!state.ok) return false
+          if (!state.ok) return null
+          const created = await window.chromaShift.createProfile('Notification gate')
+          if (!created.ok) return null
           const result = await window.chromaShift.updateSettings({
             ...state.value.settings,
             profileChangeNotifications: true,
             shortcutBindings: [{
-              action: { kind: 'toggleChromaShift' },
+              action: { kind: 'profile', profileId: created.value.id },
               accelerator: 'CommandOrControl+Alt+Shift+F9'
             }]
           })
-          return result.ok
+          return result.ok ? { id: created.value.id, name: created.value.name } : null
         })()`,
         awaitPromise: true,
         returnByValue: true
       })
-      if (configured.result.value !== true) {
+      const notificationProfile = configured.result.value
+      if (
+        typeof notificationProfile?.id !== 'string' ||
+        notificationProfile.name !== 'Notification gate'
+      ) {
         throw new Error(`${label} could not configure its notification shortcut.`)
       }
-      await pressToggleShortcut()
+      await pressNotificationShortcut()
       const notificationDeadline = Date.now() + timeoutMilliseconds
       while (!output.includes('"eventName":"ProfileNotificationShown"')) {
         if (output.includes('"eventName":"ProfileNotificationFailed"')) {
@@ -358,6 +410,25 @@ async function smokeApplication(
           throw new Error(`${label} native notification was not confirmed as shown.\n${output}`)
         }
         await delay(100)
+      }
+      await clickNewestWindowsNotification(`${notificationProfile.name} activated`)
+      const selectionDeadline = Date.now() + timeoutMilliseconds
+      let selectedProfile = ''
+      while (Date.now() < selectionDeadline) {
+        const selection = await send('Runtime.evaluate', {
+          expression: `document.querySelector(
+            '[data-part="profile-item"][data-selected] [data-part="profile-select"] strong'
+          )?.textContent?.trim() ?? ''`,
+          returnByValue: true
+        })
+        selectedProfile = selection.result.value
+        if (selectedProfile === notificationProfile.name) break
+        await delay(100)
+      }
+      if (selectedProfile !== notificationProfile.name) {
+        throw new Error(
+          `${label} notification click did not select ${notificationProfile.name}; selected ${selectedProfile}.`
+        )
       }
     }
     try {
@@ -461,16 +532,17 @@ try {
   await writeFile(configurationPath, configuration)
   await smokeService(installedService, 'installed')
   await smokeApplication(installedApplication, installedUserData, 'installed app', true)
+  const configurationAfterSmoke = await readFile(configurationPath, 'utf8')
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS upgrade')
-  if ((await readFile(configurationPath, 'utf8')) !== configuration) {
+  if ((await readFile(configurationPath, 'utf8')) !== configurationAfterSmoke) {
     throw new Error('The profile configuration changed during the upgrade.')
   }
 
   const uninstaller = join(installedDirectory, 'Uninstall ChromaShift.exe')
   await assertFile(uninstaller)
   await runProcess(uninstaller, ['/S'], 'NSIS uninstall')
-  if ((await readFile(configurationPath, 'utf8')) !== configuration) {
+  if ((await readFile(configurationPath, 'utf8')) !== configurationAfterSmoke) {
     throw new Error('The profile configuration did not survive uninstall.')
   }
 
@@ -478,7 +550,7 @@ try {
   globalThis.console.log(`Unpacked layout: ${unpackedDirectory}`)
   globalThis.console.log(`Installer: ${installer}`)
   globalThis.console.log(
-    'External sidecar launch, IPC, native notification delivery, baseline restoration, upgrade, and uninstall data safety: verified'
+    'External sidecar launch, IPC, native notification delivery and click routing, baseline restoration, upgrade, and uninstall data safety: verified'
   )
 } finally {
   await rm(temporaryRoot, {

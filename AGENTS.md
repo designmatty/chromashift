@@ -1813,9 +1813,8 @@ Current status on 2026-08-22:
 - Milestone 4 — complete
 - Milestone 5 — complete
 - Milestone 6 — complete
-- Milestone 7 — implementation and packaged notification delivery complete;
-  notification click validation pending
-- Milestone 8 — planned after Milestone 7
+- Milestone 7 — complete
+- Milestone 8 — next
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -2285,11 +2284,10 @@ reconsideration threshold recorded in `docs/performance.md`.
   alone do not validate global shortcuts, native notifications, or hidden-icons
   drawer behavior
 
-Milestone 7 implementation and packaged notification delivery completed on
-2026-08-22. Keep the milestone open until clicking a real Windows notification
-routes to the selected profile on a host where Do Not Disturb is disabled.
-`docs/testing.md` records the completed automated, real-desktop, package, and
-performance evidence.
+Milestone 7 completed on 2026-08-22. The installed-package gate delivered and
+physically clicked a real Windows notification, then verified that the app panel
+routed to the selected profile. `docs/testing.md` records the completed
+automated, real-desktop, package, notification-click, and performance evidence.
 
 ---
 
@@ -2587,16 +2585,12 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–6 are complete. Milestone 7 implementation and packaged
-notification delivery are complete, but its Windows notification click-routing
-gate remains.
-The GeoSwap-inspired Chakra UI,
+Phase 0 and Milestones 1–7 are complete. The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
-in the per-display UI plan and Milestone 5. Finish the Milestone 7 notification
-click gate before continuing with **Milestone 8 — Extended hardware and release
-hardening**.
+in the per-display UI plan and Milestone 5. Continue with **Milestone 8 —
+Extended hardware and release hardening**.
 
 Milestone 5 is complete. The current NVIDIA/two-display machine passed
 canonical verification, native watchdog restoration, real desktop, forced-parent

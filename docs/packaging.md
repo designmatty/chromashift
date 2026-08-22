@@ -146,9 +146,12 @@ fuses, CSP, and renderer sandbox, then tests both unpacked and installed layouts
 It launches `DisplayService.exe`, verifies its version/health/watchdog handshake
 and display enumeration, captures a baseline, requests service shutdown, and
 checks the per-display restoration acknowledgement. It also starts the Electron
-app with isolated user data and invokes the shared restore-safe exit path. Finally,
-it silently installs, reinstalls over the same directory, uninstalls, and verifies
-that the profile configuration survives.
+app with isolated user data and invokes the shared restore-safe exit path. The
+installed-app path creates a disposable profile, dispatches its registered global
+shortcut, requires native notification delivery, physically clicks the newest
+card in Windows Notification Center, and verifies that the app panel routes to
+that profile. Finally, it silently installs, reinstalls over the same directory,
+uninstalls, and verifies that the profile configuration survives.
 
 These checks make low-impact no-change capture/restore calls on the current
 display hardware. AMD runtime behavior remains unverified on machines without an
