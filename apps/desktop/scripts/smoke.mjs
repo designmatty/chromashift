@@ -1006,11 +1006,11 @@ try {
   await waitForText(debuggerClient, 'Shortcuts save automatically')
   const recordedToggleShortcut = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
-      const input = document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')
-      if (!(input instanceof HTMLInputElement)) return false
-      input.click()
+      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
+      if (!(button instanceof HTMLButtonElement)) return false
+      button.click()
       await new Promise((resolve) => requestAnimationFrame(resolve))
-      input.dispatchEvent(new KeyboardEvent('keydown', {
+      button.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'F9', code: 'F9', ctrlKey: true, altKey: true, shiftKey: true,
         bubbles: true, cancelable: true
       }))
@@ -1024,7 +1024,7 @@ try {
   }
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')?.value === 'Ctrl+Alt+Shift+F9'`,
+    `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
     'The shortcut recorder did not capture the key combination.'
   )
   await waitForExpression(
@@ -1591,10 +1591,10 @@ try {
   await waitForExpression(
     debuggerClient,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.chromaShift.status === 'paused' &&
-        !result.value.chromaShift.transitionInProgress &&
-        document.querySelector('[data-part="chromashift-status"]')?.textContent?.includes('ChromaShift: Paused')
+       const result = await window.chromaShift.getState()
+       return result.ok && result.value.chromaShift.status === 'paused' &&
+         !result.value.chromaShift.transitionInProgress &&
+         document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Paused'
     })()`,
     'The renderer-free Toggle ChromaShift shortcut did not enter Paused.'
   )
@@ -1615,14 +1615,27 @@ try {
   await waitForExpression(
     pausedMiniDebugger,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && !result.value.chromaShift.transitionInProgress &&
-        document.querySelector('[data-part="chromashift-status"]')?.textContent?.includes('ChromaShift: Paused') &&
-        document.querySelector('[data-part="color-control"] input:disabled') !== null
+       const result = await window.chromaShift.getState()
+       return result.ok && !result.value.chromaShift.transitionInProgress &&
+         document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === '' &&
+         document.querySelector('[aria-label="Resume ChromaShift"]') !== null &&
+         document.querySelector('[data-part="color-control"] input:disabled') !== null
     })()`,
     'The Paused mini panel did not show status or disable color controls.'
   )
   await captureScreenshot(pausedMiniDebugger, pausedMiniScreenshotPath)
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
+  })
+  await waitForExpression(
+    pausedMiniDebugger,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'active' &&
+        document.querySelector('[data-part="chromashift-control"][data-status="active"]')?.textContent?.trim() === ''
+    })()`,
+    'The mini-panel status control did not resume ChromaShift.'
+  )
   await pausedMiniDebugger.send('Runtime.evaluate', {
     expression: `window.chromaShift.openAppPanel('profiles')`,
     awaitPromise: true
@@ -1640,8 +1653,19 @@ try {
   debuggerClient = resumedAppDebugger
   await waitForUi(debuggerClient)
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `window.chromaShift.controlChromaShift('resume')`,
-    awaitPromise: true
+    expression: `document.querySelector('[aria-label="Pause ChromaShift"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'paused' &&
+        document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Paused'
+    })()`,
+    'The app-panel status control did not pause ChromaShift.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -1649,7 +1673,7 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.chromaShift.status === 'active'
     })()`,
-    'Resume ChromaShift did not restore Active status after the renderer-free toggle.'
+    'The app-panel status control did not resume ChromaShift.'
   )
   await waitForExpression(
     debuggerClient,
@@ -2429,23 +2453,12 @@ try {
     throw new Error('The smoke profile could not be restored after the Default round-trip check.')
   }
 
-  const miniPanelDebugger = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const button = document.querySelector('[aria-label="Open browser inspector"]')
-      if (button === null) return { button: false, opened: false }
-      button.click()
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      const result = await window.chromaShift.openMiniPanelDevTools()
-      return { button: true, opened: result.ok }
-    })()`,
-    awaitPromise: true,
+  const productionDebuggerButton = await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Open browser inspector"]') === null`,
     returnByValue: true
   })
-  if (
-    miniPanelDebugger.result.value?.button !== true ||
-    miniPanelDebugger.result.value?.opened !== true
-  ) {
-    throw new Error('The mini-panel debugger button did not open the browser inspector.')
+  if (productionDebuggerButton.result.value !== true) {
+    throw new Error('The production mini panel exposed its development debugger button.')
   }
 
   const failures = debuggerClient.events.filter(

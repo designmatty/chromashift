@@ -1,4 +1,4 @@
-import { Button, Flex, Heading, Input, Stack, Text } from '@chakra-ui/react'
+import { Button, Flex, Heading, Kbd, Stack, Text } from '@chakra-ui/react'
 import { useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
@@ -206,19 +206,48 @@ function ShortcutRow({
   onChange(accelerator: string | null): void
   onMessage(message: string): void
 }): React.JSX.Element {
-  const input = useRef<HTMLInputElement>(null)
+  const recordButton = useRef<HTMLButtonElement>(null)
+  const displayKeys = acceleratorKeys(accelerator)
 
   return (
     <SettingsRow title={label} description={description}>
       <Flex gap="2" align="center">
-        <Input
-          ref={input}
-          width="170px"
-          size="sm"
-          readOnly
+        <Flex
+          data-part="shortcut-display"
+          data-accelerator={accelerator ?? ''}
+          minW="170px"
+          justify="flex-end"
+          align="center"
+          gap="1"
+          aria-label={`${label} shortcut: ${displayAccelerator(accelerator)}`}
+        >
+          {recording ? (
+            <Kbd size="sm" colorPalette="blue">
+              Press shortcut…
+            </Kbd>
+          ) : displayKeys.length === 0 ? (
+            <Text color="fg.muted" fontSize="sm">
+              Not set
+            </Text>
+          ) : (
+            displayKeys.map((key, index) => (
+              <Flex key={`${key}-${String(index)}`} align="center" gap="1">
+                {index > 0 && (
+                  <Text aria-hidden="true" color="fg.muted" fontSize="xs">
+                    +
+                  </Text>
+                )}
+                <Kbd size="sm">{key}</Kbd>
+              </Flex>
+            ))
+          )}
+        </Flex>
+        <Button
+          ref={recordButton}
+          size="xs"
+          variant="outline"
           disabled={disabled}
           aria-label={`${label} shortcut`}
-          value={recording ? 'Press shortcut…' : displayAccelerator(accelerator)}
           onKeyDown={(event) => {
             if (!recording) return
             event.preventDefault()
@@ -230,16 +259,10 @@ function ShortcutRow({
             else if (result.kind === 'binding') onChange(result.accelerator)
           }}
           onClick={() => {
-            if (!recording) onRecord()
-          }}
-        />
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => {
-            onRecord()
-            requestAnimationFrame(() => input.current?.focus())
+            if (!recording) {
+              onRecord()
+              requestAnimationFrame(() => recordButton.current?.focus())
+            }
           }}
         >
           {recording ? 'Recording…' : accelerator === null ? 'Record' : 'Replace'}
@@ -263,4 +286,8 @@ function actionId(action: ShortcutAction): string {
 
 function displayAccelerator(accelerator: string | null): string {
   return accelerator?.replace('CommandOrControl', 'Ctrl').replace('Super', 'Win') ?? 'Not set'
+}
+
+function acceleratorKeys(accelerator: string | null): string[] {
+  return accelerator === null ? [] : displayAccelerator(accelerator).split('+')
 }

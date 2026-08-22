@@ -19,6 +19,7 @@ import {
   Bug,
   ChevronsUpDown,
   Monitor,
+  Power,
   RefreshCcwDot,
   Settings as SettingsIcon,
   X
@@ -33,7 +34,6 @@ import {
   type ColorSettings
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
-import { ChromaShiftStatus } from '@/components/layout/chromashift-status'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ColorControls, resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -392,10 +392,11 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   return (
     <MiniPanelFrame>
       <MiniPanelTitleBar
+        product={product}
+        onError={setError}
         onOpenDebugger={() => void run(window.chromaShift.openMiniPanelDevTools(), setError)}
         onClose={() => void run(window.chromaShift.hideMiniPanel(), setError)}
       />
-      <ChromaShiftStatus product={product} onError={setError} compact />
       {renderContent()}
     </MiniPanelFrame>
   )
@@ -485,9 +486,13 @@ function MiniProfilePickerOption({
 }
 
 function MiniPanelTitleBar({
+  product,
+  onError,
   onOpenDebugger,
   onClose
 }: {
+  product: ProductState
+  onError(error: ProductError | null): void
   onOpenDebugger(): void
   onClose(): void
 }): React.JSX.Element {
@@ -503,18 +508,39 @@ function MiniPanelTitleBar({
       css={{ WebkitAppRegion: 'drag' }}
     >
       <Brand compact />
-      <Tooltip content="Open browser inspector">
+      <Tooltip content={chromaShiftActionLabel(product)}>
         <IconButton
+          data-part="chromashift-control"
+          data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
           variant="ghost"
           size="2xs"
           ml="1"
+          colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
           css={{ WebkitAppRegion: 'no-drag' }}
-          onClick={onOpenDebugger}
-          aria-label="Open browser inspector"
+          disabled={product.chromaShift.transitionInProgress}
+          loading={product.chromaShift.transitionInProgress}
+          onClick={() =>
+            void run(window.chromaShift.controlChromaShift(chromaShiftAction(product)), onError)
+          }
+          aria-label={chromaShiftActionLabel(product)}
         >
-          <Bug size={16} />
+          <Power size={16} />
         </IconButton>
       </Tooltip>
+      {import.meta.env.DEV && (
+        <Tooltip content="Open browser inspector">
+          <IconButton
+            variant="ghost"
+            size="2xs"
+            ml="1"
+            css={{ WebkitAppRegion: 'no-drag' }}
+            onClick={onOpenDebugger}
+            aria-label="Open browser inspector"
+          >
+            <Bug size={16} />
+          </IconButton>
+        </Tooltip>
+      )}
       <PanelViewToggle mini />
       <Tooltip content="Close mini panel">
         <IconButton
@@ -532,6 +558,18 @@ function MiniPanelTitleBar({
       </Tooltip>
     </Flex>
   )
+}
+
+function chromaShiftAction(product: ProductState): 'pause' | 'resume' | 'retry' {
+  if (product.chromaShift.status === 'active') return 'pause'
+  return product.chromaShift.status === 'safetyBlocked' ? 'retry' : 'resume'
+}
+
+function chromaShiftActionLabel(product: ProductState): string {
+  if (product.chromaShift.status === 'active') return 'Pause ChromaShift'
+  return product.chromaShift.status === 'safetyBlocked'
+    ? 'Retry ChromaShift safety check'
+    : 'Resume ChromaShift'
 }
 
 function MiniDisplaySelect({

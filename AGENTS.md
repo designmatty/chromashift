@@ -2262,6 +2262,8 @@ reconsideration threshold recorded in `docs/performance.md`.
 - save each shortcut edit immediately through the same settings boundary used by
   General settings; support Ctrl, Alt, Shift, and the Windows key with another
   key, while treating hardware-only Fn as unavailable
+- render saved shortcut combinations with Chakra `Kbd` elements beside the
+  Record or Replace action rather than as read-only form inputs
 - unregister stale bindings on edits and shutdown, and surface actionable errors
   without disturbing the last valid shortcut configuration
 
@@ -2282,8 +2284,11 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - expose notification preferences and shortcut bindings through the existing
   validated settings and preload boundaries
-- make paused/restored display-control state visible in the tray, app panel, and
-  mini panel, with an obvious path back to automatic activation
+- make paused/restored display-control state visible in the tray and as a
+  clickable status control beside each panel logo. The app panel labels the
+  control Active or Paused, while the mini panel keeps it icon-only. Do not show
+  a separate Intended target summary
+- keep the mini-panel browser-inspector action limited to development builds
 - keep notifications, tray actions, and shortcuts synchronized with profile
   creation, rename, disablement, deletion, and activation-state changes
 - cover settings persistence, shortcut conflicts, previous/next ordering,

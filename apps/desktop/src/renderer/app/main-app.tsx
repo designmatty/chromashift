@@ -1,9 +1,8 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
-import { CircleAlert } from 'lucide-react'
+import { CircleAlert, Power } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
-import { ChromaShiftStatus } from '@/components/layout/chromashift-status'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
 import { resetRememberedColorValues } from '@/features/profiles/color-controls'
@@ -369,7 +368,27 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
 
   return (
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
-      <TitleBar />
+      <TitleBar
+        brandAccessory={
+          <Button
+            data-part="chromashift-control"
+            data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
+            size="2xs"
+            variant="subtle"
+            colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
+            rounded="sm"
+            disabled={product.chromaShift.transitionInProgress}
+            loading={product.chromaShift.transitionInProgress}
+            aria-label={chromaShiftActionLabel(product)}
+            onClick={() =>
+              void run(window.chromaShift.controlChromaShift(chromaShiftAction(product)), setError)
+            }
+          >
+            <Power size={14} />
+            {product.chromaShift.status === 'active' ? 'Active' : 'Paused'}
+          </Button>
+        }
+      />
       <OverrideBanner />
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
@@ -384,7 +403,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           />
         </Alert.Root>
       )}
-      <ChromaShiftStatus product={product} onError={setError} />
       <Flex data-part="app-body" overflow={'auto'} gap="4" flex={1} paddingX={4} paddingBottom={4}>
         {inSettings ? (
           <SettingsNav
@@ -518,6 +536,18 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       />
     </VStack>
   )
+}
+
+function chromaShiftAction(product: ProductState): 'pause' | 'resume' | 'retry' {
+  if (product.chromaShift.status === 'active') return 'pause'
+  return product.chromaShift.status === 'safetyBlocked' ? 'retry' : 'resume'
+}
+
+function chromaShiftActionLabel(product: ProductState): string {
+  if (product.chromaShift.status === 'active') return 'Pause ChromaShift'
+  return product.chromaShift.status === 'safetyBlocked'
+    ? 'Retry ChromaShift safety check'
+    : 'Resume ChromaShift'
 }
 
 const appPanelViews: AppPanelView[] = [

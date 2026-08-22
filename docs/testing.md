@@ -112,7 +112,8 @@ tests cover defaults, validation, and atomic persistence.
 Milestone 7 coverage validates the versioned settings migration, notification
 policy and completed-outcome wording, including suppression of routine shortcut
 feedback when profile notifications are disabled. It also validates shortcut
-autosave, Windows and Shift modifiers, shortcut parsing and normalization,
+autosave, Chakra `Kbd` rendering, Windows and Shift modifiers, shortcut parsing
+and normalization,
 reserved and duplicate accelerators, operating-system registration rollback,
 deterministic previous/next selection, disabled-profile handling, and cleanup on
 profile deletion. Display-control state-machine tests cover renderer-free Pause,
@@ -141,8 +142,8 @@ real Electron same-profile Preview-to-Edit promotion and rollback,
 cancellation of a debounced edit before it can reapply discarded values,
 explicit-preview rollback when another profile is selected, the exact product
 light-mode shell/panel/row/select/foreground colors, right-edge alignment of the
-sidebar Settings action, the mini-panel debugger button opening detached browser
-DevTools, and the mini-panel paths where disabling the final
+sidebar Settings action, removal of the browser-inspector button from the
+production mini panel, and the mini-panel paths where disabling the final
 saved color control starts a baseline-only override while an unchanged Default
 brightness on/off round trip cancels its temporary override. It also verifies
 validated product state, automatic activation with fresh isolated user data,
@@ -166,12 +167,15 @@ sequence also requires Electron to report that Windows showed the native
 notification, physically opens Windows Notification Center from the primary
 taskbar, clicks the newest profile-change card, and verifies that the app panel
 selects the notification's profile. Reopening the app and mini panel verifies
-persisted Paused state. The installed shortcut setup also proves that Electron
+persisted Paused state. The app-panel status control pauses and resumes
+ChromaShift, while the mini panel exposes and resumes the same Paused state as an
+icon-only control. The
+installed shortcut setup also proves that Electron
 accepts Shift-only and Windows-plus-Shift modifier combinations, and the
 notification flow proves that opting out suppresses a successful direct-profile
-shortcut before opting back in for the click-routing gate. Readable intended
-target, disabled color writes, and Resume are verified before the restoration
-guard compares exact pre-run and post-run display state. The same smoke retains
+shortcut before opting back in for the click-routing gate. Disabled color writes
+and Resume are verified before the restoration guard compares exact pre-run and
+post-run display state. The same smoke retains
 app/mini mutual exclusion, native caption, focus, non-activation, position, and
 z-order assertions.
 
