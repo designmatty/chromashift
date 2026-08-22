@@ -89,6 +89,34 @@ async function runProcess(executable, args, description, timeout = 120_000) {
   if (code !== 0) {
     throw new Error(`${description} exited with code ${String(code)}.\n${stdout}\n${stderr}`)
   }
+  return { stdout, stderr }
+}
+
+async function pressToggleShortcut() {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftPackageKeys {
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$keys = @(0x11, 0x12, 0x10, 0x78)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+[Array]::Reverse($keys)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+`
+  await runProcess(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    'installed global shortcut dispatch'
+  )
 }
 
 async function smokeService(servicePath, label) {
@@ -201,7 +229,12 @@ async function waitForDebuggerTarget(port) {
   throw new Error('The packaged app did not expose a renderer debugging target.')
 }
 
-async function smokeApplication(executablePath, userDataDirectory, label) {
+async function smokeApplication(
+  executablePath,
+  userDataDirectory,
+  label,
+  verifyInstalledNotification = false
+) {
   const port = await reservePort()
   const environment = { ...globalThis.process.env }
   delete environment.ELECTRON_RUN_AS_NODE
@@ -293,6 +326,39 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
     }
     if (security.result.value?.node !== 'undefined') {
       throw new Error(`${label} exposed Node in the sandboxed renderer.`)
+    }
+    if (verifyInstalledNotification) {
+      const configured = await send('Runtime.evaluate', {
+        expression: `(async () => {
+          const state = await window.chromaShift.getState()
+          if (!state.ok) return false
+          const result = await window.chromaShift.updateSettings({
+            ...state.value.settings,
+            profileChangeNotifications: true,
+            shortcutBindings: [{
+              action: { kind: 'toggleChromaShift' },
+              accelerator: 'CommandOrControl+Alt+Shift+F9'
+            }]
+          })
+          return result.ok
+        })()`,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      if (configured.result.value !== true) {
+        throw new Error(`${label} could not configure its notification shortcut.`)
+      }
+      await pressToggleShortcut()
+      const notificationDeadline = Date.now() + timeoutMilliseconds
+      while (!output.includes('"eventName":"ProfileNotificationShown"')) {
+        if (output.includes('"eventName":"ProfileNotificationFailed"')) {
+          throw new Error(`${label} native notification delivery failed.\n${output}`)
+        }
+        if (Date.now() >= notificationDeadline) {
+          throw new Error(`${label} native notification was not confirmed as shown.\n${output}`)
+        }
+        await delay(100)
+      }
     }
     try {
       exitIssued = true
@@ -394,7 +460,7 @@ try {
     '{\n  "schemaVersion": 2,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
   await writeFile(configurationPath, configuration)
   await smokeService(installedService, 'installed')
-  await smokeApplication(installedApplication, installedUserData, 'installed app')
+  await smokeApplication(installedApplication, installedUserData, 'installed app', true)
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS upgrade')
   if ((await readFile(configurationPath, 'utf8')) !== configuration) {
@@ -412,7 +478,7 @@ try {
   globalThis.console.log(`Unpacked layout: ${unpackedDirectory}`)
   globalThis.console.log(`Installer: ${installer}`)
   globalThis.console.log(
-    'External sidecar launch, IPC, baseline restoration, upgrade, and uninstall data safety: verified'
+    'External sidecar launch, IPC, native notification delivery, baseline restoration, upgrade, and uninstall data safety: verified'
   )
 } finally {
   await rm(temporaryRoot, {

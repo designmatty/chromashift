@@ -73,6 +73,23 @@ export function SettingsPanel({
         </SettingsRow>
       </Stack>
       <Stack direction="column" gap={0.5}>
+        <Heading as="h2" size="lg">
+          Notifications
+        </Heading>
+        <SettingsRow
+          title="Profile changes"
+          description="Show a Windows notification when the selected profile changes"
+        >
+          <Switch
+            checked={settings.profileChangeNotifications}
+            onCheckedChange={(details) =>
+              update({ ...settings, profileChangeNotifications: details.checked })
+            }
+            aria-label="Profile change notifications"
+          />
+        </SettingsRow>
+      </Stack>
+      <Stack direction="column" gap={0.5}>
         <Heading as="h1" size="lg">
           Appearance
         </Heading>

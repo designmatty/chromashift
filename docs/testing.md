@@ -13,8 +13,11 @@ npm run build
 npm run verify
 npm run native:test:integration
 npm run smoke:desktop
+npm run smoke:desktop:crash
+npm run smoke:desktop:native-recovery
 npm run package:win
 npm run smoke:package
+npm run measure:performance
 ```
 
 `npm run verify` is the canonical non-interactive Windows verification path. It
@@ -106,6 +109,16 @@ during preview, that ChromaShift's own windows do not replace the external
 foreground target, and that rollback applies the latest intended target. Settings
 tests cover defaults, validation, and atomic persistence.
 
+Milestone 7 coverage validates the versioned settings migration, notification
+policy and completed-outcome wording, shortcut parsing and normalization,
+reserved and duplicate accelerators, operating-system registration rollback,
+deterministic previous/next selection, disabled-profile handling, and cleanup on
+profile deletion. Display-control state-machine tests cover renderer-free Pause,
+Resume, retry, toggle coalescing, explicit selection from Paused and Safety
+blocked, persisted intent, one-shot restoration, and fail-closed partial restore.
+Tray tests assert the approved status/current-profile/action order and both
+explicit panel commands.
+
 `npm run smoke:desktop` builds and launches the actual Electron application,
 reloads its renderer through the Chromium debugging protocol, and verifies the
 sandboxed preload bridge, read-only profile navigation, Settings navigation,
@@ -142,6 +155,17 @@ The desktop close/reopen path now closes the real native window, verifies that
 its renderer is released, and launches ChromaShift again with the same isolated
 user-data directory. The single-instance signal must recreate the app panel in
 the existing process without starting a second DisplayService owner.
+
+The Milestone 7 desktop sequence records a Toggle ChromaShift binding through
+the real Shortcuts settings UI, closes every renderer, emits the accelerator
+through Windows `keybd_event`, and observes main-process dispatch plus native
+notification creation. The installed-package sequence also requires Electron to
+report that Windows showed the native notification. Reopening the app and mini
+panel verifies persisted
+Paused state, readable intended target, disabled color writes, and Resume before
+the restoration guard compares exact pre-run and post-run display state. The
+same smoke retains app/mini mutual exclusion, native caption, focus,
+non-activation, position, and z-order assertions.
 
 `npm run measure:memory` launches the production Electron build with isolated
 user data, samples the complete Windows child-process tree in visible and tray
@@ -198,6 +222,29 @@ smoke:desktop`, `npm run package:win`, `npm run smoke:package`, and the packaged
 performance gate. The exact installer was 84.69 MiB, its unpacked layout was
 285.43 MiB, and the trimmed external helper was 14.01 MiB. Exact results and the
 package comparison are recorded in `docs/performance.md`.
+
+## Milestone 7 implementation validation record (2026-08-22)
+
+The implementation validation ran `npm run verify`, `npm run
+native:test:integration`, `npm run
+smoke:desktop`, `npm run smoke:desktop:crash`, `npm run
+smoke:desktop:native-recovery`, `npm run package:win`, `npm run smoke:package`,
+and the packaged performance gate. The real desktop run registered and fired a
+global Toggle ChromaShift shortcut with no renderer alive, invoked Electron's
+native notification API, verified persisted Paused/Resume behavior in both
+panels, and restored both displays exactly. The development executable was not
+registered for visual notification delivery, and ChromaShift reported that
+operating-system rejection accurately. The installed package subsequently
+produced a confirmed native notification delivery. Clicking that real Windows
+notification remains the milestone's final platform gate because Do Not Disturb
+was enabled on the validation host. Windows UI Automation opened the
+real hidden-icons drawer,
+verified the approved tray-menu order, and invoked both explicit panel commands;
+the mini remained non-activating and mutually exclusive with the app panel. A
+final packaged performance sample passed at 852 ms startup, 412 ms mini open,
+and 727 ms app reopen with all memory and CPU budgets
+inside their limits. The installer was 84.70 MiB, the unpacked application was
+285.48 MiB, and the external helper remained 14.01 MiB.
 
 ## Phase 0 hardware record (2026-08-08)
 

@@ -1,12 +1,23 @@
 import { readFile } from 'node:fs/promises'
-import { appSettingsSchema, type AppSettings } from '../shared/product-api.js'
+import {
+  appSettingsSchema,
+  legacyAppSettingsSchema,
+  type AppSettings
+} from '../shared/product-api.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
 
 export const defaultAppSettings: AppSettings = {
+  schemaVersion: 1,
   launchAtStartup: false,
   launchBehavior: 'tray',
   closeBehavior: 'tray',
-  theme: 'system'
+  theme: 'system',
+  profileChangeNotifications: false,
+  shortcutBindings: [],
+  chromaShiftStatus: 'active',
+  pendingControlOperation: null,
+  intendedActivationMode: { kind: 'automatic' },
+  intendedTarget: null
 }
 
 export class AppSettingsRepository {
@@ -19,7 +30,29 @@ export class AppSettingsRepository {
   public async get(): Promise<AppSettings> {
     if (this.#settings !== null) return { ...this.#settings }
     try {
-      this.#settings = appSettingsSchema.parse(JSON.parse(await readFile(this.filePath, 'utf8')))
+      const persisted: unknown = JSON.parse(await readFile(this.filePath, 'utf8'))
+      const current = appSettingsSchema.safeParse(persisted)
+      if (current.success) {
+        this.#settings = current.data
+      } else {
+        if (typeof persisted === 'object' && persisted !== null && 'schemaVersion' in persisted) {
+          throw current.error
+        }
+        const legacy = legacyAppSettingsSchema.parse(persisted)
+        this.#settings = appSettingsSchema.parse({
+          schemaVersion: 1,
+          ...legacy,
+          profileChangeNotifications: false,
+          shortcutBindings: [],
+          chromaShiftStatus: 'active',
+          pendingControlOperation: null,
+          intendedActivationMode: { kind: 'automatic' },
+          intendedTarget: null
+        })
+        await new AppDataProfileConfigurationStorage(this.filePath).write(
+          `${JSON.stringify(this.#settings, null, 2)}\n`
+        )
+      }
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
       this.#settings = { ...defaultAppSettings }

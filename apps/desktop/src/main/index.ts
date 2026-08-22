@@ -31,8 +31,13 @@ import { AppWindowStateController } from './app-window-state-controller.js'
 import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
 import { applicationFriendlyName } from './application-friendly-name.js'
-import { AutomaticActivationController } from './automatic-activation-controller.js'
+import {
+  AutomaticActivationController,
+  type CompletedActivationOutcome
+} from './automatic-activation-controller.js'
+import { ChromaShiftController } from './chroma-shift-controller.js'
 import { DisplayTransitionController } from './display-transition-controller.js'
+import { ElectronNotificationPort } from './electron-notification.js'
 import { EmergencyRestoreController } from './emergency-restore-controller.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
 import { ElectronTrayMenu } from './electron-tray-menu.js'
@@ -47,6 +52,7 @@ import {
 import { PanelController } from './panel-controller.js'
 import { PhysicalDisplayClient } from './physical-display-client.js'
 import { rewriteProfilesForPhysicalDisplays } from './physical-display-profile-rewrite.js'
+import { ProfileNotificationController } from './profile-notification-controller.js'
 import { registerProductIpcHandlers } from './product-ipc.js'
 import { ProductController } from './product-controller.js'
 import { PreviewSessionController } from './preview-session-controller.js'
@@ -58,12 +64,14 @@ import {
 } from './renderer-recovery-controller.js'
 import { isSameDocumentNavigation, isTrustedRendererUrl } from './renderer-security.js'
 import { ShutdownCoordinator } from './shutdown-coordinator.js'
+import { EMERGENCY_RESTORE_ACCELERATOR, ShortcutController } from './shortcut-controller.js'
 import { describeError, PersistentJsonLogger, readDiagnosticLog } from './structured-logger.js'
 import { TrayController } from './tray-controller.js'
 import { WindowController } from './window-controller.js'
 
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-software-rasterizer')
+if (process.platform === 'win32') app.setAppUserModelId('com.chromashift.desktop')
 
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined
@@ -71,6 +79,8 @@ let nativeClient: NativeClient | undefined
 let physicalDisplayClient: PhysicalDisplayClient | undefined
 let profileRepository: ProfileRepository | undefined
 let automaticActivation: AutomaticActivationController | undefined
+let chromaShiftController: ChromaShiftController | undefined
+let startupForegroundApplication: Awaited<ReturnType<NativeClient['getForegroundApplication']>>
 let trayController: TrayController | undefined
 let shutdownCoordinator: ShutdownCoordinator | undefined
 let productController: ProductController | undefined
@@ -79,9 +89,10 @@ let displayTransitionController: DisplayTransitionController | undefined
 let powerEventAdapter: PowerEventAdapter | undefined
 let nativeRecoveryController: NativeServiceRecoveryController | undefined
 let emergencyRestoreController: EmergencyRestoreController | undefined
+let unsubscribeProfileNotifications: (() => void) | undefined
+let shortcutController: ShortcutController | undefined
 let productStateBroadcastPending = false
 const TITLE_BAR_HEIGHT = 37
-const EMERGENCY_RESTORE_SHORTCUT = 'CommandOrControl+Alt+Shift+R'
 const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
 const developmentWorktreeRoot = app.isPackaged
   ? undefined
@@ -375,17 +386,7 @@ async function startNativeService(): Promise<void> {
         ...describeError(error)
       })
     }
-    const currentApplication = await nativeClient.getForegroundApplication()
-    try {
-      await automaticActivation.start(currentApplication)
-    } catch (error) {
-      logger.write({
-        level: 'error',
-        eventName: 'AutomaticActivationUnavailable',
-        configurationPath,
-        ...describeError(error)
-      })
-    }
+    startupForegroundApplication = await nativeClient.getForegroundApplication()
   } catch (error) {
     logger.write({
       level: 'error',
@@ -552,6 +553,17 @@ function openWindow(view: AppPanelView = 'profiles'): void {
   else navigate()
 }
 
+function openProfile(profileId: string | null): void {
+  openWindow('profiles')
+  if (profileId === null) return
+  const window = mainWindow
+  if (window === undefined || window.webContents.isDestroyed()) return
+  const select = (): void =>
+    window.webContents.send(productIpcChannels.selectAppPanelProfile, { profileId })
+  if (window.webContents.isLoading()) window.webContents.once('did-finish-load', select)
+  else select()
+}
+
 if (ownsSingleInstanceLock) {
   app.on('second-instance', () => {
     if (app.isReady()) openWindow()
@@ -589,12 +601,58 @@ async function configureDesktopLifecycle(): Promise<void> {
     },
     logger
   )
+  previewController = new PreviewSessionController(physicalDisplayClient, automaticActivation, () =>
+    scheduleProductStateBroadcast()
+  )
+  chromaShiftController = new ChromaShiftController(
+    automaticActivation,
+    {
+      refreshTopology: () => nativeClient!.refreshDisplayTopology(),
+      getForegroundApplication: () => nativeClient!.getForegroundApplication()
+    },
+    { cancel: () => previewController!.cancel() },
+    {
+      status: currentSettings.chromaShiftStatus,
+      pendingOperation: currentSettings.pendingControlOperation,
+      intendedMode: currentSettings.intendedActivationMode,
+      intendedTarget: currentSettings.intendedTarget
+    },
+    async (state) => {
+      currentSettings = await settingsRepository.save({
+        ...currentSettings,
+        chromaShiftStatus: state.status,
+        pendingControlOperation: state.pendingOperation ?? null,
+        intendedActivationMode: state.intendedMode,
+        intendedTarget: state.intendedTarget
+      })
+      scheduleProductStateBroadcast()
+    },
+    logger
+  )
+  try {
+    if (currentSettings.chromaShiftStatus === 'active') {
+      await automaticActivation.start(startupForegroundApplication ?? null)
+      await chromaShiftController.syncActiveIntent()
+    } else {
+      await automaticActivation.startSuspended(
+        startupForegroundApplication ?? null,
+        currentSettings.intendedActivationMode,
+        currentSettings.intendedTarget
+      )
+    }
+  } catch (error) {
+    logger.write({
+      level: 'error',
+      eventName: 'AutomaticActivationUnavailable',
+      ...describeError(error)
+    })
+  }
   const trayMenu = new ElectronTrayMenu(await loadTrayIcon(), (bounds) =>
     panelController.reopenLastPanel(bounds)
   )
   trayController = new TrayController(
     profileRepository,
-    automaticActivation,
+    chromaShiftController,
     {
       openAppPanel: () => panelController.openAppPanel(),
       openMiniPanel: () => panelController.openMiniPanel()
@@ -603,16 +661,72 @@ async function configureDesktopLifecycle(): Promise<void> {
     trayMenu,
     logger
   )
-  automaticActivation.subscribe(() => scheduleProductStateBroadcast())
-  previewController = new PreviewSessionController(physicalDisplayClient, automaticActivation, () =>
+  automaticActivation.subscribe(() => {
+    void chromaShiftController?.syncActiveIntent().catch((error: unknown) => {
+      logger.write({
+        level: 'error',
+        eventName: 'ChromaShiftIntentPersistenceFailed',
+        ...describeError(error)
+      })
+    })
     scheduleProductStateBroadcast()
+  })
+  const profileNotifications = new ProfileNotificationController(
+    profileRepository,
+    () => currentSettings,
+    new ElectronNotificationPort(logger),
+    openProfile
   )
+  const handleNotificationOutcome = (outcome: CompletedActivationOutcome): void => {
+    void chromaShiftController?.recordCompletedOutcome(outcome).catch((error: unknown) => {
+      logger.write({
+        level: 'error',
+        eventName: 'ChromaShiftIntentPersistenceFailed',
+        ...describeError(error)
+      })
+    })
+    void profileNotifications.handle(outcome).catch((error: unknown) => {
+      logger.write({
+        level: 'error',
+        eventName: 'ProfileNotificationFailed',
+        message: describeError(error)
+      })
+    })
+  }
+  const finalizedControlOrigins = new Set<CompletedActivationOutcome['origin']>([
+    'pause',
+    'resume',
+    'safetyRetry',
+    'originalSettingsRestore'
+  ])
+  const unsubscribeActivationNotifications = automaticActivation.subscribeOutcomes((outcome) => {
+    if (!finalizedControlOrigins.has(outcome.origin)) handleNotificationOutcome(outcome)
+  })
+  const unsubscribeOperationalNotifications =
+    chromaShiftController.subscribeOperationalOutcomes(handleNotificationOutcome)
+  unsubscribeProfileNotifications = () => {
+    unsubscribeActivationNotifications()
+    unsubscribeOperationalNotifications()
+  }
   nativeRecoveryController = new NativeServiceRecoveryController(
     nativeClient,
-    automaticActivation,
+    {
+      handleNativeServiceExit: () => automaticActivation!.handleNativeServiceExit(),
+      start: (application) => {
+        const state = chromaShiftController!.chromaShiftState
+        return state.status === 'active'
+          ? automaticActivation!.start(application)
+          : automaticActivation!.startSuspended(
+              application,
+              state.intendedMode,
+              state.intendedTarget
+            )
+      }
+    },
     () => shutdownCoordinator?.exiting === true,
     {
       recovered: () => {
+        void chromaShiftController?.syncActiveIntent()
         scheduleProductStateBroadcast()
         void trayController?.refresh()
       },
@@ -629,7 +743,7 @@ async function configureDesktopLifecycle(): Promise<void> {
     logger
   )
   if (
-    !globalShortcut.register(EMERGENCY_RESTORE_SHORTCUT, () => {
+    !globalShortcut.register(EMERGENCY_RESTORE_ACCELERATOR, () => {
       void emergencyRestoreController?.request().then((restored) => {
         if (!restored) {
           dialog.showErrorBox(
@@ -644,7 +758,50 @@ async function configureDesktopLifecycle(): Promise<void> {
     logger.write({
       level: 'warning',
       eventName: 'EmergencyRestoreShortcutUnavailable',
-      shortcut: EMERGENCY_RESTORE_SHORTCUT
+      shortcut: EMERGENCY_RESTORE_ACCELERATOR
+    })
+  }
+  shortcutController = new ShortcutController(
+    globalShortcut,
+    profileRepository,
+    {
+      get currentTarget() {
+        return chromaShiftController?.chromaShiftState.intendedTarget ?? null
+      },
+      selectManualProfile: (profileId) =>
+        chromaShiftController!.selectManualProfile(profileId, 'shortcut'),
+      enableAutomatic: () => chromaShiftController!.enableAutomatic('shortcut'),
+      toggleChromaShift: () => chromaShiftController!.toggle('shortcut')
+    },
+    async () => {
+      await trayController?.refresh()
+      scheduleProductStateBroadcast()
+    },
+    logger
+  )
+  try {
+    shortcutController.replace(currentSettings.shortcutBindings)
+    const normalizedBindings = shortcutController.bindings
+    if (JSON.stringify(normalizedBindings) !== JSON.stringify(currentSettings.shortcutBindings)) {
+      currentSettings = await settingsRepository.save({
+        ...currentSettings,
+        shortcutBindings: normalizedBindings
+      })
+    }
+  } catch (error) {
+    logger.write({
+      level: 'warning',
+      eventName: 'ShortcutRegistrationFailed',
+      ...describeError(error)
+    })
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: 'Shortcuts unavailable',
+      message: describeError(error).message,
+      detail:
+        'Your saved shortcuts were not changed. Open Shortcut settings to choose another binding.',
+      buttons: ['OK'],
+      noLink: true
     })
   }
   displayTransitionController = new DisplayTransitionController(
@@ -656,6 +813,9 @@ async function configureDesktopLifecycle(): Promise<void> {
     () => {
       productController?.invalidateHardwareCache()
       scheduleProductStateBroadcast()
+      if (chromaShiftController?.chromaShiftState.status === 'safetyBlocked') {
+        void chromaShiftController.retrySafetyCheck('automatic')
+      }
     }
   )
   powerEventAdapter = new PowerEventAdapter(powerMonitor)
@@ -670,7 +830,7 @@ async function configureDesktopLifecycle(): Promise<void> {
   productController = new ProductController(
     profileRepository,
     physicalDisplayClient,
-    automaticActivation,
+    chromaShiftController,
     previewController,
     {
       pick: async () => {
@@ -717,6 +877,12 @@ async function configureDesktopLifecycle(): Promise<void> {
         app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup })
         applyTitleBarOverlay()
         miniPanelController.refreshSize()
+      },
+      prepareShortcuts: (bindings) => {
+        const controller = shortcutController
+        if (controller === undefined) throw new Error('Shortcut registration is unavailable.')
+        const rollback = controller.replace(bindings)
+        return { bindings: controller.bindings, rollback }
       }
     },
     {
@@ -833,9 +999,13 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
+  unsubscribeProfileNotifications?.()
+  unsubscribeProfileNotifications = undefined
   appWindowStateController.dispose()
   powerEventAdapter?.dispose()
   displayTransitionController?.dispose()
-  globalShortcut.unregister(EMERGENCY_RESTORE_SHORTCUT)
+  shortcutController?.dispose()
+  shortcutController = undefined
+  globalShortcut.unregister(EMERGENCY_RESTORE_ACCELERATOR)
   trayController?.dispose()
 })

@@ -33,6 +33,7 @@ import {
   type ColorSettings
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
+import { ChromaShiftStatus } from '@/components/layout/chromashift-status'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ColorControls, resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -53,8 +54,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const [picker, setPicker] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const activeId =
-    product.activation.currentTarget?.kind === 'profile'
-      ? product.activation.currentTarget.profileId
+    product.chromaShift.intendedTarget?.kind === 'profile'
+      ? product.chromaShift.intendedTarget.profileId
       : DEFAULT_ID
   const active =
     product.configuration.profiles.find((profile) => profile.id === activeId) ??
@@ -117,7 +118,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
   const draftSignature = JSON.stringify(draft)
   useEffect(() => {
-    if (!dirty || active === undefined || draft === undefined) return
+    if (
+      !dirty ||
+      active === undefined ||
+      draft === undefined ||
+      product.chromaShift.status !== 'active'
+    )
+      return
     const timer = setTimeout(() => {
       const request =
         override === null
@@ -145,7 +152,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     }
 
     if (picker) {
-      const pickerValue = product.activation.mode.kind === 'automatic' ? AUTOMATIC_ID : active.id
+      const pickerValue =
+        product.chromaShift.intendedMode.kind === 'automatic' ? AUTOMATIC_ID : active.id
       const [automaticItem, ...profileItems] = pickerItems
 
       return (
@@ -295,7 +303,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               color={selectedColor}
               lastColorValues={selectedTarget?.lastColorValues}
               product={product}
-              editable
+              editable={product.chromaShift.status === 'active'}
               onChange={(color, lastColorValues) => {
                 const next = setDisplayTarget(draft, {
                   displayId: selectedDisplayId,
@@ -337,7 +345,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           >
             <Stack gap="0" flex={1} width={'full'}>
               <Text color="fg.muted" fontSize="md">
-                {product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}
+                {product.chromaShift.intendedMode.kind === 'automatic'
+                  ? 'Auto switch'
+                  : 'Manually selected'}
               </Text>
               <Text
                 overflow="hidden"
@@ -369,6 +379,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               variant="ghost"
               onClick={() => void run(window.chromaShift.restoreBaseline(), setError)}
               aria-label="Restore original display settings"
+              disabled={product.chromaShift.status !== 'active'}
             >
               <RefreshCcwDot />
             </IconButton>
@@ -384,6 +395,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
         onOpenDebugger={() => void run(window.chromaShift.openMiniPanelDevTools(), setError)}
         onClose={() => void run(window.chromaShift.hideMiniPanel(), setError)}
       />
+      <ChromaShiftStatus product={product} onError={setError} compact />
       {renderContent()}
     </MiniPanelFrame>
   )

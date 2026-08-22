@@ -11,7 +11,12 @@ import type {
   DisplayCapabilityReport,
   ForegroundApplication
 } from '@chromashift/native-client'
-import type { ApplicationSelection, AppSettings, ProductState } from '../shared/product-api.js'
+import type {
+  ApplicationSelection,
+  AppSettings,
+  ProductState,
+  ShortcutBinding
+} from '../shared/product-api.js'
 import type { ActivationOutcome } from './activation-coordinator.js'
 import type { ActivationControllerState } from './automatic-activation-controller.js'
 import type { PreviewSessionController } from './preview-session-controller.js'
@@ -25,9 +30,14 @@ export interface ProductNativePort {
 
 export interface ProductActivationPort {
   readonly state: ActivationControllerState
+  readonly chromaShiftState: ProductState['chromaShift']
   selectManualProfile(profileId: string): Promise<ActivationOutcome>
   enableAutomatic(): Promise<ActivationOutcome>
   restoreBaseline(): Promise<ActivationOutcome>
+  pause(source: 'manual'): Promise<ActivationOutcome>
+  resume(source: 'manual'): Promise<ActivationOutcome>
+  retrySafetyCheck(source: 'manual'): Promise<ActivationOutcome>
+  reconcileAutomaticIntent(): Promise<void>
   refreshAfterConfigurationChange(): Promise<void>
 }
 
@@ -41,6 +51,10 @@ export interface ProductSettingsPort {
   get(): Promise<AppSettings>
   save(settings: AppSettings): Promise<AppSettings>
   apply(settings: AppSettings): void
+  prepareShortcuts?(bindings: readonly ShortcutBinding[]): {
+    bindings: ShortcutBinding[]
+    rollback(): void
+  }
 }
 
 export interface ProductRefreshPort {
@@ -100,6 +114,7 @@ export class ProductController {
       displays,
       capabilityReports,
       activation: this.activation.state,
+      chromaShift: this.activation.chromaShiftState,
       foregroundApplication: await this.native.getForegroundApplication(),
       preview: this.preview.state,
       settings: await this.settings.get()
@@ -148,17 +163,44 @@ export class ProductController {
     return profile
   }
 
-  public async saveProfile(profile: ColorProfile): Promise<ColorProfile> {
+  public async saveProfile(profile: ColorProfile, removeShortcut = false): Promise<ColorProfile> {
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
-    const saved = await this.repository.save(
-      isDefault ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] } : profile
+    const normalized = isDefault
+      ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] }
+      : profile
+    const currentSettings = await this.settings.get()
+    const binding = currentSettings.shortcutBindings.find(
+      (candidate) =>
+        candidate.action.kind === 'profile' &&
+        candidate.action.profileId.toLowerCase() === normalized.id.toLowerCase()
     )
+    if (!normalized.enabled && binding !== undefined && !removeShortcut) {
+      throw new ProductConflictError(
+        `Turning off ${normalized.name} requires removing its ${binding.accelerator} shortcut.`
+      )
+    }
+    const settingsTransaction =
+      !normalized.enabled && binding !== undefined
+        ? await this.#replaceSettings({
+            ...currentSettings,
+            shortcutBindings: currentSettings.shortcutBindings.filter(
+              (candidate) => candidate !== binding
+            )
+          })
+        : null
+    let saved: ColorProfile
+    try {
+      saved = await this.repository.save(normalized)
+    } catch (error) {
+      await settingsTransaction?.rollback()
+      throw error
+    }
     if (
       !saved.enabled &&
       this.activation.state.mode.kind === 'manual' &&
       this.activation.state.mode.profileId.toLowerCase() === saved.id.toLowerCase()
     ) {
-      await this.activation.enableAutomatic()
+      await this.activation.reconcileAutomaticIntent()
     }
     await this.#configurationChanged()
     return saved
@@ -185,13 +227,32 @@ export class ProductController {
     ) {
       await this.preview.cancel()
     }
-    const deleted = await this.repository.delete(profileId)
-    if (!deleted) throw new ProductNotFoundError(`Profile ${profileId} does not exist.`)
+    const currentSettings = await this.settings.get()
+    const retainedBindings = currentSettings.shortcutBindings.filter(
+      (binding) =>
+        binding.action.kind !== 'profile' ||
+        binding.action.profileId.toLowerCase() !== profileId.toLowerCase()
+    )
+    const settingsTransaction =
+      retainedBindings.length === currentSettings.shortcutBindings.length
+        ? null
+        : await this.#replaceSettings({ ...currentSettings, shortcutBindings: retainedBindings })
+    let deleted: boolean
+    try {
+      deleted = await this.repository.delete(profileId)
+    } catch (error) {
+      await settingsTransaction?.rollback()
+      throw error
+    }
+    if (!deleted) {
+      await settingsTransaction?.rollback()
+      throw new ProductNotFoundError(`Profile ${profileId} does not exist.`)
+    }
     if (
       this.activation.state.mode.kind === 'manual' &&
       this.activation.state.mode.profileId.toLowerCase() === profileId.toLowerCase()
     ) {
-      await this.activation.enableAutomatic()
+      await this.activation.reconcileAutomaticIntent()
     }
     await this.#configurationChanged()
     return true
@@ -238,6 +299,14 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
+  public async controlChromaShift(action: 'pause' | 'resume' | 'retry'): Promise<void> {
+    if (action === 'pause') await this.activation.pause('manual')
+    else if (action === 'resume') await this.activation.resume('manual')
+    else await this.activation.retrySafetyCheck('manual')
+    await this.refresh.refreshTray()
+    this.refresh.stateChanged()
+  }
+
   public pickApplication(): Promise<ApplicationSelection | null> {
     return this.applicationPicker.pick()
   }
@@ -256,13 +325,16 @@ export class ProductController {
     // Window placement belongs to Electron main. A renderer can hold an older
     // product snapshot while the user moves a window, so never let that stale
     // hidden metadata overwrite the latest main-owned geometry.
-    const saved = await this.settings.save({
+    const { saved } = await this.#replaceSettings({
       ...settings,
       miniPanelPosition: current.miniPanelPosition,
       windowBounds: current.windowBounds,
-      windowMaximized: current.windowMaximized
+      windowMaximized: current.windowMaximized,
+      chromaShiftStatus: current.chromaShiftStatus,
+      pendingControlOperation: current.pendingControlOperation,
+      intendedActivationMode: current.intendedActivationMode,
+      intendedTarget: current.intendedTarget
     })
-    this.settings.apply(saved)
     this.refresh.stateChanged()
     return saved
   }
@@ -271,11 +343,17 @@ export class ProductController {
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override'
   ): Promise<void> {
+    if (this.activation.chromaShiftState.status !== 'active') {
+      throw new ProductConflictError('Resume ChromaShift before starting a display preview.')
+    }
     await this.preview.start(profile, kind)
     this.refresh.stateChanged()
   }
 
   public async updatePreview(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
+    if (this.activation.chromaShiftState.status !== 'active') {
+      throw new ProductConflictError('Resume ChromaShift before changing display colors.')
+    }
     await this.preview.update(profileId, targets)
     this.refresh.stateChanged()
   }
@@ -301,6 +379,32 @@ export class ProductController {
     await this.activation.refreshAfterConfigurationChange()
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
+  }
+
+  async #replaceSettings(next: AppSettings): Promise<{
+    saved: AppSettings
+    rollback(): Promise<void>
+  }> {
+    const previous = await this.settings.get()
+    const prepared = this.settings.prepareShortcuts?.(next.shortcutBindings) ?? {
+      bindings: next.shortcutBindings,
+      rollback: () => undefined
+    }
+    try {
+      const saved = await this.settings.save({ ...next, shortcutBindings: prepared.bindings })
+      this.settings.apply(saved)
+      return {
+        saved,
+        rollback: async () => {
+          prepared.rollback()
+          const restored = await this.settings.save(previous)
+          this.settings.apply(restored)
+        }
+      }
+    } catch (error) {
+      prepared.rollback()
+      throw error
+    }
   }
 }
 

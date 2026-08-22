@@ -16,6 +16,9 @@ const screenshotPath = join(screenshotDirectory, 'desktop.png')
 const miniScreenshotPath = join(screenshotDirectory, 'mini-panel.png')
 const settingsScreenshotPath = join(screenshotDirectory, 'settings.png')
 const settingsSelectScreenshotPath = join(screenshotDirectory, 'settings-select.png')
+const shortcutsScreenshotPath = join(screenshotDirectory, 'shortcuts.png')
+const pausedStatusScreenshotPath = join(screenshotDirectory, 'status-paused.png')
+const pausedMiniScreenshotPath = join(screenshotDirectory, 'mini-panel-paused.png')
 const displaysScreenshotPath = join(screenshotDirectory, 'displays.png')
 const diagnosticsScreenshotPath = join(screenshotDirectory, 'diagnostics.png')
 const aboutScreenshotPath = join(screenshotDirectory, 'about.png')
@@ -31,6 +34,26 @@ const execFileAsync = promisify(execFile)
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
+}
+
+async function pressToggleShortcut() {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftSmokeKeys {
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$keys = @(0x11, 0x12, 0x10, 0x78)
+foreach ($key in $keys) { [ChromaShiftSmokeKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+[Array]::Reverse($keys)
+foreach ($key in $keys) { [ChromaShiftSmokeKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+`
+  await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true
+  })
 }
 
 function withTimeout(promise, milliseconds, description) {
@@ -168,6 +191,10 @@ async function waitForUi(debuggerClient) {
     })
     const snapshot = evaluation.result.value
     lastSnapshot = snapshot
+    if (snapshot === undefined) {
+      await delay(100)
+      continue
+    }
     if (
       snapshot.documentReady === 'complete' &&
       snapshot.bridgeReady &&
@@ -889,6 +916,26 @@ try {
   )
   await captureScreenshot(debuggerClient, settingsScreenshotPath)
 
+  const notificationPreference = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const toggle = document.querySelector('[aria-label="Profile change notifications"]')
+      toggle?.click()
+      return toggle !== null
+    })()`,
+    returnByValue: true
+  })
+  if (notificationPreference.result.value !== true) {
+    throw new Error('The profile-change notification preference was unavailable.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.settings.profileChangeNotifications
+    })()`,
+    'The profile-change notification preference was not persisted.'
+  )
+
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const trigger = document.querySelector('[aria-label="Windows startup behavior"]')
@@ -951,6 +998,50 @@ try {
     })()`,
     'The Chakra startup behavior Select did not restore the original smoke setting.'
   )
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')?.click()`
+  })
+  await waitForText(debuggerClient, 'Shortcuts work globally')
+  const recordedToggleShortcut = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const input = document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')
+      if (!(input instanceof HTMLInputElement)) return false
+      input.click()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'F9', code: 'F9', ctrlKey: true, altKey: true, shiftKey: true,
+        bubbles: true, cancelable: true
+      }))
+      return true
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (recordedToggleShortcut.result.value !== true) {
+    throw new Error('The Toggle ChromaShift shortcut recorder was unavailable.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')?.value === 'Control+Alt+Shift+F9'`,
+    'The shortcut recorder did not capture the key combination.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Save shortcuts')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.settings.shortcutBindings.some((binding) =>
+        binding.action.kind === 'toggleChromaShift' &&
+        binding.accelerator === 'CommandOrControl+Alt+Shift+F9')
+    })()`,
+    'The recorded Toggle ChromaShift shortcut was not registered and persisted.'
+  )
+  await captureScreenshot(debuggerClient, shortcutsScreenshotPath)
 
   // Settings replaces the profile sidebar with its own settings-section navigation.
   await debuggerClient.send('Runtime.evaluate', {
@@ -1459,8 +1550,22 @@ try {
     'The profile could not enter Edit mode for app-panel close coverage.'
   )
   await delay(20)
+  const priorNotificationCount = (
+    standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
+  ).length
   await closeMainWindow(electron.pid)
-  await delay(300)
+  await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
+  await pressToggleShortcut()
+  const shortcutDeadline = Date.now() + timeoutMilliseconds
+  while (
+    (standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []).length <=
+    priorNotificationCount
+  ) {
+    if (Date.now() >= shortcutDeadline) {
+      throw new Error('The renderer-free toggle shortcut did not request a native notification.')
+    }
+    await delay(100)
+  }
   const priorEvents = debuggerClient.events
   const reopen = spawn(electronPath, [`--user-data-dir=${userDataDirectory}`, '.'], {
     cwd: desktopDirectory,
@@ -1485,6 +1590,69 @@ try {
     expression: `window.chromaShift.openAppPanel('profiles')`,
     awaitPromise: true
   })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'paused' &&
+        !result.value.chromaShift.transitionInProgress &&
+        document.querySelector('[data-part="chromashift-status"]')?.textContent?.includes('ChromaShift: Paused')
+    })()`,
+    'The renderer-free Toggle ChromaShift shortcut did not enter Paused.'
+  )
+  await captureScreenshot(debuggerClient, pausedStatusScreenshotPath)
+  const pausedAppEvents = debuggerClient.events
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `void window.chromaShift.showMiniPanel()`
+  })
+  debuggerClient.close()
+  await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
+  const pausedMiniTarget = await waitForDebuggerTarget(debuggingPort, (candidate) =>
+    candidate.url.includes('panel=mini')
+  )
+  const pausedMiniDebugger = await connectToDebugger(pausedMiniTarget.webSocketDebuggerUrl)
+  await pausedMiniDebugger.send('Runtime.enable')
+  await pausedMiniDebugger.send('Page.enable')
+  await pausedMiniDebugger.send('Log.enable')
+  await waitForExpression(
+    pausedMiniDebugger,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && !result.value.chromaShift.transitionInProgress &&
+        document.querySelector('[data-part="chromashift-status"]')?.textContent?.includes('ChromaShift: Paused') &&
+        document.querySelector('[data-part="color-control"] input:disabled') !== null
+    })()`,
+    'The Paused mini panel did not show status or disable color controls.'
+  )
+  await captureScreenshot(pausedMiniDebugger, pausedMiniScreenshotPath)
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `window.chromaShift.openAppPanel('profiles')`,
+    awaitPromise: true
+  })
+  const resumedAppTarget = await waitForDebuggerTarget(
+    debuggingPort,
+    (candidate) => !candidate.url.includes('panel=mini')
+  )
+  const resumedAppDebugger = await connectToDebugger(resumedAppTarget.webSocketDebuggerUrl)
+  await resumedAppDebugger.send('Runtime.enable')
+  await resumedAppDebugger.send('Page.enable')
+  await resumedAppDebugger.send('Log.enable')
+  resumedAppDebugger.events.push(...pausedAppEvents, ...pausedMiniDebugger.events)
+  pausedMiniDebugger.close()
+  debuggerClient = resumedAppDebugger
+  await waitForUi(debuggerClient)
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.controlChromaShift('resume')`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'active'
+    })()`,
+    'Resume ChromaShift did not restore Active status after the renderer-free toggle.'
+  )
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2313,6 +2481,9 @@ try {
   globalThis.console.log(`Mini-panel screenshot: ${miniScreenshotPath}`)
   globalThis.console.log(`Settings screenshot: ${settingsScreenshotPath}`)
   globalThis.console.log(`Settings Select screenshot: ${settingsSelectScreenshotPath}`)
+  globalThis.console.log(`Shortcuts screenshot: ${shortcutsScreenshotPath}`)
+  globalThis.console.log(`Paused status screenshot: ${pausedStatusScreenshotPath}`)
+  globalThis.console.log(`Paused mini-panel screenshot: ${pausedMiniScreenshotPath}`)
   globalThis.console.log(`Displays screenshot: ${displaysScreenshotPath}`)
   globalThis.console.log(`Diagnostics screenshot: ${diagnosticsScreenshotPath}`)
   globalThis.console.log(`About screenshot: ${aboutScreenshotPath}`)

@@ -9,6 +9,7 @@ import {
   appSettingsResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
+  controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
@@ -76,7 +77,7 @@ export function registerProductIpcHandlers(
     saveProfileRequestSchema,
     profileResultSchema,
     assertTrustedRenderer,
-    async (request) => controller().saveProfile(request.profile)
+    async (request) => controller().saveProfile(request.profile, request.removeShortcut)
   )
   register(
     ipc,
@@ -146,6 +147,17 @@ export function registerProductIpcHandlers(
     assertTrustedRenderer,
     async () => {
       await controller().restoreBaseline()
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.controlChromaShift,
+    controlChromaShiftRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      await controller().controlChromaShift(request.action)
       return null
     }
   )

@@ -1,10 +1,13 @@
-import { ArrowLeft, BadgeInfo, Eclipse, Monitor, ScrollText } from 'lucide-react'
+import { ArrowLeft, BadgeInfo, Eclipse, Keyboard, Monitor, ScrollText } from 'lucide-react'
 import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
 
 import { NavButton } from '@/components/layout/presentational'
 import type { AppPanelView } from '../../../shared/product-api.js'
 
-export type SettingsPage = Extract<AppPanelView, 'settings' | 'displays' | 'diagnostics' | 'about'>
+export type SettingsPage = Extract<
+  AppPanelView,
+  'settings' | 'shortcuts' | 'displays' | 'diagnostics' | 'about'
+>
 
 /**
  * Settings replaces the profile sidebar rather than sitting beside it, so the
@@ -30,6 +33,12 @@ export function SettingsNav({
           icon={<Eclipse />}
           label="General"
           onClick={() => onSelect('settings')}
+        />
+        <NavButton
+          active={page === 'shortcuts'}
+          icon={<Keyboard />}
+          label="Shortcuts"
+          onClick={() => onSelect('shortcuts')}
         />
         <NavButton
           active={page === 'displays'}

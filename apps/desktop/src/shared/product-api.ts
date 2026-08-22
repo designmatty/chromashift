@@ -22,6 +22,7 @@ export const productIpcChannels = {
   activateProfile: 'product:activate-profile',
   enableAutomatic: 'product:enable-automatic',
   restoreBaseline: 'product:restore-baseline',
+  controlChromaShift: 'product:control-chromashift',
   pickApplication: 'product:pick-application',
   listApplications: 'product:list-applications',
   getDiagnostics: 'product:get-diagnostics',
@@ -38,21 +39,23 @@ export const productIpcChannels = {
   setMiniPanelView: 'application:set-mini-panel-view',
   appPanelClosed: 'application:app-panel-closed',
   navigateAppPanel: 'application:navigate-app-panel',
+  selectAppPanelProfile: 'application:select-app-panel-profile',
   stateChanged: 'product:state-changed'
 } as const
 
+export const activationModeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('automatic') }),
+  z.object({ kind: z.literal('manual'), profileId: z.string().min(1) })
+])
+export const activationTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('baseline') }),
+  z.object({ kind: z.literal('profile'), profileId: z.string().min(1) })
+])
+
 export const activationStateSchema = z.object({
   enabled: z.boolean(),
-  mode: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('automatic') }),
-    z.object({ kind: z.literal('manual'), profileId: z.string().min(1) })
-  ]),
-  currentTarget: z
-    .discriminatedUnion('kind', [
-      z.object({ kind: z.literal('baseline') }),
-      z.object({ kind: z.literal('profile'), profileId: z.string().min(1) })
-    ])
-    .nullable()
+  mode: activationModeSchema,
+  currentTarget: activationTargetSchema.nullable()
 })
 
 export const previewTargetSchema = z
@@ -72,29 +75,62 @@ export const previewStateSchema = z.discriminatedUnion('state', [
   })
 ])
 
-export const appSettingsSchema = z.object({
+const miniPanelPositionSchema = z
+  .object({
+    x: z.number().int(),
+    y: z.number().int()
+  })
+  .strict()
+
+const windowBoundsSchema = z
+  .object({
+    x: z.number().int(),
+    y: z.number().int(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive()
+  })
+  .strict()
+
+const appSettingsBaseShape = {
   launchAtStartup: z.boolean(),
   launchBehavior: z.enum(['tray', 'app']),
   closeBehavior: z.enum(['tray', 'shutdown']),
   theme: z.enum(['system', 'light', 'dark']),
-  miniPanelPosition: z
-    .object({
-      x: z.number().int(),
-      y: z.number().int()
-    })
-    .strict()
-    .optional(),
-  windowBounds: z
-    .object({
-      x: z.number().int(),
-      y: z.number().int(),
-      width: z.number().int().positive(),
-      height: z.number().int().positive()
-    })
-    .strict()
-    .optional(),
+  miniPanelPosition: miniPanelPositionSchema.optional(),
+  windowBounds: windowBoundsSchema.optional(),
   windowMaximized: z.boolean().optional()
-})
+}
+
+export const legacyAppSettingsSchema = z.object(appSettingsBaseShape)
+
+export const shortcutActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('defaultProfile') }).strict(),
+  z.object({ kind: z.literal('previousProfile') }).strict(),
+  z.object({ kind: z.literal('nextProfile') }).strict(),
+  z.object({ kind: z.literal('automatic') }).strict(),
+  z.object({ kind: z.literal('toggleChromaShift') }).strict(),
+  z.object({ kind: z.literal('profile'), profileId: z.string().trim().min(1) }).strict()
+])
+
+export const shortcutBindingSchema = z
+  .object({
+    action: shortcutActionSchema,
+    accelerator: z.string().trim().min(1).max(100)
+  })
+  .strict()
+
+export const appSettingsSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    ...appSettingsBaseShape,
+    profileChangeNotifications: z.boolean(),
+    shortcutBindings: z.array(shortcutBindingSchema),
+    chromaShiftStatus: z.enum(['active', 'paused', 'safetyBlocked']),
+    pendingControlOperation: z.enum(['pause', 'resume']).nullable().default(null),
+    intendedActivationMode: activationModeSchema,
+    intendedTarget: activationTargetSchema.nullable()
+  })
+  .strict()
 
 export const productStateSchema = z.object({
   version: z.string().min(1),
@@ -102,6 +138,15 @@ export const productStateSchema = z.object({
   displays: z.array(displaySchema),
   capabilityReports: z.record(z.string(), displayCapabilitiesResultSchema),
   activation: activationStateSchema,
+  chromaShift: z
+    .object({
+      status: z.enum(['active', 'paused', 'safetyBlocked']),
+      pendingOperation: z.enum(['pause', 'resume']).nullable(),
+      intendedMode: activationModeSchema,
+      intendedTarget: activationTargetSchema.nullable(),
+      transitionInProgress: z.boolean()
+    })
+    .strict(),
   foregroundApplication: foregroundApplicationSchema.nullable(),
   preview: previewStateSchema,
   settings: appSettingsSchema
@@ -139,6 +184,7 @@ export const appPanelViewSchema = z.enum([
   'profiles',
   'displays',
   'settings',
+  'shortcuts',
   'diagnostics',
   'about'
 ])
@@ -146,6 +192,9 @@ export const openAppPanelRequestSchema = z.object({ view: appPanelViewSchema.opt
 export const miniPanelViewSchema = z.enum(['controls', 'override', 'picker'])
 export const setMiniPanelViewRequestSchema = z.object({ view: miniPanelViewSchema }).strict()
 export const profileIdRequestSchema = z.object({ profileId: z.string().trim().min(1) }).strict()
+export const controlChromaShiftRequestSchema = z
+  .object({ action: z.enum(['pause', 'resume', 'retry']) })
+  .strict()
 export const reorderProfilesRequestSchema = z
   .object({
     profileIds: z.array(z.string().trim().min(1)).min(1)
@@ -154,7 +203,9 @@ export const reorderProfilesRequestSchema = z
 export const createProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100) })
   .strict()
-export const saveProfileRequestSchema = z.object({ profile: colorProfileSchema }).strict()
+export const saveProfileRequestSchema = z
+  .object({ profile: colorProfileSchema, removeShortcut: z.boolean().optional() })
+  .strict()
 export const setDefaultProfileRequestSchema = z
   .object({
     profileId: z.string().trim().min(1).nullable()
@@ -225,6 +276,8 @@ export type ProductError = z.infer<typeof productErrorSchema>
 export type ApplicationSelection = z.infer<typeof applicationSelectionSchema>
 export type DiagnosticLogEntry = z.infer<typeof diagnosticLogEntrySchema>
 export type AppSettings = z.infer<typeof appSettingsSchema>
+export type ShortcutAction = z.infer<typeof shortcutActionSchema>
+export type ShortcutBinding = z.infer<typeof shortcutBindingSchema>
 export type AppPanelView = z.infer<typeof appPanelViewSchema>
 export type MiniPanelView = z.infer<typeof miniPanelViewSchema>
 export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: ProductError }
@@ -232,7 +285,7 @@ export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: Prod
 export interface ChromaShiftApi {
   getState(): Promise<ProductResult<ProductState>>
   createProfile(name: string): Promise<ProductResult<ColorProfile>>
-  saveProfile(profile: ColorProfile): Promise<ProductResult<ColorProfile>>
+  saveProfile(profile: ColorProfile, removeShortcut?: boolean): Promise<ProductResult<ColorProfile>>
   duplicateProfile(profileId: string): Promise<ProductResult<ColorProfile>>
   deleteProfile(profileId: string): Promise<ProductResult<boolean>>
   reorderProfiles(profileIds: string[]): Promise<ProductResult<null>>
@@ -240,6 +293,7 @@ export interface ChromaShiftApi {
   activateProfile(profileId: string): Promise<ProductResult<null>>
   enableAutomatic(): Promise<ProductResult<null>>
   restoreBaseline(): Promise<ProductResult<null>>
+  controlChromaShift(action: 'pause' | 'resume' | 'retry'): Promise<ProductResult<null>>
   pickApplication(): Promise<ProductResult<ApplicationSelection | null>>
   listApplications(): Promise<ProductResult<ApplicationSelection[]>>
   getDiagnostics(): Promise<ProductResult<DiagnosticLogEntry[]>>
@@ -263,4 +317,5 @@ export interface ChromaShiftApi {
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
+  onAppPanelProfileSelection(listener: (profileId: string) => void): void
 }

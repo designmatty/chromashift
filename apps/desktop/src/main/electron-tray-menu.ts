@@ -31,8 +31,8 @@ export class ElectronTrayMenu implements TrayMenuPort {
 
     this.#tray.setContextMenu(
       Menu.buildFromTemplate([
+        { label: `ChromaShift: ${model.chromaShiftStatusLabel}`, enabled: false },
         { label: `Current: ${model.currentProfileLabel}`, enabled: false },
-        { type: 'separator' },
         {
           label: 'Automatic',
           type: 'radio',
@@ -43,13 +43,24 @@ export class ElectronTrayMenu implements TrayMenuPort {
         { label: 'Profiles', submenu: profileItems },
         { type: 'separator' },
         {
-          label: 'Restore original display settings',
-          enabled: model.controlsEnabled,
+          label: 'Restore original settings',
+          enabled: model.restoreEnabled,
           click: commands.resetBaseline
+        },
+        {
+          label:
+            model.controlAction === 'retry'
+              ? 'Retry safety check'
+              : model.controlAction === 'resume'
+                ? 'Resume ChromaShift'
+                : 'Pause ChromaShift',
+          enabled: model.controlsEnabled,
+          click: commands.controlChromaShift
         },
         { type: 'separator' },
         { label: 'Open app panel', click: commands.openAppPanel },
         { label: 'Open mini panel', click: commands.openMiniPanel },
+        { type: 'separator' },
         { label: 'Exit', click: commands.exit }
       ])
     )

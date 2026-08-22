@@ -25,6 +25,7 @@ export class AutomaticActivationController {
   #currentTarget: ActivationTarget | null = null
   #previewing = false
   #systemTransitioning = false
+  #writesSuspended = false
 
   public constructor(
     private readonly repository: ProfileRepository,
@@ -52,9 +53,7 @@ export class AutomaticActivationController {
     return () => this.#listeners.delete(listener)
   }
 
-  public subscribeOutcomes(
-    listener: (outcome: CompletedActivationOutcome) => void
-  ): () => void {
+  public subscribeOutcomes(listener: (outcome: CompletedActivationOutcome) => void): () => void {
     this.#outcomeListeners.add(listener)
     return () => this.#outcomeListeners.delete(listener)
   }
@@ -103,6 +102,7 @@ export class AutomaticActivationController {
       }
 
       this.#enabled = true
+      this.#writesSuspended = false
       this.logger.write({
         level: 'information',
         eventName: 'AutomaticActivationEnabled'
@@ -120,6 +120,37 @@ export class AutomaticActivationController {
     } finally {
       this.#starting = false
     }
+  }
+
+  public async startSuspended(
+    currentApplication: ForegroundApplication | null,
+    mode: ActivationMode,
+    intendedTarget: ActivationTarget | null
+  ): Promise<void> {
+    if (this.#enabled || this.#starting) {
+      throw new Error('Automatic activation has already been started.')
+    }
+    const configuration = await this.repository.getConfiguration()
+    this.logger.write({
+      level: 'information',
+      eventName: 'ProfileConfigurationLoaded',
+      schemaVersion: configuration.schemaVersion,
+      profileCount: configuration.profiles.length,
+      defaultProfileId: configuration.settings.defaultProfileId
+    })
+    this.#currentApplication = this.#pendingApplications.at(-1) ?? currentApplication
+    this.#pendingApplications.length = 0
+    this.#mode = { ...mode }
+    this.#currentTarget = intendedTarget === null ? null : { ...intendedTarget }
+    this.#writesSuspended = true
+    this.#enabled = true
+    this.#emitState()
+    this.logger.write({
+      level: 'information',
+      eventName: 'AutomaticActivationStartedSuspended',
+      mode: this.#mode,
+      intendedTarget: this.#currentTarget
+    })
   }
 
   public handleNativeEvent(event: NativeEvent): Promise<CompletedActivationOutcome | void> {
@@ -151,7 +182,9 @@ export class AutomaticActivationController {
     }
 
     this.#currentApplication = parsed.data.application
-    if (this.#previewing || this.#systemTransitioning) return Promise.resolve()
+    if (this.#previewing || this.#systemTransitioning || this.#writesSuspended) {
+      return Promise.resolve()
+    }
     return this.#activateCurrentApplication({ source: 'automatic', origin: 'foreground' })
   }
 
@@ -167,6 +200,7 @@ export class AutomaticActivationController {
     if (!this.#previewing) return
     this.#previewing = false
     await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
+    if (this.#writesSuspended) return
     await this.#activateCurrentApplication({ source: 'manual', origin: 'previewRollback' })
   }
 
@@ -188,7 +222,8 @@ export class AutomaticActivationController {
   }
 
   public async refreshAfterConfigurationChange(): Promise<void> {
-    if (!this.#enabled || this.#previewing || this.#systemTransitioning) return
+    if (!this.#enabled || this.#previewing || this.#systemTransitioning || this.#writesSuspended)
+      return
     await this.coordinator.resetAfterExternalRestore()
     await this.#activateCurrentApplication({
       source: 'automatic',
@@ -246,11 +281,40 @@ export class AutomaticActivationController {
     return this.#publishOutcome(outcome, context)
   }
 
+  public async suspendWrites(): Promise<void> {
+    this.#writesSuspended = true
+    await this.coordinator.waitForIdle()
+  }
+
+  public async setSuspendedIntent(
+    mode: ActivationMode,
+    target: ActivationTarget | null
+  ): Promise<void> {
+    if (mode.kind === 'manual') {
+      const profile = await this.repository.findById(mode.profileId)
+      if (profile === null) throw new Error(`Profile ${mode.profileId} does not exist.`)
+      if (!profile.enabled) throw new Error(`Profile ${profile.name} is disabled.`)
+    }
+    this.#mode = { ...mode }
+    this.#currentTarget = target === null ? null : { ...target }
+    this.#emitState()
+  }
+
+  public async resumeCurrent(
+    currentApplication: ForegroundApplication | null | undefined,
+    context: ActivationContext = { source: 'manual', origin: 'resume' }
+  ): Promise<CompletedActivationOutcome> {
+    if (currentApplication !== undefined) this.#currentApplication = currentApplication
+    this.#writesSuspended = false
+    return this.#activateCurrentApplication(context)
+  }
+
   public async handleNativeServiceExit(): Promise<void> {
     this.#enabled = false
     this.#previewing = false
     this.#pendingApplications.length = 0
     this.#currentTarget = null
+    this.#writesSuspended = false
     await this.coordinator.resetAfterNativeServiceRestart()
     this.#emitState()
   }
@@ -272,7 +336,7 @@ export class AutomaticActivationController {
     await this.coordinator.resetForDisplayTransition()
     if (!resumeWrites) return
     this.#systemTransitioning = false
-    if (!reapply || !this.#enabled || this.#previewing) return
+    if (!reapply || !this.#enabled || this.#previewing || this.#writesSuspended) return
     await this.#activateCurrentApplication({ source: 'automatic', origin: 'topologyChange' })
   }
 
@@ -332,6 +396,10 @@ export type ActivationOrigin =
   | 'configurationChange'
   | 'topologyChange'
   | 'originalSettingsRestore'
+  | 'pause'
+  | 'safetyRetry'
+  | 'resume'
+  | 'statusControl'
   | 'shortcut'
 
 export interface ActivationContext {

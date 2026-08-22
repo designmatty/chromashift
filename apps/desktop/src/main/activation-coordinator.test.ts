@@ -1,5 +1,6 @@
 import {
   JsonProfileRepository,
+  manualActivationMode,
   type ColorProfile,
   type ColorSettings,
   type ProfileConfiguration,
@@ -820,6 +821,33 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it('hydrates a persisted Paused intent without display reads or writes until resume', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+
+    await controller.startSuspended(application('Browser.exe'), manualActivationMode('game-a'), {
+      kind: 'profile',
+      profileId: 'game-a'
+    })
+    await controller.handleNativeEvent(foregroundEvent('Browser.exe'))
+
+    expect(native.calls).toEqual([])
+    expect(controller.state).toMatchObject({
+      enabled: true,
+      mode: { kind: 'manual', profileId: 'game-a' },
+      currentTarget: { kind: 'profile', profileId: 'game-a' }
+    })
+
+    await controller.resumeCurrent(application('Browser.exe'))
+
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+  })
+
   it('buffers foreground events until configuration is validated and then enables automation', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))

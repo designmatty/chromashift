@@ -1196,9 +1196,10 @@ The application should remain useful with its main window closed.
 Target tray behavior:
 
 ```text
+ChromaShift: Active
 Current: Gaming
 
-Automatic ✓
+Automatic
 
 Profiles
   Default
@@ -1208,8 +1209,16 @@ Profiles
 
 ────────────
 
-Reset displays
-Open
+Restore original settings
+Pause ChromaShift
+
+────────────
+
+Open app panel
+Open mini panel
+
+────────────
+
 Exit
 ```
 
@@ -1795,7 +1804,7 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-20:
+Current status on 2026-08-22:
 
 - Phase 0 — complete
 - Milestone 1 — complete
@@ -1803,9 +1812,10 @@ Current status on 2026-08-20:
 - Milestone 3 — complete
 - Milestone 4 — complete
 - Milestone 5 — complete
-- Milestone 6 — next
-- Milestone 7 — planned after Milestone 6
-- Milestone 8 — extended hardening planned after Milestone 7
+- Milestone 6 — complete
+- Milestone 7 — implementation and packaged notification delivery complete;
+  notification click validation pending
+- Milestone 8 — planned after Milestone 7
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -2051,7 +2061,7 @@ Focus on functionality before visual polish.
   excluding ChromaShift, system/background windows, and duplicate executables;
   retain the `.exe` browser
 - add System/Light/Dark theme, launch-at-startup, login launch behavior, close
-  behavior, and Reset displays settings; diagnostics/log browsing is completed
+  behavior, and Restore original settings; diagnostics/log browsing is completed
   in Slice 5.3
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
@@ -2154,7 +2164,7 @@ missing states before changing the product model.
 
 ---
 
-# Milestone 6 — Performance and footprint optimization
+# Milestone 6 — Performance and footprint optimization (complete)
 
 Optimize only from repeatable measurements. Reliability, exact baseline
 restoration, native-provider coverage, renderer sandboxing, Windows interaction
@@ -2274,6 +2284,12 @@ reconsideration threshold recorded in `docs/performance.md`.
 - run canonical verification and the real Electron desktop sequence; unit tests
   alone do not validate global shortcuts, native notifications, or hidden-icons
   drawer behavior
+
+Milestone 7 implementation and packaged notification delivery completed on
+2026-08-22. Keep the milestone open until clicking a real Windows notification
+routes to the selected profile on a host where Do Not Disturb is disabled.
+`docs/testing.md` records the completed automated, real-desktop, package, and
+performance evidence.
 
 ---
 
@@ -2571,14 +2587,16 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–5 are complete. The GeoSwap-inspired Chakra UI,
+Phase 0 and Milestones 1–6 are complete. Milestone 7 implementation and packaged
+notification delivery are complete, but its Windows notification click-routing
+gate remains.
+The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
-in the per-display UI plan and Milestone 5. Continue with **Milestone 6 —
-Performance and footprint optimization**, followed by **Milestone 7 —
-Notifications, shortcuts, and tray extensions**. Run **Milestone 8 — Extended
-hardware and release hardening** after Milestone 7.
+in the per-display UI plan and Milestone 5. Finish the Milestone 7 notification
+click gate before continuing with **Milestone 8 — Extended hardware and release
+hardening**.
 
 Milestone 5 is complete. The current NVIDIA/two-display machine passed
 canonical verification, native watchdog restoration, real desktop, forced-parent
