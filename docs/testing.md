@@ -110,7 +110,9 @@ foreground target, and that rollback applies the latest intended target. Setting
 tests cover defaults, validation, and atomic persistence.
 
 Milestone 7 coverage validates the versioned settings migration, notification
-policy and completed-outcome wording, shortcut parsing and normalization,
+policy and completed-outcome wording, including suppression of routine shortcut
+feedback when profile notifications are disabled. It also validates shortcut
+autosave, Windows and Shift modifiers, shortcut parsing and normalization,
 reserved and duplicate accelerators, operating-system registration rollback,
 deterministic previous/next selection, disabled-profile handling, and cleanup on
 profile deletion. Display-control state-machine tests cover renderer-free Pause,
@@ -156,18 +158,22 @@ its renderer is released, and launches ChromaShift again with the same isolated
 user-data directory. The single-instance signal must recreate the app panel in
 the existing process without starting a second DisplayService owner.
 
-The Milestone 7 desktop sequence records a Toggle ChromaShift binding through
-the real Shortcuts settings UI, closes every renderer, emits the accelerator
-through Windows `keybd_event`, and observes main-process dispatch plus native
-notification creation. The installed-package sequence also requires Electron to
-report that Windows showed the native notification, physically opens Windows
-Notification Center from the primary taskbar, clicks the newest profile-change
-card, and verifies that the app panel selects the notification's profile.
-Reopening the app and mini panel verifies persisted
-Paused state, readable intended target, disabled color writes, and Resume before
-the restoration guard compares exact pre-run and post-run display state. The
-same smoke retains app/mini mutual exclusion, native caption, focus,
-non-activation, position, and z-order assertions.
+The Milestone 7 desktop sequence records and automatically saves a Toggle
+ChromaShift binding through the real Shortcuts settings UI, closes every
+renderer, emits the accelerator through Windows `keybd_event`, and observes
+main-process dispatch plus native notification creation. The installed-package
+sequence also requires Electron to report that Windows showed the native
+notification, physically opens Windows Notification Center from the primary
+taskbar, clicks the newest profile-change card, and verifies that the app panel
+selects the notification's profile. Reopening the app and mini panel verifies
+persisted Paused state. The installed shortcut setup also proves that Electron
+accepts Shift-only and Windows-plus-Shift modifier combinations, and the
+notification flow proves that opting out suppresses a successful direct-profile
+shortcut before opting back in for the click-routing gate. Readable intended
+target, disabled color writes, and Resume are verified before the restoration
+guard compares exact pre-run and post-run display state. The same smoke retains
+app/mini mutual exclusion, native caption, focus, non-activation, position, and
+z-order assertions.
 
 `npm run measure:memory` launches the production Electron build with isolated
 user data, samples the complete Windows child-process tree in visible and tray

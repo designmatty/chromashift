@@ -107,6 +107,24 @@ describe('ShortcutController registration', () => {
     ])
   })
 
+  it('registers Windows and Shift modifiers', () => {
+    const registrations = new RecordingRegistrations()
+    const controller = new ShortcutController(
+      registrations,
+      new JsonProfileRepository(new MemoryStorage()),
+      createActivation(),
+      () => undefined,
+      { write: () => undefined }
+    )
+
+    controller.replace([
+      binding({ kind: 'defaultProfile' }, 'Windows+D'),
+      binding({ kind: 'automatic' }, 'Shift+F9')
+    ])
+
+    expect([...registrations.registered.keys()]).toEqual(['Super+D', 'Shift+F9'])
+  })
+
   it('rejects duplicates, modifier-only bindings, and the fixed emergency shortcut', () => {
     const controller = new ShortcutController(
       new RecordingRegistrations(),

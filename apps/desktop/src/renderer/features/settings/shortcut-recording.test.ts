@@ -8,6 +8,15 @@ describe('recordShortcut', () => {
     ).toEqual({ kind: 'binding', accelerator: 'Control+Shift+D' })
   })
 
+  it('records Windows and Shift as supported modifiers', () => {
+    expect(
+      recordShortcut({ key: 'g', ctrlKey: false, altKey: false, shiftKey: false, metaKey: true })
+    ).toEqual({ kind: 'binding', accelerator: 'Super+G' })
+    expect(
+      recordShortcut({ key: 'F9', ctrlKey: false, altKey: false, shiftKey: true, metaKey: false })
+    ).toEqual({ kind: 'binding', accelerator: 'Shift+F9' })
+  })
+
   it('waits through modifier-only keydown events and lets Escape cancel recording', () => {
     expect(
       recordShortcut({

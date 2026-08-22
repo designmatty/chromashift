@@ -7,6 +7,22 @@ import {
 } from 'electron'
 import type { TrayCommands, TrayMenuPort, TrayReadModel } from './tray-controller.js'
 
+export function createAutomaticMenuItem(
+  model: TrayReadModel,
+  commands: TrayCommands
+): MenuItemConstructorOptions {
+  return {
+    label: 'Automatic',
+    // Automatic has no adjacent radio peer because profile choices live in a
+    // submenu. Electron forces a standalone radio item checked, so use the
+    // native checkable item that can accurately represent both states.
+    type: 'checkbox',
+    enabled: model.automaticEnabled,
+    checked: model.automaticChecked,
+    click: commands.enableAutomatic
+  }
+}
+
 export class ElectronTrayMenu implements TrayMenuPort {
   readonly #tray: Tray
 
@@ -33,13 +49,7 @@ export class ElectronTrayMenu implements TrayMenuPort {
       Menu.buildFromTemplate([
         { label: `ChromaShift: ${model.chromaShiftStatusLabel}`, enabled: false },
         { label: `Current: ${model.currentProfileLabel}`, enabled: false },
-        {
-          label: 'Automatic',
-          type: 'radio',
-          enabled: model.automaticEnabled,
-          checked: model.automaticChecked,
-          click: commands.enableAutomatic
-        },
+        createAutomaticMenuItem(model, commands),
         { label: 'Profiles', submenu: profileItems },
         { type: 'separator' },
         {

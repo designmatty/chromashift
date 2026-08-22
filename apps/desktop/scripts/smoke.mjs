@@ -1003,7 +1003,7 @@ try {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')?.click()`
   })
-  await waitForText(debuggerClient, 'Shortcuts work globally')
+  await waitForText(debuggerClient, 'Shortcuts save automatically')
   const recordedToggleShortcut = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const input = document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')
@@ -1024,22 +1024,20 @@ try {
   }
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')?.value === 'Control+Alt+Shift+F9'`,
+    `document.querySelector('[aria-label="Toggle ChromaShift shortcut"]')?.value === 'Ctrl+Alt+Shift+F9'`,
     'The shortcut recorder did not capture the key combination.'
   )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Save shortcuts')?.click()`
-  })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.settings.shortcutBindings.some((binding) =>
         binding.action.kind === 'toggleChromaShift' &&
-        binding.accelerator === 'CommandOrControl+Alt+Shift+F9')
+        binding.accelerator === 'CommandOrControl+Alt+Shift+F9') &&
+        ![...document.querySelectorAll('button')]
+          .some((candidate) => candidate.textContent?.trim() === 'Save shortcuts')
     })()`,
-    'The recorded Toggle ChromaShift shortcut was not registered and persisted.'
+    'The recorded Toggle ChromaShift shortcut was not automatically registered and persisted.'
   )
   await captureScreenshot(debuggerClient, shortcutsScreenshotPath)
 

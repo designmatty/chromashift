@@ -188,7 +188,7 @@ describe('ProfileNotificationController', () => {
     ])
   })
 
-  it('confirms a same-target shortcut without claiming a transition when notifications are off', async () => {
+  it('suppresses a same-target shortcut when profile notifications are off', async () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
@@ -205,14 +205,7 @@ describe('ProfileNotificationController', () => {
       })
     )
 
-    expect(notifications.messages).toMatchObject([
-      {
-        title: 'Gaming already selected',
-        body: 'Shortcut did not change the selected target.',
-        severity: 'information',
-        urgency: 'low'
-      }
-    ])
+    expect(notifications.messages).toEqual([])
   })
 
   it('reports a failed direct shortcut instead of describing it as already selected', async () => {

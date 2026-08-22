@@ -1,5 +1,5 @@
 import { Button, Flex, Heading, Input, Stack, Text } from '@chakra-ui/react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
 import type {
@@ -45,37 +45,38 @@ export function ShortcutsPanel({
   product: ProductState
   onError(error: ProductError | null): void
 }): React.JSX.Element {
-  const [draft, setDraft] = useState<ShortcutBinding[]>(() => product.settings.shortcutBindings)
   const [recording, setRecording] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (dirty) return
-    setDraft(product.settings.shortcutBindings)
-  }, [dirty, product.settings.shortcutBindings])
+  const savingRef = useRef(false)
 
   const profiles = product.configuration.profiles.filter(
     (profile) => profile.enabled && profile.id.toLowerCase() !== DEFAULT_PROFILE_ID
   )
 
-  function replaceBinding(action: ShortcutAction, accelerator: string | null): void {
-    setDraft((current) => {
-      const retained = current.filter((binding) => actionId(binding.action) !== actionId(action))
-      return accelerator === null ? retained : [...retained, { action, accelerator }]
-    })
-    setDirty(true)
-    setMessage(null)
-  }
-
-  async function save(): Promise<void> {
+  async function replaceBinding(action: ShortcutAction, accelerator: string | null): Promise<void> {
+    if (savingRef.current) return
+    const retained = product.settings.shortcutBindings.filter(
+      (binding) => actionId(binding.action) !== actionId(action)
+    )
+    const shortcutBindings =
+      accelerator === null ? retained : [...retained, { action, accelerator }]
+    savingRef.current = true
     setSaving(true)
     setMessage(null)
-    const result = await window.chromaShift.updateSettings({
-      ...product.settings,
-      shortcutBindings: draft
-    })
+    const result = await window.chromaShift
+      .updateSettings({
+        ...product.settings,
+        shortcutBindings
+      })
+      .catch((error: unknown) => ({
+        ok: false as const,
+        error: {
+          code: 'OPERATION_FAILED' as const,
+          message: error instanceof Error ? error.message : String(error)
+        }
+      }))
+    savingRef.current = false
     setSaving(false)
     if (!result.ok) {
       onError(result.error)
@@ -83,16 +84,6 @@ export function ShortcutsPanel({
       return
     }
     onError(null)
-    setDraft(result.value.shortcutBindings)
-    setDirty(false)
-    setRecording(null)
-  }
-
-  function cancel(): void {
-    setDraft(product.settings.shortcutBindings)
-    setDirty(false)
-    setRecording(null)
-    setMessage(null)
   }
 
   return (
@@ -102,17 +93,19 @@ export function ShortcutsPanel({
           Shortcuts
         </Heading>
         <Text color="fg.muted" fontSize="sm">
-          Shortcuts work globally, including while both panels are closed.
+          Shortcuts save automatically and work while both panels are closed. Use Ctrl, Alt, Shift,
+          or Windows with another key. Fn cannot be registered as a Windows shortcut.
         </Text>
       </Stack>
 
       <ShortcutGroup
         title="Navigation"
         rows={builtInActions}
-        bindings={draft}
+        bindings={product.settings.shortcutBindings}
         recording={recording}
+        disabled={saving}
         onRecordingChange={setRecording}
-        onBindingChange={replaceBinding}
+        onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
         onMessage={setMessage}
       />
       <ShortcutGroup
@@ -122,24 +115,17 @@ export function ShortcutsPanel({
           label: profile.name,
           description: 'Select this profile directly'
         }))}
-        bindings={draft}
+        bindings={product.settings.shortcutBindings}
         recording={recording}
+        disabled={saving}
         onRecordingChange={setRecording}
-        onBindingChange={replaceBinding}
+        onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
         onMessage={setMessage}
       />
 
       <Text aria-live="polite" minH="5" color={message === null ? 'fg.muted' : 'fg.error'}>
         {message ?? (recording === null ? '' : 'Press Escape to cancel recording.')}
       </Text>
-      <Flex gap="2" justify="flex-end" mt="auto">
-        <Button variant="ghost" size="sm" disabled={!dirty || saving} onClick={cancel}>
-          Cancel
-        </Button>
-        <Button size="sm" disabled={!dirty || saving} loading={saving} onClick={() => void save()}>
-          Save shortcuts
-        </Button>
-      </Flex>
     </Stack>
   )
 }
@@ -149,6 +135,7 @@ function ShortcutGroup({
   rows,
   bindings,
   recording,
+  disabled,
   onRecordingChange,
   onBindingChange,
   onMessage
@@ -157,6 +144,7 @@ function ShortcutGroup({
   rows: Array<{ action: ShortcutAction; label: string; description: string }>
   bindings: readonly ShortcutBinding[]
   recording: string | null
+  disabled: boolean
   onRecordingChange(value: string | null): void
   onBindingChange(action: ShortcutAction, accelerator: string | null): void
   onMessage(value: string | null): void
@@ -178,6 +166,7 @@ function ShortcutGroup({
                 bindings.find((binding) => actionId(binding.action) === id)?.accelerator ?? null
               }
               recording={recording === id}
+              disabled={disabled}
               onRecord={() => {
                 onMessage(null)
                 onRecordingChange(id)
@@ -201,6 +190,7 @@ function ShortcutRow({
   description,
   accelerator,
   recording,
+  disabled,
   onRecord,
   onCancel,
   onChange,
@@ -210,6 +200,7 @@ function ShortcutRow({
   description: string
   accelerator: string | null
   recording: boolean
+  disabled: boolean
   onRecord(): void
   onCancel(): void
   onChange(accelerator: string | null): void
@@ -225,6 +216,7 @@ function ShortcutRow({
           width="170px"
           size="sm"
           readOnly
+          disabled={disabled}
           aria-label={`${label} shortcut`}
           value={recording ? 'Press shortcut…' : displayAccelerator(accelerator)}
           onKeyDown={(event) => {
@@ -244,6 +236,7 @@ function ShortcutRow({
         <Button
           size="xs"
           variant="outline"
+          disabled={disabled}
           onClick={() => {
             onRecord()
             requestAnimationFrame(() => input.current?.focus())
@@ -254,7 +247,7 @@ function ShortcutRow({
         <Button
           size="xs"
           variant="ghost"
-          disabled={accelerator === null}
+          disabled={disabled || accelerator === null}
           onClick={() => onChange(null)}
         >
           Clear
@@ -269,5 +262,5 @@ function actionId(action: ShortcutAction): string {
 }
 
 function displayAccelerator(accelerator: string | null): string {
-  return accelerator?.replace('CommandOrControl', 'Ctrl') ?? 'Not set'
+  return accelerator?.replace('CommandOrControl', 'Ctrl').replace('Super', 'Win') ?? 'Not set'
 }

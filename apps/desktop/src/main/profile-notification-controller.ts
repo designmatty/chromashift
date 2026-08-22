@@ -49,8 +49,14 @@ export class ProfileNotificationController {
       outcome.origin === 'statusControl'
     )
       return true
-    if (outcome.source === 'shortcut' && outcome.origin === 'shortcut') return true
+    if (
+      outcome.source === 'shortcut' &&
+      outcome.origin === 'shortcut' &&
+      (outcome.status === 'failed' || outcome.status === 'partialFailure')
+    )
+      return true
     if (!this.getSettings().profileChangeNotifications) return false
+    if (outcome.source === 'shortcut' && outcome.origin === 'shortcut') return true
     if (
       outcome.origin === 'startup' ||
       outcome.origin === 'configurationChange' ||

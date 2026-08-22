@@ -2236,6 +2236,9 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - add an opt-in setting for native Windows notifications when the effective
   profile changes
+- apply that preference to routine automatic, manual, and shortcut profile
+  selections; explicit restore, pause/resume, safety, and critical shortcut
+  failure feedback remains available independently
 - identify the successfully selected profile and whether the transition came
   from automatic activation, a manual selection, or a shortcut
 - notify only after a real activation transition completes; suppress duplicate
@@ -2256,6 +2259,9 @@ reconsideration threshold recorded in `docs/performance.md`.
 - register shortcuts in Electron main, validate and persist bindings, detect
   collisions or operating-system registration failures, and never depend on a
   renderer being open
+- save each shortcut edit immediately through the same settings boundary used by
+  General settings; support Ctrl, Alt, Shift, and the Windows key with another
+  key, while treating hardware-only Fn as unavailable
 - unregister stale bindings on edits and shutdown, and surface actionable errors
   without disturbing the last valid shortcut configuration
 
@@ -2263,6 +2269,9 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - add separate `Open app panel` and `Open mini panel` actions to the tray context
   menu, including when the icon is opened from the Windows hidden-icons drawer
+- represent the top-level Automatic choice with a native checkable item that can
+  remain unchecked while a manual profile is selected; it has no adjacent radio
+  peer because profile choices live in a submenu
 - retain tray left-click reopening the last-used panel
 - route both context actions through the shared panel controller so opening one
   surface hides the other

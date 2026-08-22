@@ -382,11 +382,15 @@ async function smokeApplication(
           if (!created.ok) return null
           const result = await window.chromaShift.updateSettings({
             ...state.value.settings,
-            profileChangeNotifications: true,
-            shortcutBindings: [{
-              action: { kind: 'profile', profileId: created.value.id },
-              accelerator: 'CommandOrControl+Alt+Shift+F9'
-            }]
+            profileChangeNotifications: false,
+            shortcutBindings: [
+              {
+                action: { kind: 'profile', profileId: created.value.id },
+                accelerator: 'CommandOrControl+Alt+Shift+F9'
+              },
+              { action: { kind: 'previousProfile' }, accelerator: 'Shift+F23' },
+              { action: { kind: 'automatic' }, accelerator: 'Super+Shift+F24' }
+            ]
           })
           return result.ok ? { id: created.value.id, name: created.value.name } : null
         })()`,
@@ -399,6 +403,54 @@ async function smokeApplication(
         notificationProfile.name !== 'Notification gate'
       ) {
         throw new Error(`${label} could not configure its notification shortcut.`)
+      }
+      const notificationRequestsBeforeOptOut = (
+        output.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
+      ).length
+      await pressNotificationShortcut()
+      const optOutDeadline = Date.now() + timeoutMilliseconds
+      let optedOutSelection = false
+      while (Date.now() < optOutDeadline) {
+        const selected = await send('Runtime.evaluate', {
+          expression: `(async () => {
+            const state = await window.chromaShift.getState()
+            return state.ok && state.value.chromaShift.intendedMode.kind === 'manual' &&
+              state.value.chromaShift.intendedMode.profileId === ${JSON.stringify(notificationProfile.id)}
+          })()`,
+          awaitPromise: true,
+          returnByValue: true
+        })
+        optedOutSelection = selected.result.value === true
+        if (optedOutSelection) break
+        await delay(100)
+      }
+      if (!optedOutSelection) {
+        throw new Error(`${label} opted-out shortcut did not select its profile.`)
+      }
+      await delay(300)
+      const notificationRequestsAfterOptOut = (
+        output.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
+      ).length
+      if (notificationRequestsAfterOptOut !== notificationRequestsBeforeOptOut) {
+        throw new Error(`${label} showed a profile notification while the preference was off.`)
+      }
+      const optedIn = await send('Runtime.evaluate', {
+        expression: `(async () => {
+          const automatic = await window.chromaShift.enableAutomatic()
+          if (!automatic.ok) return false
+          const state = await window.chromaShift.getState()
+          if (!state.ok) return false
+          const updated = await window.chromaShift.updateSettings({
+            ...state.value.settings,
+            profileChangeNotifications: true
+          })
+          return updated.ok
+        })()`,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      if (optedIn.result.value !== true) {
+        throw new Error(`${label} could not enable profile notifications.`)
       }
       await pressNotificationShortcut()
       const notificationDeadline = Date.now() + timeoutMilliseconds
