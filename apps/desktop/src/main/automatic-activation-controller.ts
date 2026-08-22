@@ -17,6 +17,7 @@ import { describeError, type StructuredLogger } from './structured-logger.js'
 export class AutomaticActivationController {
   readonly #pendingApplications: Array<ForegroundApplication | null> = []
   readonly #listeners = new Set<(state: ActivationControllerState) => void>()
+  readonly #outcomeListeners = new Set<(outcome: CompletedActivationOutcome) => void>()
   #enabled = false
   #starting = false
   #currentApplication: ForegroundApplication | null = null
@@ -51,9 +52,16 @@ export class AutomaticActivationController {
     return () => this.#listeners.delete(listener)
   }
 
+  public subscribeOutcomes(
+    listener: (outcome: CompletedActivationOutcome) => void
+  ): () => void {
+    this.#outcomeListeners.add(listener)
+    return () => this.#outcomeListeners.delete(listener)
+  }
+
   public async start(
     currentApplication: ForegroundApplication | null
-  ): Promise<ActivationOutcome | null> {
+  ): Promise<CompletedActivationOutcome | null> {
     if (this.#enabled || this.#starting) {
       throw new Error('Automatic activation has already been started.')
     }
@@ -69,14 +77,29 @@ export class AutomaticActivationController {
         defaultProfileId: configuration.settings.defaultProfileId
       })
 
-      let outcome: ActivationOutcome | null = null
-      let applications = [currentApplication, ...this.#pendingApplications.splice(0)]
+      let outcome: CompletedActivationOutcome | null = null
+      let applications: Array<{
+        application: ForegroundApplication | null
+        context: ActivationContext
+      }> = [
+        {
+          application: currentApplication,
+          context: { source: 'automatic', origin: 'startup' }
+        },
+        ...this.#pendingApplications.splice(0).map((application) => ({
+          application,
+          context: { source: 'automatic' as const, origin: 'foreground' as const }
+        }))
+      ]
       while (applications.length > 0) {
-        for (const application of applications) {
+        for (const { application, context } of applications) {
           this.#currentApplication = application
-          outcome = await this.#activateCurrentApplication()
+          outcome = await this.#activateCurrentApplication(context)
         }
-        applications = this.#pendingApplications.splice(0)
+        applications = this.#pendingApplications.splice(0).map((application) => ({
+          application,
+          context: { source: 'automatic' as const, origin: 'foreground' as const }
+        }))
       }
 
       this.#enabled = true
@@ -99,7 +122,7 @@ export class AutomaticActivationController {
     }
   }
 
-  public handleNativeEvent(event: NativeEvent): Promise<ActivationOutcome | void> {
+  public handleNativeEvent(event: NativeEvent): Promise<CompletedActivationOutcome | void> {
     if (event.event !== 'foregroundApplicationChanged') return Promise.resolve()
 
     const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
@@ -129,7 +152,7 @@ export class AutomaticActivationController {
 
     this.#currentApplication = parsed.data.application
     if (this.#previewing || this.#systemTransitioning) return Promise.resolve()
-    return this.#activateCurrentApplication()
+    return this.#activateCurrentApplication({ source: 'automatic', origin: 'foreground' })
   }
 
   public async beginPreview(): Promise<void> {
@@ -144,7 +167,7 @@ export class AutomaticActivationController {
     if (!this.#previewing) return
     this.#previewing = false
     await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
-    await this.#activateCurrentApplication()
+    await this.#activateCurrentApplication({ source: 'manual', origin: 'previewRollback' })
   }
 
   public async confirmPreview(
@@ -155,7 +178,10 @@ export class AutomaticActivationController {
     this.#mode = manualActivationMode(profileId)
     this.#previewing = false
     await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
-    const outcome = await this.#activateCurrentApplication()
+    const outcome = await this.#activateCurrentApplication({
+      source: 'manual',
+      origin: 'previewConfirmation'
+    })
     if (outcome.status === 'failed' || outcome.status === 'partialFailure') {
       throw new Error(outcome.failures.map((failure) => failure.message).join(' '))
     }
@@ -164,10 +190,16 @@ export class AutomaticActivationController {
   public async refreshAfterConfigurationChange(): Promise<void> {
     if (!this.#enabled || this.#previewing || this.#systemTransitioning) return
     await this.coordinator.resetAfterExternalRestore()
-    await this.#activateCurrentApplication()
+    await this.#activateCurrentApplication({
+      source: 'automatic',
+      origin: 'configurationChange'
+    })
   }
 
-  public async selectManualProfile(profileId: string): Promise<ActivationOutcome> {
+  public async selectManualProfile(
+    profileId: string,
+    context: ActivationContext = { source: 'manual', origin: 'profileSelection' }
+  ): Promise<CompletedActivationOutcome> {
     if (!this.#enabled) throw new Error('Profile activation is not available.')
     if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     const profile = await this.repository.findById(profileId)
@@ -181,10 +213,12 @@ export class AutomaticActivationController {
       profileId: profile.id
     })
     this.#emitState()
-    return this.#activateCurrentApplication()
+    return this.#activateCurrentApplication(context)
   }
 
-  public async enableAutomatic(): Promise<ActivationOutcome> {
+  public async enableAutomatic(
+    context: ActivationContext = { source: 'manual', origin: 'automaticSelection' }
+  ): Promise<CompletedActivationOutcome> {
     if (!this.#enabled) throw new Error('Automatic activation is not available.')
     if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     this.#mode = automaticActivationMode
@@ -193,10 +227,12 @@ export class AutomaticActivationController {
       eventName: 'AutomaticActivationSelected'
     })
     this.#emitState()
-    return this.#activateCurrentApplication()
+    return this.#activateCurrentApplication(context)
   }
 
-  public async restoreBaseline(): Promise<ActivationOutcome> {
+  public async restoreBaseline(
+    context: ActivationContext = { source: 'manual', origin: 'originalSettingsRestore' }
+  ): Promise<CompletedActivationOutcome> {
     if (!this.#enabled) throw new Error('Display restoration is not available.')
     const outcome = await this.coordinator.restoreBaseline()
     this.#updateTarget(outcome)
@@ -207,7 +243,7 @@ export class AutomaticActivationController {
       failures: outcome.failures,
       deferredDisplayIds: outcome.deferredDisplayIds
     })
-    return outcome
+    return this.#publishOutcome(outcome, context)
   }
 
   public async handleNativeServiceExit(): Promise<void> {
@@ -237,13 +273,30 @@ export class AutomaticActivationController {
     if (!resumeWrites) return
     this.#systemTransitioning = false
     if (!reapply || !this.#enabled || this.#previewing) return
-    await this.#activateCurrentApplication()
+    await this.#activateCurrentApplication({ source: 'automatic', origin: 'topologyChange' })
   }
 
-  async #activateCurrentApplication(): Promise<ActivationOutcome> {
+  async #activateCurrentApplication(
+    context: ActivationContext
+  ): Promise<CompletedActivationOutcome> {
     const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode)
     this.#updateTarget(outcome)
-    return outcome
+    return this.#publishOutcome(outcome, context)
+  }
+
+  #publishOutcome(
+    outcome: ActivationOutcome,
+    context: ActivationContext
+  ): CompletedActivationOutcome {
+    const completed: CompletedActivationOutcome = {
+      ...outcome,
+      failures: outcome.failures.map((failure) => ({ ...failure })),
+      deferredDisplayIds: [...outcome.deferredDisplayIds],
+      source: context.source,
+      origin: context.origin
+    }
+    for (const listener of this.#outcomeListeners) listener(completed)
+    return completed
   }
 
   #updateTarget(outcome: ActivationOutcome): void {
@@ -265,4 +318,28 @@ export interface ActivationControllerState {
   enabled: boolean
   mode: ActivationMode
   currentTarget: ActivationTarget | null
+}
+
+export type ActivationSource = 'automatic' | 'manual' | 'shortcut'
+
+export type ActivationOrigin =
+  | 'startup'
+  | 'foreground'
+  | 'profileSelection'
+  | 'automaticSelection'
+  | 'previewRollback'
+  | 'previewConfirmation'
+  | 'configurationChange'
+  | 'topologyChange'
+  | 'originalSettingsRestore'
+  | 'shortcut'
+
+export interface ActivationContext {
+  source: ActivationSource
+  origin: ActivationOrigin
+}
+
+export interface CompletedActivationOutcome extends ActivationOutcome {
+  source: ActivationSource
+  origin: ActivationOrigin
 }

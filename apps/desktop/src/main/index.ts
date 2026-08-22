@@ -595,7 +595,10 @@ async function configureDesktopLifecycle(): Promise<void> {
   trayController = new TrayController(
     profileRepository,
     automaticActivation,
-    { open: () => openWindow() },
+    {
+      openAppPanel: () => panelController.openAppPanel(),
+      openMiniPanel: () => panelController.openMiniPanel()
+    },
     shutdownCoordinator,
     trayMenu,
     logger

@@ -24,7 +24,8 @@ export interface TrayReadModel {
 }
 
 export interface TrayCommands {
-  open(): void
+  openAppPanel(): void
+  openMiniPanel(): void
   exit(): void
   enableAutomatic(): void
   selectProfile(profileId: string): void
@@ -45,8 +46,9 @@ export interface TrayActivationPort {
   restoreBaseline(): Promise<ActivationOutcome>
 }
 
-export interface MainWindowPort {
-  open(): void
+export interface PanelPort {
+  openAppPanel(): void
+  openMiniPanel(): void
 }
 
 export interface ShutdownRequestPort {
@@ -91,7 +93,7 @@ export class TrayController {
   public constructor(
     private readonly repository: ProfileRepository,
     private readonly activation: TrayActivationPort,
-    private readonly window: MainWindowPort,
+    private readonly panels: PanelPort,
     private readonly shutdown: ShutdownRequestPort,
     private readonly menu: TrayMenuPort,
     private readonly logger: StructuredLogger
@@ -126,7 +128,8 @@ export class TrayController {
 
   #commands(): TrayCommands {
     return {
-      open: () => this.window.open(),
+      openAppPanel: () => this.panels.openAppPanel(),
+      openMiniPanel: () => this.panels.openMiniPanel(),
       exit: () => {
         void this.shutdown.request('tray')
       },

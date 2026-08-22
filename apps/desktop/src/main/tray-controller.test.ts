@@ -152,19 +152,21 @@ describe('TrayController', () => {
   it('opens, exits, switches modes, resets, and refreshes after activation changes', async () => {
     const activation = new FakeActivation()
     const menu = new FakeMenu()
-    const open = vi.fn()
+    const openAppPanel = vi.fn()
+    const openMiniPanel = vi.fn()
     const requestExit = vi.fn(() => Promise.resolve(true))
     const controller = new TrayController(
       new JsonProfileRepository(new MemoryStorage()),
       activation,
-      { open },
+      { openAppPanel, openMiniPanel },
       { request: requestExit },
       menu,
       logger
     )
     await controller.start()
 
-    menu.commands!.open()
+    menu.commands!.openAppPanel()
+    menu.commands!.openMiniPanel()
     menu.commands!.selectProfile('gaming')
     await vi.waitFor(() => expect(activation.calls).toContain('profile:gaming'))
     await vi.waitFor(() => expect(menu.model?.profiles[0]?.checked).toBe(true))
@@ -174,7 +176,8 @@ describe('TrayController', () => {
     await vi.waitFor(() => expect(menu.model?.currentProfileLabel).toBe('Baseline'))
     menu.commands!.exit()
 
-    expect(open).toHaveBeenCalledOnce()
+    expect(openAppPanel).toHaveBeenCalledOnce()
+    expect(openMiniPanel).toHaveBeenCalledOnce()
     expect(requestExit).toHaveBeenCalledWith('tray')
     expect(activation.calls).toEqual(['profile:gaming', 'automatic', 'baseline'])
     controller.dispose()

@@ -48,7 +48,8 @@ export class ElectronTrayMenu implements TrayMenuPort {
           click: commands.resetBaseline
         },
         { type: 'separator' },
-        { label: 'Open ChromaShift', click: commands.open },
+        { label: 'Open app panel', click: commands.openAppPanel },
+        { label: 'Open mini panel', click: commands.openMiniPanel },
         { label: 'Exit', click: commands.exit }
       ])
     )
