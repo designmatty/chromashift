@@ -20,7 +20,7 @@ import {
   Plus,
   PowerOff,
   Settings as SettingsIcon,
-  Settings2 as EditIcon,
+  Edit as EditIcon,
   EyeOff,
   ScanEye,
   Trash2

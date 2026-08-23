@@ -1,4 +1,4 @@
-import { Button, Flex, Heading, Kbd, Stack, Text } from '@chakra-ui/react'
+import { Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } from '@chakra-ui/react'
 import { useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
@@ -9,22 +9,23 @@ import type {
   ShortcutBinding
 } from '../../../shared/product-api.js'
 import { recordShortcut } from './shortcut-recording.js'
+import { X } from 'lucide-react'
 
 const builtInActions: Array<{ action: ShortcutAction; label: string; description: string }> = [
   {
     action: { kind: 'defaultProfile' },
     label: 'Default',
-    description: 'Select the Default profile'
+    description: 'Selects Default profile'
   },
   {
     action: { kind: 'previousProfile' },
     label: 'Previous profile',
-    description: 'Select the previous enabled profile'
+    description: 'Selects previous enabled profile'
   },
   {
     action: { kind: 'nextProfile' },
     label: 'Next profile',
-    description: 'Select the next enabled profile'
+    description: 'Selects next enabled profile'
   },
   {
     action: { kind: 'automatic' },
@@ -215,66 +216,58 @@ function ShortcutRow({
         <Flex
           data-part="shortcut-display"
           data-accelerator={accelerator ?? ''}
-          minW="170px"
-          justify="flex-end"
           align="center"
           gap="1"
           aria-label={`${label} shortcut: ${displayAccelerator(accelerator)}`}
         >
           {recording ? (
             <Kbd size="sm" colorPalette="blue">
-              Press shortcut…
+              Press shortcut
             </Kbd>
-          ) : displayKeys.length === 0 ? (
-            <Text color="fg.muted" fontSize="sm">
-              Not set
-            </Text>
-          ) : (
-            displayKeys.map((key, index) => (
-              <Flex key={`${key}-${String(index)}`} align="center" gap="1">
-                {index > 0 && (
-                  <Text aria-hidden="true" color="fg.muted" fontSize="xs">
-                    +
-                  </Text>
-                )}
-                <Kbd size="sm">{key}</Kbd>
-              </Flex>
-            ))
-          )}
+          ) : displayKeys.length > 0 ? (
+              <Kbd size="sm">
+                {displayKeys.join(' + ')}
+              </Kbd>
+            ) : null
+          }
         </Flex>
-        <Button
-          ref={recordButton}
-          size="xs"
-          variant="outline"
-          disabled={disabled}
-          aria-label={`${label} shortcut`}
-          onKeyDown={(event) => {
-            if (!recording) return
-            event.preventDefault()
-            event.stopPropagation()
-            const result = recordShortcut(event)
-            if (result.kind === 'cancel') onCancel()
-            else if (result.kind === 'clear') onChange(null)
-            else if (result.kind === 'invalid') onMessage(result.message)
-            else if (result.kind === 'binding') onChange(result.accelerator)
-          }}
-          onClick={() => {
-            if (!recording) {
-              onRecord()
-              requestAnimationFrame(() => recordButton.current?.focus())
-            }
-          }}
-        >
-          {recording ? 'Recording…' : accelerator === null ? 'Record' : 'Replace'}
-        </Button>
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={disabled || accelerator === null}
-          onClick={() => onChange(null)}
-        >
-          Clear
-        </Button>
+        <Group attached>
+          <Button
+            ref={recordButton}
+            size="2xs"
+            variant='surface'
+            disabled={disabled}
+            aria-label={`${label} shortcut`}
+            margin={0}
+            onKeyDown={(event) => {
+              if (!recording) return
+              event.preventDefault()
+              event.stopPropagation()
+              const result = recordShortcut(event)
+              if (result.kind === 'cancel') onCancel()
+              else if (result.kind === 'clear') onChange(null)
+              else if (result.kind === 'invalid') onMessage(result.message)
+              else if (result.kind === 'binding') onChange(result.accelerator)
+            }}
+            onClick={() => {
+              if (!recording) {
+                onRecord()
+                requestAnimationFrame(() => recordButton.current?.focus())
+              }
+            }}
+          >
+            {recording ? 'Recording…' : 'Record'}
+          </Button>
+          <IconButton
+            aria-label='Clear shortcut'
+            size="2xs"
+            variant='surface'
+            disabled={disabled || accelerator === null}
+            onClick={() => onChange(null)}
+          >
+            <X />
+          </IconButton>
+        </Group>
       </Flex>
     </SettingsRow>
   )
