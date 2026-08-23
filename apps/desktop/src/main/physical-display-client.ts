@@ -19,7 +19,7 @@ const capabilityNames = [
   'colorTemperature'
 ] as const
 
-interface EndpointDisplayPort {
+export interface EndpointDisplayPort {
   getDisplays(): Promise<Display[]>
   getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport>
   getForegroundApplication(): Promise<ForegroundApplication | null>

@@ -51,7 +51,13 @@ runtime's grouped ports (settings accessor, dialogs, icons, panel commands,
 system registrations, notifications). The shell reaches product behavior
 through the runtime's `productController`, `shutdownCoordinator`, and
 `previewController` getters plus `start()` and `dispose()`; the runtime reaches
-the shell only through its ports. Product wiring changes belong in the runtime
+the shell only through its ports. The DisplayService connection enters through
+a `createClient` factory port typed as the union of the consumer ports the
+runtime feeds, so runtime startup wiring (start-mode selection, the
+health/version handshake, fail-open lifecycle configuration) is covered by
+fast in-process tests against `testing/fake-native-display.ts` — the one
+shared fake for the native display seam that activation-coordinator and
+preview-session tests also use. Product wiring changes belong in the runtime
 and routers, not in `index.ts`.
 
 Electron main composes that domain layer with the native client. It stores

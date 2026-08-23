@@ -13,6 +13,7 @@ import {
   type OpenDialogOptions
 } from 'electron'
 import { join, resolve } from 'node:path'
+import { NativeClient } from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { AppWindowStateController } from './app-window-state-controller.js'
@@ -108,8 +109,15 @@ const runtime = createProductRuntime({
   configuration: {
     profileConfigurationPath: applicationDataPaths.profileConfigurationPath,
     legacyProfileConfigurationPaths: applicationDataPaths.legacyProfileConfigurationPaths,
-    resolveServicePath: () => servicePath(),
     appVersion: app.getVersion()
+  },
+  native: {
+    createClient: () =>
+      new NativeClient({
+        executablePath: servicePath(),
+        executableArguments: [`--parent-pid=${process.pid}`],
+        detached: process.platform === 'win32'
+      })
   },
   settings: {
     preferences: {

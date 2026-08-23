@@ -4,7 +4,7 @@ import {
   JsonProfileRepository,
   type ProfileRepository
 } from '@chromashift/core'
-import { NativeClient, PROTOCOL_VERSION } from '@chromashift/native-client'
+import { PROTOCOL_VERSION, type ForegroundApplication } from '@chromashift/native-client'
 import { ActivationCoordinator } from './activation-coordinator.js'
 import type { UserPreferences } from '../shared/product-api.js'
 import type { ChromaShiftIntent } from './app-settings.js'
@@ -14,13 +14,16 @@ import { AutomaticActivationController } from './automatic-activation-controller
 import { ChromaShiftController } from './chroma-shift-controller.js'
 import { DisplayTransitionController } from './display-transition-controller.js'
 import { EmergencyRestoreController } from './emergency-restore-controller.js'
-import { attachNativeEventRouter } from './native-event-router.js'
+import { attachNativeEventRouter, type NativeEventSource } from './native-event-router.js'
 import {
   nativeRecoveryTerminalMessage,
   nativeRecoveryTerminalTitle
 } from './native-recovery-user-message.js'
-import { NativeServiceRecoveryController } from './native-service-recovery-controller.js'
-import { PhysicalDisplayClient } from './physical-display-client.js'
+import {
+  NativeServiceRecoveryController,
+  type RecoverableNativeServicePort
+} from './native-service-recovery-controller.js'
+import { PhysicalDisplayClient, type EndpointDisplayPort } from './physical-display-client.js'
 import { rewriteProfilesForPhysicalDisplays } from './physical-display-profile-rewrite.js'
 import { PowerEventAdapter, type PowerMonitorPort } from './power-event-adapter.js'
 import { PreviewSessionController } from './preview-session-controller.js'
@@ -36,17 +39,34 @@ import {
   ShortcutController,
   type ShortcutRegistrationPort
 } from './shortcut-controller.js'
-import { ShutdownCoordinator, type ShutdownApplicationPort } from './shutdown-coordinator.js'
+import {
+  ShutdownCoordinator,
+  type ShutdownApplicationPort,
+  type ShutdownNativePort
+} from './shutdown-coordinator.js'
 import { describeError, type StructuredLogger } from './structured-logger.js'
 import { TrayController, type TrayMenuPort } from './tray-controller.js'
+
+/**
+ * Everything the runtime needs from the DisplayService connection: lifecycle
+ * events, health and recovery, shutdown, and per-endpoint display operations.
+ * The production NativeClient satisfies it structurally; tests substitute an
+ * in-process fake through the createClient factory port.
+ */
+export type ProductRuntimeNativeClient = NativeEventSource &
+  RecoverableNativeServicePort &
+  ShutdownNativePort &
+  EndpointDisplayPort
 
 export interface ProductRuntimePorts {
   logger: StructuredLogger
   configuration: {
     profileConfigurationPath: string
     legacyProfileConfigurationPaths: string[]
-    resolveServicePath: () => string
     appVersion: string
+  }
+  native: {
+    createClient: () => ProductRuntimeNativeClient
   }
   settings: {
     preferences: {
@@ -98,12 +118,11 @@ export interface ProductRuntimePorts {
  * shell only through its ports.
  */
 export class ProductRuntime {
-  #nativeClient: NativeClient | undefined
+  #nativeClient: ProductRuntimeNativeClient | undefined
   #physicalDisplayClient: PhysicalDisplayClient | undefined
   #profileRepository: ProfileRepository | undefined
   #automaticActivation: AutomaticActivationController | undefined
-  #startupForegroundApplication:
-    Awaited<ReturnType<NativeClient['getForegroundApplication']>> | undefined
+  #startupForegroundApplication: ForegroundApplication | null | undefined
   #trayController: TrayController | undefined
   #shutdownCoordinator: ShutdownCoordinator | undefined
   #productController: ProductController | undefined
@@ -159,11 +178,7 @@ export class ProductRuntime {
           destinationPath: configurationPath
         })
       }
-      const nativeClient = new NativeClient({
-        executablePath: configuration.resolveServicePath(),
-        executableArguments: [`--parent-pid=${process.pid}`],
-        detached: process.platform === 'win32'
-      })
+      const nativeClient = this.ports.native.createClient()
       this.#nativeClient = nativeClient
       this.#profileRepository = new JsonProfileRepository(
         new AppDataProfileConfigurationStorage(configurationPath),

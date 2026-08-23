@@ -1,110 +1,24 @@
 import type { ColorProfile, ColorSettings } from '@chromashift/core'
 import { NativeServiceError } from '@chromashift/native-client'
-import type {
-  BaselineCaptureResult,
-  Display,
-  DisplayApplyResult,
-  DisplayCapabilityReport,
-  DisplayRestoreResult,
-  DisplaySettings
-} from '@chromashift/native-client'
+import type { DisplayApplyResult, DisplaySettings } from '@chromashift/native-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PreviewSessionController,
   PreviewValidationError,
-  type PreviewActivationPort,
-  type PreviewNativePort
+  type PreviewActivationPort
 } from './preview-session-controller.js'
+import {
+  FakeNativeDisplayPort,
+  testCapabilityReport as report,
+  testDisplay
+} from './testing/fake-native-display.js'
 
-function makeDisplay(id: string, name: string, primary = false): Display {
-  return {
-    id,
-    name,
-    windowsDisplayName: `\\\\.\\${name}`,
-    monitorDevicePath: `${id}-path`,
-    manufacturer: 'TEST',
-    productCode: '1234',
-    serialNumber: '5678',
-    adapter: { id: 'adapter:one', name: 'Test GPU', vendor: 'nvidia', deviceId: 'device' },
-    connection: 'DisplayPort',
-    primary,
-    hdr: false,
-    advancedColorSupported: true,
-    bitsPerColorChannel: 8,
-    refreshRate: 144
-  }
-}
+const display = testDisplay('display:one', false, 'Test display', true)
+const secondDisplay = testDisplay('display:two', false, 'Second display', false)
 
-const display = makeDisplay('display:one', 'Test display', true)
-const secondDisplay = makeDisplay('display:two', 'Second display')
-
-function report(displayId: string, saturationSupported = true): DisplayCapabilityReport {
-  const unsupported = { supported: false, provider: 'unknown' as const, reason: 'Not available' }
-  const supported = { supported: true, provider: 'nvidia' as const, min: 0, max: 100, default: 50 }
-  return {
-    displayId,
-    capabilities: {
-      brightness: supported,
-      contrast: unsupported,
-      gamma: unsupported,
-      saturation: saturationSupported ? supported : unsupported,
-      hue: unsupported,
-      colorTemperature: unsupported
-    },
-    nativeState: {
-      nvidia: {
-        saturation: { supported: saturationSupported, current: 50 },
-        hue: { supported: false }
-      },
-      amd: {
-        brightness: { supported: false },
-        contrast: { supported: false },
-        saturation: { supported: false },
-        hue: { supported: false },
-        colorTemperature: { supported: false }
-      }
-    }
-  }
-}
-
-class FakeNative implements PreviewNativePort {
-  public readonly applied: Array<{ displayId: string; settings: DisplaySettings }> = []
-  public readonly captured: string[] = []
-  public readonly restored: string[] = []
-  public readonly failRestoreDisplayIds = new Set<string>()
-  public displays: Display[] = [display, secondDisplay]
-  public reports = new Map<string, DisplayCapabilityReport>([
-    [display.id, report(display.id)],
-    [secondDisplay.id, report(secondDisplay.id)]
-  ])
-
-  public getDisplays(): Promise<Display[]> {
-    return Promise.resolve(this.displays)
-  }
-
-  public getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
-    return Promise.resolve(this.reports.get(displayId) ?? report(displayId))
-  }
-
-  public captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
-    this.captured.push(displayId)
-    return Promise.resolve({ displayId, state: 'captured' })
-  }
-
-  public applyDisplaySettings(
-    displayId: string,
-    settings: DisplaySettings
-  ): Promise<DisplayApplyResult> {
-    this.applied.push({ displayId, settings })
-    return Promise.resolve({ displayId, settings, applied: {} })
-  }
-
-  public restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {
-    if (this.failRestoreDisplayIds.has(displayId)) {
-      return Promise.reject(new Error(`Restore failed on ${displayId}`))
-    }
-    this.restored.push(displayId)
-    return Promise.resolve({ displayId, restored: true })
+class FakeNative extends FakeNativeDisplayPort {
+  public constructor() {
+    super(0, [display, secondDisplay])
   }
 }
 
