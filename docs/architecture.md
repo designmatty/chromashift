@@ -142,7 +142,13 @@ app.
 
 Live preview is an explicit activation session. It suspends automatic display
 writes while still remembering foreground changes and applies only validated
-settings from the native service's immutable baseline. Edit mode previews changes
+settings from the native service's immutable baseline. Both renderer surfaces
+drive their sessions through one shared seam: `use-preview-draft.ts` owns the
+draft and dirty state, and the framework-free `preview-sync.ts` session owns
+debounced draft synchronization, the start-versus-update decision, and
+race-safe rollback that waits for in-flight writes before cancelling. Surface
+flows (preview promotion, collapse-on-equal, explicit Preview toggling) stay in
+`main-app.tsx` and `mini-panel.tsx` and call into that seam. Edit mode previews changes
 as they are made; the separate Preview action is a user-controlled toggle. Cancel,
 reset, navigation away from a dirty edit, or failure resets the activation resolver
 and reapplies the exact previous manual/foreground/default/baseline target. There

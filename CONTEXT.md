@@ -51,3 +51,19 @@ _Avoid_: Activation reason, trigger
 The profile or Original settings selected by activation precedence, including
 while display control is Paused and nothing is being applied.
 _Avoid_: Active profile, applied profile
+
+## Preview
+
+**Preview session**:
+The explicit activation session that applies unsaved values from the native
+baseline. Its kind is Edit (app-panel editing, lives for the whole edit),
+Preview (a user-controlled toggle of a saved profile), or Temporary override
+(mini-panel quick changes, exists exactly while applied values diverge from
+the saved profile).
+_Avoid_: Live mode, draft mode
+
+**Draft**:
+The renderer's unsaved copy of a profile whose changes a Preview session
+applies. A dirty draft differs from the saved profile in applied display
+values, not merely in remembered control metadata.
+_Avoid_: Working copy, pending profile

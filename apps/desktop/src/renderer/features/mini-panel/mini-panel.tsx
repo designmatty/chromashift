@@ -37,6 +37,7 @@ import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentationa
 import { Tooltip } from '@/components/ui/tooltip'
 import { ColorControls, resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
+import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
 import type { ProductError, ProductState } from '../../../shared/product-api.js'
@@ -76,10 +77,14 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           : applyOverrideTargets(active, override.targets),
     [active, override]
   )
-  const [draft, setDraft] = useState<ColorProfile | undefined>(() =>
-    appliedProfile === undefined ? undefined : structuredClone(appliedProfile)
-  )
-  const [dirty, setDirty] = useState(override !== null)
+  const { draft, dirty, updateDraft, resetTo, rollbackPreview } = usePreviewDraft({
+    kind: 'override',
+    session: product.preview,
+    enabled: active !== undefined && product.chromaShift.status === 'active',
+    onError: setError,
+    initialDraft: () => (appliedProfile === undefined ? null : structuredClone(appliedProfile)),
+    initialDirty: () => override !== null
+  })
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(() =>
     chooseInitialDisplay(product, appliedProfile)
   )
@@ -102,13 +107,12 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
   useEffect(() => {
     if (active !== undefined) resetRememberedColorValues(active)
-    setDraft(appliedProfile === undefined ? undefined : structuredClone(appliedProfile))
+    resetTo(appliedProfile ?? null, { dirty: override !== null })
     setSelectedDisplayId((current) =>
       current !== null && product.displays.some((display) => display.id === current)
         ? current
         : chooseInitialDisplay(product, appliedProfile)
     )
-    setDirty(override !== null)
   }, [active?.id, override?.profileId])
 
   useEffect(() => {
@@ -116,38 +120,19 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     void window.chromaShift.setMiniPanelView(view)
   }, [picker, dirty])
 
-  const draftSignature = JSON.stringify(draft)
-  useEffect(() => {
-    if (
-      !dirty ||
-      active === undefined ||
-      draft === undefined ||
-      product.chromaShift.status !== 'active'
-    )
-      return
-    const timer = setTimeout(() => {
-      const request =
-        override === null
-          ? window.chromaShift.startPreview(draft, 'override')
-          : window.chromaShift.updatePreview(active.id, activeColorTargets(draft))
-      void run(request, setError)
-    }, 100)
-    return () => clearTimeout(timer)
-  }, [draftSignature, dirty, active?.id, override?.profileId])
-
   async function choose(profileId: string | null): Promise<void> {
     if (product.preview.state === 'active') {
-      await run(window.chromaShift.cancelPreview(), setError)
+      await rollbackPreview()
     }
     resetRememberedColorValues(active ?? null)
     if (profileId === null) await run(window.chromaShift.enableAutomatic(), setError)
     else await run(window.chromaShift.activateProfile(profileId), setError)
     setPicker(false)
-    setDirty(false)
+    resetTo(active ?? null)
   }
 
   function renderContent(): React.ReactNode {
-    if (active === undefined || draft === undefined) {
+    if (active === undefined || draft === null) {
       return <Empty title="No profiles available" />
     }
 
@@ -247,9 +232,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               borderRadius={'full'}
               onClick={() => {
                 resetRememberedColorValues(active)
-                setDraft(structuredClone(active))
-                setDirty(false)
-                void run(window.chromaShift.cancelPreview(), setError)
+                resetTo(active)
+                void rollbackPreview()
               }}
             >
               Reset changes
@@ -262,8 +246,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 void run(window.chromaShift.confirmPreview(draft, 'preserve'), setError).then(
                   (saved) => {
                     if (saved === undefined) return
-                    setDraft(structuredClone(saved))
-                    setDirty(false)
+                    resetTo(saved)
                   }
                 )
               }
@@ -312,15 +295,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 })
                 if (sameAppliedColors(next, active)) {
                   resetRememberedColorValues(active)
-                  setDraft(structuredClone(active))
-                  setDirty(false)
+                  resetTo(active)
                   if (dirty || override !== null) {
-                    void run(window.chromaShift.cancelPreview(), setError)
+                    void rollbackPreview()
                   }
                   return
                 }
-                setDraft(next)
-                setDirty(true)
+                updateDraft(next)
               }}
               compact
             />
