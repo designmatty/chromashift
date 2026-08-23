@@ -18,12 +18,7 @@ import {
   JsonProfileRepository,
   type ProfileRepository
 } from '@chromashift/core'
-import {
-  NativeClient,
-  PROTOCOL_VERSION,
-  displayTopologyChangedDataSchema,
-  foregroundApplicationChangedDataSchema
-} from '@chromashift/native-client'
+import { NativeClient, PROTOCOL_VERSION } from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { ActivationCoordinator } from './activation-coordinator.js'
@@ -44,6 +39,7 @@ import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
 import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
 import { MiniPanelController } from './mini-panel-controller.js'
+import { attachNativeEventRouter } from './native-event-router.js'
 import { NativeServiceRecoveryController } from './native-service-recovery-controller.js'
 import {
   nativeRecoveryTerminalMessage,
@@ -232,30 +228,6 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
   throw new Error(`Renderer IPC sender is not trusted: ${senderUrl}`)
 }
 
-function recordNativeDiagnostic(message: string): void {
-  try {
-    const parsed = JSON.parse(message) as unknown
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'eventName' in parsed &&
-      typeof parsed.eventName === 'string'
-    ) {
-      const { level, eventName, ...details } = parsed as Record<string, unknown>
-      logger.write({
-        ...details,
-        level:
-          level === 'warning' || level === 'error' || level === 'critical' ? level : 'information',
-        eventName: String(eventName)
-      })
-      return
-    }
-  } catch {
-    // Preserve non-JSON native diagnostics as structured messages below.
-  }
-  logger.write({ level: 'warning', eventName: 'NativeServiceDiagnostic', message })
-}
-
 function handleRendererExit(
   surface: RendererSurface,
   window: BrowserWindow,
@@ -313,40 +285,13 @@ async function startNativeService(): Promise<void> {
       logger,
       (application) => application?.pid === process.pid
     )
-    nativeClient.on('diagnostic', recordNativeDiagnostic)
-    nativeClient.on('event', (event) => {
-      if (event.event === 'displayTopologyChanged') {
-        const parsed = displayTopologyChangedDataSchema.safeParse(event.data)
-        if (parsed.success) {
-          displayTransitionController?.handleDisplayEvent('nativeDisplaySettingsChanged')
-        }
-      }
-      if (event.event === 'foregroundApplicationChanged') {
-        const parsed = foregroundApplicationChangedDataSchema.safeParse(event.data)
-        if (parsed.success) scheduleProductStateBroadcast()
-      }
-      void automaticActivation?.handleNativeEvent(event).catch((error: unknown) => {
-        logger.write({
-          level: 'error',
-          eventName: 'AutomaticActivationEventFailed',
-          ...describeError(error)
-        })
-      })
-    })
-    nativeClient.on('exit', () => {
-      const recovery = nativeRecoveryController
-      const handling =
-        recovery === undefined
-          ? (automaticActivation?.handleNativeServiceExit() ?? Promise.resolve())
-          : recovery.handleExit()
-      void handling.catch((error: unknown) => {
-        logger.write({
-          level: 'error',
-          eventName: 'NativeServiceExitHandlingFailed',
-          ...describeError(error)
-        })
-      })
-      if (shutdownCoordinator?.exiting !== true) scheduleProductStateBroadcast()
+    attachNativeEventRouter(nativeClient, {
+      activation: () => automaticActivation,
+      displayTransitions: () => displayTransitionController,
+      recovery: () => nativeRecoveryController,
+      isExiting: () => shutdownCoordinator?.exiting === true,
+      broadcastProductState: () => scheduleProductStateBroadcast(),
+      logger
     })
     const info = await nativeClient.start()
     const health = await nativeClient.getServiceHealth()
