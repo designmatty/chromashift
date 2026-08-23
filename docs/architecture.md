@@ -42,7 +42,19 @@ resolves manual/foreground/default/baseline precedence without importing
 Electron or the native client. A storage port leaves the app-data filesystem
 adapter in Electron main. See `core-domain.md` for the exact contracts.
 
-Electron main now composes that domain layer with the native client. It stores
+Electron main is split along one seam. `product-runtime.ts` owns the product
+side: the native client, every domain controller, and all wiring between them,
+including native event routing (`native-event-router.ts`) and activation
+outcome routing (`activation-outcome-router.ts`). `index.ts` is Electron shell
+only — windows, panels, IPC registration, app lifecycle — and supplies the
+runtime's grouped ports (settings accessor, dialogs, icons, panel commands,
+system registrations, notifications). The shell reaches product behavior
+through the runtime's `productController`, `shutdownCoordinator`, and
+`previewController` getters plus `start()` and `dispose()`; the runtime reaches
+the shell only through its ports. Product wiring changes belong in the runtime
+and routers, not in `index.ts`.
+
+Electron main composes that domain layer with the native client. It stores
 configuration atomically at `profiles.json` under Electron's user-data directory
 and validates the complete document before automatic activation is enabled.
 Foreground events received during startup are buffered until validation finishes.
