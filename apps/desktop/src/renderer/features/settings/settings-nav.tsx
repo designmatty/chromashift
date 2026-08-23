@@ -1,4 +1,4 @@
-import { ArrowLeft, BadgeInfo, Eclipse, Keyboard, Monitor, ScrollText } from 'lucide-react'
+import { ArrowLeft, BadgeInfo, Settings, Keyboard, Monitor, ScrollText } from 'lucide-react'
 import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
 
 import { NavButton } from '@/components/layout/presentational'
@@ -30,7 +30,7 @@ export function SettingsNav({
       <Stack as="nav" gap="3">
         <NavButton
           active={page === 'settings'}
-          icon={<Eclipse />}
+          icon={<Settings />}
           label="General"
           onClick={() => onSelect('settings')}
         />

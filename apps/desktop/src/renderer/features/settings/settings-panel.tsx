@@ -78,7 +78,7 @@ export function SettingsPanel({
         </Heading>
         <SettingsRow
           title="Profile changes"
-          description="Show a Windows notification when the selected profile changes"
+          description="Show a Windows notification when the profile changes"
         >
           <Switch
             checked={settings.profileChangeNotifications}

@@ -1,4 +1,4 @@
-import { Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } from '@chakra-ui/react'
+import { Alert, Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } from '@chakra-ui/react'
 import { useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
@@ -9,7 +9,7 @@ import type {
   ShortcutBinding
 } from '../../../shared/product-api.js'
 import { recordShortcut } from './shortcut-recording.js'
-import { X } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 
 const builtInActions: Array<{ action: ShortcutAction; label: string; description: string }> = [
   {
@@ -93,12 +93,26 @@ export function ShortcutsPanel({
         <Heading as="h1" size="lg">
           Shortcuts
         </Heading>
-        <Text color="fg.muted" fontSize="sm">
-          Shortcuts save automatically and work while both panels are closed. Use Ctrl, Alt, Shift,
-          or Windows with another key. Fn cannot be registered as a Windows shortcut.
-        </Text>
+        <Stack gap="2.5">
+          <Text color="fg.muted" fontSize="sm">
+            Shortcuts continue to work while ChromaShift runs in the background. Use a modifier key:{' '}
+            <Kbd>Ctrl</Kbd>, <Kbd>Alt</Kbd>, <Kbd>Shift</Kbd>, <Kbd>Windows</Kbd> + another key.{' '}
+            <Kbd>Fn</Kbd> cannot be used as a shortcut.
+          </Text>
+          <Text color="fg.muted" fontSize="sm">
+            When recording, press <Kbd>Esc</Kbd> to cancel or <Kbd>DEL</Kbd>/<Kbd>Backspace</Kbd> to
+            remove a shortcut.
+          </Text>
+        </Stack>
       </Stack>
-
+      {message && (
+        <Alert.Root status={'warning'} size={'sm'}>
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{message}</Alert.Title>
+          </Alert.Content>
+        </Alert.Root>
+      )}
       <ShortcutGroup
         title="Navigation"
         rows={builtInActions}
@@ -109,24 +123,22 @@ export function ShortcutsPanel({
         onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
         onMessage={setMessage}
       />
-      <ShortcutGroup
-        title="Profiles"
-        rows={profiles.map((profile) => ({
-          action: { kind: 'profile' as const, profileId: profile.id },
-          label: profile.name,
-          description: 'Select this profile directly'
-        }))}
-        bindings={product.settings.shortcutBindings}
-        recording={recording}
-        disabled={saving}
-        onRecordingChange={setRecording}
-        onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
-        onMessage={setMessage}
-      />
-
-      <Text aria-live="polite" minH="5" color={message === null ? 'fg.muted' : 'fg.error'}>
-        {message ?? (recording === null ? '' : 'Press Escape to cancel recording.')}
-      </Text>
+      {profiles.length > 0 && (
+        <ShortcutGroup
+          title="Profiles"
+          rows={profiles.map((profile) => ({
+            action: { kind: 'profile' as const, profileId: profile.id },
+            label: profile.name,
+            description: 'Select this profile directly'
+          }))}
+          bindings={product.settings.shortcutBindings}
+          recording={recording}
+          disabled={saving}
+          onRecordingChange={setRecording}
+          onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
+          onMessage={setMessage}
+        />
+      )}
     </Stack>
   )
 }
@@ -172,7 +184,10 @@ function ShortcutGroup({
                 onMessage(null)
                 onRecordingChange(id)
               }}
-              onCancel={() => onRecordingChange(null)}
+              onCancel={() => {
+                onMessage(null)
+                onRecordingChange(null)
+              }}
               onChange={(accelerator) => {
                 onBindingChange(row.action, accelerator)
                 onRecordingChange(null)
@@ -212,22 +227,14 @@ function ShortcutRow({
 
   return (
     <SettingsRow title={label} description={description}>
-      <Flex gap="2" align="center">
-        <Flex
-          data-part="shortcut-display"
-          data-accelerator={accelerator ?? ''}
-          align="center"
-          gap="1"
-          aria-label={`${label} shortcut: ${displayAccelerator(accelerator)}`}
-        >
-          {recording ? (
-            <Kbd size="sm" colorPalette="blue">
-              Press shortcut
-            </Kbd>
-          ) : displayKeys.length > 0 ? (
-            <Kbd size="sm">{displayKeys.join(' + ')}</Kbd>
-          ) : null}
-        </Flex>
+      <Flex gap="2" align="flex-end" direction={'column'}>
+        {recording ? (
+          <Text lineHeight={1} fontSize="xs" fontStyle={'italic'} color={'fg.muted'}>
+            Press shortcut...
+          </Text>
+        ) : displayKeys.length > 0 ? (
+          <Kbd size="sm">{displayKeys.join(' + ')}</Kbd>
+        ) : null}
         <Group attached>
           <Button
             ref={recordButton}
@@ -255,15 +262,17 @@ function ShortcutRow({
           >
             {recording ? 'Recording…' : 'Record'}
           </Button>
-          <IconButton
-            aria-label="Clear shortcut"
-            size="2xs"
-            variant="surface"
-            disabled={disabled || accelerator === null}
-            onClick={() => onChange(null)}
-          >
-            <X />
-          </IconButton>
+          {displayKeys.length && (
+            <IconButton
+              aria-label="Clear shortcut"
+              size="2xs"
+              variant="surface"
+              disabled={disabled || accelerator === null}
+              onClick={() => onChange(null)}
+            >
+              <Trash2 />
+            </IconButton>
+          )}
         </Group>
       </Flex>
     </SettingsRow>
