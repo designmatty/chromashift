@@ -173,11 +173,17 @@ a manual override until the user returns to Auto switch. Mini-panel footer actio
 open the corresponding Profiles, Displays, or Settings view in the
 native-caption-controlled app panel.
 
-App settings are validated and atomically persisted separately from profiles.
-They control login launch, login-only tray/app startup behavior, close-to-tray
-versus restore-safe shutdown, System/Light/Dark rendering, opt-in profile-change
-notifications, configurable global shortcuts, and persisted display-control
-status. A lossless version-1 migration supplies defaults for older settings.
+App settings persist as three slice files under the user-data directory, one
+per owner: `preferences.json` (renderer-editable user preferences: login
+launch, launch/close behavior, theme, notifications, shortcut bindings),
+`window-state.json` (Electron-shell window geometry and mini-panel position),
+and `chroma-shift.json` (runtime-owned display-control status and intended
+activation target). Each slice has one store with a serialized update queue,
+so writers within a slice cannot clobber each other and no cross-slice
+coordination exists. The renderer sees and edits only the preferences slice;
+main-owned fields are structurally absent from the IPC contract rather than
+defensively guarded. A missing slice file yields defaults; the pre-slice
+`settings.json` blob was converted once and has no in-code migration path.
 Explicit launches still show the app panel. The permanent Default profile
 remains the only catch-all, cannot be disabled or deleted, and cannot receive
 application assignments.

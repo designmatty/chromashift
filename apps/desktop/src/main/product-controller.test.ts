@@ -1,9 +1,9 @@
 import { JsonProfileRepository, type ColorProfile } from '@chromashift/core'
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client'
 import { describe, expect, it, vi } from 'vitest'
-import type { AppSettings } from '../shared/product-api.js'
+import type { UserPreferences } from '../shared/product-api.js'
 import { PreviewSessionController } from './preview-session-controller.js'
-import { defaultAppSettings } from './app-settings.js'
+import { defaultUserPreferences as defaultAppSettings } from './app-settings.js'
 import {
   type ApplicationPickerPort,
   ProductConflictError,
@@ -162,45 +162,31 @@ function capabilityReport(supported: boolean): DisplayCapabilityReport {
 }
 
 describe('ProductController settings ownership', () => {
-  it('preserves the latest main-owned window geometry across renderer updates', async () => {
+  it('saves and applies renderer preference updates', async () => {
     const saved: Parameters<ProductSettingsPort['save']>[0][] = []
-    const current = {
-      ...defaultAppSettings,
-      launchAtStartup: false,
-      launchBehavior: 'tray' as const,
-      closeBehavior: 'tray' as const,
-      theme: 'system' as const,
-      miniPanelPosition: { x: 20, y: 30 },
-      windowBounds: { x: 100, y: 120, width: 1100, height: 720 },
-      windowMaximized: true
-    }
+    const applied: Parameters<ProductSettingsPort['apply']>[0][] = []
     const { product } = controller(undefined, {
-      get: () => Promise.resolve(current),
+      get: () => Promise.resolve(defaultAppSettings),
       save: (settings) => {
         saved.push(settings)
         return Promise.resolve(settings)
       },
-      apply: () => undefined
+      apply: (settings) => {
+        applied.push(settings)
+      }
     })
 
-    await product.updateSettings({
+    const next = {
       ...defaultAppSettings,
       launchAtStartup: true,
-      launchBehavior: 'app',
-      closeBehavior: 'shutdown',
-      theme: 'dark',
-      windowBounds: { x: 3000, y: 10, width: 900, height: 600 }
-    })
+      launchBehavior: 'app' as const,
+      closeBehavior: 'shutdown' as const,
+      theme: 'dark' as const
+    }
+    await product.updateSettings(next)
 
-    expect(saved).toEqual([
-      {
-        ...current,
-        launchAtStartup: true,
-        launchBehavior: 'app',
-        closeBehavior: 'shutdown',
-        theme: 'dark'
-      }
-    ])
+    expect(saved).toEqual([next])
+    expect(applied).toEqual([next])
   })
 
   it('rolls shortcut registration back when settings persistence fails', async () => {
@@ -224,7 +210,7 @@ describe('ProductController settings ownership', () => {
 
 describe('ProductController profile shortcut lifecycle', () => {
   it('requires confirmation before disabling a bound profile and removes the binding when confirmed', async () => {
-    let settings: AppSettings = {
+    let settings: UserPreferences = {
       ...defaultAppSettings,
       shortcutBindings: [
         { action: { kind: 'profile' as const, profileId: 'gaming' }, accelerator: 'Control+G' }
@@ -257,7 +243,7 @@ describe('ProductController profile shortcut lifecycle', () => {
   })
 
   it('removes a direct binding as part of profile deletion', async () => {
-    let settings: AppSettings = {
+    let settings: UserPreferences = {
       ...defaultAppSettings,
       shortcutBindings: [
         { action: { kind: 'profile' as const, profileId: 'gaming' }, accelerator: 'Control+G' }

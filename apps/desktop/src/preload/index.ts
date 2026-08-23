@@ -5,8 +5,8 @@ import {
   applicationSelectionResultSchema,
   applicationSelectionsResultSchema,
   appPanelViewSchema,
-  appSettingsRequestSchema,
-  appSettingsResultSchema,
+  userPreferencesRequestSchema,
+  userPreferencesResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
@@ -105,9 +105,14 @@ const api: ChromaShiftApi = {
       {}
     ),
   updateSettings: (settings) =>
-    invoke(productIpcChannels.updateSettings, appSettingsRequestSchema, appSettingsResultSchema, {
-      settings
-    }),
+    invoke(
+      productIpcChannels.updateSettings,
+      userPreferencesRequestSchema,
+      userPreferencesResultSchema,
+      {
+        settings
+      }
+    ),
   startPreview: (profile, kind) =>
     invoke(productIpcChannels.startPreview, startSessionRequestSchema, voidResultSchema, {
       profile,

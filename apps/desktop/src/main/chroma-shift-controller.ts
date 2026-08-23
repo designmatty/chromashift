@@ -110,29 +110,32 @@ export class ChromaShiftController {
     if (this.#transition !== null) return this.#transition
     if (this.#state.status === 'paused') return Promise.resolve(this.#statusOutcome(source))
     this.#rememberActiveIntent()
-    return this.#runTransition(async () => {
-      this.#state.status = 'safetyBlocked'
-      this.#state.pendingOperation = 'pause'
-      await this.#persistState()
-      await this.activation.suspendWrites()
-      try {
-        await this.preview.cancel()
-      } catch (error) {
-        this.logger.write({
-          level: 'error',
-          eventName: 'PausePreviewRestoreFailed',
-          ...describeError(error)
-        })
-        throw error
-      }
-      await this.activation.waitForIdle()
-      const outcome = await this.activation.restoreBaseline({ source, origin: 'pause' })
-      const restored = restorationComplete(outcome)
-      this.#state.status = restored ? 'paused' : 'safetyBlocked'
-      this.#state.pendingOperation = restored ? null : 'pause'
-      await this.#persistState()
-      return outcome
-    }, { source, origin: 'pause' })
+    return this.#runTransition(
+      async () => {
+        this.#state.status = 'safetyBlocked'
+        this.#state.pendingOperation = 'pause'
+        await this.#persistState()
+        await this.activation.suspendWrites()
+        try {
+          await this.preview.cancel()
+        } catch (error) {
+          this.logger.write({
+            level: 'error',
+            eventName: 'PausePreviewRestoreFailed',
+            ...describeError(error)
+          })
+          throw error
+        }
+        await this.activation.waitForIdle()
+        const outcome = await this.activation.restoreBaseline({ source, origin: 'pause' })
+        const restored = restorationComplete(outcome)
+        this.#state.status = restored ? 'paused' : 'safetyBlocked'
+        this.#state.pendingOperation = restored ? null : 'pause'
+        await this.#persistState()
+        return outcome
+      },
+      { source, origin: 'pause' }
+    )
   }
 
   public retrySafetyCheck(source: ActivationSource): Promise<CompletedActivationOutcome> {
@@ -144,28 +147,34 @@ export class ChromaShiftController {
         origin: 'resume'
       })
     }
-    return this.#runTransition(async () => {
-      await this.activation.suspendWrites()
-      await this.activation.waitForIdle()
-      const outcome = await this.activation.restoreBaseline({ source, origin: 'safetyRetry' })
-      const restored = restorationComplete(outcome)
-      this.#state.status = restored ? 'paused' : 'safetyBlocked'
-      this.#state.pendingOperation = restored ? null : 'pause'
-      await this.#persistState()
-      return outcome
-    }, { source, origin: 'safetyRetry' })
+    return this.#runTransition(
+      async () => {
+        await this.activation.suspendWrites()
+        await this.activation.waitForIdle()
+        const outcome = await this.activation.restoreBaseline({ source, origin: 'safetyRetry' })
+        const restored = restorationComplete(outcome)
+        this.#state.status = restored ? 'paused' : 'safetyBlocked'
+        this.#state.pendingOperation = restored ? null : 'pause'
+        await this.#persistState()
+        return outcome
+      },
+      { source, origin: 'safetyRetry' }
+    )
   }
 
   public resume(source: ActivationSource): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) return this.#transition
     if (this.#state.status === 'active') return Promise.resolve(this.#statusOutcome(source))
     if (this.#state.status === 'safetyBlocked') return this.retrySafetyCheck(source)
-    return this.#runTransition(async () => {
-      this.#state.status = 'safetyBlocked'
-      this.#state.pendingOperation = 'resume'
-      await this.#persistState()
-      return this.#resumeOperation(source)
-    }, { source, origin: 'resume' })
+    return this.#runTransition(
+      async () => {
+        this.#state.status = 'safetyBlocked'
+        this.#state.pendingOperation = 'resume'
+        await this.#persistState()
+        return this.#resumeOperation(source)
+      },
+      { source, origin: 'resume' }
+    )
   }
 
   public async selectManualProfile(
@@ -302,8 +311,7 @@ export class ChromaShiftController {
             failureContext.origin === 'resume'
           ) {
             this.#state.status = 'safetyBlocked'
-            this.#state.pendingOperation =
-              failureContext.origin === 'resume' ? 'resume' : 'pause'
+            this.#state.pendingOperation = failureContext.origin === 'resume' ? 'resume' : 'pause'
             try {
               await this.#persistState()
             } catch (persistError) {

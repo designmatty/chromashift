@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  appSettingsSchema,
   controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
   openAppPanelRequestSchema,
@@ -8,7 +7,8 @@ import {
   productStateResultSchema,
   reorderProfilesRequestSchema,
   setMiniPanelViewRequestSchema,
-  saveProfileRequestSchema
+  saveProfileRequestSchema,
+  userPreferencesSchema
 } from './product-api.js'
 
 describe('product API contracts', () => {
@@ -32,16 +32,25 @@ describe('product API contracts', () => {
     ).toBe(true)
   })
 
-  it('rejects malformed ChromaShift status and shortcut binding state', () => {
+  it('rejects malformed shortcut bindings and main-owned fields in preferences', () => {
     expect(
-      appSettingsSchema.safeParse({ ...validSettings(), chromaShiftStatus: 'stopped' }).success
-    ).toBe(false)
-    expect(
-      appSettingsSchema.safeParse({
+      userPreferencesSchema.safeParse({
         ...validSettings(),
         shortcutBindings: [{ action: { kind: 'profile' }, accelerator: 'Control+G' }]
       }).success
     ).toBe(false)
+    // ChromaShift intent and window geometry are main-owned slices; the strict
+    // preferences schema must reject them at the renderer seam.
+    expect(
+      userPreferencesSchema.safeParse({ ...validSettings(), chromaShiftStatus: 'active' }).success
+    ).toBe(false)
+    expect(
+      userPreferencesSchema.safeParse({
+        ...validSettings(),
+        windowBounds: { x: 0, y: 0, width: 800, height: 600 }
+      }).success
+    ).toBe(false)
+    expect(userPreferencesSchema.safeParse(validSettings()).success).toBe(true)
   })
 
   it('accepts independent per-display preview targets', () => {
@@ -121,10 +130,6 @@ function validSettings() {
     closeBehavior: 'tray',
     theme: 'system',
     profileChangeNotifications: false,
-    shortcutBindings: [],
-    chromaShiftStatus: 'active',
-    pendingControlOperation: null,
-    intendedActivationMode: { kind: 'automatic' },
-    intendedTarget: null
+    shortcutBindings: []
   }
 }

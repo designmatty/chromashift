@@ -1,5 +1,5 @@
-import type { AppSettings } from '../shared/product-api.js'
 import { isOnAnyWorkArea, type WindowBounds, type WorkArea } from '../shared/layout.js'
+import type { WindowState } from './app-settings.js'
 import { describeError, type StructuredLogger } from './structured-logger.js'
 
 export interface WindowStatePort {
@@ -9,14 +9,17 @@ export interface WindowStatePort {
   getNormalBounds(): WindowBounds
 }
 
+export interface WindowStateStorePort {
+  readonly current: WindowState
+  update(updater: (current: WindowState) => WindowState): Promise<unknown>
+}
+
 /** Debounces geometry writes while retaining an explicit close-time flush. */
 export class AppWindowStateController {
   #timer: NodeJS.Timeout | undefined
 
   public constructor(
-    private readonly getSettings: () => AppSettings,
-    private readonly setSettings: (settings: AppSettings) => void,
-    private readonly saveSettings: (settings: AppSettings) => Promise<unknown>,
+    private readonly store: WindowStateStorePort,
     private readonly getWorkAreas: () => readonly WorkArea[],
     private readonly logger: StructuredLogger,
     private readonly debounceMs = 400
@@ -43,7 +46,7 @@ export class AppWindowStateController {
 
   async #captureAndSave(window: WindowStatePort): Promise<void> {
     if (window.isDestroyed() || window.isMinimized()) return
-    const current = this.getSettings()
+    const current = this.store.current
     const maximized = window.isMaximized()
     const bounds = maximized ? current.windowBounds : window.getNormalBounds()
 
@@ -59,14 +62,12 @@ export class AppWindowStateController {
     )
       return
 
-    const next: AppSettings = {
-      ...current,
-      windowMaximized: maximized,
-      ...(bounds === undefined ? {} : { windowBounds: bounds })
-    }
-    this.setSettings(next)
     try {
-      await this.saveSettings(next)
+      await this.store.update((state) => ({
+        ...state,
+        windowMaximized: maximized,
+        ...(bounds === undefined ? {} : { windowBounds: bounds })
+      }))
     } catch (error) {
       this.logger.write({
         level: 'warning',

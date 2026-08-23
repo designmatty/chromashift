@@ -6,7 +6,8 @@ import {
 } from '@chromashift/core'
 import { NativeClient, PROTOCOL_VERSION } from '@chromashift/native-client'
 import { ActivationCoordinator } from './activation-coordinator.js'
-import type { AppSettings } from '../shared/product-api.js'
+import type { UserPreferences } from '../shared/product-api.js'
+import type { ChromaShiftIntent } from './app-settings.js'
 import { attachActivationOutcomeRouter } from './activation-outcome-router.js'
 import { applicationFriendlyName } from './application-friendly-name.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
@@ -48,11 +49,18 @@ export interface ProductRuntimePorts {
     appVersion: string
   }
   settings: {
-    current: () => AppSettings
-    setCurrent: (settings: AppSettings) => void
-    get: () => Promise<AppSettings>
-    save: (settings: AppSettings) => Promise<AppSettings>
-    applyToShell: (settings: AppSettings) => void
+    preferences: {
+      current: () => UserPreferences
+      get: () => Promise<UserPreferences>
+      update: (updater: (current: UserPreferences) => UserPreferences) => Promise<UserPreferences>
+      applyToShell: (preferences: UserPreferences) => void
+    }
+    chromaShiftIntent: {
+      current: () => ChromaShiftIntent
+      update: (
+        updater: (current: ChromaShiftIntent) => ChromaShiftIntent
+      ) => Promise<ChromaShiftIntent>
+    }
   }
   shell: {
     openWindow: () => void
@@ -275,34 +283,32 @@ export class ProductRuntime {
       },
       { cancel: () => previewController.cancel() },
       {
-        status: settings.current().chromaShiftStatus,
-        pendingOperation: settings.current().pendingControlOperation,
-        intendedMode: settings.current().intendedActivationMode,
-        intendedTarget: settings.current().intendedTarget
+        status: settings.chromaShiftIntent.current().chromaShiftStatus,
+        pendingOperation: settings.chromaShiftIntent.current().pendingControlOperation,
+        intendedMode: settings.chromaShiftIntent.current().intendedActivationMode,
+        intendedTarget: settings.chromaShiftIntent.current().intendedTarget
       },
       async (state) => {
-        settings.setCurrent(
-          await settings.save({
-            ...settings.current(),
-            chromaShiftStatus: state.status,
-            pendingControlOperation: state.pendingOperation ?? null,
-            intendedActivationMode: state.intendedMode,
-            intendedTarget: state.intendedTarget
-          })
-        )
+        await settings.chromaShiftIntent.update((intent) => ({
+          ...intent,
+          chromaShiftStatus: state.status,
+          pendingControlOperation: state.pendingOperation ?? null,
+          intendedActivationMode: state.intendedMode,
+          intendedTarget: state.intendedTarget
+        }))
         shell.broadcastProductState()
       },
       logger
     )
     try {
-      if (settings.current().chromaShiftStatus === 'active') {
+      if (settings.chromaShiftIntent.current().chromaShiftStatus === 'active') {
         await automaticActivation.start(this.#startupForegroundApplication ?? null)
         await chromaShiftController.syncActiveIntent()
       } else {
         await automaticActivation.startSuspended(
           this.#startupForegroundApplication ?? null,
-          settings.current().intendedActivationMode,
-          settings.current().intendedTarget
+          settings.chromaShiftIntent.current().intendedActivationMode,
+          settings.chromaShiftIntent.current().intendedTarget
         )
       }
     } catch (error) {
@@ -326,7 +332,7 @@ export class ProductRuntime {
     this.#trayController = trayController
     const profileNotifications = new ProfileNotificationController(
       profileRepository,
-      () => settings.current(),
+      () => settings.preferences.current(),
       notifications,
       (profileId) => shell.openProfile(profileId)
     )
@@ -410,14 +416,16 @@ export class ProductRuntime {
     )
     this.#shortcutController = shortcutController
     try {
-      shortcutController.replace(settings.current().shortcutBindings)
+      shortcutController.replace(settings.preferences.current().shortcutBindings)
       const normalizedBindings = shortcutController.bindings
       if (
-        JSON.stringify(normalizedBindings) !== JSON.stringify(settings.current().shortcutBindings)
+        JSON.stringify(normalizedBindings) !==
+        JSON.stringify(settings.preferences.current().shortcutBindings)
       ) {
-        settings.setCurrent(
-          await settings.save({ ...settings.current(), shortcutBindings: normalizedBindings })
-        )
+        await settings.preferences.update((preferences) => ({
+          ...preferences,
+          shortcutBindings: normalizedBindings
+        }))
       }
     } catch (error) {
       logger.write({
@@ -479,9 +487,9 @@ export class ProductRuntime {
         resolveIcon: (executablePath) => icons.applicationIconDataUrl(executablePath)
       },
       {
-        get: () => settings.get(),
-        save: (value) => settings.save(value),
-        apply: (value) => settings.applyToShell(value),
+        get: () => settings.preferences.get(),
+        save: (value) => settings.preferences.update(() => value),
+        apply: (value) => settings.preferences.applyToShell(value),
         prepareShortcuts: (bindings) => {
           const controller = this.#shortcutController
           if (controller === undefined) throw new Error('Shortcut registration is unavailable.')

@@ -28,7 +28,12 @@ export async function migrateLegacyProfileConfiguration(
     try {
       await copyFile(legacyPath, temporaryPath, constants.COPYFILE_EXCL)
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ) {
         continue
       }
       throw error
@@ -38,7 +43,12 @@ export async function migrateLegacyProfileConfiguration(
       await link(temporaryPath, destinationPath)
       return legacyPath
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST') {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
         return null
       }
       throw error

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AppSettings } from '../shared/product-api.js'
-import { defaultAppSettings } from './app-settings.js'
-import { AppWindowStateController, type WindowStatePort } from './app-window-state-controller.js'
+import { defaultWindowState, type WindowState } from './app-settings.js'
+import {
+  AppWindowStateController,
+  type WindowStatePort,
+  type WindowStateStorePort
+} from './app-window-state-controller.js'
 import type { StructuredLogger } from './structured-logger.js'
 
 function windowState(bounds = { x: 40, y: 50, width: 1000, height: 700 }): WindowStatePort {
@@ -13,21 +16,30 @@ function windowState(bounds = { x: 40, y: 50, width: 1000, height: 700 }): Windo
   }
 }
 
+class MemoryWindowStateStore implements WindowStateStorePort {
+  public saves = 0
+
+  public constructor(public state: WindowState = { ...defaultWindowState }) {}
+
+  public get current(): WindowState {
+    return structuredClone(this.state)
+  }
+
+  public update(updater: (current: WindowState) => WindowState): Promise<unknown> {
+    this.state = updater(this.current)
+    this.saves += 1
+    return Promise.resolve(this.state)
+  }
+}
+
 const logger: StructuredLogger = { write: () => undefined }
 
 describe('AppWindowStateController', () => {
   it('debounces movement and flushes the final geometry immediately', async () => {
     vi.useFakeTimers()
-    let settings = { ...defaultAppSettings }
-    const saved: unknown[] = []
+    const store = new MemoryWindowStateStore()
     const controller = new AppWindowStateController(
-      () => settings,
-      (next) => {
-        settings = next
-      },
-      async (next) => {
-        saved.push(next)
-      },
+      store,
       () => [{ x: 0, y: 0, width: 1920, height: 1040 }],
       logger
     )
@@ -37,24 +49,19 @@ describe('AppWindowStateController', () => {
     controller.flush(windowState({ x: 60, y: 70, width: 1100, height: 720 }))
     await vi.runAllTimersAsync()
 
-    expect(saved).toHaveLength(1)
-    expect(settings.windowBounds).toEqual({ x: 60, y: 70, width: 1100, height: 720 })
+    expect(store.saves).toBe(1)
+    expect(store.state.windowBounds).toEqual({ x: 60, y: 70, width: 1100, height: 720 })
     vi.useRealTimers()
   })
 
   it('rejects transient geometry that no longer intersects a display', async () => {
     vi.useFakeTimers()
-    let settings: AppSettings = {
-      ...defaultAppSettings,
+    const store = new MemoryWindowStateStore({
+      ...defaultWindowState,
       windowBounds: { x: 100, y: 100, width: 1000, height: 700 }
-    }
-    const save = vi.fn(async () => undefined)
+    })
     const controller = new AppWindowStateController(
-      () => settings,
-      (next) => {
-        settings = next
-      },
-      save,
+      store,
       () => [{ x: 0, y: 0, width: 1920, height: 1040 }],
       logger
     )
@@ -62,8 +69,8 @@ describe('AppWindowStateController', () => {
     controller.flush(windowState({ x: 3000, y: 100, width: 1000, height: 700 }))
     await vi.runAllTimersAsync()
 
-    expect(save).not.toHaveBeenCalled()
-    expect(settings.windowBounds).toEqual({ x: 100, y: 100, width: 1000, height: 700 })
+    expect(store.saves).toBe(0)
+    expect(store.state.windowBounds).toEqual({ x: 100, y: 100, width: 1000, height: 700 })
     vi.useRealTimers()
   })
 })

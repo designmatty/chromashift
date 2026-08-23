@@ -26,7 +26,6 @@ describe('profile application-data path', () => {
     expect(paths).toEqual({
       userDataDirectory: 'C:\\Users\\test\\AppData\\Roaming\\ChromaShift',
       profileConfigurationPath: 'C:\\Users\\test\\AppData\\Roaming\\ChromaShift\\profiles.json',
-      settingsPath: 'C:\\Users\\test\\AppData\\Roaming\\ChromaShift\\settings.json',
       legacyProfileConfigurationPaths: [
         'C:\\Users\\test\\AppData\\Roaming\\@chromashift\\desktop\\profiles.json'
       ]
@@ -42,7 +41,6 @@ describe('profile application-data path', () => {
     expect(paths).toEqual({
       userDataDirectory: 'D:\\isolated-smoke-data',
       profileConfigurationPath: 'D:\\isolated-smoke-data\\profiles.json',
-      settingsPath: 'D:\\isolated-smoke-data\\settings.json',
       legacyProfileConfigurationPaths: []
     })
   })

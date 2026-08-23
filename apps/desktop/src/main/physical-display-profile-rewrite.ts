@@ -72,5 +72,7 @@ function sameTargetList(
   left: readonly ProfileDisplayTarget[],
   right: readonly ProfileDisplayTarget[]
 ): boolean {
-  return left.length === right.length && left.every((target, index) => sameTarget(target, right[index]!))
+  return (
+    left.length === right.length && left.every((target, index) => sameTarget(target, right[index]!))
+  )
 }
