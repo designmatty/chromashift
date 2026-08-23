@@ -26,10 +26,8 @@ import { AppWindowStateController } from './app-window-state-controller.js'
 import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
 import { applicationFriendlyName } from './application-friendly-name.js'
-import {
-  AutomaticActivationController,
-  type CompletedActivationOutcome
-} from './automatic-activation-controller.js'
+import { attachActivationOutcomeRouter } from './activation-outcome-router.js'
+import { AutomaticActivationController } from './automatic-activation-controller.js'
 import { ChromaShiftController } from './chroma-shift-controller.js'
 import { DisplayTransitionController } from './display-transition-controller.js'
 import { ElectronNotificationPort } from './electron-notification.js'
@@ -622,37 +620,12 @@ async function configureDesktopLifecycle(): Promise<void> {
     new ElectronNotificationPort(logger),
     openProfile
   )
-  const handleNotificationOutcome = (outcome: CompletedActivationOutcome): void => {
-    void chromaShiftController?.recordCompletedOutcome(outcome).catch((error: unknown) => {
-      logger.write({
-        level: 'error',
-        eventName: 'ChromaShiftIntentPersistenceFailed',
-        ...describeError(error)
-      })
-    })
-    void profileNotifications.handle(outcome).catch((error: unknown) => {
-      logger.write({
-        level: 'error',
-        eventName: 'ProfileNotificationFailed',
-        message: describeError(error)
-      })
-    })
-  }
-  const finalizedControlOrigins = new Set<CompletedActivationOutcome['origin']>([
-    'pause',
-    'resume',
-    'safetyRetry',
-    'originalSettingsRestore'
-  ])
-  const unsubscribeActivationNotifications = automaticActivation.subscribeOutcomes((outcome) => {
-    if (!finalizedControlOrigins.has(outcome.origin)) handleNotificationOutcome(outcome)
-  })
-  const unsubscribeOperationalNotifications =
-    chromaShiftController.subscribeOperationalOutcomes(handleNotificationOutcome)
-  unsubscribeProfileNotifications = () => {
-    unsubscribeActivationNotifications()
-    unsubscribeOperationalNotifications()
-  }
+  unsubscribeProfileNotifications = attachActivationOutcomeRouter(
+    automaticActivation,
+    chromaShiftController,
+    profileNotifications,
+    logger
+  )
   nativeRecoveryController = new NativeServiceRecoveryController(
     nativeClient,
     {
