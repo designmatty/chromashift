@@ -225,17 +225,14 @@ function ShortcutRow({
               Press shortcut
             </Kbd>
           ) : displayKeys.length > 0 ? (
-              <Kbd size="sm">
-                {displayKeys.join(' + ')}
-              </Kbd>
-            ) : null
-          }
+            <Kbd size="sm">{displayKeys.join(' + ')}</Kbd>
+          ) : null}
         </Flex>
         <Group attached>
           <Button
             ref={recordButton}
             size="2xs"
-            variant='surface'
+            variant="surface"
             disabled={disabled}
             aria-label={`${label} shortcut`}
             margin={0}
@@ -259,9 +256,9 @@ function ShortcutRow({
             {recording ? 'Recording…' : 'Record'}
           </Button>
           <IconButton
-            aria-label='Clear shortcut'
+            aria-label="Clear shortcut"
             size="2xs"
-            variant='surface'
+            variant="surface"
             disabled={disabled || accelerator === null}
             onClick={() => onChange(null)}
           >
