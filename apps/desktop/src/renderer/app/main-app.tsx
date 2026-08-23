@@ -1,7 +1,7 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
 import { CircleAlert, Power } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { activeColorTargets, type ColorProfile } from '@chromashift/core'
+import { useEffect, useState } from 'react'
+import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
@@ -10,6 +10,7 @@ import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
+import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { SettingsNav } from '@/features/settings/settings-nav'
 import { SettingsPanel } from '@/features/settings/settings-panel'
@@ -35,15 +36,18 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       ? remembered
       : (product.configuration.profiles[0]?.id ?? null)
   })
-  const [draft, setDraft] = useState<ColorProfile | null>(null)
   const [expandedDisplayIds, setExpandedDisplayIds] = useState<string[]>([])
   const [editing, setEditing] = useState(false)
-  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
   const [profilePendingDeletion, setProfilePendingDeletion] = useState<ColorProfile | null>(null)
-  const editPreviewGeneration = useRef(0)
-  const pendingEditPreviews = useRef(new Set<Promise<unknown>>())
+  const { draft, dirty, updateDraft, replaceDraft, resetTo, invalidateSync, rollbackPreview } =
+    usePreviewDraft({
+      kind: 'edit',
+      session: product.preview,
+      enabled: editing,
+      onError: setError
+    })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
     product.configuration.profiles[0] ??
@@ -63,7 +67,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }, [selectedId])
 
   useEffect(() => {
-    if (!editing && selected !== null) setDraft(structuredClone(selected))
+    if (!editing && selected !== null) replaceDraft(structuredClone(selected))
   }, [selected, editing])
 
   const connectedDisplayIds = new Set(product.displays.map((display) => display.id.toLowerCase()))
@@ -77,29 +81,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   useEffect(() => {
     setExpandedDisplayIds(selectedDisplayIds)
   }, [selected?.id, selectedDisplayIdsSignature, editing])
-
-  const draftSignature = JSON.stringify(draft)
-  useEffect(() => {
-    if (!editing || draft === null || draft.displays.length === 0) return
-    const generation = editPreviewGeneration.current
-    const timer = setTimeout(() => {
-      if (generation !== editPreviewGeneration.current) return
-      const request =
-        activeSession?.kind === 'edit' && activeSession.profileId === draft.id
-          ? window.chromaShift.updatePreview(draft.id, activeColorTargets(draft))
-          : window.chromaShift.startPreview(draft, 'edit')
-      const pending = run(request, setError)
-      pendingEditPreviews.current.add(pending)
-      void pending.finally(() => pendingEditPreviews.current.delete(pending))
-    }, 120)
-    return () => clearTimeout(timer)
-  }, [editing, draftSignature, activeSession?.kind, activeSession?.profileId])
-
-  async function rollbackEditPreview(): Promise<void> {
-    editPreviewGeneration.current += 1
-    await Promise.allSettled([...pendingEditPreviews.current])
-    await run(window.chromaShift.cancelPreview(), setError)
-  }
 
   async function rollbackExplicitPreview(): Promise<void> {
     const current = await run(window.chromaShift.getState(), setError)
@@ -124,15 +105,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     const leavingProfile =
       selected !== null && selected.id.toLowerCase() !== profile.id.toLowerCase()
     const rollback = editing
-      ? rollbackEditPreview()
+      ? rollbackPreview()
       : leavingProfile
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
     if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
-    setDraft(structuredClone(profile))
+    resetTo(profile)
     setEditing(false)
-    setDirty(false)
     await rollback
   }
 
@@ -140,14 +120,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (nextView === view) return
     if (editing && dirty && !confirm('Discard the changes to this profile?')) return
     const rollback = editing
-      ? rollbackEditPreview()
+      ? rollbackPreview()
       : view === 'profiles'
         ? rollbackExplicitPreview()
         : Promise.resolve()
     if (editing) resetRememberedColorValues(selected)
-    setDraft(selected === null ? null : structuredClone(selected))
+    resetTo(selected)
     setEditing(false)
-    setDirty(false)
     setView(nextView)
     await rollback
   }
@@ -170,11 +149,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   useEffect(() => {
     window.chromaShift.onAppPanelClosed(() => {
       if (!editing) return
-      const rollback = rollbackEditPreview()
+      const rollback = rollbackPreview()
       resetRememberedColorValues(selected)
-      setDraft(selected === null ? null : structuredClone(selected))
+      resetTo(selected)
       setEditing(false)
-      setDirty(false)
       void rollback
     })
   })
@@ -190,16 +168,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       return
     }
     const rollback = editing
-      ? rollbackEditPreview()
+      ? rollbackPreview()
       : activeSession?.kind === 'preview' && !promotingPreview
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
-    editPreviewGeneration.current += 1
+    invalidateSync()
     if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
-    setDraft(structuredClone(profile))
+    resetTo(profile)
     setEditing(true)
-    setDirty(false)
     await rollback
     if (promotingPreview) {
       const result = await window.chromaShift.startPreview(profile, 'edit')
@@ -213,15 +190,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       return
     }
     const rollback = editing
-      ? rollbackEditPreview()
+      ? rollbackPreview()
       : changingProfile
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
     if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
-    setDraft(structuredClone(profile))
+    resetTo(profile)
     setEditing(false)
-    setDirty(false)
     await rollback
     await action(
       activeSession?.kind === 'preview' && activeSession.profileId === profile.id
@@ -231,11 +207,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
 
   async function cancelEdit(): Promise<void> {
-    const rollback = rollbackEditPreview()
+    const rollback = rollbackPreview()
     resetRememberedColorValues(selected)
-    setDraft(selected === null ? null : structuredClone(selected))
+    resetTo(selected)
     setEditing(false)
-    setDirty(false)
     await rollback
   }
 
@@ -251,12 +226,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     void action(window.chromaShift.deleteProfile(profile.id), () => {
       const deletedProfileWasSelected = selected?.id.toLowerCase() === profile.id.toLowerCase()
       if (deletedProfileWasSelected) {
-        editPreviewGeneration.current += 1
+        invalidateSync()
         if (editing) resetRememberedColorValues(selected)
         setSelectedId(DEFAULT_ID)
-        setDraft(null)
+        resetTo(null)
         setEditing(false)
-        setDirty(false)
       }
       setProfilePendingDeletion(null)
     })
@@ -422,7 +396,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             onCreate={() =>
               void action(window.chromaShift.createProfile('New profile'), (profile) => {
                 setSelectedId(profile.id)
-                setDraft(profile)
+                replaceDraft(profile)
                 setEditing(true)
               })
             }
@@ -438,7 +412,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             onDuplicate={(profile) =>
               void action(window.chromaShift.duplicateProfile(profile.id), (copy) => {
                 setSelectedId(copy.id)
-                setDraft(copy)
+                replaceDraft(copy)
               })
             }
             onToggleEnabled={toggleProfileEnabled}
@@ -477,10 +451,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   }
                   active={activeProfileId?.toLowerCase() === shownProfile.id.toLowerCase()}
                   onEdit={() => void beginEdit()}
-                  onChange={(profile) => {
-                    setDraft(profile)
-                    setDirty(true)
-                  }}
+                  onChange={(profile) => updateDraft(profile)}
                   onCancel={() => void cancelEdit()}
                   onSave={() =>
                     void action(
@@ -488,9 +459,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                         ? window.chromaShift.confirmPreview(shownProfile, 'preserve')
                         : window.chromaShift.saveProfile(shownProfile),
                       (saved) => {
-                        setDraft(saved)
+                        resetTo(saved)
                         setEditing(false)
-                        setDirty(false)
                       }
                     )
                   }
@@ -504,7 +474,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   onCopy={() =>
                     void action(window.chromaShift.duplicateProfile(shownProfile.id), (copy) => {
                       setSelectedId(copy.id)
-                      setDraft(copy)
+                      replaceDraft(copy)
                     })
                   }
                   onDelete={() => requestProfileDeletion(shownProfile)}
