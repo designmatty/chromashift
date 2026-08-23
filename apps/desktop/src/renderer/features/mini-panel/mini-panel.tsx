@@ -19,6 +19,7 @@ import {
   Bug,
   ChevronsUpDown,
   Monitor,
+  Power,
   RefreshCcwDot,
   Settings as SettingsIcon,
   X
@@ -53,8 +54,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const [picker, setPicker] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const activeId =
-    product.activation.currentTarget?.kind === 'profile'
-      ? product.activation.currentTarget.profileId
+    product.chromaShift.intendedTarget?.kind === 'profile'
+      ? product.chromaShift.intendedTarget.profileId
       : DEFAULT_ID
   const active =
     product.configuration.profiles.find((profile) => profile.id === activeId) ??
@@ -117,7 +118,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
   const draftSignature = JSON.stringify(draft)
   useEffect(() => {
-    if (!dirty || active === undefined || draft === undefined) return
+    if (
+      !dirty ||
+      active === undefined ||
+      draft === undefined ||
+      product.chromaShift.status !== 'active'
+    )
+      return
     const timer = setTimeout(() => {
       const request =
         override === null
@@ -145,7 +152,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     }
 
     if (picker) {
-      const pickerValue = product.activation.mode.kind === 'automatic' ? AUTOMATIC_ID : active.id
+      const pickerValue =
+        product.chromaShift.intendedMode.kind === 'automatic' ? AUTOMATIC_ID : active.id
       const [automaticItem, ...profileItems] = pickerItems
 
       return (
@@ -295,7 +303,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               color={selectedColor}
               lastColorValues={selectedTarget?.lastColorValues}
               product={product}
-              editable
+              editable={product.chromaShift.status === 'active'}
               onChange={(color, lastColorValues) => {
                 const next = setDisplayTarget(draft, {
                   displayId: selectedDisplayId,
@@ -337,7 +345,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           >
             <Stack gap="0" flex={1} width={'full'}>
               <Text color="fg.muted" fontSize="md">
-                {product.activation.mode.kind === 'automatic' ? 'Auto switch' : 'Manually selected'}
+                {product.chromaShift.intendedMode.kind === 'automatic'
+                  ? 'Auto switch'
+                  : 'Manually selected'}
               </Text>
               <Text
                 overflow="hidden"
@@ -369,6 +379,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               variant="ghost"
               onClick={() => void run(window.chromaShift.restoreBaseline(), setError)}
               aria-label="Restore original display settings"
+              disabled={product.chromaShift.status !== 'active'}
             >
               <RefreshCcwDot />
             </IconButton>
@@ -381,6 +392,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   return (
     <MiniPanelFrame>
       <MiniPanelTitleBar
+        product={product}
+        onError={setError}
         onOpenDebugger={() => void run(window.chromaShift.openMiniPanelDevTools(), setError)}
         onClose={() => void run(window.chromaShift.hideMiniPanel(), setError)}
       />
@@ -473,9 +486,13 @@ function MiniProfilePickerOption({
 }
 
 function MiniPanelTitleBar({
+  product,
+  onError,
   onOpenDebugger,
   onClose
 }: {
+  product: ProductState
+  onError(error: ProductError | null): void
   onOpenDebugger(): void
   onClose(): void
 }): React.JSX.Element {
@@ -491,18 +508,39 @@ function MiniPanelTitleBar({
       css={{ WebkitAppRegion: 'drag' }}
     >
       <Brand compact />
-      <Tooltip content="Open browser inspector">
+      <Tooltip content={chromaShiftActionLabel(product)}>
         <IconButton
+          data-part="chromashift-control"
+          data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
           variant="ghost"
           size="2xs"
           ml="1"
+          colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
           css={{ WebkitAppRegion: 'no-drag' }}
-          onClick={onOpenDebugger}
-          aria-label="Open browser inspector"
+          disabled={product.chromaShift.transitionInProgress}
+          loading={product.chromaShift.transitionInProgress}
+          onClick={() =>
+            void run(window.chromaShift.controlChromaShift(chromaShiftAction(product)), onError)
+          }
+          aria-label={chromaShiftActionLabel(product)}
         >
-          <Bug size={16} />
+          <Power size={16} />
         </IconButton>
       </Tooltip>
+      {import.meta.env.DEV && (
+        <Tooltip content="Open browser inspector">
+          <IconButton
+            variant="ghost"
+            size="2xs"
+            ml="1"
+            css={{ WebkitAppRegion: 'no-drag' }}
+            onClick={onOpenDebugger}
+            aria-label="Open browser inspector"
+          >
+            <Bug size={16} />
+          </IconButton>
+        </Tooltip>
+      )}
       <PanelViewToggle mini />
       <Tooltip content="Close mini panel">
         <IconButton
@@ -520,6 +558,18 @@ function MiniPanelTitleBar({
       </Tooltip>
     </Flex>
   )
+}
+
+function chromaShiftAction(product: ProductState): 'pause' | 'resume' | 'retry' {
+  if (product.chromaShift.status === 'active') return 'pause'
+  return product.chromaShift.status === 'safetyBlocked' ? 'retry' : 'resume'
+}
+
+function chromaShiftActionLabel(product: ProductState): string {
+  if (product.chromaShift.status === 'active') return 'Pause ChromaShift'
+  return product.chromaShift.status === 'safetyBlocked'
+    ? 'Retry ChromaShift safety check'
+    : 'Resume ChromaShift'
 }
 
 function MiniDisplaySelect({

@@ -1,5 +1,5 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
-import { CircleAlert } from 'lucide-react'
+import { CircleAlert, Power } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
@@ -13,6 +13,7 @@ import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { SettingsNav } from '@/features/settings/settings-nav'
 import { SettingsPanel } from '@/features/settings/settings-panel'
+import { ShortcutsPanel } from '@/features/settings/shortcuts-panel'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
 import type {
@@ -156,6 +157,17 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   })
 
   useEffect(() => {
+    window.chromaShift.onAppPanelProfileSelection((profileId) => {
+      const profile = product.configuration.profiles.find(
+        (candidate) => candidate.id.toLowerCase() === profileId.toLowerCase()
+      )
+      if (profile === undefined) return
+      setView('profiles')
+      void selectProfile(profile)
+    })
+  })
+
+  useEffect(() => {
     window.chromaShift.onAppPanelClosed(() => {
       if (!editing) return
       const rollback = rollbackEditPreview()
@@ -250,6 +262,25 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   }
 
+  function toggleProfileEnabled(profile: ColorProfile): void {
+    const enabled = !profile.enabled
+    const binding = product.settings.shortcutBindings.find(
+      (candidate) =>
+        candidate.action.kind === 'profile' &&
+        candidate.action.profileId.toLowerCase() === profile.id.toLowerCase()
+    )
+    const removeShortcut = !enabled && binding !== undefined
+    if (
+      removeShortcut &&
+      !confirm(
+        `This will remove the ${binding.accelerator} shortcut from "${profile.name}". Continue?`
+      )
+    ) {
+      return
+    }
+    void action(window.chromaShift.saveProfile({ ...profile, enabled }, removeShortcut))
+  }
+
   const savedProfile = draft ?? selected
   // A temporary override replaces the saved values on the displays it touched, so
   // the read-only view shows what is actually applied right now.
@@ -263,8 +294,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
 
   const inSettings = view !== 'profiles'
   const activeProfileId =
-    product.activation.currentTarget?.kind === 'profile'
-      ? product.activation.currentTarget.profileId
+    product.chromaShift.intendedTarget?.kind === 'profile'
+      ? product.chromaShift.intendedTarget.profileId
       : null
 
   const OverrideBanner = () => {
@@ -337,7 +368,27 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
 
   return (
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
-      <TitleBar />
+      <TitleBar
+        brandAccessory={
+          <Button
+            data-part="chromashift-control"
+            data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
+            size="2xs"
+            variant="subtle"
+            colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
+            rounded="sm"
+            disabled={product.chromaShift.transitionInProgress}
+            loading={product.chromaShift.transitionInProgress}
+            aria-label={chromaShiftActionLabel(product)}
+            onClick={() =>
+              void run(window.chromaShift.controlChromaShift(chromaShiftAction(product)), setError)
+            }
+          >
+            <Power size={14} />
+            {product.chromaShift.status === 'active' ? 'Active' : 'Paused'}
+          </Button>
+        }
+      />
       <OverrideBanner />
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
@@ -366,7 +417,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             activeId={activeProfileId}
             editingProfileId={editing ? (shownProfile?.id ?? null) : null}
             previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
-            automatic={product.activation.mode.kind === 'automatic'}
+            automatic={product.chromaShift.intendedMode.kind === 'automatic'}
             onSelect={(profile) => void selectProfile(profile)}
             onCreate={() =>
               void action(window.chromaShift.createProfile('New profile'), (profile) => {
@@ -390,9 +441,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 setDraft(copy)
               })
             }
-            onToggleEnabled={(profile) =>
-              void action(window.chromaShift.saveProfile({ ...profile, enabled: !profile.enabled }))
-            }
+            onToggleEnabled={toggleProfileEnabled}
             onDelete={requestProfileDeletion}
             onReorder={(profileIds) => void action(window.chromaShift.reorderProfiles(profileIds))}
           />
@@ -466,14 +515,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                         : window.chromaShift.enableAutomatic()
                     )
                   }
-                  onToggleEnabled={() =>
-                    void action(
-                      window.chromaShift.saveProfile({
-                        ...shownProfile,
-                        enabled: !shownProfile.enabled
-                      })
-                    )
-                  }
+                  onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
                   onError={setError}
                 />
               )}
@@ -481,6 +523,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           )}
           {view === 'displays' && <DisplaysView product={product} onError={setError} />}
           {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
+          {view === 'shortcuts' && <ShortcutsPanel product={product} onError={setError} />}
           {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
           {view === 'about' && <AboutPanel version={product.version} />}
         </Flex>
@@ -495,7 +538,26 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   )
 }
 
-const appPanelViews: AppPanelView[] = ['profiles', 'displays', 'settings', 'diagnostics', 'about']
+function chromaShiftAction(product: ProductState): 'pause' | 'resume' | 'retry' {
+  if (product.chromaShift.status === 'active') return 'pause'
+  return product.chromaShift.status === 'safetyBlocked' ? 'retry' : 'resume'
+}
+
+function chromaShiftActionLabel(product: ProductState): string {
+  if (product.chromaShift.status === 'active') return 'Pause ChromaShift'
+  return product.chromaShift.status === 'safetyBlocked'
+    ? 'Retry ChromaShift safety check'
+    : 'Resume ChromaShift'
+}
+
+const appPanelViews: AppPanelView[] = [
+  'profiles',
+  'displays',
+  'settings',
+  'shortcuts',
+  'diagnostics',
+  'about'
+]
 
 function readLastView(): AppPanelView {
   const remembered = localStorage.getItem(LAST_VIEW_KEY)

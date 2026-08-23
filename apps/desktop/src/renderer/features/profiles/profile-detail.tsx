@@ -11,7 +11,7 @@ import {
   Stack,
   Text
 } from '@chakra-ui/react'
-import { Copy, Ellipsis, EyeOff, PowerOff, ScanEye, Settings2, Trash2 } from 'lucide-react'
+import { Copy, Ellipsis, EyeOff, PowerOff, ScanEye, Edit, Trash2 } from 'lucide-react'
 import { useId } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Switch } from '@/components/ui/switch'
@@ -139,7 +139,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                   onClick={props.onEdit}
                   aria-label="Edit profile"
                 >
-                  <Settings2 />
+                  <Edit />
                 </IconButton>
               </Tooltip>
               <Menu.Root ids={{ trigger: actionsTriggerId }}>

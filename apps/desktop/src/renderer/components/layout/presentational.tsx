@@ -31,7 +31,13 @@ export function Brand({ compact = false }: { compact?: boolean }): React.JSX.Ele
  * a drag region; interactive children opt out with `no-drag` so the native
  * caption buttons, keyboard handling, DPI scaling, and Snap behavior are intact.
  */
-export function TitleBar({ children }: { children?: ReactNode }): React.JSX.Element {
+export function TitleBar({
+  brandAccessory,
+  children
+}: {
+  brandAccessory?: ReactNode
+  children?: ReactNode
+}): React.JSX.Element {
   return (
     <Flex
       as="header"
@@ -44,6 +50,11 @@ export function TitleBar({ children }: { children?: ReactNode }): React.JSX.Elem
       css={{ WebkitAppRegion: 'drag' }}
     >
       <Brand />
+      {brandAccessory !== undefined && (
+        <Flex ml="2" align="center" css={{ WebkitAppRegion: 'no-drag' }}>
+          {brandAccessory}
+        </Flex>
+      )}
       <PanelViewToggle />
       {children !== undefined && (
         <Flex ml="auto" align="center" gap={3} css={{ WebkitAppRegion: 'no-drag' }}>

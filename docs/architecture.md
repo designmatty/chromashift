@@ -157,12 +157,39 @@ native-caption-controlled app panel.
 
 App settings are validated and atomically persisted separately from profiles.
 They control login launch, login-only tray/app startup behavior, close-to-tray
-versus restore-safe shutdown, and System/Light/Dark rendering. Explicit launches
-still show the app panel. The permanent Default profile remains the only catch-all,
-cannot be disabled or deleted, and cannot receive application assignments.
+versus restore-safe shutdown, System/Light/Dark rendering, opt-in profile-change
+notifications, configurable global shortcuts, and persisted display-control
+status. A lossless version-1 migration supplies defaults for older settings.
+Explicit launches still show the app panel. The permanent Default profile
+remains the only catch-all, cannot be disabled or deleted, and cannot receive
+application assignments.
 
-The system tray reads the same activation state, supports
-manual profile overrides, returns to automatic mode, and can restore baseline.
+Electron main owns native notifications and global shortcut registration, so
+both remain available with no renderer alive. Shortcut replacement is atomic:
+validation, reserved-key and duplicate checks, and operating-system registration
+must all succeed before the new bindings are persisted, otherwise the last valid
+set is restored. Profile bindings follow profile rename, disable, and deletion;
+disabling a bound profile requires explicit confirmation that names the binding.
+The fixed emergency-restore accelerator is reserved outside configurable
+bindings. Notification wording is derived from completed activation outcomes and
+distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
+and no-op results. Clicking a profile notification opens that profile in the app
+panel.
+
+Display control has three persisted states: Active, Paused, and Safety blocked.
+Pause suspends new writes, waits for in-flight activation, restores every owned
+baseline, and enters Paused only after full restoration. An incomplete restore
+fails closed into Safety blocked. Resume re-resolves the latest foreground app
+and applies the preserved intended mode and target. Explicit profile or Automatic
+selection resumes a user pause; during a safety block it updates intent without
+bypassing the required retry. Safety blocked persists whether the interrupted
+operation was Pause or Resume so retry completes the correct operation. One-shot
+Restore original settings leaves display control Active and preserves intent.
+
+The system tray reads the same activation and display-control state, supports
+manual profile overrides, returns to automatic mode, restores original settings,
+and pauses, resumes, or retries display control. It exposes separate app- and
+mini-panel commands while preserving last-used-panel left-click behavior.
 Closing the window either releases its renderer to the tray or requests shutdown
 according to settings. Opening the app recreates the renderer from main-owned
 product state. ChromaShift holds a single-instance lock, so launching it again

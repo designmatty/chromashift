@@ -9,6 +9,7 @@ import {
   appSettingsResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
+  controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
@@ -46,9 +47,10 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.createProfile, createProfileRequestSchema, profileResultSchema, {
       name
     }),
-  saveProfile: (profile) =>
+  saveProfile: (profile, removeShortcut) =>
     invoke(productIpcChannels.saveProfile, saveProfileRequestSchema, profileResultSchema, {
-      profile
+      profile,
+      removeShortcut
     }),
   duplicateProfile: (profileId) =>
     invoke(productIpcChannels.duplicateProfile, profileIdRequestSchema, profileResultSchema, {
@@ -74,6 +76,13 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.enableAutomatic, emptyRequestSchema, voidResultSchema, {}),
   restoreBaseline: () =>
     invoke(productIpcChannels.restoreBaseline, emptyRequestSchema, voidResultSchema, {}),
+  controlChromaShift: (action) =>
+    invoke(
+      productIpcChannels.controlChromaShift,
+      controlChromaShiftRequestSchema,
+      voidResultSchema,
+      { action }
+    ),
   pickApplication: () =>
     invoke(
       productIpcChannels.pickApplication,
@@ -148,6 +157,14 @@ const api: ChromaShiftApi = {
       const view = appPanelViewSchema.safeParse(input)
       if (view.success) listener(view.data)
       else console.error('Rejected invalid app-panel navigation event.', view.error)
+    })
+  },
+  onAppPanelProfileSelection: (listener) => {
+    ipcRenderer.removeAllListeners(productIpcChannels.selectAppPanelProfile)
+    ipcRenderer.on(productIpcChannels.selectAppPanelProfile, (_event, input: unknown) => {
+      const request = profileIdRequestSchema.safeParse(input)
+      if (request.success) listener(request.data.profileId)
+      else console.error('Rejected invalid app-panel profile selection event.', request.error)
     })
   }
 }

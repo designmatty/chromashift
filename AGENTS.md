@@ -1196,9 +1196,10 @@ The application should remain useful with its main window closed.
 Target tray behavior:
 
 ```text
+ChromaShift: Active
 Current: Gaming
 
-Automatic ✓
+Automatic
 
 Profiles
   Default
@@ -1208,8 +1209,16 @@ Profiles
 
 ────────────
 
-Reset displays
-Open
+Restore original settings
+Pause ChromaShift
+
+────────────
+
+Open app panel
+Open mini panel
+
+────────────
+
 Exit
 ```
 
@@ -1795,7 +1804,7 @@ later milestones.
 
 # Roadmap status and slice rules
 
-Current status on 2026-08-20:
+Current status on 2026-08-22:
 
 - Phase 0 — complete
 - Milestone 1 — complete
@@ -1803,9 +1812,9 @@ Current status on 2026-08-20:
 - Milestone 3 — complete
 - Milestone 4 — complete
 - Milestone 5 — complete
-- Milestone 6 — next
-- Milestone 7 — planned after Milestone 6
-- Milestone 8 — extended hardening planned after Milestone 7
+- Milestone 6 — complete
+- Milestone 7 — complete
+- Milestone 8 — next
 
 Implement the roadmap in the numbered slices below. A slice is complete only
 when its behavior is integrated, tested at the appropriate boundary, documented
@@ -2051,7 +2060,7 @@ Focus on functionality before visual polish.
   excluding ChromaShift, system/background windows, and duplicate executables;
   retain the `.exe` browser
 - add System/Light/Dark theme, launch-at-startup, login launch behavior, close
-  behavior, and Reset displays settings; diagnostics/log browsing is completed
+  behavior, and Restore original settings; diagnostics/log browsing is completed
   in Slice 5.3
 - login launch respects `Start in tray` versus `Show app panel`; explicit launches
   always show the app panel
@@ -2154,7 +2163,7 @@ missing states before changing the product model.
 
 ---
 
-# Milestone 6 — Performance and footprint optimization
+# Milestone 6 — Performance and footprint optimization (complete)
 
 Optimize only from repeatable measurements. Reliability, exact baseline
 restoration, native-provider coverage, renderer sandboxing, Windows interaction
@@ -2227,6 +2236,9 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - add an opt-in setting for native Windows notifications when the effective
   profile changes
+- apply that preference to routine automatic, manual, and shortcut profile
+  selections; explicit restore, pause/resume, safety, and critical shortcut
+  failure feedback remains available independently
 - identify the successfully selected profile and whether the transition came
   from automatic activation, a manual selection, or a shortcut
 - notify only after a real activation transition completes; suppress duplicate
@@ -2247,6 +2259,11 @@ reconsideration threshold recorded in `docs/performance.md`.
 - register shortcuts in Electron main, validate and persist bindings, detect
   collisions or operating-system registration failures, and never depend on a
   renderer being open
+- save each shortcut edit immediately through the same settings boundary used by
+  General settings; support Ctrl, Alt, Shift, and the Windows key with another
+  key, while treating hardware-only Fn as unavailable
+- render saved shortcut combinations with Chakra `Kbd` elements beside the
+  Record or Replace action rather than as read-only form inputs
 - unregister stale bindings on edits and shutdown, and surface actionable errors
   without disturbing the last valid shortcut configuration
 
@@ -2254,6 +2271,9 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - add separate `Open app panel` and `Open mini panel` actions to the tray context
   menu, including when the icon is opened from the Windows hidden-icons drawer
+- represent the top-level Automatic choice with a native checkable item that can
+  remain unchecked while a manual profile is selected; it has no adjacent radio
+  peer because profile choices live in a submenu
 - retain tray left-click reopening the last-used panel
 - route both context actions through the shared panel controller so opening one
   surface hides the other
@@ -2264,8 +2284,11 @@ reconsideration threshold recorded in `docs/performance.md`.
 
 - expose notification preferences and shortcut bindings through the existing
   validated settings and preload boundaries
-- make paused/restored display-control state visible in the tray, app panel, and
-  mini panel, with an obvious path back to automatic activation
+- make paused/restored display-control state visible in the tray and as a
+  clickable status control beside each panel logo. The app panel labels the
+  control Active or Paused, while the mini panel keeps it icon-only. Do not show
+  a separate Intended target summary
+- keep the mini-panel browser-inspector action limited to development builds
 - keep notifications, tray actions, and shortcuts synchronized with profile
   creation, rename, disablement, deletion, and activation-state changes
 - cover settings persistence, shortcut conflicts, previous/next ordering,
@@ -2274,6 +2297,11 @@ reconsideration threshold recorded in `docs/performance.md`.
 - run canonical verification and the real Electron desktop sequence; unit tests
   alone do not validate global shortcuts, native notifications, or hidden-icons
   drawer behavior
+
+Milestone 7 completed on 2026-08-22. The installed-package gate delivered and
+physically clicked a real Windows notification, then verified that the app panel
+routed to the selected profile. `docs/testing.md` records the completed
+automated, real-desktop, package, notification-click, and performance evidence.
 
 ---
 
@@ -2571,14 +2599,12 @@ This kind of visibility is preferable to opaque abstractions.
 
 # Current agent task
 
-Phase 0 and Milestones 1–5 are complete. The GeoSwap-inspired Chakra UI,
+Phase 0 and Milestones 1–7 are complete. The GeoSwap-inspired Chakra UI,
 feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
-in the per-display UI plan and Milestone 5. Continue with **Milestone 6 —
-Performance and footprint optimization**, followed by **Milestone 7 —
-Notifications, shortcuts, and tray extensions**. Run **Milestone 8 — Extended
-hardware and release hardening** after Milestone 7.
+in the per-display UI plan and Milestone 5. Continue with **Milestone 8 —
+Extended hardware and release hardening**.
 
 Milestone 5 is complete. The current NVIDIA/two-display machine passed
 canonical verification, native watchdog restoration, real desktop, forced-parent

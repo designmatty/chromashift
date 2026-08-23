@@ -1,7 +1,9 @@
 import { JsonProfileRepository, type ColorProfile } from '@chromashift/core'
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { AppSettings } from '../shared/product-api.js'
 import { PreviewSessionController } from './preview-session-controller.js'
+import { defaultAppSettings } from './app-settings.js'
 import {
   type ApplicationPickerPort,
   ProductConflictError,
@@ -37,16 +39,17 @@ function controller(
   settings: ProductSettingsPort = {
     get: () =>
       Promise.resolve({
-        launchAtStartup: false,
-        launchBehavior: 'tray',
-        closeBehavior: 'tray',
-        theme: 'system'
+        ...defaultAppSettings
       }),
     save: (value) => Promise.resolve(value),
     apply: () => undefined
   },
   nativeOverride?: ProductNativePort
-): { product: ProductController; repository: JsonProfileRepository } {
+): {
+  product: ProductController
+  repository: JsonProfileRepository
+  activation: ProductActivationPort
+} {
   const repository = new JsonProfileRepository(new MemoryStorage())
   const native: ProductNativePort = nativeOverride ?? {
     getDisplays: () => Promise.resolve([]),
@@ -57,9 +60,20 @@ function controller(
   }
   const activation: ProductActivationPort = {
     state: { enabled: true, mode: { kind: 'automatic' }, currentTarget: null },
+    chromaShiftState: {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: null,
+      transitionInProgress: false
+    },
     selectManualProfile: () => Promise.resolve(successfulOutcome),
     enableAutomatic: () => Promise.resolve(successfulOutcome),
     restoreBaseline: () => Promise.resolve(successfulOutcome),
+    pause: () => Promise.resolve(successfulOutcome),
+    resume: () => Promise.resolve(successfulOutcome),
+    retrySafetyCheck: () => Promise.resolve(successfulOutcome),
+    reconcileAutomaticIntent: () => Promise.resolve(),
     refreshAfterConfigurationChange: () => Promise.resolve()
   }
   const preview = new PreviewSessionController(
@@ -79,6 +93,7 @@ function controller(
   )
   return {
     repository,
+    activation,
     product: new ProductController(
       repository,
       native,
@@ -150,6 +165,7 @@ describe('ProductController settings ownership', () => {
   it('preserves the latest main-owned window geometry across renderer updates', async () => {
     const saved: Parameters<ProductSettingsPort['save']>[0][] = []
     const current = {
+      ...defaultAppSettings,
       launchAtStartup: false,
       launchBehavior: 'tray' as const,
       closeBehavior: 'tray' as const,
@@ -168,6 +184,7 @@ describe('ProductController settings ownership', () => {
     })
 
     await product.updateSettings({
+      ...defaultAppSettings,
       launchAtStartup: true,
       launchBehavior: 'app',
       closeBehavior: 'shutdown',
@@ -184,6 +201,107 @@ describe('ProductController settings ownership', () => {
         theme: 'dark'
       }
     ])
+  })
+
+  it('rolls shortcut registration back when settings persistence fails', async () => {
+    const rollback = vi.fn()
+    const { product } = controller(undefined, {
+      get: () => Promise.resolve(defaultAppSettings),
+      save: () => Promise.reject(new Error('Disk full.')),
+      apply: () => undefined,
+      prepareShortcuts: (bindings) => ({ bindings: [...bindings], rollback })
+    })
+
+    await expect(
+      product.updateSettings({
+        ...defaultAppSettings,
+        shortcutBindings: [{ action: { kind: 'defaultProfile' }, accelerator: 'Control+Shift+D' }]
+      })
+    ).rejects.toThrow('Disk full')
+    expect(rollback).toHaveBeenCalledOnce()
+  })
+})
+
+describe('ProductController profile shortcut lifecycle', () => {
+  it('requires confirmation before disabling a bound profile and removes the binding when confirmed', async () => {
+    let settings: AppSettings = {
+      ...defaultAppSettings,
+      shortcutBindings: [
+        { action: { kind: 'profile' as const, profileId: 'gaming' }, accelerator: 'Control+G' }
+      ]
+    }
+    const { product, repository } = controller(undefined, {
+      get: () => Promise.resolve(settings),
+      save: (next) => {
+        settings = next
+        return Promise.resolve(next)
+      },
+      apply: () => undefined,
+      prepareShortcuts: (bindings) => ({ bindings: [...bindings], rollback: () => undefined })
+    })
+    const profile = await repository.save({
+      id: 'gaming',
+      name: 'Gaming',
+      enabled: true,
+      applications: [],
+      displays: []
+    })
+
+    await expect(product.saveProfile({ ...profile, enabled: false })).rejects.toThrow(
+      'Turning off Gaming requires removing its Control+G shortcut.'
+    )
+    await expect(product.saveProfile({ ...profile, enabled: false }, true)).resolves.toMatchObject({
+      enabled: false
+    })
+    expect(settings.shortcutBindings).toEqual([])
+  })
+
+  it('removes a direct binding as part of profile deletion', async () => {
+    let settings: AppSettings = {
+      ...defaultAppSettings,
+      shortcutBindings: [
+        { action: { kind: 'profile' as const, profileId: 'gaming' }, accelerator: 'Control+G' }
+      ]
+    }
+    const { product, repository } = controller(undefined, {
+      get: () => Promise.resolve(settings),
+      save: (next) => {
+        settings = next
+        return Promise.resolve(next)
+      },
+      apply: () => undefined,
+      prepareShortcuts: (bindings) => ({ bindings: [...bindings], rollback: () => undefined })
+    })
+    await repository.save({
+      id: 'gaming',
+      name: 'Gaming',
+      enabled: true,
+      applications: [],
+      displays: []
+    })
+
+    await product.deleteProfile('gaming')
+
+    expect(settings.shortcutBindings).toEqual([])
+  })
+
+  it('reconciles a disabled manual target through the status-safe path', async () => {
+    const { product, repository, activation } = controller()
+    const profile = await repository.save({
+      id: 'gaming',
+      name: 'Gaming',
+      enabled: true,
+      applications: [],
+      displays: []
+    })
+    activation.state.mode = { kind: 'manual', profileId: 'gaming' }
+    const reconcile = vi.spyOn(activation, 'reconcileAutomaticIntent')
+    const enable = vi.spyOn(activation, 'enableAutomatic')
+
+    await product.saveProfile({ ...profile, enabled: false })
+
+    expect(reconcile).toHaveBeenCalledOnce()
+    expect(enable).not.toHaveBeenCalled()
   })
 })
 

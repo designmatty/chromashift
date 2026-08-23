@@ -35,6 +35,7 @@ export type ActivationOperation =
   | 'apply'
   | 'restore'
   | 'restoreAll'
+  | 'control'
 
 export interface ActivationFailure {
   operation: ActivationOperation

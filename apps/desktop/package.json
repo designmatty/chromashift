@@ -18,7 +18,7 @@
     "measure:memory": "node scripts/measure-memory.mjs",
     "measure:performance": "node scripts/measure-memory.mjs --packaged --check",
     "smoke:package": "node scripts/package-smoke.mjs",
-    "test": "vitest run src/main src/shared src/renderer/features/profiles/display-rows.test.ts",
+    "test": "vitest run src/main src/shared src/renderer",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {

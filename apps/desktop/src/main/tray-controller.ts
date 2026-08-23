@@ -6,6 +6,7 @@ import type {
 } from '@chromashift/core'
 import type { ActivationOutcome } from './activation-coordinator.js'
 import type { ActivationControllerState } from './automatic-activation-controller.js'
+import type { ChromaShiftState } from './chroma-shift-controller.js'
 import { describeError, type StructuredLogger } from './structured-logger.js'
 
 export interface TrayProfileItem {
@@ -16,19 +17,24 @@ export interface TrayProfileItem {
 }
 
 export interface TrayReadModel {
+  chromaShiftStatusLabel: 'Active' | 'Paused' | 'Safety blocked'
   currentProfileLabel: string
   automaticEnabled: boolean
   automaticChecked: boolean
   controlsEnabled: boolean
+  restoreEnabled: boolean
+  controlAction: 'pause' | 'resume' | 'retry'
   profiles: TrayProfileItem[]
 }
 
 export interface TrayCommands {
-  open(): void
+  openAppPanel(): void
+  openMiniPanel(): void
   exit(): void
   enableAutomatic(): void
   selectProfile(profileId: string): void
   resetBaseline(): void
+  controlChromaShift(): void
 }
 
 export interface TrayMenuPort {
@@ -39,14 +45,19 @@ export interface TrayMenuPort {
 
 export interface TrayActivationPort {
   readonly state: ActivationControllerState
-  subscribe(listener: (state: ActivationControllerState) => void): () => void
+  readonly chromaShiftState: ChromaShiftState
+  subscribe(listener: (state: ChromaShiftState) => void): () => void
   enableAutomatic(): Promise<ActivationOutcome>
   selectManualProfile(profileId: string): Promise<ActivationOutcome>
   restoreBaseline(): Promise<ActivationOutcome>
+  pause(source: 'manual'): Promise<ActivationOutcome>
+  resume(source: 'manual'): Promise<ActivationOutcome>
+  retrySafetyCheck(source: 'manual'): Promise<ActivationOutcome>
 }
 
-export interface MainWindowPort {
-  open(): void
+export interface PanelPort {
+  openAppPanel(): void
+  openMiniPanel(): void
 }
 
 export interface ShutdownRequestPort {
@@ -55,10 +66,11 @@ export interface ShutdownRequestPort {
 
 function targetLabel(target: ActivationTarget | null, profiles: readonly ColorProfile[]): string {
   if (target === null) return 'None'
-  if (target.kind === 'baseline') return 'Baseline'
-  return profiles.find(
-    (profile) => profile.id.toLowerCase() === target.profileId.toLowerCase()
-  )?.name ?? `Unknown (${target.profileId})`
+  if (target.kind === 'baseline') return 'Original settings'
+  return (
+    profiles.find((profile) => profile.id.toLowerCase() === target.profileId.toLowerCase())?.name ??
+    `Unknown (${target.profileId})`
+  )
 }
 
 function isManualProfile(mode: ActivationMode, profileId: string): boolean {
@@ -67,18 +79,33 @@ function isManualProfile(mode: ActivationMode, profileId: string): boolean {
 
 export function createTrayReadModel(
   profiles: readonly ColorProfile[],
-  state: ActivationControllerState
+  state: ActivationControllerState,
+  chromaShift: ChromaShiftState
 ): TrayReadModel {
+  const controlsEnabled = !chromaShift.transitionInProgress
   return {
-    currentProfileLabel: targetLabel(state.currentTarget, profiles),
-    automaticEnabled: state.enabled,
-    automaticChecked: state.mode.kind === 'automatic',
-    controlsEnabled: state.enabled,
+    chromaShiftStatusLabel:
+      chromaShift.status === 'safetyBlocked'
+        ? 'Safety blocked'
+        : chromaShift.status === 'paused'
+          ? 'Paused'
+          : 'Active',
+    currentProfileLabel: targetLabel(chromaShift.intendedTarget, profiles),
+    automaticEnabled: state.enabled && controlsEnabled,
+    automaticChecked: chromaShift.intendedMode.kind === 'automatic',
+    controlsEnabled: state.enabled && controlsEnabled,
+    restoreEnabled: state.enabled && controlsEnabled && chromaShift.status === 'active',
+    controlAction:
+      chromaShift.status === 'safetyBlocked'
+        ? 'retry'
+        : chromaShift.status === 'paused'
+          ? 'resume'
+          : 'pause',
     profiles: profiles.map((profile) => ({
       id: profile.id,
       name: profile.name,
       enabled: state.enabled && profile.enabled,
-      checked: isManualProfile(state.mode, profile.id)
+      checked: isManualProfile(chromaShift.intendedMode, profile.id)
     }))
   }
 }
@@ -91,7 +118,7 @@ export class TrayController {
   public constructor(
     private readonly repository: ProfileRepository,
     private readonly activation: TrayActivationPort,
-    private readonly window: MainWindowPort,
+    private readonly panels: PanelPort,
     private readonly shutdown: ShutdownRequestPort,
     private readonly menu: TrayMenuPort,
     private readonly logger: StructuredLogger
@@ -110,7 +137,10 @@ export class TrayController {
     try {
       const profiles = await this.repository.list()
       if (this.#disposed || generation !== this.#refreshGeneration) return
-      this.menu.update(createTrayReadModel(profiles, this.activation.state), this.#commands())
+      this.menu.update(
+        createTrayReadModel(profiles, this.activation.state, this.activation.chromaShiftState),
+        this.#commands()
+      )
     } catch (error) {
       this.#reportError('Tray menu could not be refreshed', error)
     }
@@ -126,7 +156,8 @@ export class TrayController {
 
   #commands(): TrayCommands {
     return {
-      open: () => this.window.open(),
+      openAppPanel: () => this.panels.openAppPanel(),
+      openMiniPanel: () => this.panels.openMiniPanel(),
       exit: () => {
         void this.shutdown.request('tray')
       },
@@ -144,14 +175,27 @@ export class TrayController {
         void this.#runAction('Original display settings could not be restored', () =>
           this.activation.restoreBaseline()
         )
+      },
+      controlChromaShift: () => {
+        const status = this.activation.chromaShiftState.status
+        const title =
+          status === 'safetyBlocked'
+            ? 'The safety check could not be completed'
+            : status === 'paused'
+              ? 'ChromaShift could not be resumed'
+              : 'ChromaShift could not be paused'
+        void this.#runAction(title, () =>
+          status === 'safetyBlocked'
+            ? this.activation.retrySafetyCheck('manual')
+            : status === 'paused'
+              ? this.activation.resume('manual')
+              : this.activation.pause('manual')
+        )
       }
     }
   }
 
-  async #runAction(
-    title: string,
-    action: () => Promise<ActivationOutcome>
-  ): Promise<void> {
+  async #runAction(title: string, action: () => Promise<ActivationOutcome>): Promise<void> {
     try {
       const outcome = await action()
       if (outcome.status === 'failed' || outcome.status === 'partialFailure') {
@@ -172,6 +216,9 @@ export class TrayController {
       title,
       ...details
     })
-    this.menu.showError(title, `${details.message}\n\nOpen ChromaShift for diagnostics, then retry.`)
+    this.menu.showError(
+      title,
+      `${details.message}\n\nOpen ChromaShift for diagnostics, then retry.`
+    )
   }
 }

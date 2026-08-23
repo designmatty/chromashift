@@ -1,5 +1,6 @@
 import {
   JsonProfileRepository,
+  manualActivationMode,
   type ColorProfile,
   type ColorSettings,
   type ProfileConfiguration,
@@ -820,6 +821,33 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it('hydrates a persisted Paused intent without display reads or writes until resume', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+
+    await controller.startSuspended(application('Browser.exe'), manualActivationMode('game-a'), {
+      kind: 'profile',
+      profileId: 'game-a'
+    })
+    await controller.handleNativeEvent(foregroundEvent('Browser.exe'))
+
+    expect(native.calls).toEqual([])
+    expect(controller.state).toMatchObject({
+      enabled: true,
+      mode: { kind: 'manual', profileId: 'game-a' },
+      currentTarget: { kind: 'profile', profileId: 'game-a' }
+    })
+
+    await controller.resumeCurrent(application('Browser.exe'))
+
+    expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+  })
+
   it('buffers foreground events until configuration is validated and then enables automation', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
@@ -908,6 +936,49 @@ describe('AutomaticActivationController', () => {
     })
     expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(3)
     expect(native.calls.at(-1)).toEqual({ operation: 'restoreAll' })
+  })
+
+  it('publishes completed outcomes with their activation source and origin', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const coordinator = new ActivationCoordinator(profileRepository, native, new RecordingLogger())
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      coordinator,
+      new RecordingLogger()
+    )
+    const completed: Array<{ source: string; origin: string; status: string }> = []
+    controller.subscribeOutcomes((outcome) => {
+      completed.push({ source: outcome.source, origin: outcome.origin, status: outcome.status })
+    })
+
+    await expect(controller.start(application('Browser.exe'))).resolves.toMatchObject({
+      source: 'automatic',
+      origin: 'startup',
+      status: 'activated'
+    })
+    await expect(controller.selectManualProfile('game-a')).resolves.toMatchObject({
+      source: 'manual',
+      origin: 'profileSelection',
+      status: 'activated'
+    })
+    await expect(controller.enableAutomatic()).resolves.toMatchObject({
+      source: 'manual',
+      origin: 'automaticSelection',
+      status: 'activated'
+    })
+    await expect(controller.restoreBaseline()).resolves.toMatchObject({
+      source: 'manual',
+      origin: 'originalSettingsRestore',
+      status: 'activated'
+    })
+
+    expect(completed).toEqual([
+      { source: 'automatic', origin: 'startup', status: 'activated' },
+      { source: 'manual', origin: 'profileSelection', status: 'activated' },
+      { source: 'manual', origin: 'automaticSelection', status: 'activated' },
+      { source: 'manual', origin: 'originalSettingsRestore', status: 'activated' }
+    ])
   })
 
   it('suspends writes during preview and applies the latest foreground target on rollback', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appSettingsSchema,
+  controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
   openAppPanelRequestSchema,
   previewUpdateRequestSchema,
@@ -23,9 +25,23 @@ describe('product API contracts', () => {
     expect(openAppPanelRequestSchema.safeParse({ view: 'settings' }).success).toBe(true)
     expect(setMiniPanelViewRequestSchema.safeParse({ view: 'override' }).success).toBe(true)
     expect(setMiniPanelViewRequestSchema.safeParse({ view: 'large' }).success).toBe(false)
+    expect(controlChromaShiftRequestSchema.safeParse({ action: 'stop' }).success).toBe(false)
+    expect(controlChromaShiftRequestSchema.safeParse({ action: 'retry' }).success).toBe(true)
     expect(
       reorderProfilesRequestSchema.safeParse({ profileIds: ['default', 'gaming'] }).success
     ).toBe(true)
+  })
+
+  it('rejects malformed ChromaShift status and shortcut binding state', () => {
+    expect(
+      appSettingsSchema.safeParse({ ...validSettings(), chromaShiftStatus: 'stopped' }).success
+    ).toBe(false)
+    expect(
+      appSettingsSchema.safeParse({
+        ...validSettings(),
+        shortcutBindings: [{ action: { kind: 'profile' }, accelerator: 'Control+G' }]
+      }).success
+    ).toBe(false)
   })
 
   it('accepts independent per-display preview targets', () => {
@@ -96,3 +112,19 @@ describe('product API contracts', () => {
     ).toBe(false)
   })
 })
+
+function validSettings() {
+  return {
+    schemaVersion: 1,
+    launchAtStartup: false,
+    launchBehavior: 'tray',
+    closeBehavior: 'tray',
+    theme: 'system',
+    profileChangeNotifications: false,
+    shortcutBindings: [],
+    chromaShiftStatus: 'active',
+    pendingControlOperation: null,
+    intendedActivationMode: { kind: 'automatic' },
+    intendedTarget: null
+  }
+}

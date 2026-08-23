@@ -7,6 +7,22 @@ import {
 } from 'electron'
 import type { TrayCommands, TrayMenuPort, TrayReadModel } from './tray-controller.js'
 
+export function createAutomaticMenuItem(
+  model: TrayReadModel,
+  commands: TrayCommands
+): MenuItemConstructorOptions {
+  return {
+    label: 'Automatic',
+    // Automatic has no adjacent radio peer because profile choices live in a
+    // submenu. Electron forces a standalone radio item checked, so use the
+    // native checkable item that can accurately represent both states.
+    type: 'checkbox',
+    enabled: model.automaticEnabled,
+    checked: model.automaticChecked,
+    click: commands.enableAutomatic
+  }
+}
+
 export class ElectronTrayMenu implements TrayMenuPort {
   readonly #tray: Tray
 
@@ -31,24 +47,30 @@ export class ElectronTrayMenu implements TrayMenuPort {
 
     this.#tray.setContextMenu(
       Menu.buildFromTemplate([
+        { label: `ChromaShift: ${model.chromaShiftStatusLabel}`, enabled: false },
         { label: `Current: ${model.currentProfileLabel}`, enabled: false },
-        { type: 'separator' },
-        {
-          label: 'Automatic',
-          type: 'radio',
-          enabled: model.automaticEnabled,
-          checked: model.automaticChecked,
-          click: commands.enableAutomatic
-        },
+        createAutomaticMenuItem(model, commands),
         { label: 'Profiles', submenu: profileItems },
         { type: 'separator' },
         {
-          label: 'Restore original display settings',
-          enabled: model.controlsEnabled,
+          label: 'Restore original settings',
+          enabled: model.restoreEnabled,
           click: commands.resetBaseline
         },
+        {
+          label:
+            model.controlAction === 'retry'
+              ? 'Retry safety check'
+              : model.controlAction === 'resume'
+                ? 'Resume ChromaShift'
+                : 'Pause ChromaShift',
+          enabled: model.controlsEnabled,
+          click: commands.controlChromaShift
+        },
         { type: 'separator' },
-        { label: 'Open ChromaShift', click: commands.open },
+        { label: 'Open app panel', click: commands.openAppPanel },
+        { label: 'Open mini panel', click: commands.openMiniPanel },
+        { type: 'separator' },
         { label: 'Exit', click: commands.exit }
       ])
     )
