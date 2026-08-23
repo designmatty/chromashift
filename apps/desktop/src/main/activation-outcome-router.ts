@@ -2,12 +2,14 @@ import type { CompletedActivationOutcome } from './automatic-activation-controll
 import { describeError, type StructuredLogger } from './structured-logger.js'
 
 export interface OutcomeActivationSource {
+  subscribe(listener: () => void): () => void
   subscribeOutcomes(listener: (outcome: CompletedActivationOutcome) => void): () => void
 }
 
 export interface OutcomeControlSource {
   subscribeOperationalOutcomes(listener: (outcome: CompletedActivationOutcome) => void): () => void
   recordCompletedOutcome(outcome: CompletedActivationOutcome): Promise<unknown>
+  syncActiveIntent(): Promise<unknown>
 }
 
 export interface OutcomeNotificationPort {
@@ -25,16 +27,28 @@ const finalizedControlOrigins = new Set<CompletedActivationOutcome['origin']>([
 ])
 
 /**
- * Routes every completed activation outcome into persisted ChromaShift intent
- * and user-facing profile notifications. Returns one detach function covering
- * both subscriptions.
+ * Routes activation state changes into persisted ChromaShift intent and a
+ * product-state refresh, and every completed activation outcome into intent
+ * persistence and user-facing profile notifications. Returns one detach
+ * function covering all three subscriptions.
  */
 export function attachActivationOutcomeRouter(
   activation: OutcomeActivationSource,
   control: OutcomeControlSource,
   notifications: OutcomeNotificationPort,
+  broadcastProductState: () => void,
   logger: StructuredLogger
 ): () => void {
+  const unsubscribeStateSync = activation.subscribe(() => {
+    void control.syncActiveIntent().catch((error: unknown) => {
+      logger.write({
+        level: 'error',
+        eventName: 'ChromaShiftIntentPersistenceFailed',
+        ...describeError(error)
+      })
+    })
+    broadcastProductState()
+  })
   const handleOutcome = (outcome: CompletedActivationOutcome): void => {
     void control.recordCompletedOutcome(outcome).catch((error: unknown) => {
       logger.write({
@@ -56,6 +70,7 @@ export function attachActivationOutcomeRouter(
   })
   const unsubscribeControl = control.subscribeOperationalOutcomes(handleOutcome)
   return () => {
+    unsubscribeStateSync()
     unsubscribeActivation()
     unsubscribeControl()
   }

@@ -29,7 +29,14 @@ class RecordingLogger {
 class FakeControl {
   public readonly recorded: CompletedActivationOutcome[] = []
   public recordFailure: Error | undefined
+  public syncs = 0
+  public syncFailure: Error | undefined
   #listeners = new Set<(outcome: CompletedActivationOutcome) => void>()
+
+  public syncActiveIntent(): Promise<unknown> {
+    this.syncs += 1
+    return this.syncFailure === undefined ? Promise.resolve() : Promise.reject(this.syncFailure)
+  }
 
   public subscribeOperationalOutcomes(
     listener: (outcome: CompletedActivationOutcome) => void
@@ -50,6 +57,12 @@ class FakeControl {
 
 class FakeActivation {
   #listeners = new Set<(outcome: CompletedActivationOutcome) => void>()
+  #stateListeners = new Set<() => void>()
+
+  public subscribe(listener: () => void): () => void {
+    this.#stateListeners.add(listener)
+    return () => this.#stateListeners.delete(listener)
+  }
 
   public subscribeOutcomes(listener: (outcome: CompletedActivationOutcome) => void): () => void {
     this.#listeners.add(listener)
@@ -58,6 +71,10 @@ class FakeActivation {
 
   public emit(value: CompletedActivationOutcome): void {
     for (const listener of this.#listeners) listener(value)
+  }
+
+  public emitStateChange(): void {
+    for (const listener of this.#stateListeners) listener()
   }
 }
 
@@ -76,14 +93,24 @@ function createHarness(): {
   control: FakeControl
   notifications: FakeNotifications
   logger: RecordingLogger
+  broadcasts: () => number
   detach: () => void
 } {
   const activation = new FakeActivation()
   const control = new FakeControl()
   const notifications = new FakeNotifications()
   const logger = new RecordingLogger()
-  const detach = attachActivationOutcomeRouter(activation, control, notifications, logger)
-  return { activation, control, notifications, logger, detach }
+  let broadcasts = 0
+  const detach = attachActivationOutcomeRouter(
+    activation,
+    control,
+    notifications,
+    () => {
+      broadcasts += 1
+    },
+    logger
+  )
+  return { activation, control, notifications, logger, broadcasts: () => broadcasts, detach }
 }
 
 describe('activation outcome router', () => {
@@ -138,12 +165,39 @@ describe('activation outcome router', () => {
     ])
   })
 
-  it('detaches both streams through the returned function', () => {
+  it('syncs persisted intent and refreshes product state on an activation state change', () => {
+    const harness = createHarness()
+    harness.activation.emitStateChange()
+    expect(harness.control.syncs).toBe(1)
+    expect(harness.broadcasts()).toBe(1)
+    expect(harness.control.recorded).toEqual([])
+    expect(harness.notifications.handled).toEqual([])
+  })
+
+  it('still refreshes product state when intent sync fails, logging the failure', async () => {
+    const harness = createHarness()
+    harness.control.syncFailure = new Error('settings write broke')
+    harness.activation.emitStateChange()
+    await Promise.resolve()
+    expect(harness.broadcasts()).toBe(1)
+    expect(harness.logger.events).toEqual([
+      {
+        level: 'error',
+        eventName: 'ChromaShiftIntentPersistenceFailed',
+        message: 'settings write broke'
+      }
+    ])
+  })
+
+  it('detaches all three streams through the returned function', () => {
     const harness = createHarness()
     harness.detach()
     harness.activation.emit(outcome())
+    harness.activation.emitStateChange()
     harness.control.emit(outcome({ origin: 'resume' }))
     expect(harness.control.recorded).toEqual([])
+    expect(harness.control.syncs).toBe(0)
     expect(harness.notifications.handled).toEqual([])
+    expect(harness.broadcasts()).toBe(0)
   })
 })

@@ -604,16 +604,6 @@ async function configureDesktopLifecycle(): Promise<void> {
     trayMenu,
     logger
   )
-  automaticActivation.subscribe(() => {
-    void chromaShiftController?.syncActiveIntent().catch((error: unknown) => {
-      logger.write({
-        level: 'error',
-        eventName: 'ChromaShiftIntentPersistenceFailed',
-        ...describeError(error)
-      })
-    })
-    scheduleProductStateBroadcast()
-  })
   const profileNotifications = new ProfileNotificationController(
     profileRepository,
     () => currentSettings,
@@ -624,6 +614,7 @@ async function configureDesktopLifecycle(): Promise<void> {
     automaticActivation,
     chromaShiftController,
     profileNotifications,
+    () => scheduleProductStateBroadcast(),
     logger
   )
   nativeRecoveryController = new NativeServiceRecoveryController(
