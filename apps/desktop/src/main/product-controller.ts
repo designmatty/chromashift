@@ -13,9 +13,9 @@ import type {
 } from '@chromashift/native-client'
 import type {
   ApplicationSelection,
-  AppSettings,
   ProductState,
-  ShortcutBinding
+  ShortcutBinding,
+  UserPreferences
 } from '../shared/product-api.js'
 import type { ActivationOutcome } from './activation-coordinator.js'
 import type { ActivationControllerState } from './automatic-activation-controller.js'
@@ -48,9 +48,9 @@ export interface ApplicationPickerPort {
 }
 
 export interface ProductSettingsPort {
-  get(): Promise<AppSettings>
-  save(settings: AppSettings): Promise<AppSettings>
-  apply(settings: AppSettings): void
+  get(): Promise<UserPreferences>
+  save(settings: UserPreferences): Promise<UserPreferences>
+  apply(settings: UserPreferences): void
   prepareShortcuts?(bindings: readonly ShortcutBinding[]): {
     bindings: ShortcutBinding[]
     rollback(): void
@@ -320,21 +320,8 @@ export class ProductController {
     return selections.filter((selection): selection is ApplicationSelection => selection !== null)
   }
 
-  public async updateSettings(settings: AppSettings): Promise<AppSettings> {
-    const current = await this.settings.get()
-    // Window placement belongs to Electron main. A renderer can hold an older
-    // product snapshot while the user moves a window, so never let that stale
-    // hidden metadata overwrite the latest main-owned geometry.
-    const { saved } = await this.#replaceSettings({
-      ...settings,
-      miniPanelPosition: current.miniPanelPosition,
-      windowBounds: current.windowBounds,
-      windowMaximized: current.windowMaximized,
-      chromaShiftStatus: current.chromaShiftStatus,
-      pendingControlOperation: current.pendingControlOperation,
-      intendedActivationMode: current.intendedActivationMode,
-      intendedTarget: current.intendedTarget
-    })
+  public async updateSettings(settings: UserPreferences): Promise<UserPreferences> {
+    const { saved } = await this.#replaceSettings(settings)
     this.refresh.stateChanged()
     return saved
   }
@@ -381,8 +368,8 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
-  async #replaceSettings(next: AppSettings): Promise<{
-    saved: AppSettings
+  async #replaceSettings(next: UserPreferences): Promise<{
+    saved: UserPreferences
     rollback(): Promise<void>
   }> {
     const previous = await this.settings.get()

@@ -14,14 +14,18 @@ async function createTemporaryDirectory(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true }))
   )
 })
 
 describe('AppDataProfileConfigurationStorage', () => {
   it('returns null when the configuration file does not exist', async () => {
     const directory = await createTemporaryDirectory()
-    const storage = new AppDataProfileConfigurationStorage(join(directory, 'nested', 'profiles.json'))
+    const storage = new AppDataProfileConfigurationStorage(
+      join(directory, 'nested', 'profiles.json')
+    )
 
     await expect(storage.read()).resolves.toBeNull()
   })

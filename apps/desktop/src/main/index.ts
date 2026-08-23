@@ -13,10 +13,11 @@ import {
   type OpenDialogOptions
 } from 'electron'
 import { join, resolve } from 'node:path'
+import { NativeClient } from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
 import { AppWindowStateController } from './app-window-state-controller.js'
-import { AppSettingsRepository, defaultAppSettings } from './app-settings.js'
+import { createSettingsStores } from './app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
 import { ElectronNotificationPort } from './electron-notification.js'
 import { resolveDisplayServicePath } from './display-service-path.js'
@@ -55,14 +56,9 @@ const applicationDataPaths = resolveApplicationDataPaths(
 const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
 const logger = new PersistentJsonLogger(diagnosticLogPath)
 const rendererRecoveryController = new RendererRecoveryController(logger)
-const settingsRepository = new AppSettingsRepository(applicationDataPaths.settingsPath)
-let currentSettings = defaultAppSettings
+const settingsStores = createSettingsStores(applicationDataPaths.userDataDirectory)
 const appWindowStateController = new AppWindowStateController(
-  () => currentSettings,
-  (settings) => {
-    currentSettings = settings
-  },
-  (settings) => settingsRepository.save(settings),
+  settingsStores.windowState,
   () => screen.getAllDisplays().map((display) => display.workArea),
   logger
 )
@@ -87,7 +83,7 @@ const miniPanelController = new MiniPanelController(
   () => miniWindow,
   () => createMiniWindow(),
   (bounds) => screen.getDisplayMatching(bounds),
-  () => currentSettings.miniPanelPosition,
+  () => settingsStores.windowState.current.miniPanelPosition,
   (position) => saveMiniPanelPosition(position),
   () => miniPanelHeightAdjustment()
 )
@@ -113,21 +109,30 @@ const runtime = createProductRuntime({
   configuration: {
     profileConfigurationPath: applicationDataPaths.profileConfigurationPath,
     legacyProfileConfigurationPaths: applicationDataPaths.legacyProfileConfigurationPaths,
-    resolveServicePath: () => servicePath(),
     appVersion: app.getVersion()
   },
+  native: {
+    createClient: () =>
+      new NativeClient({
+        executablePath: servicePath(),
+        executableArguments: [`--parent-pid=${process.pid}`],
+        detached: process.platform === 'win32'
+      })
+  },
   settings: {
-    current: () => currentSettings,
-    setCurrent: (settings) => {
-      currentSettings = settings
+    preferences: {
+      current: () => settingsStores.preferences.current,
+      get: () => settingsStores.preferences.load(),
+      update: (updater) => settingsStores.preferences.update(updater),
+      applyToShell: (preferences) => {
+        app.setLoginItemSettings({ openAtLogin: preferences.launchAtStartup })
+        applyTitleBarOverlay()
+        miniPanelController.refreshSize()
+      }
     },
-    get: () => settingsRepository.get(),
-    save: (settings) => settingsRepository.save(settings),
-    applyToShell: (settings) => {
-      currentSettings = settings
-      app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup })
-      applyTitleBarOverlay()
-      miniPanelController.refreshSize()
+    chromaShiftIntent: {
+      current: () => settingsStores.chromaShiftIntent.current,
+      update: (updater) => settingsStores.chromaShiftIntent.update(updater)
     }
   },
   shell: {
@@ -200,11 +205,10 @@ const runtime = createProductRuntime({
 })
 
 function saveMiniPanelPosition(position: { x: number; y: number }): void {
-  const currentPosition = currentSettings.miniPanelPosition
+  const currentPosition = settingsStores.windowState.current.miniPanelPosition
   if (currentPosition?.x === position.x && currentPosition.y === position.y) return
-  currentSettings = { ...currentSettings, miniPanelPosition: position }
-  void settingsRepository
-    .save(currentSettings)
+  void settingsStores.windowState
+    .update((state) => ({ ...state, miniPanelPosition: position }))
     .then(() => {
       scheduleProductStateBroadcast()
     })
@@ -219,8 +223,8 @@ function saveMiniPanelPosition(position: { x: number; y: number }): void {
 
 function titleBarOverlayOptions(): { color: string; symbolColor: string; height: number } {
   const dark =
-    currentSettings.theme === 'dark' ||
-    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+    settingsStores.preferences.current.theme === 'dark' ||
+    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
   return {
     color: dark ? '#111114' : '#f1f1f3',
     symbolColor: dark ? '#f1f1f3' : '#111114',
@@ -230,8 +234,8 @@ function titleBarOverlayOptions(): { color: string; symbolColor: string; height:
 
 function appPanelBackgroundColor(): string {
   const dark =
-    currentSettings.theme === 'dark' ||
-    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+    settingsStores.preferences.current.theme === 'dark' ||
+    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
   return dark ? '#111114' : '#f1f1f3'
 }
 
@@ -289,7 +293,7 @@ function handleRendererExit(
 
 function createWindow(): BrowserWindow {
   const bounds = resolveWindowBounds(
-    currentSettings.windowBounds,
+    settingsStores.windowState.current.windowBounds,
     screen.getAllDisplays().map((display) => display.workArea)
   )
   const window = new BrowserWindow({
@@ -329,7 +333,7 @@ function createWindow(): BrowserWindow {
   window.on('close', (event) => {
     appWindowStateController.flush(window)
     const wasExiting = runtime.shutdownCoordinator?.exiting === true
-    if (!wasExiting && currentSettings.closeBehavior === 'shutdown') {
+    if (!wasExiting && settingsStores.preferences.current.closeBehavior === 'shutdown') {
       event.preventDefault()
       void runtime.shutdownCoordinator?.request('application')
       return
@@ -352,7 +356,7 @@ function createWindow(): BrowserWindow {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
-  if (currentSettings.windowMaximized === true) window.maximize()
+  if (settingsStores.windowState.current.windowMaximized === true) window.maximize()
   window.on('resize', () => appWindowStateController.schedule(window))
   window.on('move', () => appWindowStateController.schedule(window))
   window.on('maximize', () => appWindowStateController.schedule(window))
@@ -478,8 +482,8 @@ async function applicationIconDataUrl(executablePath: string): Promise<string | 
 
 function miniPanelHeightAdjustment(): number {
   const dark =
-    currentSettings.theme === 'dark' ||
-    (currentSettings.theme === 'system' && nativeTheme.shouldUseDarkColors)
+    settingsStores.preferences.current.theme === 'dark' ||
+    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
   return dark ? 0 : 6
 }
 
@@ -544,11 +548,18 @@ registerProductIpcHandlers(
 
 void app.whenReady().then(async () => {
   if (!ownsSingleInstanceLock) return
-  currentSettings = await settingsRepository.get()
-  app.setLoginItemSettings({ openAtLogin: currentSettings.launchAtStartup })
+  await Promise.all([
+    settingsStores.preferences.load(),
+    settingsStores.windowState.load(),
+    settingsStores.chromaShiftIntent.load()
+  ])
+  app.setLoginItemSettings({ openAtLogin: settingsStores.preferences.current.launchAtStartup })
   nativeTheme.on('updated', () => applyTitleBarOverlay())
   await runtime.start()
-  if (!app.getLoginItemSettings().wasOpenedAtLogin || currentSettings.launchBehavior === 'app') {
+  if (
+    !app.getLoginItemSettings().wasOpenedAtLogin ||
+    settingsStores.preferences.current.launchBehavior === 'app'
+  ) {
     openWindow()
   }
   app.on('activate', () => openWindow())

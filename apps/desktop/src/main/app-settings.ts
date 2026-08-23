@@ -1,88 +1,86 @@
-import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { z } from 'zod'
 import {
-  appSettingsSchema,
-  legacyAppSettingsSchema,
-  type AppSettings
+  activationModeSchema,
+  activationTargetSchema,
+  miniPanelPositionSchema,
+  userPreferencesSchema,
+  windowBoundsSchema,
+  type UserPreferences
 } from '../shared/product-api.js'
-import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { SettingsSliceStore } from './settings-slice-store.js'
 
-export const defaultAppSettings: AppSettings = {
+// Settings persist as three slice files under the user-data directory, one per
+// owner: user preferences (renderer-editable), window state (Electron shell),
+// and ChromaShift intent (product runtime). Each slice has exactly one store
+// and its writers never touch another slice's fields.
+
+export const windowStateSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    miniPanelPosition: miniPanelPositionSchema.optional(),
+    windowBounds: windowBoundsSchema.optional(),
+    windowMaximized: z.boolean().optional()
+  })
+  .strict()
+
+export const chromaShiftIntentSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    chromaShiftStatus: z.enum(['active', 'paused', 'safetyBlocked']),
+    pendingControlOperation: z.enum(['pause', 'resume']).nullable().default(null),
+    intendedActivationMode: activationModeSchema,
+    intendedTarget: activationTargetSchema.nullable()
+  })
+  .strict()
+
+export type WindowState = z.infer<typeof windowStateSchema>
+export type ChromaShiftIntent = z.infer<typeof chromaShiftIntentSchema>
+
+export const defaultUserPreferences: UserPreferences = {
   schemaVersion: 1,
   launchAtStartup: false,
   launchBehavior: 'tray',
   closeBehavior: 'tray',
   theme: 'system',
   profileChangeNotifications: false,
-  shortcutBindings: [],
+  shortcutBindings: []
+}
+
+export const defaultWindowState: WindowState = {
+  schemaVersion: 1
+}
+
+export const defaultChromaShiftIntent: ChromaShiftIntent = {
+  schemaVersion: 1,
   chromaShiftStatus: 'active',
   pendingControlOperation: null,
   intendedActivationMode: { kind: 'automatic' },
   intendedTarget: null
 }
 
-export class AppSettingsRepository {
-  #settings: AppSettings | null = null
-  #writeTail: Promise<void> = Promise.resolve()
-  #saveRevision = 0
+export interface SettingsStores {
+  preferences: SettingsSliceStore<UserPreferences>
+  windowState: SettingsSliceStore<WindowState>
+  chromaShiftIntent: SettingsSliceStore<ChromaShiftIntent>
+}
 
-  public constructor(private readonly filePath: string) {}
-
-  public async get(): Promise<AppSettings> {
-    if (this.#settings !== null) return { ...this.#settings }
-    try {
-      const persisted: unknown = JSON.parse(await readFile(this.filePath, 'utf8'))
-      const current = appSettingsSchema.safeParse(persisted)
-      if (current.success) {
-        this.#settings = current.data
-      } else {
-        if (typeof persisted === 'object' && persisted !== null && 'schemaVersion' in persisted) {
-          throw current.error
-        }
-        const legacy = legacyAppSettingsSchema.parse(persisted)
-        this.#settings = appSettingsSchema.parse({
-          schemaVersion: 1,
-          ...legacy,
-          profileChangeNotifications: false,
-          shortcutBindings: [],
-          chromaShiftStatus: 'active',
-          pendingControlOperation: null,
-          intendedActivationMode: { kind: 'automatic' },
-          intendedTarget: null
-        })
-        await new AppDataProfileConfigurationStorage(this.filePath).write(
-          `${JSON.stringify(this.#settings, null, 2)}\n`
-        )
-      }
-    } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
-      this.#settings = { ...defaultAppSettings }
-    }
-    return { ...this.#settings }
-  }
-
-  public async save(settings: AppSettings): Promise<AppSettings> {
-    const validated = appSettingsSchema.parse(settings)
-    const previous = this.#settings
-    const revision = ++this.#saveRevision
-    // Readers must observe the newest full snapshot while its serialized atomic
-    // write is pending, otherwise a concurrent UI settings change can erase
-    // freshly captured window geometry.
-    this.#settings = validated
-    const write = this.#writeTail.then(() =>
-      new AppDataProfileConfigurationStorage(this.filePath).write(
-        `${JSON.stringify(validated, null, 2)}\n`
-      )
+export function createSettingsStores(userDataDirectory: string): SettingsStores {
+  return {
+    preferences: new SettingsSliceStore(
+      join(userDataDirectory, 'preferences.json'),
+      userPreferencesSchema,
+      defaultUserPreferences
+    ),
+    windowState: new SettingsSliceStore(
+      join(userDataDirectory, 'window-state.json'),
+      windowStateSchema,
+      defaultWindowState
+    ),
+    chromaShiftIntent: new SettingsSliceStore(
+      join(userDataDirectory, 'chroma-shift.json'),
+      chromaShiftIntentSchema,
+      defaultChromaShiftIntent
     )
-    this.#writeTail = write.then(
-      () => undefined,
-      () => undefined
-    )
-    try {
-      await write
-    } catch (error) {
-      if (revision === this.#saveRevision) this.#settings = previous
-      throw error
-    }
-    return { ...validated }
   }
 }

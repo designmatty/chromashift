@@ -20,9 +20,7 @@ export class WindowController {
 
   public open(): void {
     const existing = this.getWindow()
-    const window = existing === undefined || existing.isDestroyed()
-      ? this.createWindow()
-      : existing
+    const window = existing === undefined || existing.isDestroyed() ? this.createWindow() : existing
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()

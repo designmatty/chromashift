@@ -17,7 +17,11 @@ describe('WindowController', () => {
   it('releases a closed renderer while the tray process remains alive', () => {
     const window = windowPort()
     const preventDefault = vi.fn()
-    const controller = new WindowController(() => window, () => window, () => false)
+    const controller = new WindowController(
+      () => window,
+      () => window,
+      () => false
+    )
 
     controller.handleClose({ preventDefault }, window)
 
@@ -28,7 +32,11 @@ describe('WindowController', () => {
   it('allows close during coordinated shutdown and restores an existing window on open', () => {
     const window = windowPort({ isMinimized: () => true })
     const preventDefault = vi.fn()
-    const controller = new WindowController(() => window, () => window, () => true)
+    const controller = new WindowController(
+      () => window,
+      () => window,
+      () => true
+    )
 
     controller.handleClose({ preventDefault }, window)
     controller.open()

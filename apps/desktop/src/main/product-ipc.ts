@@ -5,8 +5,8 @@ import { z } from 'zod'
 import {
   applicationSelectionResultSchema,
   applicationSelectionsResultSchema,
-  appSettingsRequestSchema,
-  appSettingsResultSchema,
+  userPreferencesRequestSchema,
+  userPreferencesResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
@@ -188,8 +188,8 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.updateSettings,
-    appSettingsRequestSchema,
-    appSettingsResultSchema,
+    userPreferencesRequestSchema,
+    userPreferencesResultSchema,
     assertTrustedRenderer,
     async (request) => controller().updateSettings(request.settings)
   )

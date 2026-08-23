@@ -75,14 +75,14 @@ export const previewStateSchema = z.discriminatedUnion('state', [
   })
 ])
 
-const miniPanelPositionSchema = z
+export const miniPanelPositionSchema = z
   .object({
     x: z.number().int(),
     y: z.number().int()
   })
   .strict()
 
-const windowBoundsSchema = z
+export const windowBoundsSchema = z
   .object({
     x: z.number().int(),
     y: z.number().int(),
@@ -90,18 +90,6 @@ const windowBoundsSchema = z
     height: z.number().int().positive()
   })
   .strict()
-
-const appSettingsBaseShape = {
-  launchAtStartup: z.boolean(),
-  launchBehavior: z.enum(['tray', 'app']),
-  closeBehavior: z.enum(['tray', 'shutdown']),
-  theme: z.enum(['system', 'light', 'dark']),
-  miniPanelPosition: miniPanelPositionSchema.optional(),
-  windowBounds: windowBoundsSchema.optional(),
-  windowMaximized: z.boolean().optional()
-}
-
-export const legacyAppSettingsSchema = z.object(appSettingsBaseShape)
 
 export const shortcutActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('defaultProfile') }).strict(),
@@ -119,16 +107,19 @@ export const shortcutBindingSchema = z
   })
   .strict()
 
-export const appSettingsSchema = z
+// The renderer sees and edits only user preferences. Window geometry and
+// ChromaShift intent are main-owned slices persisted separately and never
+// cross the renderer seam; intent is exposed read-only via ProductState's
+// chromaShift section.
+export const userPreferencesSchema = z
   .object({
     schemaVersion: z.literal(1),
-    ...appSettingsBaseShape,
+    launchAtStartup: z.boolean(),
+    launchBehavior: z.enum(['tray', 'app']),
+    closeBehavior: z.enum(['tray', 'shutdown']),
+    theme: z.enum(['system', 'light', 'dark']),
     profileChangeNotifications: z.boolean(),
-    shortcutBindings: z.array(shortcutBindingSchema),
-    chromaShiftStatus: z.enum(['active', 'paused', 'safetyBlocked']),
-    pendingControlOperation: z.enum(['pause', 'resume']).nullable().default(null),
-    intendedActivationMode: activationModeSchema,
-    intendedTarget: activationTargetSchema.nullable()
+    shortcutBindings: z.array(shortcutBindingSchema)
   })
   .strict()
 
@@ -149,7 +140,7 @@ export const productStateSchema = z.object({
     .strict(),
   foregroundApplication: foregroundApplicationSchema.nullable(),
   preview: previewStateSchema,
-  settings: appSettingsSchema
+  settings: userPreferencesSchema
 })
 
 export const applicationSelectionSchema = z.object({
@@ -266,8 +257,8 @@ export const diagnosticLogEntrySchema = z
 export const diagnosticLogEntriesResultSchema = productResultSchema(
   z.array(diagnosticLogEntrySchema).max(250)
 )
-export const appSettingsRequestSchema = z.object({ settings: appSettingsSchema }).strict()
-export const appSettingsResultSchema = productResultSchema(appSettingsSchema)
+export const userPreferencesRequestSchema = z.object({ settings: userPreferencesSchema }).strict()
+export const userPreferencesResultSchema = productResultSchema(userPreferencesSchema)
 
 export type ProductState = z.infer<typeof productStateSchema>
 export type PreviewState = z.infer<typeof previewStateSchema>
@@ -275,7 +266,7 @@ export type PreviewTarget = z.infer<typeof previewTargetSchema>
 export type ProductError = z.infer<typeof productErrorSchema>
 export type ApplicationSelection = z.infer<typeof applicationSelectionSchema>
 export type DiagnosticLogEntry = z.infer<typeof diagnosticLogEntrySchema>
-export type AppSettings = z.infer<typeof appSettingsSchema>
+export type UserPreferences = z.infer<typeof userPreferencesSchema>
 export type ShortcutAction = z.infer<typeof shortcutActionSchema>
 export type ShortcutBinding = z.infer<typeof shortcutBindingSchema>
 export type AppPanelView = z.infer<typeof appPanelViewSchema>
@@ -297,7 +288,7 @@ export interface ChromaShiftApi {
   pickApplication(): Promise<ProductResult<ApplicationSelection | null>>
   listApplications(): Promise<ProductResult<ApplicationSelection[]>>
   getDiagnostics(): Promise<ProductResult<DiagnosticLogEntry[]>>
-  updateSettings(settings: AppSettings): Promise<ProductResult<AppSettings>>
+  updateSettings(settings: UserPreferences): Promise<ProductResult<UserPreferences>>
   startPreview(
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override'

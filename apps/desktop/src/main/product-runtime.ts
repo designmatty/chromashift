@@ -4,22 +4,26 @@ import {
   JsonProfileRepository,
   type ProfileRepository
 } from '@chromashift/core'
-import { NativeClient, PROTOCOL_VERSION } from '@chromashift/native-client'
+import { PROTOCOL_VERSION, type ForegroundApplication } from '@chromashift/native-client'
 import { ActivationCoordinator } from './activation-coordinator.js'
-import type { AppSettings } from '../shared/product-api.js'
+import type { UserPreferences } from '../shared/product-api.js'
+import type { ChromaShiftIntent } from './app-settings.js'
 import { attachActivationOutcomeRouter } from './activation-outcome-router.js'
 import { applicationFriendlyName } from './application-friendly-name.js'
 import { AutomaticActivationController } from './automatic-activation-controller.js'
 import { ChromaShiftController } from './chroma-shift-controller.js'
 import { DisplayTransitionController } from './display-transition-controller.js'
 import { EmergencyRestoreController } from './emergency-restore-controller.js'
-import { attachNativeEventRouter } from './native-event-router.js'
+import { attachNativeEventRouter, type NativeEventSource } from './native-event-router.js'
 import {
   nativeRecoveryTerminalMessage,
   nativeRecoveryTerminalTitle
 } from './native-recovery-user-message.js'
-import { NativeServiceRecoveryController } from './native-service-recovery-controller.js'
-import { PhysicalDisplayClient } from './physical-display-client.js'
+import {
+  NativeServiceRecoveryController,
+  type RecoverableNativeServicePort
+} from './native-service-recovery-controller.js'
+import { PhysicalDisplayClient, type EndpointDisplayPort } from './physical-display-client.js'
 import { rewriteProfilesForPhysicalDisplays } from './physical-display-profile-rewrite.js'
 import { PowerEventAdapter, type PowerMonitorPort } from './power-event-adapter.js'
 import { PreviewSessionController } from './preview-session-controller.js'
@@ -35,24 +39,48 @@ import {
   ShortcutController,
   type ShortcutRegistrationPort
 } from './shortcut-controller.js'
-import { ShutdownCoordinator, type ShutdownApplicationPort } from './shutdown-coordinator.js'
+import {
+  ShutdownCoordinator,
+  type ShutdownApplicationPort,
+  type ShutdownNativePort
+} from './shutdown-coordinator.js'
 import { describeError, type StructuredLogger } from './structured-logger.js'
 import { TrayController, type TrayMenuPort } from './tray-controller.js'
+
+/**
+ * Everything the runtime needs from the DisplayService connection: lifecycle
+ * events, health and recovery, shutdown, and per-endpoint display operations.
+ * The production NativeClient satisfies it structurally; tests substitute an
+ * in-process fake through the createClient factory port.
+ */
+export type ProductRuntimeNativeClient = NativeEventSource &
+  RecoverableNativeServicePort &
+  ShutdownNativePort &
+  EndpointDisplayPort
 
 export interface ProductRuntimePorts {
   logger: StructuredLogger
   configuration: {
     profileConfigurationPath: string
     legacyProfileConfigurationPaths: string[]
-    resolveServicePath: () => string
     appVersion: string
   }
+  native: {
+    createClient: () => ProductRuntimeNativeClient
+  }
   settings: {
-    current: () => AppSettings
-    setCurrent: (settings: AppSettings) => void
-    get: () => Promise<AppSettings>
-    save: (settings: AppSettings) => Promise<AppSettings>
-    applyToShell: (settings: AppSettings) => void
+    preferences: {
+      current: () => UserPreferences
+      get: () => Promise<UserPreferences>
+      update: (updater: (current: UserPreferences) => UserPreferences) => Promise<UserPreferences>
+      applyToShell: (preferences: UserPreferences) => void
+    }
+    chromaShiftIntent: {
+      current: () => ChromaShiftIntent
+      update: (
+        updater: (current: ChromaShiftIntent) => ChromaShiftIntent
+      ) => Promise<ChromaShiftIntent>
+    }
   }
   shell: {
     openWindow: () => void
@@ -90,12 +118,11 @@ export interface ProductRuntimePorts {
  * shell only through its ports.
  */
 export class ProductRuntime {
-  #nativeClient: NativeClient | undefined
+  #nativeClient: ProductRuntimeNativeClient | undefined
   #physicalDisplayClient: PhysicalDisplayClient | undefined
   #profileRepository: ProfileRepository | undefined
   #automaticActivation: AutomaticActivationController | undefined
-  #startupForegroundApplication:
-    Awaited<ReturnType<NativeClient['getForegroundApplication']>> | undefined
+  #startupForegroundApplication: ForegroundApplication | null | undefined
   #trayController: TrayController | undefined
   #shutdownCoordinator: ShutdownCoordinator | undefined
   #productController: ProductController | undefined
@@ -151,11 +178,7 @@ export class ProductRuntime {
           destinationPath: configurationPath
         })
       }
-      const nativeClient = new NativeClient({
-        executablePath: configuration.resolveServicePath(),
-        executableArguments: [`--parent-pid=${process.pid}`],
-        detached: process.platform === 'win32'
-      })
+      const nativeClient = this.ports.native.createClient()
       this.#nativeClient = nativeClient
       this.#profileRepository = new JsonProfileRepository(
         new AppDataProfileConfigurationStorage(configurationPath),
@@ -275,34 +298,32 @@ export class ProductRuntime {
       },
       { cancel: () => previewController.cancel() },
       {
-        status: settings.current().chromaShiftStatus,
-        pendingOperation: settings.current().pendingControlOperation,
-        intendedMode: settings.current().intendedActivationMode,
-        intendedTarget: settings.current().intendedTarget
+        status: settings.chromaShiftIntent.current().chromaShiftStatus,
+        pendingOperation: settings.chromaShiftIntent.current().pendingControlOperation,
+        intendedMode: settings.chromaShiftIntent.current().intendedActivationMode,
+        intendedTarget: settings.chromaShiftIntent.current().intendedTarget
       },
       async (state) => {
-        settings.setCurrent(
-          await settings.save({
-            ...settings.current(),
-            chromaShiftStatus: state.status,
-            pendingControlOperation: state.pendingOperation ?? null,
-            intendedActivationMode: state.intendedMode,
-            intendedTarget: state.intendedTarget
-          })
-        )
+        await settings.chromaShiftIntent.update((intent) => ({
+          ...intent,
+          chromaShiftStatus: state.status,
+          pendingControlOperation: state.pendingOperation ?? null,
+          intendedActivationMode: state.intendedMode,
+          intendedTarget: state.intendedTarget
+        }))
         shell.broadcastProductState()
       },
       logger
     )
     try {
-      if (settings.current().chromaShiftStatus === 'active') {
+      if (settings.chromaShiftIntent.current().chromaShiftStatus === 'active') {
         await automaticActivation.start(this.#startupForegroundApplication ?? null)
         await chromaShiftController.syncActiveIntent()
       } else {
         await automaticActivation.startSuspended(
           this.#startupForegroundApplication ?? null,
-          settings.current().intendedActivationMode,
-          settings.current().intendedTarget
+          settings.chromaShiftIntent.current().intendedActivationMode,
+          settings.chromaShiftIntent.current().intendedTarget
         )
       }
     } catch (error) {
@@ -326,7 +347,7 @@ export class ProductRuntime {
     this.#trayController = trayController
     const profileNotifications = new ProfileNotificationController(
       profileRepository,
-      () => settings.current(),
+      () => settings.preferences.current(),
       notifications,
       (profileId) => shell.openProfile(profileId)
     )
@@ -410,14 +431,16 @@ export class ProductRuntime {
     )
     this.#shortcutController = shortcutController
     try {
-      shortcutController.replace(settings.current().shortcutBindings)
+      shortcutController.replace(settings.preferences.current().shortcutBindings)
       const normalizedBindings = shortcutController.bindings
       if (
-        JSON.stringify(normalizedBindings) !== JSON.stringify(settings.current().shortcutBindings)
+        JSON.stringify(normalizedBindings) !==
+        JSON.stringify(settings.preferences.current().shortcutBindings)
       ) {
-        settings.setCurrent(
-          await settings.save({ ...settings.current(), shortcutBindings: normalizedBindings })
-        )
+        await settings.preferences.update((preferences) => ({
+          ...preferences,
+          shortcutBindings: normalizedBindings
+        }))
       }
     } catch (error) {
       logger.write({
@@ -479,9 +502,9 @@ export class ProductRuntime {
         resolveIcon: (executablePath) => icons.applicationIconDataUrl(executablePath)
       },
       {
-        get: () => settings.get(),
-        save: (value) => settings.save(value),
-        apply: (value) => settings.applyToShell(value),
+        get: () => settings.preferences.get(),
+        save: (value) => settings.preferences.update(() => value),
+        apply: (value) => settings.preferences.applyToShell(value),
         prepareShortcuts: (bindings) => {
           const controller = this.#shortcutController
           if (controller === undefined) throw new Error('Shortcut registration is unavailable.')

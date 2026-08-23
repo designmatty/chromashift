@@ -9,7 +9,6 @@ const LEGACY_APPLICATION_DIRECTORY = join('@chromashift', 'desktop')
 export interface ApplicationDataPaths {
   userDataDirectory: string
   profileConfigurationPath: string
-  settingsPath: string
   legacyProfileConfigurationPaths: string[]
 }
 
@@ -22,7 +21,6 @@ export function resolveApplicationDataPaths(
     return {
       userDataDirectory: userDataOverride,
       profileConfigurationPath: join(userDataOverride, 'profiles.json'),
-      settingsPath: join(userDataOverride, 'settings.json'),
       legacyProfileConfigurationPaths: []
     }
   }
@@ -42,7 +40,6 @@ export function resolveApplicationDataPaths(
     return {
       userDataDirectory,
       profileConfigurationPath: join(userDataDirectory, 'profiles.json'),
-      settingsPath: join(userDataDirectory, 'settings.json'),
       legacyProfileConfigurationPaths: []
     }
   }
@@ -51,7 +48,6 @@ export function resolveApplicationDataPaths(
   return {
     userDataDirectory,
     profileConfigurationPath: join(userDataDirectory, 'profiles.json'),
-    settingsPath: join(userDataDirectory, 'settings.json'),
     legacyProfileConfigurationPaths: [
       join(appDataDirectory, LEGACY_APPLICATION_DIRECTORY, 'profiles.json')
     ]

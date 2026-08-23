@@ -19,7 +19,7 @@ const capabilityNames = [
   'colorTemperature'
 ] as const
 
-interface EndpointDisplayPort {
+export interface EndpointDisplayPort {
   getDisplays(): Promise<Display[]>
   getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport>
   getForegroundApplication(): Promise<ForegroundApplication | null>
@@ -51,7 +51,8 @@ function aggregateCapability(capabilities: readonly Capability[]): Capability {
       provider: unsupported.every((capability) => capability.provider === unsupported[0]!.provider)
         ? unsupported[0]!.provider
         : 'unknown',
-      reason: [...new Set(unsupported.flatMap((capability) => capability.reason ?? []))].join('; ') ||
+      reason:
+        [...new Set(unsupported.flatMap((capability) => capability.reason ?? []))].join('; ') ||
         'Unavailable on one or more current connections.'
     }
   }
@@ -208,7 +209,8 @@ export class PhysicalDisplayClient {
     const current = displays
       .filter(
         (display) =>
-          physicalId(display).toLowerCase() === normalized || display.id.toLowerCase() === normalized
+          physicalId(display).toLowerCase() === normalized ||
+          display.id.toLowerCase() === normalized
       )
       .map((display) => display.id)
     const known = new Set([...(this.#physicalToEndpoints.get(normalized) ?? []), ...current])

@@ -29,13 +29,7 @@ export interface NativeActivationPort {
 }
 
 export type ActivationOperation =
-  | 'configuration'
-  | 'enumerateDisplays'
-  | 'capture'
-  | 'apply'
-  | 'restore'
-  | 'restoreAll'
-  | 'control'
+  'configuration' | 'enumerateDisplays' | 'capture' | 'apply' | 'restore' | 'restoreAll' | 'control'
 
 export interface ActivationFailure {
   operation: ActivationOperation
@@ -57,9 +51,11 @@ function findSelectedProfile(
 ): ColorProfile | null {
   if (resolution.target.kind === 'baseline') return null
   const profileId = resolution.target.profileId
-  return configuration.profiles.find(
-    (profile) => profile.id.toLowerCase() === profileId.toLowerCase()
-  ) ?? null
+  return (
+    configuration.profiles.find(
+      (profile) => profile.id.toLowerCase() === profileId.toLowerCase()
+    ) ?? null
+  )
 }
 
 export class ActivationCoordinator {
@@ -301,13 +297,7 @@ export class ActivationCoordinator {
         continue
       }
       if (hdrDisplayIds.has(target.displayId.toLowerCase())) {
-        this.#deferDisplay(
-          profile.id,
-          target.displayId,
-          'apply',
-          'hdrActive',
-          deferredDisplayIds
-        )
+        this.#deferDisplay(profile.id, target.displayId, 'apply', 'hdrActive', deferredDisplayIds)
         continue
       }
       try {
@@ -340,13 +330,7 @@ export class ActivationCoordinator {
         await this.native.applyDisplaySettings(target.displayId, target.color)
       } catch (error) {
         if (this.#isHdrUnsafe(error)) {
-          this.#deferDisplay(
-            profile.id,
-            target.displayId,
-            'apply',
-            'hdrActive',
-            deferredDisplayIds
-          )
+          this.#deferDisplay(profile.id, target.displayId, 'apply', 'hdrActive', deferredDisplayIds)
         } else if (this.#isDisplayDisconnected(error)) {
           this.#deferDisplay(
             profile.id,
@@ -416,12 +400,7 @@ export class ActivationCoordinator {
           )
         } else if (display.error !== undefined) {
           failures.push(
-            this.#failureFromDetails(
-              'restoreAll',
-              display.error,
-              display.displayId,
-              display.code
-            )
+            this.#failureFromDetails('restoreAll', display.error, display.displayId, display.code)
           )
         } else {
           failures.push(
@@ -495,9 +474,10 @@ export class ActivationCoordinator {
       return
     }
 
-    const foregroundMatch = resolution.reason === 'foregroundApplication'
-      ? findMatchingProfile(configuration.profiles, foregroundApplication)
-      : null
+    const foregroundMatch =
+      resolution.reason === 'foregroundApplication'
+        ? findMatchingProfile(configuration.profiles, foregroundApplication)
+        : null
     this.logger.write({
       level: 'information',
       eventName: 'ProfileMatched',
@@ -509,11 +489,7 @@ export class ActivationCoordinator {
     })
   }
 
-  #failure(
-    operation: ActivationOperation,
-    error: unknown,
-    displayId?: string
-  ): ActivationFailure {
+  #failure(operation: ActivationOperation, error: unknown, displayId?: string): ActivationFailure {
     const details = describeError(error)
     return displayId === undefined
       ? { operation, ...details }

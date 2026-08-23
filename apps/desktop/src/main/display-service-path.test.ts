@@ -13,9 +13,9 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(directories.splice(0).map((directory) =>
-    rm(directory, { recursive: true, force: true })
-  ))
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
+  )
 })
 
 describe('resolveDisplayServicePath', () => {
@@ -25,13 +25,15 @@ describe('resolveDisplayServicePath', () => {
     await mkdir(join(root, 'resources', 'display-service'), { recursive: true })
     await writeFile(executable, '')
 
-    expect(resolveDisplayServicePath({
-      isPackaged: true,
-      resourcesPath: join(root, 'resources'),
-      appPath: join(root, 'resources', 'app.asar'),
-      cwd: root,
-      configuredPath: join(root, 'wrong.exe')
-    })).toBe(executable)
+    expect(
+      resolveDisplayServicePath({
+        isPackaged: true,
+        resourcesPath: join(root, 'resources'),
+        appPath: join(root, 'resources', 'app.asar'),
+        cwd: root,
+        configuredPath: join(root, 'wrong.exe')
+      })
+    ).toBe(executable)
   })
 
   it('honors an explicit development helper path', async () => {
@@ -39,12 +41,14 @@ describe('resolveDisplayServicePath', () => {
     const executable = join(root, 'DisplayService.exe')
     await writeFile(executable, '')
 
-    expect(resolveDisplayServicePath({
-      isPackaged: false,
-      resourcesPath: root,
-      appPath: root,
-      cwd: root,
-      configuredPath: executable
-    })).toBe(executable)
+    expect(
+      resolveDisplayServicePath({
+        isPackaged: false,
+        resourcesPath: root,
+        appPath: root,
+        cwd: root,
+        configuredPath: executable
+      })
+    ).toBe(executable)
   })
 })

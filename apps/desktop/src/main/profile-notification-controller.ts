@@ -1,5 +1,5 @@
 import type { ColorProfile, ProfileRepository } from '@chromashift/core'
-import type { AppSettings } from '../shared/product-api.js'
+import type { UserPreferences } from '../shared/product-api.js'
 import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
 
 export interface ProductNotification {
@@ -18,7 +18,7 @@ export interface ProductNotificationPort {
 export class ProfileNotificationController {
   public constructor(
     private readonly repository: ProfileRepository,
-    private readonly getSettings: () => AppSettings,
+    private readonly getSettings: () => UserPreferences,
     private readonly notifications: ProductNotificationPort,
     private readonly openProfile: (profileId: string | null) => void
   ) {}

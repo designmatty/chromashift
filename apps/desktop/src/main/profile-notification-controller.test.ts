@@ -1,6 +1,6 @@
 import { JsonProfileRepository, type ProfileConfigurationStorage } from '@chromashift/core'
 import { describe, expect, it, vi } from 'vitest'
-import { defaultAppSettings } from './app-settings.js'
+import { defaultUserPreferences as defaultAppSettings } from './app-settings.js'
 import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
 import {
   ProfileNotificationController,
