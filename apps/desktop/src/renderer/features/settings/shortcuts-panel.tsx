@@ -88,7 +88,7 @@ export function ShortcutsPanel({
   }
 
   return (
-    <Stack as="section" h="full" minH="full" gap="4">
+    <Stack as="section"  gap="4">
       <Stack gap="1">
         <Heading as="h1" size="lg">
           Shortcuts

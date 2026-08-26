@@ -109,11 +109,11 @@ during preview, that ChromaShift's own windows do not replace the external
 foreground target, and that rollback applies the latest intended target. Settings
 tests cover defaults, validation, and atomic persistence.
 
-Milestone 7 coverage validates the versioned settings migration, notification
-policy and completed-outcome wording, including suppression of routine shortcut
-feedback when profile notifications are disabled. It also validates shortcut
-autosave, Chakra `Kbd` rendering, Windows and Shift modifiers, shortcut parsing
-and normalization,
+Milestone 7 coverage validates the versioned settings migration, the global
+notification policy, and completed-outcome wording. Disabling notifications
+suppresses profile, shortcut, display-control, safety, and restoration notices.
+It also validates shortcut autosave, Chakra `Kbd` rendering, Windows and Shift
+modifiers, shortcut parsing and normalization,
 reserved and duplicate accelerators, operating-system registration rollback,
 deterministic previous/next selection, disabled-profile handling, and cleanup on
 profile deletion. Display-control state-machine tests cover renderer-free Pause,
@@ -172,8 +172,8 @@ ChromaShift, while the mini panel exposes and resumes the same Paused state as a
 icon-only control. The
 installed shortcut setup also proves that Electron
 accepts Shift-only and Windows-plus-Shift modifier combinations, and the
-notification flow proves that opting out suppresses a successful direct-profile
-shortcut before opting back in for the click-routing gate. Disabled color writes
+notification flow proves that opting out suppresses native notifications before
+opting back in for the click-routing gate. Disabled color writes
 and Resume are verified before the restoration guard compares exact pre-run and
 post-run display state. The same smoke retains
 app/mini mutual exclusion, native caption, focus, non-activation, position, and

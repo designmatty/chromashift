@@ -195,7 +195,8 @@ remains the only catch-all, cannot be disabled or deleted, and cannot receive
 application assignments.
 
 Electron main owns native notifications and global shortcut registration, so
-both remain available with no renderer alive. Shortcut replacement is atomic:
+both remain available with no renderer alive. One user preference enables or
+suppresses every native notification type. Shortcut replacement is atomic:
 validation, reserved-key and duplicate checks, and operating-system registration
 must all succeed before the new bindings are persisted, otherwise the last valid
 set is restored. Profile bindings follow profile rename, disable, and deletion;

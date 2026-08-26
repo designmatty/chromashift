@@ -70,7 +70,7 @@ describe('ProfileNotificationController', () => {
     const openProfile = vi.fn()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
-      () => ({ ...defaultAppSettings, profileChangeNotifications: true }),
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
       notifications,
       openProfile
     )
@@ -110,7 +110,7 @@ describe('ProfileNotificationController', () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
-      () => ({ ...defaultAppSettings, profileChangeNotifications: true }),
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
       notifications,
       () => undefined
     )
@@ -157,7 +157,7 @@ describe('ProfileNotificationController', () => {
     ])
   })
 
-  it('confirms an explicit one-shot restoration even when profile notifications are off', async () => {
+  it('suppresses restoration, control, and safety notifications when notifications are off', async () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
@@ -178,17 +178,31 @@ describe('ProfileNotificationController', () => {
         origin: 'originalSettingsRestore'
       })
     )
+    await controller.handle(
+      completed({
+        source: 'shortcut',
+        origin: 'pause',
+        resolution: {
+          target: { kind: 'baseline' },
+          reason: 'baseline',
+          changed: true,
+          previousTarget: { kind: 'profile', profileId: 'gaming' }
+        }
+      })
+    )
+    await controller.handle(
+      completed({
+        source: 'shortcut',
+        origin: 'resume',
+        status: 'failed',
+        failures: [{ operation: 'control', message: 'Topology refresh failed.' }]
+      })
+    )
 
-    expect(notifications.messages).toMatchObject([
-      {
-        title: 'Original settings restored',
-        body: 'ChromaShift remains active.',
-        severity: 'information'
-      }
-    ])
+    expect(notifications.messages).toEqual([])
   })
 
-  it('suppresses a same-target shortcut when profile notifications are off', async () => {
+  it('suppresses a same-target shortcut when notifications are off', async () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
@@ -212,7 +226,7 @@ describe('ProfileNotificationController', () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
-      () => defaultAppSettings,
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
       notifications,
       () => undefined
     )
@@ -237,11 +251,11 @@ describe('ProfileNotificationController', () => {
     ])
   })
 
-  it('reports toggle pause, safety block, and resume outcomes independently of profile opt-in', async () => {
+  it('reports toggle pause, safety block, and resume outcomes when notifications are on', async () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
       new JsonProfileRepository(new MemoryStorage()),
-      () => defaultAppSettings,
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
       notifications,
       () => undefined
     )
