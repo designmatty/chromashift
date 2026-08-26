@@ -23,7 +23,7 @@ export function DiagnosticsPanel({
   }, [])
 
   return (
-    <Stack as="section" h="full" minH="full" gap="4">
+    <Stack as="section" gap="4">
       <Flex as="header" align="center" justify="space-between" gap="4">
         <Stack gap="0">
           <Heading as="h1" size="lg">
@@ -44,7 +44,7 @@ export function DiagnosticsPanel({
           Refresh
         </Button>
       </Flex>
-      <Stack gap="2" overflow="auto" aria-live="polite">
+      <Stack gap="2" aria-live="polite">
         {!loading && entries.length === 0 && (
           <Text color="fg.muted">No diagnostic events are available yet.</Text>
         )}

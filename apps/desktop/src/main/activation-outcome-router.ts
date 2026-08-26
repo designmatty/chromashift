@@ -29,7 +29,7 @@ const finalizedControlOrigins = new Set<CompletedActivationOutcome['origin']>([
 /**
  * Routes activation state changes into persisted ChromaShift intent and a
  * product-state refresh, and every completed activation outcome into intent
- * persistence and user-facing profile notifications. Returns one detach
+ * persistence and user-facing notifications. Returns one detach
  * function covering all three subscriptions.
  */
 export function attachActivationOutcomeRouter(

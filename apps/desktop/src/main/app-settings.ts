@@ -37,13 +37,33 @@ export const chromaShiftIntentSchema = z
 export type WindowState = z.infer<typeof windowStateSchema>
 export type ChromaShiftIntent = z.infer<typeof chromaShiftIntentSchema>
 
+const legacyUserPreferencesSchema = userPreferencesSchema
+  .omit({ schemaVersion: true, notificationsEnabled: true })
+  .extend({
+    schemaVersion: z.literal(1),
+    profileChangeNotifications: z.boolean()
+  })
+  .strict()
+
+const persistedUserPreferencesSchema = z
+  .union([userPreferencesSchema, legacyUserPreferencesSchema])
+  .transform((preferences): UserPreferences => {
+    if (preferences.schemaVersion === 2) return preferences
+    const { profileChangeNotifications, ...unchanged } = preferences
+    return {
+      ...unchanged,
+      schemaVersion: 2,
+      notificationsEnabled: profileChangeNotifications
+    }
+  })
+
 export const defaultUserPreferences: UserPreferences = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   launchAtStartup: false,
   launchBehavior: 'tray',
   closeBehavior: 'tray',
   theme: 'system',
-  profileChangeNotifications: false,
+  notificationsEnabled: false,
   shortcutBindings: []
 }
 
@@ -69,7 +89,7 @@ export function createSettingsStores(userDataDirectory: string): SettingsStores 
   return {
     preferences: new SettingsSliceStore(
       join(userDataDirectory, 'preferences.json'),
-      userPreferencesSchema,
+      persistedUserPreferencesSchema,
       defaultUserPreferences
     ),
     windowState: new SettingsSliceStore(

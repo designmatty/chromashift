@@ -113,12 +113,12 @@ export const shortcutBindingSchema = z
 // chromaShift section.
 export const userPreferencesSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     launchAtStartup: z.boolean(),
     launchBehavior: z.enum(['tray', 'app']),
     closeBehavior: z.enum(['tray', 'shutdown']),
     theme: z.enum(['system', 'light', 'dark']),
-    profileChangeNotifications: z.boolean(),
+    notificationsEnabled: z.boolean(),
     shortcutBindings: z.array(shortcutBindingSchema)
   })
   .strict()

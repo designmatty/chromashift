@@ -918,22 +918,22 @@ try {
 
   const notificationPreference = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      const toggle = document.querySelector('[aria-label="Profile change notifications"]')
+      const toggle = document.querySelector('[aria-label="Windows notifications"]')
       toggle?.click()
       return toggle !== null
     })()`,
     returnByValue: true
   })
   if (notificationPreference.result.value !== true) {
-    throw new Error('The profile-change notification preference was unavailable.')
+    throw new Error('The notification preference was unavailable.')
   }
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.settings.profileChangeNotifications
+      return result.ok && result.value.settings.notificationsEnabled
     })()`,
-    'The profile-change notification preference was not persisted.'
+    'The notification preference was not persisted.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {

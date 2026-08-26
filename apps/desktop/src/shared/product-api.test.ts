@@ -124,12 +124,12 @@ describe('product API contracts', () => {
 
 function validSettings() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     launchAtStartup: false,
     launchBehavior: 'tray',
     closeBehavior: 'tray',
     theme: 'system',
-    profileChangeNotifications: false,
+    notificationsEnabled: false,
     shortcutBindings: []
   }
 }

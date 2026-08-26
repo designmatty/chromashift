@@ -41,6 +41,7 @@ export class ProfileNotificationController {
   }
 
   #shouldNotify(outcome: CompletedActivationOutcome): boolean {
+    if (!this.getSettings().notificationsEnabled) return false
     if (outcome.origin === 'originalSettingsRestore') return true
     if (
       outcome.origin === 'pause' ||
@@ -55,7 +56,6 @@ export class ProfileNotificationController {
       (outcome.status === 'failed' || outcome.status === 'partialFailure')
     )
       return true
-    if (!this.getSettings().profileChangeNotifications) return false
     if (outcome.source === 'shortcut' && outcome.origin === 'shortcut') return true
     if (
       outcome.origin === 'startup' ||

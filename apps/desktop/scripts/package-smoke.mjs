@@ -382,7 +382,7 @@ async function smokeApplication(
           if (!created.ok) return null
           const result = await window.chromaShift.updateSettings({
             ...state.value.settings,
-            profileChangeNotifications: false,
+            notificationsEnabled: false,
             shortcutBindings: [
               {
                 action: { kind: 'profile', profileId: created.value.id },
@@ -432,7 +432,7 @@ async function smokeApplication(
         output.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
       ).length
       if (notificationRequestsAfterOptOut !== notificationRequestsBeforeOptOut) {
-        throw new Error(`${label} showed a profile notification while the preference was off.`)
+        throw new Error(`${label} showed a notification while notifications were off.`)
       }
       const optedIn = await send('Runtime.evaluate', {
         expression: `(async () => {
@@ -442,7 +442,7 @@ async function smokeApplication(
           if (!state.ok) return false
           const updated = await window.chromaShift.updateSettings({
             ...state.value.settings,
-            profileChangeNotifications: true
+            notificationsEnabled: true
           })
           return updated.ok
         })()`,
@@ -450,7 +450,7 @@ async function smokeApplication(
         returnByValue: true
       })
       if (optedIn.result.value !== true) {
-        throw new Error(`${label} could not enable profile notifications.`)
+        throw new Error(`${label} could not enable notifications.`)
       }
       await pressNotificationShortcut()
       const notificationDeadline = Date.now() + timeoutMilliseconds

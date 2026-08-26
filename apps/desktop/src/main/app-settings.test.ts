@@ -71,6 +71,27 @@ describe('settings slice stores', () => {
     })
   })
 
+  it('migrates the profile notification preference into the global notification switch', async () => {
+    const directory = await temporaryDirectory()
+    await writeFile(
+      join(directory, 'preferences.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        launchAtStartup: false,
+        launchBehavior: 'tray',
+        closeBehavior: 'tray',
+        theme: 'system',
+        profileChangeNotifications: true,
+        shortcutBindings: []
+      })
+    )
+
+    await expect(createSettingsStores(directory).preferences.load()).resolves.toEqual({
+      ...defaultUserPreferences,
+      notificationsEnabled: true
+    })
+  })
+
   it('rejects malformed persisted slices rather than silently changing behavior', async () => {
     const directory = await temporaryDirectory()
     await writeFile(

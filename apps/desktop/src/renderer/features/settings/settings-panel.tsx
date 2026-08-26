@@ -77,15 +77,15 @@ export function SettingsPanel({
           Notifications
         </Heading>
         <SettingsRow
-          title="Profile changes"
-          description="Show a Windows notification when the profile changes"
+          title="Windows notifications"
+          description="Show notifications from ChromaShift"
         >
           <Switch
-            checked={settings.profileChangeNotifications}
+            checked={settings.notificationsEnabled}
             onCheckedChange={(details) =>
-              update({ ...settings, profileChangeNotifications: details.checked })
+              update({ ...settings, notificationsEnabled: details.checked })
             }
-            aria-label="Profile change notifications"
+            aria-label="Windows notifications"
           />
         </SettingsRow>
       </Stack>
