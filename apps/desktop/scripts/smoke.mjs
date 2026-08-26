@@ -1067,6 +1067,85 @@ try {
     })()`,
     'The recorded Toggle ChromaShift shortcut was not automatically registered and persisted.'
   )
+  const canceledUnfocusedShortcutRecording = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
+      const alternateFocus = [...document.querySelectorAll('[data-part="settings-nav"] button')]
+        .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')
+      if (!(button instanceof HTMLButtonElement) || !(alternateFocus instanceof HTMLButtonElement)) {
+        return false
+      }
+      button.click()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      alternateFocus.focus()
+      alternateFocus.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+      }))
+      return document.activeElement === alternateFocus
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (canceledUnfocusedShortcutRecording.result.value !== true) {
+    throw new Error('The shortcut recorder focus-loss cancellation check was unavailable.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')?.textContent?.trim() === 'Record' &&
+      document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
+    'Escape did not cancel shortcut recording after the Record button lost focus.'
+  )
+  const clearedUnfocusedShortcutRecording = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
+      const alternateFocus = [...document.querySelectorAll('[data-part="settings-nav"] button')]
+        .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')
+      if (!(button instanceof HTMLButtonElement) || !(alternateFocus instanceof HTMLButtonElement)) {
+        return false
+      }
+      button.click()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      alternateFocus.focus()
+      alternateFocus.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
+      }))
+      return document.activeElement === alternateFocus
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (clearedUnfocusedShortcutRecording.result.value !== true) {
+    throw new Error('The shortcut recorder focus-loss clearing check was unavailable.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok &&
+        document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')?.textContent?.trim() === 'Record' &&
+        !result.value.settings.shortcutBindings.some((binding) =>
+          binding.action.kind === 'toggleChromaShift')
+    })()`,
+    'Delete did not clear the shortcut after the Record button lost focus.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
+      if (!(button instanceof HTMLButtonElement)) return
+      button.click()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      button.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'F9', code: 'F9', ctrlKey: true, altKey: true, shiftKey: true,
+        bubbles: true, cancelable: true
+      }))
+    })()`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
+    'The shortcut recorder did not restore the Toggle ChromaShift smoke binding.'
+  )
   await captureScreenshot(debuggerClient, shortcutsScreenshotPath)
 
   // Settings replaces the profile sidebar with its own settings-section navigation.
