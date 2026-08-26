@@ -219,14 +219,7 @@ export function SettingsRow({
           {title}
         </Heading>
         {description !== '' && (
-          <Text
-            overflow="hidden"
-            fontFamily="mono"
-            fontSize="sm"
-            textOverflow="ellipsis"
-            whiteSpace="nowrap"
-            color="fg.muted"
-          >
+          <Text fontFamily="mono" fontSize="sm" color="fg.muted">
             {description}
           </Text>
         )}

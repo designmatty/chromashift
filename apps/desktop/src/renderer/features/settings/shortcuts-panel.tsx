@@ -2,16 +2,23 @@ import { Alert, Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } fro
 import { useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
-import type {
-  ProductError,
-  ProductState,
-  ShortcutAction,
-  ShortcutBinding
+import {
+  type ProductError,
+  type ProductState,
+  type ShortcutAction,
+  type ShortcutBinding
 } from '../../../shared/product-api.js'
+import { EMERGENCY_RESTORE_ACCELERATOR } from '../../../shared/shortcut-constants.js'
 import { recordShortcut } from './shortcut-recording.js'
 import { Trash2 } from 'lucide-react'
 
-const builtInActions: Array<{ action: ShortcutAction; label: string; description: string }> = [
+type ShortcutRowDefinition = {
+  action: ShortcutAction
+  label: string
+  description: string
+}
+
+const builtInActions: ShortcutRowDefinition[] = [
   {
     action: { kind: 'defaultProfile' },
     label: 'Default',
@@ -88,7 +95,7 @@ export function ShortcutsPanel({
   }
 
   return (
-    <Stack as="section"  gap="4">
+    <Stack as="section" gap="4">
       <Stack gap="1">
         <Heading as="h1" size="lg">
           Shortcuts
@@ -113,6 +120,12 @@ export function ShortcutsPanel({
           </Alert.Content>
         </Alert.Root>
       )}
+      <FixedShortcutGroup
+        title="Safety"
+        label="Restore original display settings"
+        description="Restores display settings before ChromaShift changed them"
+        accelerator={EMERGENCY_RESTORE_ACCELERATOR}
+      />
       <ShortcutGroup
         title="Navigation"
         rows={builtInActions}
@@ -143,6 +156,31 @@ export function ShortcutsPanel({
   )
 }
 
+function FixedShortcutGroup({
+  title,
+  label,
+  description,
+  accelerator
+}: {
+  title: string
+  label: string
+  description: string
+  accelerator: string
+}): React.JSX.Element {
+  return (
+    <Stack gap="1">
+      <Heading as="h2" size="md">
+        {title}
+      </Heading>
+      <Stack gap={0.5}>
+        <SettingsRow title={label} description={description}>
+          <ShortcutDisplay label={label} accelerator={accelerator} />
+        </SettingsRow>
+      </Stack>
+    </Stack>
+  )
+}
+
 function ShortcutGroup({
   title,
   rows,
@@ -154,7 +192,7 @@ function ShortcutGroup({
   onMessage
 }: {
   title: string
-  rows: Array<{ action: ShortcutAction; label: string; description: string }>
+  rows: ShortcutRowDefinition[]
   bindings: readonly ShortcutBinding[]
   recording: string | null
   disabled: boolean
@@ -232,9 +270,9 @@ function ShortcutRow({
           <Text lineHeight={1} fontSize="xs" fontStyle={'italic'} color={'fg.muted'}>
             Press shortcut...
           </Text>
-        ) : displayKeys.length > 0 ? (
-          <Kbd size="sm">{displayKeys.join(' + ')}</Kbd>
-        ) : null}
+        ) : (
+          <ShortcutDisplay label={label} accelerator={accelerator} />
+        )}
         <Group attached>
           <Button
             ref={recordButton}
@@ -276,6 +314,28 @@ function ShortcutRow({
         </Group>
       </Flex>
     </SettingsRow>
+  )
+}
+
+function ShortcutDisplay({
+  label,
+  accelerator
+}: {
+  label: string
+  accelerator: string | null
+}): React.JSX.Element | null {
+  const displayKeys = acceleratorKeys(accelerator)
+  if (displayKeys.length === 0) return null
+
+  return (
+    <Kbd
+      data-part="shortcut-display"
+      data-accelerator={accelerator ?? ''}
+      aria-label={`${label} shortcut: ${displayAccelerator(accelerator)}`}
+      size="sm"
+    >
+      {displayKeys.join(' + ')}
+    </Kbd>
   )
 }
 

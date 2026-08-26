@@ -144,7 +144,7 @@ describe('ShortcutController registration', () => {
       'non-modifier'
     )
     expect(() =>
-      controller.replace([binding({ kind: 'defaultProfile' }, 'CommandOrControl+Alt+Shift+R')])
+      controller.replace([binding({ kind: 'defaultProfile' }, 'CommandOrControl+Alt+Super+R')])
     ).toThrow('reserved for emergency restore')
 
     expect(() =>

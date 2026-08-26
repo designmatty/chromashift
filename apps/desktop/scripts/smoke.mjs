@@ -56,6 +56,26 @@ foreach ($key in $keys) { [ChromaShiftSmokeKeys]::keybd_event($key, 0, 2, [UIntP
   })
 }
 
+async function pressEmergencyRestoreShortcut() {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftEmergencyRestoreKeys {
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$keys = @(0x11, 0x12, 0x5B, 0x52)
+foreach ($key in $keys) { [ChromaShiftEmergencyRestoreKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+[Array]::Reverse($keys)
+foreach ($key in $keys) { [ChromaShiftEmergencyRestoreKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+`
+  await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true
+  })
+}
+
 function withTimeout(promise, milliseconds, description) {
   let timeout
   const timeoutPromise = new Promise((_, reject) => {
@@ -1003,7 +1023,15 @@ try {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')?.click()`
   })
-  await waitForText(debuggerClient, 'Shortcuts save automatically')
+  await waitForText(debuggerClient, 'Shortcuts continue to work while ChromaShift runs in the background')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Super+R"]')
+      ?.getAttribute('aria-label') ===
+      'Restore original display settings shortcut: Ctrl+Alt+Win+R' &&
+      document.querySelector('button[aria-label="Restore original display settings shortcut"]') === null`,
+    'The fixed restore-original-display-settings shortcut was not exposed as a read-only Safety action.'
+  )
   const recordedToggleShortcut = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
@@ -1548,6 +1576,23 @@ try {
     'The profile could not enter Edit mode for app-panel close coverage.'
   )
   await delay(20)
+  const priorEmergencyRestoreCount = (
+    standardOutput.match(/"eventName":"EmergencyRestoreCompleted"/g) ?? []
+  ).length
+  await pressEmergencyRestoreShortcut()
+  const emergencyRestoreDeadline = Date.now() + timeoutMilliseconds
+  while (
+    (standardOutput.match(/"eventName":"EmergencyRestoreCompleted"/g) ?? []).length <=
+    priorEmergencyRestoreCount
+  ) {
+    if (Date.now() >= emergencyRestoreDeadline) {
+      throw new Error('Ctrl+Alt+Windows+R did not complete emergency display restoration.')
+    }
+    await delay(100)
+  }
+  for (const display of guardedDisplays) {
+    await waitForRestoredDisplayState(restorationGuard, display.id, guardedBaselines.get(display.id))
+  }
   const priorNotificationCount = (
     standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
   ).length
