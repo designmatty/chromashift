@@ -202,7 +202,8 @@ must all succeed before the new bindings are persisted, otherwise the last valid
 set is restored. Profile bindings follow profile rename, disable, and deletion;
 disabling a bound profile requires explicit confirmation that names the binding.
 The fixed emergency-restore accelerator is reserved outside configurable
-bindings. Notification wording is derived from completed activation outcomes and
+bindings and appears as a read-only Safety action in Shortcut settings.
+Notification wording is derived from completed activation outcomes and
 distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
 and no-op results. Clicking a profile notification opens that profile in the app
 panel.
@@ -253,7 +254,7 @@ Renderer recovery is separately bounded per app and mini-panel surface for
 `crashed`, `oom`, and `abnormal-exit` states. Only a surface that was visible is
 recreated, and it hydrates from main-owned product state; three failures in one
 minute open the circuit instead of forming a reload loop. The global
-`Ctrl+Alt+Shift+R` shortcut remains main-process owned and requests preview
+`Ctrl+Alt+Windows+R` shortcut remains main-process owned and requests preview
 rollback plus automatic-activation baseline restoration without relying on a
 renderer.
 Tray Exit and other

@@ -116,7 +116,10 @@ It also validates shortcut autosave, Chakra `Kbd` rendering, Windows and Shift
 modifiers, shortcut parsing and normalization,
 reserved and duplicate accelerators, operating-system registration rollback,
 deterministic previous/next selection, disabled-profile handling, and cleanup on
-profile deletion. Display-control state-machine tests cover renderer-free Pause,
+profile deletion. The desktop smoke shows the fixed restore-original-display-settings
+accelerator as a read-only Safety action, fires `Ctrl+Alt+Windows+R` through the
+Windows input API, and verifies exact restoration of every guarded display.
+Display-control state-machine tests cover renderer-free Pause,
 Resume, retry, toggle coalescing, explicit selection from Paused and Safety
 blocked, persisted intent, one-shot restoration, and fail-closed partial restore.
 Tray tests assert the approved status/current-profile/action order and both
