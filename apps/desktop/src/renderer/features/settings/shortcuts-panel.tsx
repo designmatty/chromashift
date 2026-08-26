@@ -1,5 +1,5 @@
 import { Alert, Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } from '@chakra-ui/react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
 import {
@@ -263,6 +263,23 @@ function ShortcutRow({
   const recordButton = useRef<HTMLButtonElement>(null)
   const displayKeys = acceleratorKeys(accelerator)
 
+  useEffect(() => {
+    if (!recording) return
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      event.preventDefault()
+      event.stopPropagation()
+      const result = recordShortcut(event)
+      if (result.kind === 'cancel') onCancel()
+      else if (result.kind === 'clear') onChange(null)
+      else if (result.kind === 'invalid') onMessage(result.message)
+      else if (result.kind === 'binding') onChange(result.accelerator)
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [onCancel, onChange, onMessage, recording])
+
   return (
     <SettingsRow title={label} description={description}>
       <Flex gap="2" align="flex-end" direction={'column'}>
@@ -281,16 +298,6 @@ function ShortcutRow({
             disabled={disabled}
             aria-label={`${label} shortcut`}
             margin={0}
-            onKeyDown={(event) => {
-              if (!recording) return
-              event.preventDefault()
-              event.stopPropagation()
-              const result = recordShortcut(event)
-              if (result.kind === 'cancel') onCancel()
-              else if (result.kind === 'clear') onChange(null)
-              else if (result.kind === 'invalid') onMessage(result.message)
-              else if (result.kind === 'binding') onChange(result.accelerator)
-            }}
             onClick={() => {
               if (!recording) {
                 onRecord()
