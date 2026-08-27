@@ -11,7 +11,7 @@ export interface DisplayServicePathContext {
 
 export function displayServiceCandidates(context: DisplayServicePathContext): string[] {
   if (context.isPackaged) {
-    return [join(context.resourcesPath, 'display-service', 'DisplayService.exe')]
+    return [join(context.resourcesPath, 'display-service', 'ChromaShift.DisplayService.exe')]
   }
 
   return [
@@ -25,7 +25,7 @@ export function displayServiceCandidates(context: DisplayServicePathContext): st
       'bin',
       'Debug',
       'net10.0-windows',
-      'DisplayService.exe'
+      'ChromaShift.DisplayService.exe'
     ),
     resolve(
       context.cwd,
@@ -34,7 +34,7 @@ export function displayServiceCandidates(context: DisplayServicePathContext): st
       'bin',
       'Debug',
       'net10.0-windows',
-      'DisplayService.exe'
+      'ChromaShift.DisplayService.exe'
     )
   ].filter((candidate): candidate is string => candidate !== undefined)
 }

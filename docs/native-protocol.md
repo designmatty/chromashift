@@ -1,6 +1,6 @@
 # Native protocol
 
-Electron launches `DisplayService.exe` as a child process. Requests and responses
+Electron launches `ChromaShift.DisplayService.exe` as a child process. Requests and responses
 are UTF-8 newline-delimited JSON over stdin/stdout. Structured diagnostic logs use
 stderr and cannot corrupt the protocol stream. Protocol version: `1`.
 

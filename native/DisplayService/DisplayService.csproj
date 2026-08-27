@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AssemblyName>DisplayService</AssemblyName>
+    <AssemblyName>ChromaShift.DisplayService</AssemblyName>
     <RootNamespace>ChromaShift.DisplayService</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>true</PublishTrimmed>
@@ -19,4 +19,33 @@
                          Condition="'$(PublishTrimmed)' == 'true'" />
     <TrimmerRootAssembly Include="NvAPIWrapper" Condition="'$(PublishTrimmed)' == 'true'" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="ThirdPartyNotices\THIRD-PARTY-NOTICES.txt"
+          Link="THIRD-PARTY-NOTICES.txt"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+    <None Include="ThirdPartyNotices\licenses\GPL-3.0.txt"
+          Link="licenses\GPL-3.0.txt"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+    <None Include="ThirdPartyNotices\licenses\LGPL-3.0.txt"
+          Link="licenses\LGPL-3.0.txt"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+  </ItemGroup>
+  <Target Name="ExcludeNvApiWrapperFromBundle"
+          BeforeTargets="GenerateSingleFileBundle"
+          DependsOnTargets="PrepareForBundle"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <FilesToBundle Remove="@(FilesToBundle)"
+                     Condition="'%(FileName)%(Extension)' == 'NvAPIWrapper.dll'" />
+    </ItemGroup>
+  </Target>
+  <Target Name="CopyReplaceableNvApiWrapper"
+          AfterTargets="Publish"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <Copy SourceFiles="$(TargetDir)NvAPIWrapper.dll"
+          DestinationFolder="$(PublishDir)" />
+  </Target>
 </Project>
