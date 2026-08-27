@@ -201,8 +201,9 @@ but forcibly terminates Electron instead of requesting a graceful exit; this
 verifies detached-helper parent-process monitoring and crash restoration.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
-publishing a self-contained, partially trimmed single-file `DisplayService`. The package
-command also checks separate budgets for the unpacked app, ASAR, helper, FFmpeg,
+publishing a self-contained, partially trimmed `ChromaShift.DisplayService.exe`
+with replaceable `NvAPIWrapper.dll` beside it. The package command also checks
+separate budgets for the unpacked app, ASAR, helper, FFmpeg,
 locales, and installer. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout, the absence of unused DirectX 12 and
 Vulkan shader runtime files, and the production fuse wire. It starts the

@@ -83,9 +83,10 @@ unreachable session restoration records without an error.
 
 Milestone 6 is complete. Packaging now excludes development artifacts and
 redundant bundled dependencies, ships only the English Chromium locale, and
-publishes DisplayService as a self-contained, partially trimmed single file. The
-final x64 NSIS installer is 84.69 MiB, its unpacked layout is 285.43 MiB, and the
-external helper is 14.01 MiB. Package and packaged runtime budgets guard
+publishes ChromaShift.DisplayService as a self-contained, partially trimmed helper
+with its replaceable NvAPIWrapper library beside it. The
+final x64 NSIS installer is 84.87 MiB, its unpacked layout is 285.71 MiB, and the
+external helper directory is 14.05 MiB. Package and packaged runtime budgets guard
 installer size, installed footprint, startup and panel latency, private memory,
 renderer release, and idle CPU. Opening the mini panel also releases the hidden
 app renderer after the handoff. Milestone 7 follows.

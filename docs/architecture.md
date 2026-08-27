@@ -7,7 +7,7 @@ React profile renderer
        -> @chromashift/core (profiles, matching, activation, persistence)
   -> typed NativeClient
   -> NDJSON over child stdin/stdout
-  -> DisplayService.exe
+  -> ChromaShift.DisplayService.exe
        -> display registry / foreground watcher / baseline manager
        -> per-capability Windows, NVIDIA, and AMD providers
 ```
