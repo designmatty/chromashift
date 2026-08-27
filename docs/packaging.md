@@ -122,11 +122,16 @@ path or direct filesystem access.
 
 ## Code signing
 
-No certificate or secret is committed. Electron Builder consumes
-`WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI secrets.
-`.env.example` documents the variable names only. Unsigned local foundation
-builds remain supported; a release pipeline can require signing with Electron
-Builder's `forceCodeSigning` option once release credentials exist.
+No certificate or secret is committed. The current Electron Builder path
+consumes `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI
+secrets. `.env.example` documents the variable names only. Milestone 8 replaces
+the release path with Azure Artifact Signing Basic under an individually
+validated publisher identity. The managed service must sign `ChromaShift.exe`
+and `ChromaShift.DisplayService.exe` before NSIS embeds them, then sign the installer.
+Milestone 8 also moves the LGPL-3.0 `NvAPIWrapper.dll` out of the single-file
+helper and ships it beside `ChromaShift.DisplayService.exe` with its required license,
+notice, source-access, and replacement-loading evidence. Unsigned local
+foundation builds remain supported.
 
 ## Release preflight
 
@@ -140,12 +145,13 @@ version, filename, architecture, size, and SHA-512 metadata.
 
 The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
 verification, validates generated artifacts, uploads them, and creates a draft
-GitHub release. Stable tags require Authenticode credentials through Electron
-Builder's `forceCodeSigning` path. Prerelease tags may produce an explicitly
-unsigned prerelease until Milestone 8 supplies signing credentials. Publication
-is never canceled by a newer run. Real display/package smoke remains a
-pre-release action on suitable Windows hardware; hosted CI does not infer it from
-compilation.
+GitHub release. The current workflow requires Authenticode credentials through
+Electron Builder's `forceCodeSigning` path. Milestone 8 will replace that PFX-only
+stable-release path with Azure Artifact Signing while retaining per-file
+verification. Prerelease tags may produce an explicitly unsigned prerelease until
+that work is complete. Publication is never canceled by a newer run. Real
+display/package smoke remains a pre-release action on suitable Windows hardware;
+hosted CI does not infer it from compilation.
 
 ## Package smoke test
 

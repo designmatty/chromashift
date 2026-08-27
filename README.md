@@ -90,10 +90,11 @@ external helper directory is 14.05 MiB. Package and packaged runtime budgets gua
 installer size, installed footprint, startup and panel latency, private memory,
 renderer release, and idle CPU. Opening the mini panel also releases the hidden
 app renderer after the handoff. Milestone 7 follows.
-The broader suspend/resume,
-lock/unlock, resolution/refresh, driver-reset, baseline-owning process-fault,
-mixed-GPU/AMD/driver, signing-certificate, and installer-reputation matrix is
-deferred to Milestone 8 — Extended hardware and release hardening.
+Milestone 8 publishes ChromaShift under MIT, integrates Azure Artifact Signing,
+and ships the signed `v0.1.0-preview.3` NSIS release after the existing safety,
+desktop, package, and performance gates pass. Additional transition, fault,
+driver, AMD, and mixed-GPU tests are issue-driven post-release work. AMD support
+is implemented against ADLX but remains hardware-unverified.
 
 Profiles now identify a physical panel independently of its connector. The
 G60SD's simultaneous DP and HDMI paths remain separate native restoration

@@ -345,8 +345,9 @@ Milestone 7
   -> notifications, shortcuts, and tray extensions
 
 Milestone 8
-  -> extended OS/GPU/process-fault matrix
-  -> signed distribution trust and reputation
+  -> open-source readiness
+  -> Azure Artifact Signing
+  -> public repository and signed preview release
 ```
 
 This order keeps product behavior and restoration reliability ahead of UI
