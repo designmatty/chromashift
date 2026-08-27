@@ -32,11 +32,17 @@ ChromaShift.exe
 resources/
   app.asar
   display-service/
-    DisplayService.exe
+    ChromaShift.DisplayService.exe
+    NvAPIWrapper.dll
+    THIRD-PARTY-NOTICES.txt
+    licenses/
+      GPL-3.0.txt
+      LGPL-3.0.txt
 ```
 
-`DisplayService.exe` is a self-contained, partially trimmed .NET single-file
-publish. Protocol JSON uses source-generated metadata so application-owned code
+`ChromaShift.DisplayService.exe` is a self-contained, partially trimmed .NET
+single-file publish except for the replaceable `NvAPIWrapper.dll`. Protocol JSON
+uses source-generated metadata so application-owned code
 remains trim analyzed. The copied NVAPI provider assembly is rooted because its
 reflection paths cannot be inferred by the linker; narrowly scoped linker
 suppressions document only that dependency's known warnings. EDID discovery
@@ -72,7 +78,7 @@ has no WebGL or GPU-heavy surface; real desktop smoke and packaged performance
 cover that rendering decision.
 
 Production code resolves the helper only from
-`process.resourcesPath/display-service/DisplayService.exe`. Development uses
+`process.resourcesPath/display-service/ChromaShift.DisplayService.exe`. Development uses
 the debug build or an explicit `CHROMASHIFT_DISPLAY_SERVICE_PATH`; production
 does not honor that override.
 
@@ -145,7 +151,7 @@ compilation.
 
 The package smoke test asserts the exact external-resource paths, production
 fuses, CSP, and renderer sandbox, then tests both unpacked and installed layouts.
-It launches `DisplayService.exe`, verifies its version/health/watchdog handshake
+It launches `ChromaShift.DisplayService.exe`, verifies its version/health/watchdog handshake
 and display enumeration, captures a baseline, requests service shutdown, and
 checks the per-display restoration acknowledgement. It also starts the Electron
 app with isolated user data and invokes the shared restore-safe exit path. The

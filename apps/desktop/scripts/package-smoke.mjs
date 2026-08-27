@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import {
   access,
+  appendFile,
   copyFile,
   mkdtemp,
   mkdir,
@@ -175,7 +176,7 @@ Write-Output "Clicked newest notification '$expected' at $notificationX,$notific
   )
 }
 
-async function smokeService(servicePath, label) {
+async function smokeService(servicePath, label, { verifyExactRestoration = false } = {}) {
   const child = spawn(servicePath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   child.stdin.setDefaultEncoding('utf8')
   const lines = createInterface({ input: child.stdout })
@@ -234,7 +235,29 @@ async function smokeService(servicePath, label) {
       await request('service.shutdown')
       throw new Error(`${label} did not enumerate an SDR display with brightness support.`)
     }
+    const baselineState = await request('display.state', { displayId: display.id })
     await request('baseline.capture', { displayId: display.id })
+    if (verifyExactRestoration) {
+      const changed = await request('display.apply', {
+        displayId: display.id,
+        settings: { gamma: 1.02 }
+      })
+      if (
+        typeof baselineState.gammaRampHash !== 'string' ||
+        changed.applied?.gammaRampHash === baselineState.gammaRampHash
+      ) {
+        throw new Error(`${label} did not apply a distinct guarded gamma ramp.`)
+      }
+      const explicitRestore = await request('baseline.restore', { displayId: display.id })
+      if (explicitRestore.restored !== true) {
+        throw new Error(`${label} did not explicitly restore ${display.id}.`)
+      }
+      const restoredState = await request('display.state', { displayId: display.id })
+      if (restoredState.gammaRampHash !== baselineState.gammaRampHash) {
+        throw new Error(`${label} did not exactly restore the original gamma ramp.`)
+      }
+      await request('baseline.capture', { displayId: display.id })
+    }
     const restored = await request('service.shutdown')
     if (!restored.displays?.some((result) => result.displayId === display.id && result.restored)) {
       throw new Error(`${label} did not confirm baseline restoration for ${display.id}.`)
@@ -282,6 +305,7 @@ async function assertReplaceableNvApiWrapper(serviceDirectory, replacementDirect
   }
 
   await copyFile(join(serviceDirectory, 'NvAPIWrapper.dll'), replacementLibrary)
+  await appendFile(replacementLibrary, '\nChromaShift replacement-loading smoke\n')
   await smokeService(replacementService, 'replacement-library helper')
 }
 
@@ -644,7 +668,7 @@ try {
     serviceDirectory,
     join(temporaryRoot, 'replacement-library')
   )
-  await smokeService(unpackedService, 'unpacked')
+  await smokeService(unpackedService, 'unpacked', { verifyExactRestoration: true })
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')
 
   const desktopPackage = JSON.parse(await readFile(join(desktopDirectory, 'package.json'), 'utf8'))

@@ -5,7 +5,7 @@ NvAPIWrapper
 
 ChromaShift uses NvAPIWrapper.dll from Varun.NvAPIWrapper.Net 9.0.3.
 
-Copyright (C) Soroush Falahati 2018-2026 and Varun.NvAPIWrapper.Net contributors.
+Copyright (C) Soroush Falahati 2018-2026.
 
 NvAPIWrapper is licensed under the GNU Lesser General Public License, version
 3. The complete LGPL-3.0 and incorporated GPL-3.0 texts accompany this notice
