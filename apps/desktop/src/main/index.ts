@@ -258,8 +258,10 @@ function servicePath(): string {
 }
 
 async function loadTrayIcon(): Promise<NativeImage> {
-  if (app.isPackaged) return app.getFileIcon(process.execPath, { size: 'small' })
-  return nativeImage.createFromPath(resolve(app.getAppPath(), 'build', 'icon.png'))
+  const iconPath = app.isPackaged
+    ? resolve(process.resourcesPath, 'chromashift-icon-lightmode.png')
+    : resolve(app.getAppPath(), 'build', 'chromashift-icon-lightmode.png')
+  return nativeImage.createFromPath(iconPath)
 }
 
 function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
