@@ -138,7 +138,7 @@ DisplayService itself measured around 15–18 MiB private and 45–50 MiB workin
 set after trimming. It remains event-driven; the publish optimization reduced
 disk and installer size without increasing its steady runtime footprint.
 
-## Milestone 6 package footprint
+## Current package footprint
 
 The 2026-08-20 installed build exposed two avoidable packaging costs. The broad
 `out/**/*` rule copied 77.36 MiB of UI-stack benchmark output and other smoke
@@ -178,7 +178,7 @@ disabled-hardware-acceleration path uses ANGLE D3D11 WARP and did not load these
 files during packaged process-module inspection. A Windows-only post-pack hook
 now removes the five unused files before signing. This cuts 32.00 MiB from the
 installed directory and 8.12 MiB from the installer compared with the first
-Milestone 6 package. The package smoke test guards the pruned layout.
+current package. The package smoke test guards the pruned layout.
 
 ChromaShift does not play audio or video. Electron Builder now swaps the stock
 2.93 MiB FFmpeg library for Electron's 1.59 MiB non-proprietary codec build, and
@@ -190,7 +190,7 @@ compression level to `maximum` produced the same byte-for-byte 85.24 MiB
 installer as the default level before these cuts, so the package keeps the
 faster default compression setting.
 
-## Milestone 6 packaged runtime
+## Current packaged runtime
 
 Opening the mini panel previously hid the app window but retained its renderer.
 The handoff reached 319.41 MiB private memory and 629.44 MiB working set on this
@@ -276,7 +276,7 @@ additional native Windows window handling.
 Decision: keep Electron. The existing shell already has mature TypeScript domain
 coverage, sandboxed and validated IPC, restore-safe DisplayService ownership,
 non-activating window behavior, renderer lifecycle optimization, and packaged
-desktop smoke. The completed UI and Milestone 5 hardening remained lower risk in
+desktop smoke. The completed Electron UI and hardening remained lower risk in
 that shell. Keep Electron Builder; Electron Forge does not solve a current packaging
 or lifecycle gap.
 

@@ -1,9 +1,8 @@
 # Windows packaging
 
-Milestone 3 uses Electron Builder 26.15.3 without adopting a starter template's
-architecture or dependency set. Application JavaScript is stored in ASAR. The
-native helper is published self-contained for Windows x64 and copied outside
-ASAR with every runtime and native dependency it needs.
+ChromaShift uses Electron Builder 26.15.3 for Windows x64. Application JavaScript
+is stored in ASAR. The native helper is published self-contained and copied
+outside ASAR with every runtime and native dependency it needs.
 
 ## Commands
 
@@ -124,14 +123,14 @@ path or direct filesystem access.
 
 No certificate or secret is committed. The current Electron Builder path
 consumes `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI
-secrets. `.env.example` documents the variable names only. Milestone 8 replaces
-the release path with Azure Artifact Signing Basic under an individually
-validated publisher identity. The managed service must sign `ChromaShift.exe`
-and `ChromaShift.DisplayService.exe` before NSIS embeds them, then sign the installer.
-Milestone 8 also moves the LGPL-3.0 `NvAPIWrapper.dll` out of the single-file
-helper and ships it beside `ChromaShift.DisplayService.exe` with its required license,
-notice, source-access, and replacement-loading evidence. Unsigned local
-foundation builds remain supported.
+secrets. `.env.example` documents the variable names only. Issue #46 will replace
+that release path with Azure Artifact Signing under an individually validated
+publisher identity. The managed service must sign `ChromaShift.exe` and
+`ChromaShift.DisplayService.exe` before NSIS embeds them, then sign the installer.
+Unsigned local builds remain supported. See `signing.md`.
+
+The LGPL-3.0 `NvAPIWrapper.dll` already ships beside the helper with its license
+texts, notice, corresponding-source link, and replacement-loading coverage.
 
 ## Release preflight
 
@@ -146,12 +145,13 @@ version, filename, architecture, size, and SHA-512 metadata.
 The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
 verification, validates generated artifacts, uploads them, and creates a draft
 GitHub release. The current workflow requires Authenticode credentials through
-Electron Builder's `forceCodeSigning` path. Milestone 8 will replace that PFX-only
-stable-release path with Azure Artifact Signing while retaining per-file
-verification. Prerelease tags may produce an explicitly unsigned prerelease until
-that work is complete. Publication is never canceled by a newer run. Real
-display/package smoke remains a pre-release action on suitable Windows hardware;
-hosted CI does not infer it from compilation.
+Electron Builder's `forceCodeSigning` path. Issue #46 replaces that PFX-only path
+with Azure Artifact Signing while retaining per-file verification. The workflow
+still contains a legacy unsigned-prerelease branch, but it must not be run or used
+to create a draft release. Issue #46 must remove that branch before the signed
+release-candidate work begins. Publication is never canceled by a newer run. Real
+display and package smoke remain pre-release actions on suitable Windows
+hardware; hosted CI does not infer them from compilation.
 
 ## Package smoke test
 
