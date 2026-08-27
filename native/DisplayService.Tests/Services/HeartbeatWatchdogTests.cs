@@ -1,4 +1,5 @@
 using ChromaShift.DisplayService.Services;
+using System.Threading.Channels;
 using Xunit;
 
 namespace ChromaShift.DisplayService.Tests.Services;
@@ -19,16 +20,33 @@ public sealed class HeartbeatWatchdogTests
     [Fact]
     public async Task HeartbeatResetsTheExpirationDeadline()
     {
-        using var watchdog = new HeartbeatWatchdog(TimeSpan.FromMilliseconds(80));
-        watchdog.RecordHeartbeat();
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        watchdog.RecordHeartbeat();
-        await Task.Delay(50, TestContext.Current.CancellationToken);
+        var timeout = TimeSpan.FromMilliseconds(80);
+        var waitCalls = Channel.CreateUnbounded<TimeSpan?>();
+        var waitResults = Channel.CreateUnbounded<int>();
+        using var watchdog = new HeartbeatWatchdog(timeout, (_, waitTimeout) =>
+        {
+            waitCalls.Writer.TryWrite(waitTimeout);
+            return waitResults.Reader.ReadAsync().AsTask().GetAwaiter().GetResult();
+        });
 
+        Assert.Null(await waitCalls.Reader.ReadAsync(TestContext.Current.CancellationToken));
+        watchdog.RecordHeartbeat();
+        await waitResults.Writer.WriteAsync(0, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            timeout,
+            await waitCalls.Reader.ReadAsync(TestContext.Current.CancellationToken));
+        watchdog.RecordHeartbeat();
+        await waitResults.Writer.WriteAsync(0, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            timeout,
+            await waitCalls.Reader.ReadAsync(TestContext.Current.CancellationToken));
         Assert.False(watchdog.Expired.IsCompleted);
-        await watchdog.Expired.WaitAsync(
-            TimeSpan.FromMilliseconds(100),
+        await waitResults.Writer.WriteAsync(
+            WaitHandle.WaitTimeout,
             TestContext.Current.CancellationToken);
+        await watchdog.Expired.WaitAsync(TestContext.Current.CancellationToken);
         Assert.True(watchdog.Armed);
     }
 }
