@@ -133,11 +133,13 @@ With `--artifacts`, the installer, block map, and `latest.yml` must agree on
 version, filename, architecture, size, and SHA-512 metadata.
 
 The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
-verification, requires Authenticode credentials through Electron Builder's
-`forceCodeSigning` path, validates generated artifacts, uploads them, and creates
-a draft GitHub release. Publication is never canceled by a newer run. Real
-display/package smoke remains a pre-release action on suitable Windows hardware;
-hosted CI does not infer it from compilation.
+verification, validates generated artifacts, uploads them, and creates a draft
+GitHub release. Stable tags require Authenticode credentials through Electron
+Builder's `forceCodeSigning` path. Prerelease tags may produce an explicitly
+unsigned prerelease until Milestone 8 supplies signing credentials. Publication
+is never canceled by a newer run. Real display/package smoke remains a
+pre-release action on suitable Windows hardware; hosted CI does not infer it from
+compilation.
 
 ## Package smoke test
 
