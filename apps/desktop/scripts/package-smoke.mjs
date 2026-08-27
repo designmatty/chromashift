@@ -554,9 +554,9 @@ try {
       throw new Error(`Unused Electron runtime file was packaged: ${unusedRuntimeFile}`)
     }
   }
-  if (await pathExists(join(unpackedDirectory, 'resources', 'icon.png'))) {
-    throw new Error('The packaged tray icon duplicates the icon embedded in ChromaShift.exe.')
-  }
+  await assertFile(
+    join(unpackedDirectory, 'resources', 'chromashift-icon-lightmode.png')
+  )
   await assertProductionFuses(unpackedApplication)
   await smokeService(unpackedService, 'unpacked')
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')
