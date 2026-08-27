@@ -42,8 +42,24 @@ jobs:
       - name: Run canonical verification
         run: npm run verify
 
-      - name: Build signed installer
-        run: npm run package:release
+      - name: Build Windows installer
+        id: package
+        shell: pwsh
+        run: |
+          $hasSigningCredentials =
+            -not [string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -and
+            -not [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)
+          $isPrerelease = $env:GITHUB_REF_NAME.Contains('-')
+
+          if ($hasSigningCredentials) {
+            npm run package:release
+            "signed=true" >> $env:GITHUB_OUTPUT
+          } elseif ($isPrerelease) {
+            npm run package:win
+            "signed=false" >> $env:GITHUB_OUTPUT
+          } else {
+            throw 'Stable releases require WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD.'
+          }
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
@@ -52,6 +68,7 @@ jobs:
         run: npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts
 
       - name: Verify Authenticode signatures
+        if: steps.package.outputs.signed == 'true'
         shell: pwsh
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
@@ -82,10 +99,18 @@ jobs:
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $installer = "apps/desktop/release/ChromaShift-$version-x64-setup.exe"
-          gh release create $env:GITHUB_REF_NAME `
-            $installer `
-            "$installer.blockmap" `
-            apps/desktop/release/latest.yml `
-            --draft --verify-tag --generate-notes
+          $arguments = @(
+            $env:GITHUB_REF_NAME,
+            $installer,
+            "$installer.blockmap",
+            'apps/desktop/release/latest.yml',
+            '--draft',
+            '--verify-tag',
+            '--generate-notes'
+          )
+          if ($env:GITHUB_REF_NAME.Contains('-')) {
+            $arguments += '--prerelease'
+          }
+          gh release create @arguments
         env:
           GH_TOKEN: ${{ github.token }}
