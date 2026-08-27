@@ -329,7 +329,7 @@ Use:
 The native implementation should live in a separate process:
 
 ```text
-DisplayService.exe
+ChromaShift.DisplayService.exe
 ```
 
 Do not implement native GPU/display functionality as a Node native addon unless there is a compelling reason discovered during implementation.
@@ -356,7 +356,7 @@ The helper-process architecture is intentional.
           JSON IPC
                │
 ┌──────────────▼───────────────────────┐
-│ DisplayService.exe                  │
+│ ChromaShift.DisplayService.exe      │
 │                                     │
 │ C# / .NET                           │
 │                                     │
@@ -1028,7 +1028,7 @@ Do not implement them yet.
 
 # Native IPC
 
-Electron communicates with `DisplayService.exe` through a simple structured protocol.
+Electron communicates with `ChromaShift.DisplayService.exe` through a simple structured protocol.
 
 Prefer newline-delimited JSON over stdin/stdout for the initial implementation unless another IPC mechanism clearly proves better.
 
@@ -1586,7 +1586,7 @@ Do not make mise-specific shell behavior part of application runtime.
 
 Electron must be able to:
 
-1. launch `DisplayService.exe`
+1. launch `ChromaShift.DisplayService.exe`
 2. detect successful initialization
 3. send a command
 4. receive a response
@@ -1990,7 +1990,7 @@ Adapt the useful Electron Builder patterns from the reviewed starter rather than
 adopting the starter itself.
 
 - configure Windows application identity, icons, NSIS artifacts, and ASAR
-- publish `DisplayService.exe` and all required runtime/native files as external
+- publish `ChromaShift.DisplayService.exe` and all required runtime/native files as external
   packaged resources
 - resolve the packaged sidecar from `process.resourcesPath`; retain explicit
   development-path resolution separately
