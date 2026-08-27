@@ -1,19 +1,49 @@
 # ChromaShift
 
-ChromaShift is a Windows 11 display profile manager. Phase 0 and Milestones 1–4
-are complete: the repository contains a functional Electron profile manager, a narrow
-Electron-to-.NET protocol, event-driven foreground detection,
-display/capability discovery, baseline-safe Windows, NVIDIA, and AMD provider
-spikes, a tested TypeScript core for profiles and activation, tray controls,
-restore-safe shutdown, and a Windows packaging foundation.
+ChromaShift is a Windows 11 display profile manager. It applies per-display color
+settings when the foreground application changes and can also select profiles
+manually from the app, mini panel, tray, or global shortcuts.
 
-## Prerequisites
+Before changing a display, ChromaShift captures its original state. Profile
+transitions start from that captured state, and normal exit, pause, emergency
+restore, and tested crash paths restore it.
+
+## Hardware support
+
+NVIDIA behavior has been verified on real hardware. The tested path covers
+Windows gamma controls, NVIDIA saturation and hue, HDR deferral, display
+reconnects, helper recovery, and exact restoration.
+
+AMD support is implemented against AMD's official ADLX API but remains
+hardware-unverified because no test display is connected to the AMD adapter.
+Intel and unknown adapters are detected but do not have vendor color providers.
+See [display research](docs/display-research.md) for the tested hardware and
+known limits.
+
+## What is included
+
+- Per-application and manually selected profiles
+- Independent optional settings for each physical display
+- Brightness, contrast, gamma, saturation, hue, and AMD color temperature where
+  the active provider reports support
+- Automatic foreground-application matching and a permanent Default profile
+- App panel, non-activating mini panel, system tray, notifications, and global
+  shortcuts
+- Pause, one-shot restore, emergency restore, preview rollback, and fail-closed
+  recovery when baseline ownership is uncertain
+
+ChromaShift uses normal Windows and GPU display APIs. It does not inject into
+applications, inspect game memory, hook rendering, or install a driver.
+
+## Build from source
+
+Requirements:
 
 - Windows 11
 - Node.js 24.11.1 and npm 11.6.2
 - .NET SDK 10.0.302
 
-The versions are pinned in `mise.toml`, but mise is optional. With mise:
+The versions are pinned in `mise.toml`, but mise is optional.
 
 ```powershell
 mise install
@@ -21,101 +51,44 @@ npm install
 npm run dev
 ```
 
-With Node and .NET installed directly, run `npm install` and `npm run dev`.
-Electron 43 downloads its platform binary on the first development launch, so
-that first `npm run dev` may take longer than later launches.
+With Node and .NET installed directly, omit `mise install`. For a deterministic
+fresh-clone setup, run [`.\scripts\setup.ps1`](scripts/setup.ps1) from PowerShell.
 
-For a deterministic fresh-clone setup on Windows, run:
-
-```powershell
-.\script\setup.ps1
-```
-
-## Commands
+## Verification and packaging
 
 ```powershell
-npm run dev
-npm run build
-npm run test
-npm run lint
-npm run typecheck
 npm run verify
-npm run native:run
 npm run native:test:integration
+npm run smoke:desktop
 npm run package:win
 npm run smoke:package
+npm run measure:performance
 ```
 
-See `docs/display-research.md` for the verified hardware matrix and constraints,
-and `docs/core-domain.md` for the profile and activation contracts. AMD writes
-are implemented against official ADLX but remain unverified because the test
-machine has no AMD-driven display. Automatic foreground activation and manual
-tray controls are connected through Electron main. The renderer now supports
-profile CRUD, display and application assignments, capability-driven controls,
-light/dark design tokens, and rollback-safe live preview.
+`npm run verify` is the canonical non-interactive gate. Native integration,
+desktop smoke, package smoke, and performance measurement need an interactive
+Windows session and suitable hardware. See [testing](docs/testing.md) for the
+scope and safety requirements of each command.
 
-## Current roadmap
+## Repository guide
 
-Milestone 4 is complete:
+- [Architecture](docs/architecture.md) explains the Electron, TypeScript, and
+  .NET boundaries.
+- [Core domain](docs/core-domain.md) defines profiles, matching, and activation.
+- [Native protocol](docs/native-protocol.md) documents Electron-to-helper IPC.
+- [Per-display settings](docs/per-display-profile-settings.md) records the current
+  profile and UI contracts plus approved Figma references.
+- [Physical display identity](docs/physical-display-identity.md) explains panel
+  identity and endpoint fanout.
+- [Packaging](docs/packaging.md), [performance](docs/performance.md), and
+  [signing](docs/signing.md) cover the Windows release path.
+- [Third-party dependencies](docs/third-party.md) records native licensing and
+  replacement requirements.
 
-1. Chakra UI foundation, semantic themes, error boundary, and accessible states — complete
-2. centralized, sender-validated, bidirectionally validated product IPC — complete
-3. profile create, edit, delete, duplicate, default, and manual activation — complete
-4. display, foreground-application, and `.exe` assignment workflows — complete
-5. capability/HDR-aware live preview with explicit save/cancel rollback — complete
-6. tray mini panel, permanent Default profile, visible-app picker, and startup,
-   close, and theme settings — complete
+## Project policy
 
-Milestone 5 is complete and covers power/display transitions, bounded renderer
-and sidecar resilience, packaged-app security, diagnostics, and current-hardware
-release readiness. Its implementation and automated coverage include:
-transition/topology/baseline validation, hardened window persistence, helper
-health and heartbeat restoration, fail-closed bounded sidecar recovery, bounded
-renderer recreation, the global emergency restore shortcut, hardened Electron
-fuses/CSP/navigation, persistent diagnostics, a bounded in-app diagnostics browser,
-worktree-isolated development data, and package security smoke. Slice 5.4's
-version/tag/artifact/update-manifest
-preflight and serialized signed-release workflow are also implemented. Guarded
-SDR/HDR/SDR plus active-Edit DisplayPort and HDMI disconnect/reconnect sequences
-have passed on the G60SD. Disconnected profile targets remain persisted but stay
-out of the editor, and explicit Exit restores connected outputs while discarding
-unreachable session restoration records without an error.
+The production app has no telemetry, analytics, or outbound network requests.
+Read [Privacy](PRIVACY.md), [Security](SECURITY.md), and
+[Contributing](CONTRIBUTING.md) for the public project policies.
 
-Milestone 6 is complete. Packaging now excludes development artifacts and
-redundant bundled dependencies, ships only the English Chromium locale, and
-publishes ChromaShift.DisplayService as a self-contained, partially trimmed helper
-with its replaceable NvAPIWrapper library beside it. The
-final x64 NSIS installer is 84.87 MiB, its unpacked layout is 285.71 MiB, and the
-external helper directory is 14.05 MiB. Package and packaged runtime budgets guard
-installer size, installed footprint, startup and panel latency, private memory,
-renderer release, and idle CPU. Opening the mini panel also releases the hidden
-app renderer after the handoff. Milestone 7 follows.
-Milestone 8 publishes ChromaShift under MIT, integrates Azure Artifact Signing,
-and ships the signed `v0.1.0-preview.3` NSIS release after the existing safety,
-desktop, package, and performance gates pass. Additional transition, fault,
-driver, AMD, and mixed-GPU tests are issue-driven post-release work. AMD support
-is implemented against ADLX but remains hardware-unverified.
-
-Profiles now identify a physical panel independently of its connector. The
-G60SD's simultaneous DP and HDMI paths remain separate native restoration
-endpoints but render as one display, share one profile target, and receive the
-same setting through endpoint fanout. A startup rewrite converts resolvable old
-endpoint targets; unknown disconnected targets remain persisted and hidden.
-Baseline-free native-service crashes are now covered by a real recovery smoke;
-the app completes its bounded health/topology handshake and resumes without a
-renderer restart. Potential baseline ownership still blocks unsafe recapture.
-
-The repository will not be rebased onto a general Electron starter. See
-`AGENTS.md` for the reviewed starter-template decision and the authoritative
-slice definitions.
-
-The renderer is organized by product feature under
-`apps/desktop/src/renderer/features`. Chakra UI v3 owns accessible controls and
-semantic tokens; product-specific Electron window layout remains plain CSS.
-Tailwind, shadcn, and Base UI are not part of the current stack.
-
-The measured UI-stack, Electron-memory, and Tauri decision record is in
-[`docs/performance.md`](docs/performance.md). `npm run measure:memory` samples
-the real Windows process tree, and the normal verification gate enforces the
-renderer bundle budget. Electron remains the production shell, with Electron
-Builder retained for packaging.
+ChromaShift is licensed under the [MIT License](LICENSE).

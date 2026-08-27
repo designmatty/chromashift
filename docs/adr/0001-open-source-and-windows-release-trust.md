@@ -15,9 +15,9 @@ Foundation approval, and gives Windows a publicly trusted Authenticode identity
 without adding a Microsoft Store package.
 
 The open-source publication and the signing service are independent decisions.
-The repository still needs a private-material and license-compliance audit before
-publication. Azure must sign `ChromaShift.exe` and `ChromaShift.DisplayService.exe` before
-NSIS packages them, then sign the final installer.
+The private-material and license-compliance audit is complete. Azure must sign
+`ChromaShift.exe` and `ChromaShift.DisplayService.exe` before NSIS packages them,
+then sign the final installer.
 
 Open-source readiness and the signed draft release will finish while the
 repository remains private. Making the repository public and publishing the
@@ -27,8 +27,8 @@ No clean-system VM or SmartScreen reputation study is required.
 The first signed release will be `v0.1.0-preview.3`. Stable `v0.1.0` can follow
 after ordinary use of the preview.
 
-The LGPL-3.0 `NvAPIWrapper.dll` will ship beside `ChromaShift.DisplayService.exe` with its
-license texts, notice, corresponding-source link, and a replacement-loading test.
+The LGPL-3.0 `NvAPIWrapper.dll` ships beside `ChromaShift.DisplayService.exe` with
+its license texts, notice, corresponding-source link, and a replacement-loading test.
 The repository will support only its latest release for security reports and
 will enable GitHub private vulnerability reporting without promising a response
 deadline.

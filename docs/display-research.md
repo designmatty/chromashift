@@ -1,9 +1,9 @@
 # Display feasibility research
 
-Status: Phase 0 complete on 2026-08-08. The spike proves the native boundary,
-Windows and NVIDIA behavior on the test machine, and an official AMD ADLX
-implementation boundary. AMD display operations remain explicitly unverified
-because no active monitor is attached to the AMD adapter.
+Status: current hardware record, first established on 2026-08-08 and extended by
+later guarded tests. Windows and NVIDIA behavior is verified on the test machine.
+AMD display operations remain explicitly unverified because no active monitor is
+attached to the AMD adapter.
 
 ## Environment
 
@@ -116,7 +116,7 @@ on the G60SD, ChromaShift detected the state and reported every Windows and
 NVIDIA color capability unsupported; profile apply requests failed closed with
 `HDR_UNSAFE` before mutation. The first live toggle also exposed repeated profile
 attempts and an SDR-baseline restore attempt while HDR was active, so it did not
-establish NVIDIA HDR write safety. Slice 5.1 now treats HDR as a deferred
+establish NVIDIA HDR write safety. ChromaShift treats HDR as a deferred
 activation state, retains the immutable SDR baseline, and waits for HDR-off
 before restoring or reapplying it. A guarded post-fix SDR/HDR/SDR sequence then
 confirmed this behavior: HDR activation performed no provider writes, the
@@ -172,7 +172,7 @@ explicit per-display restore, restore-all, and partial-apply rollback use the
 same verified path.
 
 Parent-exit monitoring and EOF cover graceful shutdown and tested abrupt Electron
-termination. Milestone 5 added a two-second Electron heartbeat and independent
+termination. ChromaShift also uses a two-second Electron heartbeat and independent
 ten-second helper watchdog; a guarded integration test verified exact gamma-ramp
 restoration after heartbeat loss. Abrupt helper crash, power loss, or OS
 termination may still prevent cleanup because the process that owns the in-memory
@@ -239,8 +239,9 @@ post-release work.
 - HDR-on detection, capability shutdown, deferred activation, SDR recovery, and
   exact exit restoration are hardware-validated on the G60SD. Provider writes
   under HDR remain intentionally unsupported and untested.
-- NVIDIA DVC and hue depend on undocumented/private interfaces and an LGPL-3.0
-  wrapper that needs distribution review.
+- NVIDIA DVC and hue depend on undocumented/private interfaces and a replaceable
+  LGPL-3.0 wrapper. The packaging contract is compliant, but driver compatibility
+  remains a risk.
 - No AMD-driven monitor was available. The ADLX implementation is not a claim of
   AMD hardware validation.
 - The G60SD endpoint IDs are verified independently across DisplayPort and HDMI
@@ -257,26 +258,24 @@ should continue owning profiles, matching, persistence, activation precedence,
 and user-facing errors. `DisplayService` should remain limited to enumeration,
 events, validated native reads/writes, and baseline restoration.
 
-| Product capability                                 | Recommended provider                                                        |
-| -------------------------------------------------- | --------------------------------------------------------------------------- |
-| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                                   |
-| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                       |
-| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                      |
-| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter, subject to compatibility and license decision |
-| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation             |
-| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation                        |
-| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op            |
+| Product capability                                 | Recommended provider                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                        |
+| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook            |
+| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                           |
+| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper     |
+| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation  |
+| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation             |
+| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op |
 
-Proceed to core-domain work only after accepting these Phase 0 constraints:
+These constraints still govern the shipped product:
 
 1. Windows gamma may ship only with HDR gating, read-back verification, bounded
    transforms, baseline-first application, and emergency restoration.
-2. NVIDIA private APIs require a compatibility test matrix and packaging/legal
-   decision before MVP distribution.
+2. NVIDIA private APIs remain compatibility-sensitive. Keep the replaceable
+   wrapper and exact read-back/restoration checks.
 3. AMD must be tested on at least one ADLX-supported, AMD-driven monitor before
    AMD support is advertised as verified.
 4. Topology invalidation and heartbeat restoration are implemented. Additional
    transition and baseline-owning fault evidence is issue-driven post-release
    work; do not make a broad crash-safe hardware claim.
-
-No polished profile UI should begin until these findings are reviewed.

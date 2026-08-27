@@ -36,7 +36,7 @@ captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
 
-`@chromashift/core` owns the vendor-neutral product model introduced in Phase 1.
+`@chromashift/core` owns the vendor-neutral product model.
 It validates versioned JSON configuration, matches foreground applications, and
 resolves manual/foreground/default/baseline precedence without importing
 Electron or the native client. A storage port leaves the app-data filesystem
@@ -46,7 +46,7 @@ Electron main is split along one seam. `product-runtime.ts` owns the product
 side: the native client, every domain controller, and all wiring between them,
 including native event routing (`native-event-router.ts`) and activation
 outcome routing (`activation-outcome-router.ts`). `index.ts` is Electron shell
-only — windows, panels, IPC registration, app lifecycle — and supplies the
+only: windows, panels, IPC registration, and app lifecycle. It supplies the
 runtime's grouped ports (settings accessor, dialogs, icons, panel commands,
 system registrations, notifications). The shell reaches product behavior
 through the runtime's `productController`, `shutdownCoordinator`, and
@@ -55,7 +55,7 @@ the shell only through its ports. The DisplayService connection enters through
 a `createClient` factory port typed as the union of the consumer ports the
 runtime feeds, so runtime startup wiring (start-mode selection, the
 health/version handshake, fail-open lifecycle configuration) is covered by
-fast in-process tests against `testing/fake-native-display.ts` — the one
+fast in-process tests against `testing/fake-native-display.ts`, the one
 shared fake for the native display seam that activation-coordinator and
 preview-session tests also use. Product wiring changes belong in the runtime
 and routers, not in `index.ts`.
@@ -288,67 +288,5 @@ manifest versions agree before a draft release can be created.
 The profile configuration path is pinned explicitly to
 `%APPDATA%\ChromaShift\profiles.json` so package metadata changes cannot move it
 again. When that file is absent, startup performs a non-overwriting one-time copy
-from the pre-Milestone 3 `%APPDATA%\@chromashift\desktop\profiles.json` path.
+from the legacy `%APPDATA%\@chromashift\desktop\profiles.json` path.
 Explicit `--user-data-dir` launches remain isolated and never import legacy data.
-
-## Desktop foundation decision
-
-ChromaShift retains this repository structure rather than rebasing onto the
-reviewed `guasam/electron-react-app` starter. The starter is a reference for
-selected patterns only:
-
-- Electron Builder packaging conventions
-- a React error boundary
-- a semantic design-token system and accessible component primitives; the later
-  product decision implements this with Chakra UI v3
-- centralized Zod contracts for renderer-to-main IPC
-
-Those patterns must be reimplemented inside the existing boundaries. The
-starter's disabled sandbox, generic IPC abstraction, custom title bar, resource
-protocol, dependency set, and lockfile are not adopted.
-
-The later `designmatty/geoswap` review added repository-organization guidance:
-feature-oriented renderer modules, one canonical verification command called by
-Windows CI, and focused repository skills routed from `AGENTS.md`. ChromaShift
-adopts those patterns without taking GeoSwap's web/extension frameworks,
-source-only package model, database stack, or Bash-first scripts.
-
-The roadmap deliberately sequences the borrowed patterns after automatic
-activation:
-
-```text
-Milestone 2
-  -> native activation surface
-  -> main-process composition and persistence
-  -> serialized activation coordinator
-  -> transition recovery and verification
-
-Milestone 3
-  -> tray behavior
-  -> restore-safe shutdown
-  -> Windows packaging with DisplayService outside ASAR
-
-Milestone 4
-  -> minimal UI foundation
-  -> validated renderer-to-main product API
-  -> profile workflows and safe preview
-
-Milestone 5
-  -> operating-system and process resilience
-  -> packaged-app security
-  -> current-hardware and automated release readiness
-
-Milestone 6
-  -> performance and footprint optimization
-
-Milestone 7
-  -> notifications, shortcuts, and tray extensions
-
-Milestone 8
-  -> open-source readiness
-  -> Azure Artifact Signing
-  -> public repository and signed preview release
-```
-
-This order keeps product behavior and restoration reliability ahead of UI
-polish while avoiding a late packaging rewrite around the native sidecar.

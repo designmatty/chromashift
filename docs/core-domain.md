@@ -1,8 +1,8 @@
 # Core domain
 
-Phase 1 lives in `packages/core` and has no dependency on Electron, Node APIs,
-or GPU vendors. It contains the product decisions connected to the native client
-by Electron main during Milestone 2.
+`packages/core` has no dependency on Electron, Node APIs, or GPU vendors. It owns
+the profile, matching, migration, and activation-selection contracts that
+Electron main connects to the native client.
 
 ## Profile configuration
 
@@ -113,5 +113,5 @@ layer to avoid duplicate display writes. `reset()` invalidates that state after
 an external baseline restore or native-service restart.
 
 The resolver remains synchronous and does not call the native service. Electron
-main's Milestone 2 activation coordinator now serializes events around it and
-performs baseline-aware native apply and restore operations.
+main serializes events around it and performs baseline-aware native apply and
+restore operations.
