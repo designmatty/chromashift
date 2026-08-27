@@ -1,5 +1,16 @@
 import { spawn } from 'node:child_process'
-import { access, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  access,
+  appendFile,
+  copyFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile
+} from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -165,7 +176,7 @@ Write-Output "Clicked newest notification '$expected' at $notificationX,$notific
   )
 }
 
-async function smokeService(servicePath, label) {
+async function smokeService(servicePath, label, { verifyExactRestoration = false } = {}) {
   const child = spawn(servicePath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   child.stdin.setDefaultEncoding('utf8')
   const lines = createInterface({ input: child.stdout })
@@ -224,7 +235,29 @@ async function smokeService(servicePath, label) {
       await request('service.shutdown')
       throw new Error(`${label} did not enumerate an SDR display with brightness support.`)
     }
+    const baselineState = await request('display.state', { displayId: display.id })
     await request('baseline.capture', { displayId: display.id })
+    if (verifyExactRestoration) {
+      const changed = await request('display.apply', {
+        displayId: display.id,
+        settings: { gamma: 1.02 }
+      })
+      if (
+        typeof baselineState.gammaRampHash !== 'string' ||
+        changed.applied?.gammaRampHash === baselineState.gammaRampHash
+      ) {
+        throw new Error(`${label} did not apply a distinct guarded gamma ramp.`)
+      }
+      const explicitRestore = await request('baseline.restore', { displayId: display.id })
+      if (explicitRestore.restored !== true) {
+        throw new Error(`${label} did not explicitly restore ${display.id}.`)
+      }
+      const restoredState = await request('display.state', { displayId: display.id })
+      if (restoredState.gammaRampHash !== baselineState.gammaRampHash) {
+        throw new Error(`${label} did not exactly restore the original gamma ramp.`)
+      }
+      await request('baseline.capture', { displayId: display.id })
+    }
     const restored = await request('service.shutdown')
     if (!restored.displays?.some((result) => result.displayId === display.id && result.restored)) {
       throw new Error(`${label} did not confirm baseline restoration for ${display.id}.`)
@@ -239,6 +272,41 @@ async function smokeService(servicePath, label) {
     lines.close()
     if (child.exitCode === null) child.kill()
   }
+}
+
+async function assertReplaceableNvApiWrapper(serviceDirectory, replacementDirectory) {
+  const executableName = 'ChromaShift.DisplayService.exe'
+  const replacementService = join(replacementDirectory, executableName)
+  const replacementLibrary = join(replacementDirectory, 'NvAPIWrapper.dll')
+  await mkdir(replacementDirectory, { recursive: true })
+  await copyFile(join(serviceDirectory, executableName), replacementService)
+
+  const missingLibrary = spawn(replacementService, [], {
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+  let missingLibraryOutput = ''
+  missingLibrary.stdout.setEncoding('utf8')
+  missingLibrary.stderr.setEncoding('utf8')
+  missingLibrary.stdout.on('data', (chunk) => {
+    missingLibraryOutput += chunk
+  })
+  missingLibrary.stderr.on('data', (chunk) => {
+    missingLibraryOutput += chunk
+  })
+  missingLibrary.stdin.end()
+  const missingLibraryCode = await withTimeout(
+    new Promise((resolveExit) => missingLibrary.once('exit', resolveExit)),
+    timeoutMilliseconds,
+    'helper startup without NvAPIWrapper.dll'
+  )
+  if (missingLibraryCode === 0 || missingLibraryOutput.includes('"event":"service.ready"')) {
+    throw new Error('The packaged helper still starts without the external NvAPIWrapper.dll.')
+  }
+
+  await copyFile(join(serviceDirectory, 'NvAPIWrapper.dll'), replacementLibrary)
+  await appendFile(replacementLibrary, '\nChromaShift replacement-loading smoke\n')
+  await smokeService(replacementService, 'replacement-library helper')
 }
 
 async function reservePort() {
@@ -528,7 +596,7 @@ const unpackedService = join(
   unpackedDirectory,
   'resources',
   'display-service',
-  'DisplayService.exe'
+  'ChromaShift.DisplayService.exe'
 )
 const unpackedAsar = join(unpackedDirectory, 'resources', 'app.asar')
 
@@ -540,8 +608,46 @@ try {
     assertFile(join(unpackedDirectory, 'ffmpeg.dll'))
   ])
   const serviceFiles = await readdir(join(unpackedDirectory, 'resources', 'display-service'))
-  if (serviceFiles.length !== 1 || serviceFiles[0] !== 'DisplayService.exe') {
+  const expectedServiceFiles = [
+    'ChromaShift.DisplayService.exe',
+    'NvAPIWrapper.dll',
+    'THIRD-PARTY-NOTICES.txt',
+    'licenses'
+  ]
+  if (serviceFiles.sort().join('\n') !== expectedServiceFiles.sort().join('\n')) {
     throw new Error(`Unexpected packaged DisplayService files: ${serviceFiles.join(', ')}`)
+  }
+  await Promise.all([
+    assertFile(join(unpackedDirectory, 'resources', 'display-service', 'NvAPIWrapper.dll')),
+    assertFile(join(unpackedDirectory, 'resources', 'display-service', 'THIRD-PARTY-NOTICES.txt')),
+    assertFile(
+      join(unpackedDirectory, 'resources', 'display-service', 'licenses', 'GPL-3.0.txt')
+    ),
+    assertFile(
+      join(unpackedDirectory, 'resources', 'display-service', 'licenses', 'LGPL-3.0.txt')
+    )
+  ])
+  const serviceDirectory = join(unpackedDirectory, 'resources', 'display-service')
+  const [thirdPartyNotice, gplText, lgplText] = await Promise.all([
+    readFile(join(serviceDirectory, 'THIRD-PARTY-NOTICES.txt'), 'utf8'),
+    readFile(join(serviceDirectory, 'licenses', 'GPL-3.0.txt'), 'utf8'),
+    readFile(join(serviceDirectory, 'licenses', 'LGPL-3.0.txt'), 'utf8')
+  ])
+  if (
+    !thirdPartyNotice.includes('Varun.NvAPIWrapper.Net 9.0.3') ||
+    !thirdPartyNotice.includes('5162538d9b4c1cc954a09206f10a80e812040c74') ||
+    !thirdPartyNotice.includes('resources\\display-service\\NvAPIWrapper.dll')
+  ) {
+    throw new Error('The NvAPIWrapper notice is missing version, source, or replacement details.')
+  }
+  if (!gplText.includes('GNU GENERAL PUBLIC LICENSE') || !gplText.includes('Version 3')) {
+    throw new Error('The packaged GPL-3.0 text is invalid.')
+  }
+  if (
+    !lgplText.includes('GNU LESSER GENERAL PUBLIC LICENSE') ||
+    !lgplText.includes('Version 3')
+  ) {
+    throw new Error('The packaged LGPL-3.0 text is invalid.')
   }
   for (const unusedRuntimeFile of [
     'dxcompiler.dll',
@@ -558,7 +664,11 @@ try {
     join(unpackedDirectory, 'resources', 'chromashift-icon-lightmode.png')
   )
   await assertProductionFuses(unpackedApplication)
-  await smokeService(unpackedService, 'unpacked')
+  await assertReplaceableNvApiWrapper(
+    serviceDirectory,
+    join(temporaryRoot, 'replacement-library')
+  )
+  await smokeService(unpackedService, 'unpacked', { verifyExactRestoration: true })
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')
 
   const desktopPackage = JSON.parse(await readFile(join(desktopDirectory, 'package.json'), 'utf8'))
@@ -572,7 +682,7 @@ try {
     installedDirectory,
     'resources',
     'display-service',
-    'DisplayService.exe'
+    'ChromaShift.DisplayService.exe'
   )
   await Promise.all([assertFile(installedApplication), assertFile(installedService)])
   await assertProductionFuses(installedApplication)

@@ -201,8 +201,9 @@ but forcibly terminates Electron instead of requesting a graceful exit; this
 verifies detached-helper parent-process monitoring and crash restoration.
 
 `npm run package:win` builds an x64 NSIS installer and unpacked directory after
-publishing a self-contained, partially trimmed single-file `DisplayService`. The package
-command also checks separate budgets for the unpacked app, ASAR, helper, FFmpeg,
+publishing a self-contained, partially trimmed `ChromaShift.DisplayService.exe`
+with replaceable `NvAPIWrapper.dll` beside it. The package command also checks
+separate budgets for the unpacked app, ASAR, helper, FFmpeg,
 locales, and installer. `npm run smoke:package` validates
 the exact external sidecar and ASAR layout, the absence of unused DirectX 12 and
 Vulkan shader runtime files, and the production fuse wire. It starts the
@@ -224,7 +225,9 @@ the exact unsigned x64 installer, unpacked and installed application, external
 sidecar handshake/restoration, in-place upgrade, uninstall, and profile-data
 survival. Milestone 5 is complete. The suspend/resume, lock/unlock,
 resolution/refresh, driver-reset, baseline-owning helper fault, AMD/mixed-GPU,
-signing-certificate, and installer-reputation matrix is deferred to Milestone 8.
+signing-certificate, and installer-reputation matrix was originally deferred.
+The later Milestone 8 release decision retained signing and moved the additional
+manual hardware and fault work to issue-driven post-release testing.
 
 ## Milestone 6 automated closeout record (2026-08-21)
 
@@ -286,18 +289,18 @@ All hardware writes in this record used mild values and completed with verified
 baseline restoration. See `display-research.md` for hashes, versions, caveats,
 and the distinction between verified and implemented-unverified behavior.
 
-## Milestone 8 extended hardening matrix
+## Existing hardware evidence reused by Milestone 8
 
-Before advertising production support, test an AMD-driven display, sleep/wake,
-topology changes, driver reset, and helper-process crash
-recovery. The guarded SDR/HDR/SDR sequence passed on the G60SD on 2026-08-14:
+Milestone 8 adds no new manual hardware or process-fault matrix. It reuses the
+existing automated, current-hardware, real-desktop, package, crash-restoration,
+native-recovery, and performance gates before publishing the signed preview. The
+guarded SDR/HDR/SDR sequence passed on the G60SD on 2026-08-14:
 each transition refreshed topology before activation, retained the same stable
 display ID and validated baseline owner, performed no provider write while HDR
 was active, reapplied the saved profile after SDR returned, refreshed the
 renderer capability state in both directions, and restored the exact original
 gamma hash on tray exit. Heartbeat timeout restoration is automated and
-hardware-verified on the current NVIDIA/two-display host, but suspend/resume and
-an actually hung Electron parent remain part of the guarded physical matrix.
+hardware-verified on the current NVIDIA/two-display host.
 
 `npm run smoke:desktop:native-recovery` force-terminates the exact baseline-free
 DisplayService child owned by the smoke Electron process, then requires the
@@ -328,8 +331,8 @@ after reconnect. The subsequent product policy now makes an explicitly requested
 shutdown discard an unreachable display's session restoration record instead;
 that policy is deterministic-test covered and avoids the disconnect error entirely.
 
-Milestone 5 has automated and live non-mutating topology-refresh coverage. The
-extended Milestone 8 physical matrix covers sleep/wake, lock/unlock, resolution
-and refresh changes, NVIDIA driver reset, and stable-ID/baseline behavior across
-each sequence. These transitions must be observed on the real desktop with the
-restoration guard active; they are not inferred from unit tests.
+Milestone 5 has automated and live non-mutating topology-refresh coverage.
+Suspend/resume, lock/unlock, resolution, refresh-rate, primary-display, NVIDIA
+driver-reset, hung-parent, baseline-owning helper, AMD, and mixed-GPU testing are
+issue-driven post-release work. Casual post-release use may provide field
+feedback, but it does not change the verified hardware matrix.

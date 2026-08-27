@@ -21,7 +21,12 @@ afterEach(async () => {
 describe('resolveDisplayServicePath', () => {
   it('uses only the external resources directory in packaged builds', async () => {
     const root = await temporaryDirectory()
-    const executable = join(root, 'resources', 'display-service', 'DisplayService.exe')
+    const executable = join(
+      root,
+      'resources',
+      'display-service',
+      'ChromaShift.DisplayService.exe'
+    )
     await mkdir(join(root, 'resources', 'display-service'), { recursive: true })
     await writeFile(executable, '')
 
@@ -38,7 +43,7 @@ describe('resolveDisplayServicePath', () => {
 
   it('honors an explicit development helper path', async () => {
     const root = await temporaryDirectory()
-    const executable = join(root, 'DisplayService.exe')
+    const executable = join(root, 'ChromaShift.DisplayService.exe')
     await writeFile(executable, '')
 
     expect(

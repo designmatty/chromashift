@@ -229,8 +229,8 @@ from manufacturer `SAM` and serial `HNAY301023`. Profiles and normal UI use that
 physical ID; native baseline ownership remains endpoint-specific. With both
 paths connected, real desktop and forced-exit smoke confirmed one profile write
 reached both endpoints and both exact baselines were restored. Sleep/wake,
-primary changes, and driver reset are deferred to the Milestone 8 extended
-hardening matrix.
+lock/unlock, primary-display changes, and driver reset are issue-driven
+post-release work.
 
 ## Known limitations and failures
 
@@ -275,8 +275,8 @@ Proceed to core-domain work only after accepting these Phase 0 constraints:
    decision before MVP distribution.
 3. AMD must be tested on at least one ADLX-supported, AMD-driven monitor before
    AMD support is advertised as verified.
-4. Topology invalidation and heartbeat restoration are implemented; the
-   Milestone 8 physical transition/fault matrix still gates any broad crash-safe
-   claim.
+4. Topology invalidation and heartbeat restoration are implemented. Additional
+   transition and baseline-owning fault evidence is issue-driven post-release
+   work; do not make a broad crash-safe hardware claim.
 
 No polished profile UI should begin until these findings are reviewed.

@@ -27,7 +27,7 @@ const miniPickerScreenshotPath = join(screenshotDirectory, 'mini-picker.png')
 const miniDefaultScreenshotPath = join(screenshotDirectory, 'mini-default-restored.png')
 const displayServicePath = resolve(
   desktopDirectory,
-  '../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe'
+  '../../native/DisplayService/bin/Debug/net10.0-windows/ChromaShift.DisplayService.exe'
 )
 const timeoutMilliseconds = 15_000
 const execFileAsync = promisify(execFile)
@@ -560,7 +560,7 @@ ${source}
 
 async function killChildDisplayService(parentProcessId) {
   const command = `$service = Get-CimInstance Win32_Process | Where-Object {
-  $_.ParentProcessId -eq ${parentProcessId} -and $_.Name -eq 'DisplayService.exe'
+  $_.ParentProcessId -eq ${parentProcessId} -and $_.Name -eq 'ChromaShift.DisplayService.exe'
 } | Select-Object -First 1
 if ($null -eq $service) { throw 'DisplayService child was not found.' }
 $processId = [int]$service.ProcessId

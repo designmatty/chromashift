@@ -7,7 +7,7 @@ const executablePath =
   process.env['CHROMASHIFT_DISPLAY_SERVICE_PATH'] ??
   fileURLToPath(
     new URL(
-      '../../../native/DisplayService/bin/Debug/net10.0-windows/DisplayService.exe',
+      '../../../native/DisplayService/bin/Debug/net10.0-windows/ChromaShift.DisplayService.exe',
       import.meta.url
     )
   )

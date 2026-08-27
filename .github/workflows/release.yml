@@ -75,7 +75,7 @@ jobs:
           $paths = @(
             "apps/desktop/release/ChromaShift-$version-x64-setup.exe",
             "apps/desktop/release/win-unpacked/ChromaShift.exe",
-            "apps/desktop/release/win-unpacked/resources/display-service/DisplayService.exe"
+            "apps/desktop/release/win-unpacked/resources/display-service/ChromaShift.DisplayService.exe"
           )
           foreach ($path in $paths) {
             $signature = Get-AuthenticodeSignature -LiteralPath $path

@@ -147,9 +147,9 @@ that Vite had already bundled. Together they made `app.asar` 142.70 MiB.
 
 The package now allowlists only compiled main, preload, and renderer output,
 bundles main-process dependencies, excludes `node_modules`, and keeps only the
-English Chromium locale. DisplayService remains self-contained, uses a partially
-trimmed single-file publish, and stays external to ASAR. The sidecar package
-smoke requires exactly one installed helper file.
+English Chromium locale. ChromaShift.DisplayService remains self-contained, uses
+a partially trimmed single-file publish, and stays external to ASAR. The
+replaceable NvAPIWrapper library and its compliance files sit beside the helper.
 
 | Artifact or layout   |        Before |      After |       Change |
 | -------------------- | ------------: | ---------: | -----------: |
@@ -158,6 +158,12 @@ smoke requires exactly one installed helper file.
 | `app.asar`           |    142.70 MiB |   3.36 MiB |       -97.6% |
 | DisplayService files |     77.87 MiB |  14.01 MiB |       -82.0% |
 | Chromium locales     |     46.65 MiB |   0.54 MiB |       -98.8% |
+
+The issue #43 package built on 2026-08-27 measured 84.87 MiB for the installer,
+285.71 MiB unpacked, 3.43 MiB for `app.asar`, and 14.05 MiB for the helper
+directory. Moving `NvAPIWrapper.dll` out of the bundle and adding the notice plus
+GPL/LGPL texts raised the guarded helper directory by 0.04 MiB. Every package
+budget remains unchanged.
 
 Internal .NET single-file compression was measured and rejected. It reduced the
 installed helper from 71.35 MiB to 36.30 MiB, but raised the helper's steady

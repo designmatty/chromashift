@@ -311,7 +311,7 @@ $rows = foreach ($item in $all) {
 
 function processKind(process, rootProcessId) {
   if (process.processId === rootProcessId) return 'electron-main'
-  if (process.name.toLowerCase().startsWith('displayservice')) return 'display-service'
+  if (process.name.toLowerCase() === 'chromashift.displayservice.exe') return 'display-service'
   if (process.commandLine.includes('--type=renderer')) return 'renderer'
   if (process.commandLine.includes('--type=gpu-process')) return 'gpu'
   if (process.commandLine.includes('--type=utility')) return 'utility'

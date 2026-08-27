@@ -329,7 +329,7 @@ Use:
 The native implementation should live in a separate process:
 
 ```text
-DisplayService.exe
+ChromaShift.DisplayService.exe
 ```
 
 Do not implement native GPU/display functionality as a Node native addon unless there is a compelling reason discovered during implementation.
@@ -356,7 +356,7 @@ The helper-process architecture is intentional.
           JSON IPC
                │
 ┌──────────────▼───────────────────────┐
-│ DisplayService.exe                  │
+│ ChromaShift.DisplayService.exe      │
 │                                     │
 │ C# / .NET                           │
 │                                     │
@@ -1028,7 +1028,7 @@ Do not implement them yet.
 
 # Native IPC
 
-Electron communicates with `DisplayService.exe` through a simple structured protocol.
+Electron communicates with `ChromaShift.DisplayService.exe` through a simple structured protocol.
 
 Prefer newline-delimited JSON over stdin/stdout for the initial implementation unless another IPC mechanism clearly proves better.
 
@@ -1586,7 +1586,7 @@ Do not make mise-specific shell behavior part of application runtime.
 
 Electron must be able to:
 
-1. launch `DisplayService.exe`
+1. launch `ChromaShift.DisplayService.exe`
 2. detect successful initialization
 3. send a command
 4. receive a response
@@ -1990,7 +1990,7 @@ Adapt the useful Electron Builder patterns from the reviewed starter rather than
 adopting the starter itself.
 
 - configure Windows application identity, icons, NSIS artifacts, and ASAR
-- publish `DisplayService.exe` and all required runtime/native files as external
+- publish `ChromaShift.DisplayService.exe` and all required runtime/native files as external
   packaged resources
 - resolve the packaged sidecar from `process.resourcesPath`; retain explicit
   development-path resolution separately
@@ -2307,38 +2307,58 @@ automated, real-desktop, package, notification-click, and performance evidence.
 
 ---
 
-# Milestone 8 — Extended hardware and release hardening
+# Milestone 8 — Open-source signed preview release
 
-Run this milestone after Milestone 7. It extends the validated matrix without
-reopening the completed Milestone 5 implementation scope.
+Run this milestone after Milestone 7. Ship the existing product as a small
+open-source utility. Reuse the safety, desktop, package, and performance gates
+already delivered in Milestones 5–7 instead of adding a new manual hardware or
+fault matrix.
 
-### Slice 8.1 — Guarded operating-system transition matrix
+### Slice 8.1 — Open-source readiness
 
-- validate suspend/resume and lock/unlock with the independent restoration guard
-- validate resolution, refresh-rate, and primary-display changes
-- validate NVIDIA driver reset, stable display identity, baseline ownership, and
-  intended-state reapplication across each transition
+- publish ChromaShift under the MIT license after auditing project-owned and
+  shipped code
+- use `ChromaShift contributors` for the MIT copyright attribution
+- ship `NvAPIWrapper.dll` beside `ChromaShift.DisplayService.exe` instead of embedding it;
+  include the GPL/LGPL texts, a third-party notice, the exact corresponding-source
+  link, and a test that an interface-compatible replacement can load
+- remove private material and add the public security, privacy, contribution,
+  and release-policy documents the project needs
+- leave issues and pull requests available without soliciting contributions or
+  promising review, support, or response times; do not require a CLA
+- support only the latest release in `SECURITY.md`, promise no response deadline,
+  and enable GitHub private vulnerability reporting after publication
+- preserve the existing Git history and author metadata after the secret and
+  private-material audit
 
-### Slice 8.2 — GPU and driver matrix
+### Slice 8.2 — Azure Artifact Signing
 
-- validate at least one ADLX-supported AMD-driven display before advertising AMD
-  hardware support as verified
-- validate mixed AMD/NVIDIA display ownership and independent capability routing
-- record representative NVIDIA and AMD driver/version results and regressions
+- enroll in Azure Artifact Signing Basic and complete individual publisher
+  identity validation
+- sign `ChromaShift.exe` and `ChromaShift.DisplayService.exe` before NSIS packages them,
+  sign the final installer, and verify every signature
+- produce `v0.1.0-preview.3` as a signed draft GitHub release while the repository
+  remains private
 
-### Slice 8.3 — Baseline-owning process fault matrix
+### Slice 8.3 — Validate and publish
 
-- validate an actually hung Electron parent through heartbeat restoration
-- exercise baseline-owning helper termination and confirm the product fails
-  closed without recapturing modified output
-- document the restoration boundary for helper, operating-system, and power-loss
-  failures that cannot be recovered after the baseline owner is gone
+- run `npm run verify`, `npm run native:test:integration`, `npm run
+  smoke:desktop`, `npm run smoke:desktop:crash`, `npm run
+  smoke:desktop:native-recovery`, `npm run package:win`, `npm run smoke:package`,
+  and `npm run measure:performance` on the current NVIDIA machine
+- fix failures in those existing gates, signing, license compliance, or the
+  private-material audit; defer hardware-specific work outside that scope
+- request explicit approval after the source and signed preview pass
+- make the repository public with its existing Git history, then verify public
+  CI, issues, releases, security reporting, and repository metadata
+- publish the signed `v0.1.0-preview.3` release
 
-### Slice 8.4 — Signed distribution trust
-
-- build with the real Authenticode certificate and verify every signed binary
-- validate signed install, in-place upgrade, restore-safe exit, and uninstall
-- record Windows SmartScreen and installer-reputation behavior on clean systems
+Resolution, refresh-rate, primary-display, and NVIDIA driver-reset testing are
+issue-driven post-release work rather than Milestone 8 gates. The same applies to
+suspend/resume, lock/unlock, an actually hung Electron parent, baseline-owning
+helper termination, AMD, and mixed-GPU validation. Keep AMD support described as
+implemented but hardware-unverified. Do not add a clean-system VM or SmartScreen
+reputation study to this milestone.
 
 ---
 
@@ -2606,7 +2626,7 @@ feature-organization, canonical verification, CI, and focused-skill foundation
 was accepted on 2026-08-11. The measured Tauri port and T3 Code review also
 settled Electron as the production shell and added the recommendations recorded
 in the per-display UI plan and Milestone 5. Continue with **Milestone 8 —
-Extended hardware and release hardening**.
+Open-source signed preview release**.
 
 Milestone 5 is complete. The current NVIDIA/two-display machine passed
 canonical verification, native watchdog restoration, real desktop, forced-parent
@@ -2618,11 +2638,13 @@ on that display, including stable-ID baseline retention and exact tray-exit
 restoration. The G60SD HDMI disconnect/reconnect path is validated as well.
 Disconnected targets remain persisted but are omitted from the editor; explicit
 shutdown restores connected displays and discards unreachable session restoration
-records without blocking Exit. The broader guarded transition, baseline-owning
-process-fault, AMD/mixed-GPU/driver, signing-certificate, and installer-reputation
-matrix moved to Milestone 8 by product decision on 2026-08-20. Do not convert an
-unconfirmed baseline-owning helper exit into an automatic restart: fail closed
-rather than recapturing modified output.
+records without blocking Exit. Milestone 8 publishes the source under MIT,
+integrates Azure Artifact Signing, runs the existing release gates, and publishes
+the signed `v0.1.0-preview.3` release. Additional manual transition, fault,
+driver-reset, AMD, and mixed-GPU testing is issue-driven post-release work by
+product decision on 2026-08-27. Do not convert an unconfirmed baseline-owning
+helper exit into an automatic restart: fail closed rather than recapturing
+modified output.
 
 Physical display identity is separate from native endpoint identity. Native
 endpoint IDs remain connector-specific and own immutable baselines. A physical

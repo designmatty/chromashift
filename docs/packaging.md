@@ -32,11 +32,17 @@ ChromaShift.exe
 resources/
   app.asar
   display-service/
-    DisplayService.exe
+    ChromaShift.DisplayService.exe
+    NvAPIWrapper.dll
+    THIRD-PARTY-NOTICES.txt
+    licenses/
+      GPL-3.0.txt
+      LGPL-3.0.txt
 ```
 
-`DisplayService.exe` is a self-contained, partially trimmed .NET single-file
-publish. Protocol JSON uses source-generated metadata so application-owned code
+`ChromaShift.DisplayService.exe` is a self-contained, partially trimmed .NET
+single-file publish except for the replaceable `NvAPIWrapper.dll`. Protocol JSON
+uses source-generated metadata so application-owned code
 remains trim analyzed. The copied NVAPI provider assembly is rooted because its
 reflection paths cannot be inferred by the linker; narrowly scoped linker
 suppressions document only that dependency's known warnings. EDID discovery
@@ -72,7 +78,7 @@ has no WebGL or GPU-heavy surface; real desktop smoke and packaged performance
 cover that rendering decision.
 
 Production code resolves the helper only from
-`process.resourcesPath/display-service/DisplayService.exe`. Development uses
+`process.resourcesPath/display-service/ChromaShift.DisplayService.exe`. Development uses
 the debug build or an explicit `CHROMASHIFT_DISPLAY_SERVICE_PATH`; production
 does not honor that override.
 
@@ -116,11 +122,16 @@ path or direct filesystem access.
 
 ## Code signing
 
-No certificate or secret is committed. Electron Builder consumes
-`WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI secrets.
-`.env.example` documents the variable names only. Unsigned local foundation
-builds remain supported; a release pipeline can require signing with Electron
-Builder's `forceCodeSigning` option once release credentials exist.
+No certificate or secret is committed. The current Electron Builder path
+consumes `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI
+secrets. `.env.example` documents the variable names only. Milestone 8 replaces
+the release path with Azure Artifact Signing Basic under an individually
+validated publisher identity. The managed service must sign `ChromaShift.exe`
+and `ChromaShift.DisplayService.exe` before NSIS embeds them, then sign the installer.
+Milestone 8 also moves the LGPL-3.0 `NvAPIWrapper.dll` out of the single-file
+helper and ships it beside `ChromaShift.DisplayService.exe` with its required license,
+notice, source-access, and replacement-loading evidence. Unsigned local
+foundation builds remain supported.
 
 ## Release preflight
 
@@ -134,18 +145,19 @@ version, filename, architecture, size, and SHA-512 metadata.
 
 The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
 verification, validates generated artifacts, uploads them, and creates a draft
-GitHub release. Stable tags require Authenticode credentials through Electron
-Builder's `forceCodeSigning` path. Prerelease tags may produce an explicitly
-unsigned prerelease until Milestone 8 supplies signing credentials. Publication
-is never canceled by a newer run. Real display/package smoke remains a
-pre-release action on suitable Windows hardware; hosted CI does not infer it from
-compilation.
+GitHub release. The current workflow requires Authenticode credentials through
+Electron Builder's `forceCodeSigning` path. Milestone 8 will replace that PFX-only
+stable-release path with Azure Artifact Signing while retaining per-file
+verification. Prerelease tags may produce an explicitly unsigned prerelease until
+that work is complete. Publication is never canceled by a newer run. Real
+display/package smoke remains a pre-release action on suitable Windows hardware;
+hosted CI does not infer it from compilation.
 
 ## Package smoke test
 
 The package smoke test asserts the exact external-resource paths, production
 fuses, CSP, and renderer sandbox, then tests both unpacked and installed layouts.
-It launches `DisplayService.exe`, verifies its version/health/watchdog handshake
+It launches `ChromaShift.DisplayService.exe`, verifies its version/health/watchdog handshake
 and display enumeration, captures a baseline, requests service shutdown, and
 checks the per-display restoration acknowledgement. It also starts the Electron
 app with isolated user data and invokes the shared restore-safe exit path. The

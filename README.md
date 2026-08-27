@@ -83,16 +83,18 @@ unreachable session restoration records without an error.
 
 Milestone 6 is complete. Packaging now excludes development artifacts and
 redundant bundled dependencies, ships only the English Chromium locale, and
-publishes DisplayService as a self-contained, partially trimmed single file. The
-final x64 NSIS installer is 84.69 MiB, its unpacked layout is 285.43 MiB, and the
-external helper is 14.01 MiB. Package and packaged runtime budgets guard
+publishes ChromaShift.DisplayService as a self-contained, partially trimmed helper
+with its replaceable NvAPIWrapper library beside it. The
+final x64 NSIS installer is 84.87 MiB, its unpacked layout is 285.71 MiB, and the
+external helper directory is 14.05 MiB. Package and packaged runtime budgets guard
 installer size, installed footprint, startup and panel latency, private memory,
 renderer release, and idle CPU. Opening the mini panel also releases the hidden
 app renderer after the handoff. Milestone 7 follows.
-The broader suspend/resume,
-lock/unlock, resolution/refresh, driver-reset, baseline-owning process-fault,
-mixed-GPU/AMD/driver, signing-certificate, and installer-reputation matrix is
-deferred to Milestone 8 — Extended hardware and release hardening.
+Milestone 8 publishes ChromaShift under MIT, integrates Azure Artifact Signing,
+and ships the signed `v0.1.0-preview.3` NSIS release after the existing safety,
+desktop, package, and performance gates pass. Additional transition, fault,
+driver, AMD, and mixed-GPU tests are issue-driven post-release work. AMD support
+is implemented against ADLX but remains hardware-unverified.
 
 Profiles now identify a physical panel independently of its connector. The
 G60SD's simultaneous DP and HDMI paths remain separate native restoration

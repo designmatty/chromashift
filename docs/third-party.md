@@ -13,8 +13,11 @@ Source and package metadata:
 - https://www.nuget.org/packages/Varun.NvAPIWrapper.Net/9.0.3
 - https://github.com/NVIDIA/nvapi
 
-Do not ship a production installer without completing license-compliance review
-and preserving the wrapper's required notices/source-access obligations.
+The package places `NvAPIWrapper.dll` beside `ChromaShift.DisplayService.exe` and
+includes the GPL and LGPL texts plus a third-party notice. The notice links the
+exact source commit recorded in the NuGet package and explains how to install an
+interface-compatible replacement. Package smoke verifies that the helper needs
+the external library and starts after a replacement copy is installed.
 
 ## AMD
 

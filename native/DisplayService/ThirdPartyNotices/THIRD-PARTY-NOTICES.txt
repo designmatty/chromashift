@@ -1,0 +1,37 @@
+ChromaShift third-party notices
+
+NvAPIWrapper
+------------
+
+ChromaShift uses NvAPIWrapper.dll from Varun.NvAPIWrapper.Net 9.0.3.
+
+Copyright (C) Soroush Falahati 2018-2026.
+
+NvAPIWrapper is licensed under the GNU Lesser General Public License, version
+3. The complete LGPL-3.0 and incorporated GPL-3.0 texts accompany this notice
+in the licenses directory.
+
+Package metadata:
+https://www.nuget.org/packages/Varun.NvAPIWrapper.Net/9.0.3
+
+Exact corresponding source commit:
+https://github.com/varun875/NvAPIWrapper-V/tree/5162538d9b4c1cc954a09206f10a80e812040c74
+
+Source archive for that commit:
+https://github.com/varun875/NvAPIWrapper-V/archive/5162538d9b4c1cc954a09206f10a80e812040c74.zip
+
+NvAPIWrapper.dll is a replaceable shared library beside
+ChromaShift.DisplayService.exe. You may replace it with a modified build that
+keeps the same assembly identity and interface. Close ChromaShift through its
+tray Exit action before replacing the file, then put the replacement at:
+
+resources\display-service\NvAPIWrapper.dll
+
+NVIDIA NVAPI
+------------
+
+NvAPIWrapper calls NVIDIA's driver-provided NVAPI implementation. ChromaShift
+does not redistribute the NVIDIA NVAPI SDK or an NVIDIA NVAPI DLL.
+
+SDK source and license information:
+https://github.com/NVIDIA/nvapi
