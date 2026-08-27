@@ -561,10 +561,10 @@ try {
   await smokeService(unpackedService, 'unpacked')
   await smokeApplication(unpackedApplication, unpackedUserData, 'unpacked app')
 
-  const artifacts = await readdir(releaseDirectory)
-  const installerName = artifacts.find((name) => /^ChromaShift-.*-x64-setup\.exe$/i.test(name))
-  if (installerName === undefined) throw new Error('The NSIS installer artifact was not found.')
+  const desktopPackage = JSON.parse(await readFile(join(desktopDirectory, 'package.json'), 'utf8'))
+  const installerName = `ChromaShift-${desktopPackage.version}-x64-setup.exe`
   const installer = join(releaseDirectory, installerName)
+  await assertFile(installer)
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS install')
   const installedApplication = join(installedDirectory, 'ChromaShift.exe')
