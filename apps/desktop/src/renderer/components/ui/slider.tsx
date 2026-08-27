@@ -6,7 +6,6 @@ interface SliderProps {
   max: number
   step: number
   disabled?: boolean
-  compact?: boolean
   'aria-label'?: string
   onValueChange(values: number[]): void
 }

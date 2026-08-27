@@ -13,10 +13,12 @@ const MINI_PANEL_HEIGHTS: Record<MiniPanelView, number> = {
   override: 620,
   picker: 575
 }
+const COLOR_TEMPERATURE_ROW_HEIGHT = 65
 
 export class MiniPanelController {
   #releaseTimer: ReturnType<typeof setTimeout> | undefined
   #view: MiniPanelView = 'controls'
+  #showColorTemperature = false
 
   public constructor(
     private readonly getWindow: () => BrowserWindow | undefined,
@@ -40,12 +42,13 @@ export class MiniPanelController {
     panel.moveTop()
   }
 
-  public setView(view: MiniPanelView): void {
+  public setView(view: MiniPanelView, showColorTemperature: boolean): void {
     this.#view = view
+    this.#showColorTemperature = showColorTemperature
     const panel = this.getWindow()
     if (panel === undefined || panel.isDestroyed()) return
     const bounds = panel.getBounds()
-    const height = MINI_PANEL_HEIGHTS[view] + this.getHeightAdjustment()
+    const height = this.#height(view, showColorTemperature)
     const display = this.getDisplay(bounds)
     const nextX = clamp(
       bounds.x,
@@ -61,7 +64,7 @@ export class MiniPanelController {
   }
 
   public refreshSize(): void {
-    this.setView(this.#view)
+    this.setView(this.#view, this.#showColorTemperature)
   }
 
   public hide(): void {
@@ -78,6 +81,12 @@ export class MiniPanelController {
   #window(): BrowserWindow {
     const current = this.getWindow()
     return current === undefined || current.isDestroyed() ? this.createWindow() : current
+  }
+
+  #height(view: MiniPanelView, showColorTemperature: boolean): number {
+    const hiddenControlAdjustment =
+      view !== 'picker' && !showColorTemperature ? -COLOR_TEMPERATURE_ROW_HEIGHT : 0
+    return MINI_PANEL_HEIGHTS[view] + hiddenControlAdjustment + this.getHeightAdjustment()
   }
 
   #scheduleRelease(panel: BrowserWindow): void {

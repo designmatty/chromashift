@@ -140,9 +140,10 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.showMiniPanel, emptyRequestSchema, voidResultSchema, {}),
   openMiniPanelDevTools: () =>
     invoke(productIpcChannels.openMiniPanelDevTools, emptyRequestSchema, voidResultSchema, {}),
-  setMiniPanelView: (view) =>
+  setMiniPanelView: (view, showColorTemperature) =>
     invoke(productIpcChannels.setMiniPanelView, setMiniPanelViewRequestSchema, voidResultSchema, {
-      view
+      view,
+      showColorTemperature
     }),
   onStateChanged: (listener) => {
     ipcRenderer.removeAllListeners(productIpcChannels.stateChanged)

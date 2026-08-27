@@ -11,7 +11,7 @@ export function DisplaysView({
   onError(error: ProductError | null): void
 }): React.JSX.Element {
   return (
-    <Stack as="section" h="full" minH="full" gap="4">
+    <Stack as="section" h="full" gap="4">
       <Flex as="header" align="center" justify="space-between">
         <Heading as="h1" size="lg">
           Displays
@@ -67,8 +67,9 @@ export function DisplaysView({
             )}
           </Flex>
           <SimpleGrid p="2" columns={2} columnGap={6} rowGap={3}>
-            {Object.entries(product.capabilityReports[display.id]?.capabilities ?? {}).map(
-              ([name, capability]) => (
+            {Object.entries(product.capabilityReports[display.id]?.capabilities ?? {})
+              .filter(([name]) => name !== 'colorTemperature' || display.adapter.vendor === 'amd')
+              .map(([name, capability]) => (
                 <Flex
                   align="center"
                   gap="3"
@@ -89,8 +90,7 @@ export function DisplaysView({
                     {capability.supported ? capability.provider.toLowerCase() : 'unavailable'}
                   </Text>
                 </Flex>
-              )
-            )}
+              ))}
           </SimpleGrid>
         </Box>
       ))}

@@ -542,7 +542,8 @@ registerProductIpcHandlers(
       contents.openDevTools({ mode: 'detach', activate: true })
     })
   },
-  (view) => miniPanelController.setView(view),
+  (view, showColorTemperature) =>
+    miniPanelController.setView(view, showColorTemperature),
   () => readDiagnosticLog(diagnosticLogPath)
 )
 

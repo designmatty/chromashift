@@ -1275,7 +1275,10 @@ Controls may include:
 - Gamma
 - Saturation
 - Hue
-- Color temperature
+
+Color temperature is shown only for AMD displays. If ADLX reports it as
+unsupported, show it as unavailable. NVIDIA, Intel, unknown, and disconnected
+displays omit it.
 
 Only show/enable settings supported by the selected display.
 
@@ -1317,7 +1320,6 @@ Contrast         Windows
 Gamma            Windows
 Saturation       NVIDIA
 Hue              NVIDIA
-Color Temperature Unsupported
 ```
 
 This view will be extremely useful for debugging hardware-specific issues.
@@ -2366,7 +2368,7 @@ Profiles support where available:
 - Saturation
 - Hue
 
-Color temperature may ship if AMD support is straightforward.
+Color temperature is available only for AMD displays where ADLX reports support.
 
 ## NVIDIA
 
@@ -2385,6 +2387,7 @@ Support through ADLX where verified:
 - gamma
 - saturation
 - hue
+- color temperature
 
 ## Automation
 
@@ -2422,7 +2425,6 @@ Architect for but do not schedule yet:
 - schedules
 - HDR profiles
 - RGB channel controls
-- color temperature on additional vendors
 - ICC integration
 - profile import/export
 - profile sharing

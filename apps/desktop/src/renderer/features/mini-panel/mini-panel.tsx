@@ -88,20 +88,18 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(() =>
     chooseInitialDisplay(product, appliedProfile)
   )
-  const pickerItems = useMemo(
-    () =>
-      [
-        { label: 'Auto switch', value: AUTOMATIC_ID },
-        ...product.configuration.profiles
-          .filter((profile) => profile.enabled)
-          .map((profile) => ({
-            label: profile.name,
-            value: profile.id,
-            global: profile.id === DEFAULT_ID
-          }))
-      ] satisfies MiniProfilePickerItem[],
-    [product.configuration.profiles]
-  )
+  const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
+  const showColorTemperature = selectedDisplay?.adapter.vendor === 'amd'
+  const pickerItems = [
+    { label: 'Auto switch', value: AUTOMATIC_ID },
+    ...product.configuration.profiles
+      .filter((profile) => profile.enabled)
+      .map((profile) => ({
+        label: profile.name,
+        value: profile.id,
+        global: profile.id === DEFAULT_ID
+      }))
+  ] satisfies MiniProfilePickerItem[]
 
   useProductTheme(product.settings.theme)
 
@@ -117,8 +115,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
   useEffect(() => {
     const view = picker ? 'picker' : dirty ? 'override' : 'controls'
-    void window.chromaShift.setMiniPanelView(view)
-  }, [picker, dirty])
+    void window.chromaShift.setMiniPanelView(view, showColorTemperature)
+  }, [picker, dirty, showColorTemperature])
 
   async function choose(profileId: string | null): Promise<void> {
     if (product.preview.state === 'active') {
@@ -152,7 +150,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             rounded="2xl"
             bg="bg.panel"
             overflowY="auto"
-            alignContent={'stretch'}
           >
             <RadioGroup.Root
               display={'flex'}
@@ -182,18 +179,16 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 </Box>
               )}
               {profileItems.length > 0 && (
-                <>
-                  <Flex gap={1} px={2} py={4} flexDirection={'column'}>
-                    {profileItems.map((item) => (
-                      <MiniProfilePickerOption
-                        item={item}
-                        selected={item.value === pickerValue}
-                        onSelect={() => void choose(item.value)}
-                        key={item.value}
-                      />
-                    ))}
-                  </Flex>
-                </>
+                <Flex gap={1} px={2} py={4} flexDirection={'column'}>
+                  {profileItems.map((item) => (
+                    <MiniProfilePickerOption
+                      item={item}
+                      selected={item.value === pickerValue}
+                      onSelect={() => void choose(item.value)}
+                      key={item.value}
+                    />
+                  ))}
+                </Flex>
               )}
             </RadioGroup.Root>
           </Box>
@@ -217,7 +212,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
       )
     }
 
-    const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
     const selectedTarget =
       selectedDisplayId === null ? undefined : findDisplayTarget(draft, selectedDisplayId)
     const selectedColor = selectedTarget?.color ?? {}
@@ -314,8 +308,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             padding={0}
             width="210px"
             mr="auto"
-            display="flex"
-            alignItems="center"
             gap={3}
             textAlign="left"
             size={'sm'}
@@ -324,7 +316,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             }}
             onClick={() => setPicker(true)}
           >
-            <Stack gap="0" flex={1} width={'full'}>
+            <Stack gap="0" flex={1}>
               <Text color="fg.muted" fontSize="md">
                 {product.chromaShift.intendedMode.kind === 'automatic'
                   ? 'Auto switch'
@@ -482,7 +474,6 @@ function MiniPanelTitleBar({
       as="header"
       position="relative"
       h="46px"
-      minH="46px"
       mx="3"
       align="center"
       userSelect="none"
