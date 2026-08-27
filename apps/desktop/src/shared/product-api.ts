@@ -181,7 +181,9 @@ export const appPanelViewSchema = z.enum([
 ])
 export const openAppPanelRequestSchema = z.object({ view: appPanelViewSchema.optional() }).strict()
 export const miniPanelViewSchema = z.enum(['controls', 'override', 'picker'])
-export const setMiniPanelViewRequestSchema = z.object({ view: miniPanelViewSchema }).strict()
+export const setMiniPanelViewRequestSchema = z
+  .object({ view: miniPanelViewSchema, showColorTemperature: z.boolean() })
+  .strict()
 export const profileIdRequestSchema = z.object({ profileId: z.string().trim().min(1) }).strict()
 export const controlChromaShiftRequestSchema = z
   .object({ action: z.enum(['pause', 'resume', 'retry']) })
@@ -304,7 +306,10 @@ export interface ChromaShiftApi {
   hideMiniPanel(): Promise<ProductResult<null>>
   showMiniPanel(): Promise<ProductResult<null>>
   openMiniPanelDevTools(): Promise<ProductResult<null>>
-  setMiniPanelView(view: MiniPanelView): Promise<ProductResult<null>>
+  setMiniPanelView(
+    view: MiniPanelView,
+    showColorTemperature: boolean
+  ): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void

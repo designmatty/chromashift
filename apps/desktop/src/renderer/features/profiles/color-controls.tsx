@@ -113,9 +113,10 @@ export function ColorControls({
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
+  const visibleControls = controls.slice(0, display?.adapter.vendor === 'amd' ? 6 : 5)
   const key = rememberKey(profileId, displayId)
   const remembered = { ...lastColorValues, ...rememberedColorValues.get(key) }
-  for (const control of controls) {
+  for (const control of visibleControls) {
     const value = color[control.key]
     if (value !== undefined) remembered[control.key] = value
   }
@@ -123,7 +124,7 @@ export function ColorControls({
 
   return (
     <Stack gap={compact ? 4 : 3}>
-      {controls.map((control) => {
+      {visibleControls.map((control) => {
         const support = controlSupport(control.key, display, report)
         const value = color[control.key]
         const enabled = value !== undefined
@@ -132,9 +133,6 @@ export function ColorControls({
           <Box
             data-part="color-control"
             display={'flex'}
-            gridTemplateColumns={
-              compact ? undefined : { base: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' }
-            }
             alignItems="center"
             gap={compact ? 2 : 2}
             flexDirection={compact ? 'column' : 'row'}
@@ -209,7 +207,6 @@ export function ColorControls({
               min={control.min}
               max={control.max}
               step={control.step}
-              compact={compact}
               disabled={!editable || !enabled || !support.available}
               aria-label={`${control.label} for ${display?.name ?? displayId}`}
               onValueChange={(values) => {
@@ -249,6 +246,7 @@ export function ColorSummary({
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
+  const visibleControls = controls.slice(0, display?.adapter.vendor === 'amd' ? 6 : 5)
 
   return (
     <Grid
@@ -258,7 +256,7 @@ export function ColorSummary({
       templateColumns={{ base: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' }}
       gap="16px 12px"
     >
-      {controls.map((control) => {
+      {visibleControls.map((control) => {
         const support = controlSupport(control.key, display, report)
         const value = color[control.key]
         const showValueBadge = support.available && value !== undefined

@@ -46,7 +46,7 @@ export function registerProductIpcHandlers(
   hideMiniPanel: () => void,
   showMiniPanel: () => void,
   openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
-  setMiniPanelView: (view: MiniPanelView) => void,
+  setMiniPanelView: (view: MiniPanelView, showColorTemperature: boolean) => void,
   getDiagnostics: () => DiagnosticLogEntry[]
 ): void {
   const controller = (): ProductController => {
@@ -293,7 +293,7 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async (request) => {
-      setMiniPanelView(request.view)
+      setMiniPanelView(request.view, request.showColorTemperature)
       return null
     }
   )

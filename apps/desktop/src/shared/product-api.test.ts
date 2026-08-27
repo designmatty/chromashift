@@ -23,8 +23,15 @@ describe('product API contracts', () => {
     expect(openAppPanelRequestSchema.safeParse({ view: 'logs' }).success).toBe(false)
     expect(openAppPanelRequestSchema.safeParse({ view: 'diagnostics' }).success).toBe(true)
     expect(openAppPanelRequestSchema.safeParse({ view: 'settings' }).success).toBe(true)
-    expect(setMiniPanelViewRequestSchema.safeParse({ view: 'override' }).success).toBe(true)
-    expect(setMiniPanelViewRequestSchema.safeParse({ view: 'large' }).success).toBe(false)
+    expect(
+      setMiniPanelViewRequestSchema.safeParse({ view: 'override', showColorTemperature: true })
+        .success
+    ).toBe(true)
+    expect(
+      setMiniPanelViewRequestSchema.safeParse({ view: 'large', showColorTemperature: false })
+        .success
+    ).toBe(false)
+    expect(setMiniPanelViewRequestSchema.safeParse({ view: 'controls' }).success).toBe(false)
     expect(controlChromaShiftRequestSchema.safeParse({ action: 'stop' }).success).toBe(false)
     expect(controlChromaShiftRequestSchema.safeParse({ action: 'retry' }).success).toBe(true)
     expect(

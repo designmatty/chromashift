@@ -134,8 +134,8 @@ describe('MiniPanelController', () => {
       () => display
     )
 
-    controller.setView('override')
-    controller.setView('picker')
+    controller.setView('override', true)
+    controller.setView('picker', false)
 
     expect(resized).toEqual([
       { x: 100, y: 76, width: 400, height: 620 },
@@ -154,8 +154,25 @@ describe('MiniPanelController', () => {
       () => 6
     )
 
-    controller.setView('controls')
+    controller.setView('controls', true)
 
     expect(resized).toEqual([{ x: 100, y: 115, width: 400, height: 581 }])
+  })
+
+  it('shrinks controls and override views when color temperature is hidden', () => {
+    const { panel, resized } = fakePanel()
+    const controller = new MiniPanelController(
+      () => panel,
+      () => panel,
+      () => display
+    )
+
+    controller.setView('controls', false)
+    controller.setView('override', false)
+
+    expect(resized).toEqual([
+      { x: 100, y: 186, width: 400, height: 510 },
+      { x: 100, y: 141, width: 400, height: 555 }
+    ])
   })
 })
