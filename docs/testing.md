@@ -88,7 +88,9 @@ It records and fires configurable shortcuts with no renderer alive, fires the
 fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact display
 restoration before exit. Screenshots are written under `apps/desktop/out/smoke`
 for visual inspection; they do not replace inspection of the positioned native
-window when pixel or window behavior matters.
+window when pixel or window behavior matters. Electron creates a development
+Start menu shortcut when the smoke checks native-notification support. The smoke
+removes that shortcut during cleanup only when it did not exist before the run.
 
 `npm run smoke:desktop:crash` forcibly terminates Electron and requires the
 detached helper to restore before exiting. `npm run
@@ -105,7 +107,9 @@ installer, unpacked application, ASAR, helper, FFmpeg, and locales.
 `npm run smoke:package` checks the external helper and license layout, production
 fuses and CSP, helper handshake, baseline capture and restoration, unpacked and
 installed Electron launches, silent install, in-place upgrade, restore-safe exit,
-uninstall, and profile-data survival. It also creates a disposable profile,
+and uninstall while the installed app is running. Uninstall must stop that process
+and remove the application directory and Start menu shortcut while preserving
+profile data. The smoke also creates a disposable profile,
 dispatches its global shortcut, verifies native notification delivery, clicks the
 notification in Windows Notification Center, and checks profile routing.
 

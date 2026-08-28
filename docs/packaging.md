@@ -96,9 +96,10 @@ containment requirement and dedicated tests. Renderer windows remain sandboxed,
 deny all new windows and cross-document navigation, and use a production CSP that
 does not allow arbitrary WebSocket connections.
 
-The installer is per-user and preserves Electron's user-data directory during
-upgrade and uninstall. `profiles.json` therefore remains outside the install
-directory and is not deleted by the NSIS uninstaller.
+The installer is per-user. Uninstall removes the application directory and its
+Start menu shortcut, but preserves Electron's user-data directory.
+`profiles.json` therefore remains outside the install directory and is not
+deleted by the NSIS uninstaller.
 
 The configuration location is explicitly pinned to
 `%APPDATA%\ChromaShift\profiles.json`. On first startup after upgrading from a
@@ -165,7 +166,9 @@ installed-app path creates a disposable profile, dispatches its registered globa
 shortcut, requires native notification delivery, physically clicks the newest
 card in Windows Notification Center, and verifies that the app panel routes to
 that profile. Finally, it silently installs, reinstalls over the same directory,
-uninstalls, and verifies that the profile configuration survives.
+starts the installed app, uninstalls it while it is running, verifies that the
+process exits and the application directory and Start menu shortcut are removed,
+and verifies that the profile configuration survives.
 
 These checks make low-impact no-change capture/restore calls on the current
 display hardware. AMD runtime behavior remains unverified on machines without an

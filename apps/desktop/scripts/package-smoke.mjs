@@ -25,6 +25,18 @@ const desktopDirectory = resolve(scriptDirectory, '..')
 const releaseDirectory = join(desktopDirectory, 'release')
 const unpackedDirectory = join(releaseDirectory, 'win-unpacked')
 const timeoutMilliseconds = 30_000
+const applicationDataDirectory = globalThis.process.env['APPDATA']
+if (applicationDataDirectory === undefined) {
+  throw new Error('APPDATA is required for the Windows package smoke test.')
+}
+const startMenuShortcut = join(
+  applicationDataDirectory,
+  'Microsoft',
+  'Windows',
+  'Start Menu',
+  'Programs',
+  'ChromaShift.lnk'
+)
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
@@ -53,6 +65,16 @@ async function pathExists(path) {
   } catch (error) {
     if (error?.code === 'ENOENT') return false
     throw error
+  }
+}
+
+async function assertPathRemoved(path, description) {
+  const deadline = Date.now() + 10_000
+  while (await pathExists(path)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`${description} remained after uninstall: ${path}`)
+    }
+    await delay(100)
   }
 }
 
@@ -341,6 +363,33 @@ async function waitForDebuggerTarget(port) {
     await delay(100)
   }
   throw new Error('The packaged app did not expose a renderer debugging target.')
+}
+
+async function startApplicationForUninstall(executablePath, userDataDirectory) {
+  const port = await reservePort()
+  const environment = { ...globalThis.process.env }
+  delete environment.ELECTRON_RUN_AS_NODE
+  const child = spawn(
+    executablePath,
+    [`--remote-debugging-port=${port}`, `--user-data-dir=${userDataDirectory}`],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: environment }
+  )
+  let output = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => {
+    output += chunk
+  })
+  child.stderr.on('data', (chunk) => {
+    output += chunk
+  })
+  try {
+    await waitForDebuggerTarget(port)
+    return { child, output: () => output }
+  } catch (error) {
+    if (child.exitCode === null) child.kill()
+    throw error
+  }
 }
 
 async function smokeApplication(
@@ -684,7 +733,11 @@ try {
     'display-service',
     'ChromaShift.DisplayService.exe'
   )
-  await Promise.all([assertFile(installedApplication), assertFile(installedService)])
+  await Promise.all([
+    assertFile(installedApplication),
+    assertFile(installedService),
+    assertFile(startMenuShortcut)
+  ])
   await assertProductionFuses(installedApplication)
 
   await mkdir(installedUserData, { recursive: true })
@@ -703,16 +756,40 @@ try {
 
   const uninstaller = join(installedDirectory, 'Uninstall ChromaShift.exe')
   await assertFile(uninstaller)
-  await runProcess(uninstaller, ['/S'], 'NSIS uninstall')
+  const runningApplication = await startApplicationForUninstall(
+    installedApplication,
+    installedUserData
+  )
+  try {
+    await runProcess(uninstaller, ['/S'], 'NSIS uninstall')
+    const applicationExitCode = await withTimeout(
+      runningApplication.child.exitCode === null
+        ? new Promise((resolveExit) => runningApplication.child.once('exit', resolveExit))
+        : Promise.resolve(runningApplication.child.exitCode),
+      timeoutMilliseconds,
+      'the installed application to exit during uninstall'
+    )
+    if (applicationExitCode === null) {
+      throw new Error(
+        `The installed application did not report an exit code during uninstall.\n${runningApplication.output()}`
+      )
+    }
+  } finally {
+    if (runningApplication.child.exitCode === null) runningApplication.child.kill()
+  }
   if ((await readFile(configurationPath, 'utf8')) !== configurationAfterSmoke) {
     throw new Error('The profile configuration did not survive uninstall.')
   }
+  await Promise.all([
+    assertPathRemoved(startMenuShortcut, 'The Start menu shortcut'),
+    assertPathRemoved(installedDirectory, 'The application install directory')
+  ])
 
   globalThis.console.log('Packaged application smoke test passed.')
   globalThis.console.log(`Unpacked layout: ${unpackedDirectory}`)
   globalThis.console.log(`Installer: ${installer}`)
   globalThis.console.log(
-    'External sidecar launch, IPC, native notification delivery and click routing, baseline restoration, upgrade, and uninstall data safety: verified'
+    'External sidecar launch, IPC, native notification delivery and click routing, baseline restoration, upgrade, uninstall cleanup, and retained data: verified'
   )
 } finally {
   await rm(temporaryRoot, {
