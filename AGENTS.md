@@ -211,13 +211,14 @@ live in `docs/testing.md`; performance and footprint budgets live in
 
 ## Current release work
 
-Milestones 1 through 7 are shipped. Milestone 8 prepares the existing product for
-public source and a signed `v0.1.0-preview.3` release:
+Milestones 1 through 7 are shipped. The explicitly authorized unsigned
+`v0.1.0-preview.3` hotfix validates the uninstall and Start menu cleanup before
+Milestone 8 publishes the existing product as signed `v0.1.0-preview.4`:
 
 - #44 public-source readiness and documentation cleanup
 - #45 human Azure Artifact Signing enrollment
 - #46 Azure signing integration
-- #47 signed release-candidate validation
+- #47 signed `v0.1.0-preview.4` release-candidate validation
 - #48 explicit public-repository and release publication
 
 Additional sleep, lock, driver-reset, AMD, mixed-GPU, clean-VM, and SmartScreen

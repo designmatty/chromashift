@@ -24,8 +24,10 @@ repository remains private. Making the repository public and publishing the
 signed preview require explicit approval after the existing release gates pass.
 No clean-system VM or SmartScreen reputation study is required.
 
-The first signed release will be `v0.1.0-preview.3`. Stable `v0.1.0` can follow
-after ordinary use of the preview.
+The maintainer authorized unsigned `v0.1.0-preview.3` as a private-repository
+hotfix cut to validate uninstall and Start menu cleanup. The first signed release
+will be `v0.1.0-preview.4`. Stable `v0.1.0` can follow after ordinary use of the
+signed preview.
 
 The LGPL-3.0 `NvAPIWrapper.dll` ships beside `ChromaShift.DisplayService.exe` with
 its license texts, notice, corresponding-source link, and a replacement-loading test.
