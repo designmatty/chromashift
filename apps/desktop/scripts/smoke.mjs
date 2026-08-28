@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -34,6 +34,16 @@ const execFileAsync = promisify(execFile)
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
+}
+
+async function pathExists(path) {
+  try {
+    await access(path)
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
 }
 
 async function pressToggleShortcut() {
@@ -587,6 +597,19 @@ const debuggingPort = await reservePort()
 const userDataDirectory = await mkdtemp(join(tmpdir(), 'chromashift-smoke-'))
 const environment = { ...globalThis.process.env }
 delete environment.ELECTRON_RUN_AS_NODE
+const applicationDataDirectory = environment.APPDATA
+if (applicationDataDirectory === undefined) {
+  throw new Error('APPDATA is required for the Windows desktop smoke test.')
+}
+const developmentElectronShortcut = join(
+  applicationDataDirectory,
+  'Microsoft',
+  'Windows',
+  'Start Menu',
+  'Programs',
+  'Electron.lnk'
+)
+const developmentElectronShortcutExisted = await pathExists(developmentElectronShortcut)
 const forceElectronTermination = globalThis.process.argv.includes('--force-exit')
 const testNativeRecovery = globalThis.process.argv.includes('--native-recovery')
 
@@ -2684,6 +2707,9 @@ try {
     maxRetries: 10,
     retryDelay: 250
   })
+  if (!developmentElectronShortcutExisted) {
+    await rm(developmentElectronShortcut, { force: true })
+  }
 }
 
 if (smokeFailure !== undefined) {
