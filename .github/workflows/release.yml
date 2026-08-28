@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   windows-release:
-    name: Build signed Windows release
+    name: Build Windows release
     runs-on: windows-latest
     timeout-minutes: 45
 

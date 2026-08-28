@@ -147,12 +147,12 @@ The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
 verification, validates generated artifacts, uploads them, and creates a draft
 GitHub release. The current workflow requires Authenticode credentials through
 Electron Builder's `forceCodeSigning` path. Issue #46 replaces that PFX-only path
-with Azure Artifact Signing while retaining per-file verification. The workflow
-still contains a legacy unsigned-prerelease branch, but it must not be run or used
-to create a draft release. Issue #46 must remove that branch before the signed
-release-candidate work begins. Publication is never canceled by a newer run. Real
-display and package smoke remain pre-release actions on suitable Windows
-hardware; hosted CI does not infer them from compilation.
+with Azure Artifact Signing while retaining per-file verification. The maintainer
+authorized the workflow's unsigned-prerelease branch once for the private
+`v0.1.0-preview.3` uninstall hotfix. Issue #46 must remove that branch before the
+signed `v0.1.0-preview.4` candidate work begins. Publication is never canceled by
+a newer run. Real display and package smoke remain pre-release actions on
+suitable Windows hardware; hosted CI does not infer them from compilation.
 
 ## Package smoke test
 

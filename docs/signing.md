@@ -10,8 +10,10 @@ options and the completed comparison have been removed from maintained docs.
 The release workflow still supports Electron Builder's PFX inputs. Issue #45
 owns the human Azure enrollment and least-privilege federated identity. Issue #46
 will replace the release path with Azure signing while keeping unsigned local
-builds. Issue #47 will build and validate the signed release candidate. Issue
-#48 is the explicit publication checkpoint.
+builds. The maintainer authorized unsigned `v0.1.0-preview.3` as a
+private-repository hotfix cut for uninstall validation. Issue #47 will build and
+validate signed `v0.1.0-preview.4`. Issue #48 is the explicit publication
+checkpoint.
 
 No certificate key or identity document belongs in this repository or in a
 GitHub secret. GitHub Actions will authenticate to Azure through workload identity
