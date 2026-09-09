@@ -44,8 +44,8 @@ The TypeScript and native test suites cover these contracts:
   bounded helper recovery, renderer recovery circuits, shutdown ordering, and
   failure messages
 - Sender-validated Zod IPC, sandboxed preload behavior, CSP, navigation policy,
-  Electron fuses, package layout, release metadata, renderer size, and package
-  footprint
+  Electron fuses, package layout, staged Azure signing order, signed-installer
+  update metadata, release preflight, renderer size, and package footprint
 - Native gamma transforms, HDR rejection, foreground-window resolution,
   heartbeat deadlines, parent monitoring, display identity, baseline ownership,
   and explicit shutdown policy

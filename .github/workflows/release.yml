@@ -11,12 +11,14 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   windows-release:
     name: Build Windows release
     runs-on: windows-latest
     timeout-minutes: 45
+    environment: release-signing
 
     steps:
       - name: Check out tagged source
@@ -42,47 +44,67 @@ jobs:
       - name: Run canonical verification
         run: npm run verify
 
-      - name: Build Windows installer
-        id: package
-        shell: pwsh
-        run: |
-          $hasSigningCredentials =
-            -not [string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK) -and
-            -not [string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)
-          $isPrerelease = $env:GITHUB_REF_NAME.Contains('-')
-
-          if ($hasSigningCredentials) {
-            npm run package:release
-            "signed=true" >> $env:GITHUB_OUTPUT
-          } elseif ($isPrerelease) {
-            npm run package:win
-            "signed=false" >> $env:GITHUB_OUTPUT
-          } else {
-            throw 'Stable releases require WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD.'
-          }
-        env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-
-      - name: Verify installer and update manifest
-        run: npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts
-
-      - name: Verify Authenticode signatures
-        if: steps.package.outputs.signed == 'true'
+      - name: Read release version
+        id: version
         shell: pwsh
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          $paths = @(
-            "apps/desktop/release/ChromaShift-$version-x64-setup.exe",
-            "apps/desktop/release/win-unpacked/ChromaShift.exe",
-            "apps/desktop/release/win-unpacked/resources/display-service/ChromaShift.DisplayService.exe"
-          )
-          foreach ($path in $paths) {
-            $signature = Get-AuthenticodeSignature -LiteralPath $path
-            if ($signature.Status -ne "Valid") {
-              throw "Invalid Authenticode signature for ${path}: $($signature.Status)"
-            }
-          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build unpacked Windows application
+        run: npm run package:release:prepare
+
+      - name: Authenticate to Azure through OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign packaged executables
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\apps\desktop\release\win-unpacked\ChromaShift.exe
+            ${{ github.workspace }}\apps\desktop\release\win-unpacked\resources\display-service\ChromaShift.DisplayService.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify packaged executable signatures
+        shell: pwsh
+        run: |
+          ./scripts/verify-authenticode.ps1 -Paths @(
+            'apps/desktop/release/win-unpacked/ChromaShift.exe',
+            'apps/desktop/release/win-unpacked/resources/display-service/ChromaShift.DisplayService.exe'
+          ) -ExpectedPublisher $env:CHROMASHIFT_EXPECTED_PUBLISHER
+        env:
+          CHROMASHIFT_EXPECTED_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
+
+      - name: Build Windows installer from signed application
+        run: npm run package:release:installer
+
+      - name: Sign Windows installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\apps\desktop\release\ChromaShift-${{ steps.version.outputs.value }}-x64-setup.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Finalize signed update metadata
+        run: npm run package:release:finalize
+
+      - name: Verify release artifacts and Authenticode signatures
+        run: npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts --signatures --expected-publisher $env:CHROMASHIFT_EXPECTED_PUBLISHER
+        env:
+          CHROMASHIFT_EXPECTED_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

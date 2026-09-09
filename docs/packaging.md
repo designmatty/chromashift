@@ -122,13 +122,12 @@ path or direct filesystem access.
 
 ## Code signing
 
-No certificate or secret is committed. The current Electron Builder path
-consumes `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` from the environment or CI
-secrets. `.env.example` documents the variable names only. Issue #46 will replace
-that release path with Azure Artifact Signing under an individually validated
-publisher identity. The managed service must sign `ChromaShift.exe` and
-`ChromaShift.DisplayService.exe` before NSIS embeds them, then sign the installer.
-Unsigned local builds remain supported. See `signing.md`.
+No certificate or secret is committed. The tag workflow authenticates to Azure
+through GitHub OIDC and signs through the `release-signing` environment. It signs
+`ChromaShift.exe` and `ChromaShift.DisplayService.exe` in the unpacked directory,
+then builds NSIS from that signed directory and signs the installer. After signing
+changes the installer bytes, the workflow regenerates its block map and update
+manifest hashes. Unsigned local builds remain supported. See `signing.md`.
 
 The LGPL-3.0 `NvAPIWrapper.dll` already ships beside the helper with its license
 texts, notice, corresponding-source link, and replacement-loading coverage.
@@ -145,14 +144,11 @@ version, filename, architecture, size, and SHA-512 metadata.
 
 The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
 verification, validates generated artifacts, uploads them, and creates a draft
-GitHub release. The current workflow requires Authenticode credentials through
-Electron Builder's `forceCodeSigning` path. Issue #46 replaces that PFX-only path
-with Azure Artifact Signing while retaining per-file verification. The maintainer
-authorized the workflow's unsigned-prerelease branch once for the private
-`v0.1.0-preview.3` uninstall hotfix. Issue #46 must remove that branch before the
-signed `v0.1.0-preview.4` candidate work begins. Publication is never canceled by
-a newer run. Real display and package smoke remain pre-release actions on
-suitable Windows hardware; hosted CI does not infer them from compilation.
+GitHub release. Every tag now requires Azure Artifact Signing. The final preflight
+rejects missing, invalid, untimestamped, or publisher-mismatched signatures before
+artifact upload or draft creation. Publication is never canceled by a newer run.
+Real display and package smoke remain pre-release actions on suitable Windows
+hardware; hosted CI does not infer them from compilation.
 
 ## Package smoke test
 

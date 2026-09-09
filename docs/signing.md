@@ -7,13 +7,12 @@ options and the completed comparison have been removed from maintained docs.
 
 ## Current state
 
-The release workflow still supports Electron Builder's PFX inputs. Issue #45
-owns the human Azure enrollment and least-privilege federated identity. Issue #46
-will replace the release path with Azure signing while keeping unsigned local
-builds. The maintainer authorized unsigned `v0.1.0-preview.3` as a
-private-repository hotfix cut for uninstall validation. Issue #47 will build and
-validate signed `v0.1.0-preview.4`. Issue #48 is the explicit publication
-checkpoint.
+Issue #45 completed the human Azure enrollment and least-privilege federated
+identity. The release workflow uses that identity for Azure Artifact Signing and
+does not accept the former PFX inputs or an unsigned tag path. The maintainer
+authorized unsigned `v0.1.0-preview.3` as a private-repository hotfix cut for
+uninstall validation. Issue #47 will build and validate signed
+`v0.1.0-preview.4`. Issue #48 is the explicit publication checkpoint.
 
 No certificate key or identity document belongs in this repository or in a
 GitHub secret. GitHub Actions will authenticate to Azure through workload identity
@@ -45,6 +44,12 @@ Record these non-secret integration values as repository variables:
 - Artifact Signing endpoint
 - account name
 - certificate profile name
+- exact certificate subject from the approved publisher preview
+
+The repository uses `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
+`AZURE_CLIENT_ID`, `AZURE_ARTIFACT_SIGNING_ENDPOINT`,
+`AZURE_ARTIFACT_SIGNING_ACCOUNT`, `AZURE_ARTIFACT_SIGNING_PROFILE`, and
+`AZURE_ARTIFACT_SIGNING_PUBLISHER` in the `release-signing` GitHub environment.
 
 Do not record validation documents, billing details, access tokens, or private
 keys in GitHub.
@@ -57,8 +62,14 @@ The build must sign files in this order:
 2. Sign `ChromaShift.exe` and `ChromaShift.DisplayService.exe`.
 3. Build NSIS with those signed executables embedded.
 4. Sign `ChromaShift-<version>-x64-setup.exe`.
-5. Verify that all three signatures are valid, timestamped, and issued to the
+5. Regenerate the installer block map and `latest.yml` hash from the signed
+   installer.
+6. Verify that all three signatures are valid, timestamped, and issued to the
    approved publisher before creating the draft release.
+
+Both verification stages compare every signer certificate with the independently
+recorded subject from the approved certificate profile. Final preflight also
+requires a valid Windows trust result and a timestamp certificate for every file.
 
 Ordinary `npm run build`, `npm run package:dir`, and `npm run package:win` commands
 remain unsigned and require no Azure account.
