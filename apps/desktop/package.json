@@ -1,6 +1,6 @@
 {
   "name": "@chromashift/desktop",
-  "version": "0.1.0-preview.3",
+  "version": "0.1.0-preview.4",
   "description": "Automatic Windows display color profiles",
   "productName": "ChromaShift",
   "author": "ChromaShift",
@@ -48,6 +48,6 @@
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",
     "vite": "7.3.6",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }
