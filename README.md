@@ -84,6 +84,8 @@ scope and safety requirements of each command.
   [signing](docs/signing.md) cover the Windows release path.
 - [Third-party dependencies](docs/third-party.md) records native licensing and
   replacement requirements.
+- [Website](apps/website/README.md) covers the `chromashift.io` build and its
+  Cloudflare deployment.
 
 ## Project policy
 

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ChromaShift social card</title>
+    <!-- Rendered to public/media/social-card.png by scripts/render-assets.mjs. -->
+    <link rel="stylesheet" href="../../../node_modules/@fontsource-variable/geist/index.css" />
+    <link rel="stylesheet" href="../../../node_modules/@fontsource-variable/geist-mono/index.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #0e0e11;
+      }
+
+      .card {
+        position: relative;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        width: 1200px;
+        height: 630px;
+        padding: 64px 72px 60px;
+        color: #f5f5f7;
+        font-family: 'Geist Variable', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .glow {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            52% 70% at 80% 48%,
+            rgb(245 245 247 / 5.5%) 0%,
+            rgb(245 245 247 / 0%) 70%
+          ),
+          radial-gradient(60% 60% at 20% 0%, rgb(245 245 247 / 3.5%) 0%, rgb(245 245 247 / 0%) 72%);
+      }
+
+      .brand {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 30px;
+        font-weight: 500;
+        letter-spacing: -0.012em;
+      }
+
+      .brand img {
+        width: 34px;
+        height: 34px;
+      }
+
+      .copy {
+        position: relative;
+        margin-top: auto;
+        max-width: 720px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 64px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.042em;
+      }
+
+      p {
+        margin: 26px 0 0;
+        font-size: 28px;
+        line-height: 1.35;
+        color: #b4b4c0;
+      }
+
+      .meta {
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        margin-top: 52px;
+        font-family: 'Geist Mono Variable', monospace;
+        font-size: 20px;
+        color: #9393a4;
+      }
+
+      .mark {
+        position: absolute;
+        top: 128px;
+        right: 72px;
+        width: 300px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="glow"></div>
+      <div class="brand">
+        <img src="../../../chromashift-icon-darkmode.png" alt="" />
+        <span>chromashift</span>
+      </div>
+      <img class="mark" src="../../../chromashift-icon-darkmode.png" alt="" />
+      <div class="copy">
+        <h1>Color profiles that switch with your apps.</h1>
+        <p>Automatic display color profiles for Windows 11.</p>
+      </div>
+      <div class="meta">
+        <span>chromashift.io</span>
+        <span>Windows 11 x64 · free and open source</span>
+      </div>
+    </main>
+  </body>
+</html>

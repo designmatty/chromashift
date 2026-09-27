@@ -1,0 +1,14 @@
+// Assets-only Worker for https://chromashift.io. Cloudflare Workers Builds
+// deploys `main` to production and non-production branches to preview URLs.
+// See apps/website/README.md before attaching the custom domain.
+{
+  "name": "chromashift-website",
+  "compatibility_date": "2026-09-27",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "workers_dev": true,
+  "preview_urls": true
+}

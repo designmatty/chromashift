@@ -40,6 +40,23 @@ A one-shot restoration of Original settings that does not Pause display control
 or change the Intended target.
 _Avoid_: Pause, reset displays
 
+**Color safety envelope**:
+The brightness and gamma combinations ChromaShift accepts to reduce the risk of
+unreadably dark or washed-out display output. It is a product guardrail, not a
+hardware-independent visibility guarantee.
+_Avoid_: Safe range, visibility guarantee
+
+**Neutral color settings**:
+ChromaShift's canonical color values for no intentional profile adjustment.
+They are product values, not captured Original settings, provider defaults, or
+the Default profile.
+_Avoid_: Default values, Original settings, provider defaults
+
+**Complete color vector**:
+The six vendor-neutral color values owned by an assigned profile display target.
+Every value is present even when the display cannot currently apply it.
+_Avoid_: Enabled controls, supported settings
+
 ## Activation
 
 **Activation source**:

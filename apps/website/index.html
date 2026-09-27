@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChromaShift · Automatic display color profiles for Windows 11</title>
+    <meta
+      name="description"
+      content="ChromaShift automatically applies per-display color settings as you move between games and Windows apps. Open source, no telemetry, Windows 11 x64."
+    />
+    <link rel="canonical" href="https://chromashift.io/" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e0e11" />
+
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="/icons/favicon-darkmode.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="/icons/favicon-lightmode.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ChromaShift" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://chromashift.io/" />
+    <meta
+      property="og:title"
+      content="ChromaShift · Automatic display color profiles for Windows 11"
+    />
+    <meta
+      property="og:description"
+      content="Per-display color profiles that switch when the foreground application changes."
+    />
+    <meta property="og:image" content="https://chromashift.io/media/social-card.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="ChromaShift: color profiles that switch with your apps. Automatic display color profiles for Windows 11."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="ChromaShift · Automatic display color profiles for Windows 11"
+    />
+    <meta
+      name="twitter:description"
+      content="Per-display color profiles that switch when the foreground application changes."
+    />
+    <meta name="twitter:image" content="https://chromashift.io/media/social-card.png" />
+    <meta
+      name="twitter:image:alt"
+      content="ChromaShift: color profiles that switch with your apps. Automatic display color profiles for Windows 11."
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ChromaShift",
+        "description": "ChromaShift automatically applies per-display color settings as you move between games and Windows apps.",
+        "url": "https://chromashift.io/",
+        "image": "https://chromashift.io/media/social-card.png",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows 11",
+        "processorRequirements": "x64",
+        "downloadUrl": "https://github.com/designmatty/chromashift/releases",
+        "license": "https://opensource.org/licenses/MIT",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "sameAs": ["https://github.com/designmatty/chromashift"]
+      }
+    </script>
+
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="page-glow" aria-hidden="true"></div>
+
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="#top" aria-label="ChromaShift home">
+            <img class="brand__mark" src="/icons/mark-darkmode.png" alt="" width="20" height="20" />
+            <span class="brand__name">chromashift</span>
+          </a>
+          <nav class="site-nav" aria-label="Primary">
+            <a class="site-nav__link" href="#faq">FAQ</a>
+            <a
+              class="site-nav__link"
+              href="https://github.com/designmatty/chromashift"
+              rel="noreferrer noopener"
+              target="_blank"
+              >GitHub</a
+            >
+            <a
+              class="button button--primary button--small"
+              href="https://github.com/designmatty/chromashift/releases"
+              data-download-link
+              >Download</a
+            >
+          </nav>
+        </div>
+      </header>
+
+      <main id="top" class="site-main">
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero__intro">
+            <h1 id="hero-title" class="hero__title">Color profiles that switch with your apps.</h1>
+            <p class="hero__lede">
+              ChromaShift automatically applies per-display color settings as you move between games
+              and Windows apps.
+            </p>
+            <div class="hero__actions">
+              <a
+                class="button button--primary button--raised"
+                href="https://github.com/designmatty/chromashift/releases"
+                data-download-link
+                >Download for Windows</a
+              >
+              <a
+                class="button button--secondary"
+                href="https://github.com/designmatty/chromashift"
+                rel="noreferrer noopener"
+                target="_blank"
+                >View on GitHub</a
+              >
+            </div>
+            <p class="hero__meta">Windows 11 x64 · free and open source</p>
+          </div>
+
+          <figure class="hero-media">
+            <!--
+              Replace the slot with the app-panel capture when it is ready:
+              <img src="/media/app-profiles.webp" width="2000" height="1400" alt="…" />
+            -->
+            <div
+              class="hero-media__slot"
+              role="img"
+              aria-label="Placeholder for the ChromaShift app panel screenshot"
+            >
+              <span class="hero-media__slot-path">public/media/app-profiles.webp</span>
+              <span class="hero-media__slot-size">app panel · 2000 × 1400</span>
+            </div>
+          </figure>
+        </section>
+
+        <section class="features" aria-labelledby="features-title">
+          <div class="section-inner">
+            <h2 id="features-title" class="section-title features__title">
+              Everything it does, briefly.
+            </h2>
+            <ul class="features__grid">
+              <li class="feature">
+                <h3 class="feature__title">Switches automatically</h3>
+                <p class="feature__body">
+                  Alt-tab into a game and its profile applies. Leave it and the next match takes
+                  over.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">One profile, every display</h3>
+                <p class="feature__body">
+                  Each monitor gets its own values. Leave one out and it stays exactly as it was.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Restores what it found</h3>
+                <p class="feature__body">
+                  Your original settings are captured first, and given back on pause, exit, or
+                  shortcut.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Six color controls</h3>
+                <p class="feature__body">
+                  Brightness, contrast, gamma, saturation, hue, and AMD color temperature where
+                  supported.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Reachable anywhere</h3>
+                <p class="feature__body">
+                  Mini panel, tray, and global shortcuts pick a profile without opening the app.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Nothing leaves your PC</h3>
+                <p class="feature__body">
+                  No account, no telemetry, no network requests. MIT licensed.
+                </p>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="faq" class="faq" aria-labelledby="faq-title">
+          <div class="section-inner section-inner--narrow">
+            <h2 id="faq-title" class="section-title">FAQ</h2>
+            <div class="faq__list">
+              <details class="faq__item">
+                <summary class="faq__question">
+                  How does it work?<span class="faq__marker" aria-hidden="true">+</span>
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    ChromaShift watches which application owns the foreground window, resolves the
+                    profile assigned to it, and changes the supported display settings through
+                    Windows and GPU-driver APIs. You can also select a profile yourself from the
+                    app, mini panel, tray, or a shortcut.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Is it safe with VAC and other anti-cheat software?<span
+                    class="faq__marker"
+                    aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    Yes. ChromaShift reads which application is in the foreground, then changes
+                    display settings through standard Windows and NVIDIA or AMD driver APIs — the
+                    same kinds of settings exposed in the GPU control panels. It does not inject
+                    DLLs, read or write game memory, hook rendering, or modify game files.
+                  </p>
+                  <p>
+                    Identifying the foreground executable uses query-only process access;
+                    ChromaShift does not inspect process memory. No anti-cheat vendor certifies or
+                    endorses it.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Which Windows versions and GPUs are supported?<span
+                    class="faq__marker"
+                    aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    Windows 11 x64. NVIDIA behavior is verified on real hardware. AMD support is
+                    implemented through AMD ADLX but is not yet verified on an AMD-driven display.
+                    Intel and unknown adapters are detected without a vendor-specific color
+                    provider, and ChromaShift defers incompatible SDR gamma behavior while HDR is
+                    active.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  What happens when I pause or close it?<span class="faq__marker" aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    Pausing restores your displays first and only then stops applying profiles.
+                    Closing normally also requires your connected displays to be restored before it
+                    exits. If a restore genuinely fails, ChromaShift stays open so it can try again.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Does it collect data or require an account?<span
+                    class="faq__marker"
+                    aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    No. The application requires no account and has no telemetry, analytics, or
+                    outbound network requests. Profiles and preferences stay on your computer.
+                  </p>
+                  <p>
+                    This website is separate: <span class="mono">chromashift.io</span> uses
+                    Cloudflare Web Analytics for aggregate, cookie-free statistics.
+                  </p>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+
+        <section class="closing" aria-labelledby="closing-title">
+          <div class="section-inner section-inner--narrow">
+            <h2 id="closing-title" class="section-title closing__title">
+              Set it up once for each game you play.
+            </h2>
+            <div class="closing__actions">
+              <a
+                class="button button--primary"
+                href="https://github.com/designmatty/chromashift/releases"
+                data-download-link
+                >Download for Windows</a
+              >
+            </div>
+            <p class="closing__meta" data-installer-line>
+              Latest signed installer on GitHub releases
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="site-footer__inner">
+          <span class="site-footer__legal">ChromaShift · MIT License</span>
+          <nav class="site-footer__nav" aria-label="Footer">
+            <a
+              href="https://github.com/designmatty/chromashift/releases"
+              rel="noreferrer noopener"
+              target="_blank"
+              >Releases</a
+            >
+            <a
+              href="https://github.com/designmatty/chromashift"
+              rel="noreferrer noopener"
+              target="_blank"
+              >GitHub</a
+            >
+            <a
+              href="https://github.com/designmatty/chromashift/blob/main/PRIVACY.md"
+              rel="noreferrer noopener"
+              target="_blank"
+              >Privacy</a
+            >
+            <a
+              href="https://github.com/designmatty/chromashift/blob/main/SECURITY.md"
+              rel="noreferrer noopener"
+              target="_blank"
+              >Security</a
+            >
+          </nav>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

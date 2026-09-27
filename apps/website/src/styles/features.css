@@ -1,0 +1,30 @@
+.features {
+  padding: var(--section-space) var(--page-gutter) 0;
+}
+
+.features__title {
+  max-width: 520px;
+}
+
+.features__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: clamp(24px, 3vw, 36px) 40px;
+  margin: clamp(32px, 4vw, 48px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--color-foreground);
+}
+
+.feature__body {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--color-muted);
+}

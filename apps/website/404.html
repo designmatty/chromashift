@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page not found · ChromaShift</title>
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e0e11" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="/icons/favicon-darkmode.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="/icons/favicon-lightmode.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="page-glow" aria-hidden="true"></div>
+
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a class="brand" href="/" aria-label="ChromaShift home">
+            <img class="brand__mark" src="/icons/mark-darkmode.png" alt="" width="20" height="20" />
+            <span class="brand__name">chromashift</span>
+          </a>
+        </div>
+      </header>
+
+      <main class="site-main">
+        <section class="not-found" aria-labelledby="not-found-title">
+          <div class="section-inner section-inner--narrow">
+            <p class="not-found__code">404</p>
+            <h1 id="not-found-title" class="section-title">This page doesn’t exist.</h1>
+            <div class="not-found__actions">
+              <a class="button button--primary" href="/">Back to chromashift.io</a>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
