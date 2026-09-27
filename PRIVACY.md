@@ -27,3 +27,11 @@ does not delete the data above. A user can remove it by deleting
 Development and test commands may use package registries, GitHub, local debugging
 ports, or explicit test services. Those tools are separate from the production
 app described here.
+
+## Website
+
+The `chromashift.io` website is separate from the app. It uses Cloudflare Web
+Analytics for aggregate, cookie-free traffic and performance statistics. It sets
+no cookies and uses no fingerprinting, custom events, or advertising pixels. To
+link the newest installer, the page asks the public GitHub releases API for
+release metadata directly from the visitor's browser.

@@ -1,0 +1,22 @@
+:root {
+  --color-background: #0e0e11;
+  --color-foreground: #f5f5f7;
+  --color-foreground-strong: #ffffff;
+  --color-muted: #b4b4c0;
+  --color-subtle: #9393a4;
+  --color-surface: #15151a;
+  --color-surface-hover: #1b1b21;
+  --color-surface-sunken: #101014;
+  --color-border: #26262d;
+  --color-border-strong: #32323a;
+  --color-divider: #1e1e24;
+
+  --font-sans: 'Geist Variable', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'Cascadia Mono', monospace;
+
+  --content-width: 960px;
+  --content-width-narrow: 800px;
+  --page-gutter: 24px;
+  --section-space: clamp(72px, 10vw, 120px);
+  --radius-pill: 999px;
+}
