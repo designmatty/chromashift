@@ -10,5 +10,8 @@
     "not_found_handling": "404-page"
   },
   "workers_dev": true,
-  "preview_urls": true
+  "preview_urls": true,
+  // Required by `wrangler preview`, the Workers Builds default for non-production
+  // branches. Empty because previews use the top-level settings above.
+  "previews": {}
 }
