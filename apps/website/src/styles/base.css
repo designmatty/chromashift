@@ -61,21 +61,6 @@ a:hover {
   overflow: clip;
 }
 
-.page-glow {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: min(1300px, 170%);
-  height: 640px;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    58% 55% at 50% 0%,
-    rgb(245 245 247 / 5%) 0%,
-    rgb(245 245 247 / 0%) 72%
-  );
-  pointer-events: none;
-}
-
 .site-main {
   position: relative;
 }

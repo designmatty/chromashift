@@ -88,8 +88,6 @@
   </head>
   <body>
     <div class="page">
-      <div class="page-glow" aria-hidden="true"></div>
-
       <header class="site-header">
         <div class="site-header__inner">
           <a class="brand" href="#top" aria-label="ChromaShift home">
@@ -138,7 +136,7 @@
                 >View on GitHub</a
               >
             </div>
-            <p class="hero__meta">Windows 11 x64 · free and open source</p>
+            <p class="hero__meta">Windows 11 x64 · Free and Open Source</p>
           </div>
 
           <figure class="hero-media">
@@ -160,40 +158,48 @@
         <section class="features" aria-labelledby="features-title">
           <div class="section-inner">
             <h2 id="features-title" class="section-title features__title">
-              Everything it does, briefly.
+              Everything ChromaShift does, in brief.
             </h2>
             <ul class="features__grid">
               <li class="feature">
-                <h3 class="feature__title">Switches automatically</h3>
+                <h3 class="feature__title">Five color controls</h3>
                 <p class="feature__body">
-                  Alt-tab into a game and its profile applies. Leave it and the next match takes
-                  over.
+                  Brightness, contrast, gamma, saturation, and hue are supported.
                 </p>
               </li>
               <li class="feature">
-                <h3 class="feature__title">One profile, every display</h3>
+                <h3 class="feature__title">Auto switching color profiles</h3>
                 <p class="feature__body">
-                  Each monitor gets its own values. Leave one out and it stays exactly as it was.
+                  Open a game or app and the assigned color profile automatically applies.
                 </p>
               </li>
               <li class="feature">
-                <h3 class="feature__title">Restores what it found</h3>
+                <h3 class="feature__title">Display aware settings</h3>
+                <p class="feature__body">Each monitor gets its own color profile values.</p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Keyboard shortcuts</h3>
                 <p class="feature__body">
-                  Your original settings are captured first, and given back on pause, exit, or
+                  Define keyboard shortcuts to quickly switch between color profiles.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Manually switch profiles</h3>
+                <p class="feature__body">
+                  Switch via the ChromaShift app, system tray, or global shortcuts.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Quick, one-off adjustments</h3>
+                <p class="feature__body">
+                  Make quick tweaks to color profiles in the Mini View to get the perfect settings.
+                </p>
+              </li>
+              <li class="feature">
+                <h3 class="feature__title">Safe restoration</h3>
+                <p class="feature__body">
+                  Original display settings are stashed and restored on pause, quit, or keyboard
                   shortcut.
-                </p>
-              </li>
-              <li class="feature">
-                <h3 class="feature__title">Six color controls</h3>
-                <p class="feature__body">
-                  Brightness, contrast, gamma, saturation, hue, and AMD color temperature where
-                  supported.
-                </p>
-              </li>
-              <li class="feature">
-                <h3 class="feature__title">Reachable anywhere</h3>
-                <p class="feature__body">
-                  Mini panel, tray, and global shortcuts pick a profile without opening the app.
                 </p>
               </li>
               <li class="feature">
@@ -212,20 +218,23 @@
             <div class="faq__list">
               <details class="faq__item">
                 <summary class="faq__question">
-                  How does it work?<span class="faq__marker" aria-hidden="true">+</span>
+                  How does ChromaShift work?<span class="faq__marker" aria-hidden="true">+</span>
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    ChromaShift watches which application owns the foreground window, resolves the
-                    profile assigned to it, and changes the supported display settings through
-                    Windows and GPU-driver APIs. You can also select a profile yourself from the
-                    app, mini panel, tray, or a shortcut.
+                    When you switch to an app or game, ChromaShift applies the profile you assigned
+                    to that app, with separate color settings for each display. Apps without their
+                    own profile use the Default profile.
+                  </p>
+                  <p>
+                    You can also pick a profile yourself from the app, mini panel, tray, or a
+                    keyboard shortcut.
                   </p>
                 </div>
               </details>
               <details class="faq__item">
                 <summary class="faq__question">
-                  Is it safe with VAC and other anti-cheat software?<span
+                  Is ChromaShift safe with VAC and other anti-cheat software?<span
                     class="faq__marker"
                     aria-hidden="true"
                     >+</span
@@ -233,16 +242,15 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    Yes. ChromaShift reads which application is in the foreground, then changes
-                    display settings through standard Windows and NVIDIA or AMD driver APIs — the
-                    same kinds of settings exposed in the GPU control panels. It does not inject
-                    DLLs, read or write game memory, hook rendering, or modify game files.
+                    ChromaShift is built to stay out of your games. ChromaShift never injects code,
+                    reads or writes game memory, hooks rendering, or modifies game files.
                   </p>
                   <p>
-                    Identifying the foreground executable uses query-only process access;
-                    ChromaShift does not inspect process memory. No anti-cheat vendor certifies or
-                    endorses it.
+                    ChromaShift only checks which program is in the foreground, using limited access
+                    that can’t read the program’s memory. Color changes go through the same Windows
+                    and NVIDIA or AMD driver settings that GPU control panels use.
                   </p>
+                  <p>No anti-cheat vendor has certified or endorsed ChromaShift.</p>
                 </div>
               </details>
               <details class="faq__item">
@@ -255,31 +263,19 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    Windows 11 x64. NVIDIA behavior is verified on real hardware. AMD support is
-                    implemented through AMD ADLX but is not yet verified on an AMD-driven display.
-                    Intel and unknown adapters are detected without a vendor-specific color
-                    provider, and ChromaShift defers incompatible SDR gamma behavior while HDR is
-                    active.
+                    ChromaShift runs on 64-bit (x64) Windows 11. NVIDIA GPUs are tested on real
+                    hardware. AMD GPUs are supported through AMD’s ADLX API but haven’t been tested
+                    on an AMD-driven display yet. Intel and other GPUs are recognized, but
+                    ChromaShift has no vendor-specific color support for them.
                   </p>
-                </div>
-              </details>
-              <details class="faq__item">
-                <summary class="faq__question">
-                  What happens when I pause or close it?<span class="faq__marker" aria-hidden="true"
-                    >+</span
-                  >
-                </summary>
-                <div class="faq__answer">
                   <p>
-                    Pausing restores your displays first and only then stops applying profiles.
-                    Closing normally also requires your connected displays to be restored before it
-                    exits. If a restore genuinely fails, ChromaShift stays open so it can try again.
+                    While HDR is on, ChromaShift holds back gamma adjustments that only work in SDR.
                   </p>
                 </div>
               </details>
               <details class="faq__item">
                 <summary class="faq__question">
-                  Does it collect data or require an account?<span
+                  What happens when I pause or close ChromaShift?<span
                     class="faq__marker"
                     aria-hidden="true"
                     >+</span
@@ -287,12 +283,31 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    No. The application requires no account and has no telemetry, analytics, or
-                    outbound network requests. Profiles and preferences stay on your computer.
+                    Both return your displays to how they were before ChromaShift changed them.
+                    Pausing restores your original settings, then stops switching profiles until you
+                    resume. Closing restores every connected display before the app exits. If a
+                    display can't be restored, ChromaShift stays open instead of leaving that
+                    display changed, so the restore can be retried.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Does ChromaShift collect data or require an account?<span
+                    class="faq__marker"
+                    aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    No. ChromaShift needs no account and has no telemetry, analytics, or network
+                    requests. Your profiles and preferences stay on your PC.
                   </p>
                   <p>
-                    This website is separate: <span class="mono">chromashift.io</span> uses
-                    Cloudflare Web Analytics for aggregate, cookie-free statistics.
+                    This website is separate. <span class="mono">chromashift.io</span> uses
+                    Cloudflare Web Analytics for aggregate, cookie-free visitor statistics, and the
+                    download button asks GitHub for the newest release.
                   </p>
                 </div>
               </details>
@@ -303,7 +318,7 @@
         <section class="closing" aria-labelledby="closing-title">
           <div class="section-inner section-inner--narrow">
             <h2 id="closing-title" class="section-title closing__title">
-              Set it up once for each game you play.
+              Set up ChromaShift once for each game you play.
             </h2>
             <div class="closing__actions">
               <a

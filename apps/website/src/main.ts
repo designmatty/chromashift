@@ -1,5 +1,5 @@
 import './styles/index.css'
-import { fetchLatestInstaller } from './release'
+import { fetchLatestInstaller, installerLine } from './release'
 
 // The static links already point at GitHub releases. Point them at the newest
 // installer when the lookup succeeds; otherwise leave the fallback in place.
@@ -9,8 +9,10 @@ async function linkLatestInstaller(): Promise<void> {
   for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-download-link]')) {
     link.href = installer.url
   }
-  for (const line of document.querySelectorAll('[data-installer-line]')) {
-    line.textContent = installer.filename
+  const line = installerLine(installer)
+  if (line === undefined) return
+  for (const element of document.querySelectorAll('[data-installer-line]')) {
+    element.textContent = line
   }
 }
 
