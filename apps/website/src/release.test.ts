@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchLatestInstaller, releasesApiUrl, selectLatestInstaller } from './release'
+import {
+  fetchLatestInstaller,
+  installerLine,
+  releasesApiUrl,
+  selectLatestInstaller
+} from './release'
 
 const download = 'https://github.com/designmatty/chromashift/releases/download'
 
 function release(tag: string, publishedAt: string, assetNames: string[], draft = false) {
   return {
     draft,
+    tag_name: tag,
     published_at: publishedAt,
     assets: assetNames.map((name) => ({
       name,
@@ -29,8 +35,25 @@ describe('selectLatestInstaller', () => {
 
     expect(selectLatestInstaller(releases)).toEqual({
       filename: 'ChromaShift-0.1.0-preview.4-x64-setup.exe',
-      url: `${download}/v0.1.0-preview.4/ChromaShift-0.1.0-preview.4-x64-setup.exe`
+      url: `${download}/v0.1.0-preview.4/ChromaShift-0.1.0-preview.4-x64-setup.exe`,
+      version: '0.1.0-preview.4'
     })
+  })
+
+  it('reads the version from the installer name when the tag is not a version', () => {
+    const releases = [
+      release('latest-preview', '2026-09-20T00:00:00Z', [
+        'ChromaShift-0.1.0-preview.4-x64-setup.exe'
+      ])
+    ]
+
+    expect(selectLatestInstaller(releases)?.version).toBe('0.1.0-preview.4')
+  })
+
+  it('leaves the version unknown when neither the tag nor the name carries one', () => {
+    const releases = [release('nightly', '2026-09-20T00:00:00Z', ['Setup-x64-setup.exe'])]
+
+    expect(selectLatestInstaller(releases)?.version).toBeUndefined()
   })
 
   it('skips drafts and releases without an x64 installer', () => {
@@ -62,6 +85,23 @@ describe('selectLatestInstaller', () => {
   it('tolerates malformed API payloads', () => {
     expect(selectLatestInstaller({ message: 'Not Found' })).toBeUndefined()
     expect(selectLatestInstaller([null, 'release', { assets: 'none' }])).toBeUndefined()
+  })
+})
+
+describe('installerLine', () => {
+  const installer = {
+    filename: 'ChromaShift-0.1.0-preview.4-x64-setup.exe',
+    url: `${download}/v0.1.0-preview.4/ChromaShift-0.1.0-preview.4-x64-setup.exe`
+  }
+
+  it('names the current version', () => {
+    expect(installerLine({ ...installer, version: '0.1.0-preview.4' })).toBe(
+      'Current version: ChromaShift 0.1.0-preview.4'
+    )
+  })
+
+  it('keeps the static fallback text when the version is unknown', () => {
+    expect(installerLine({ ...installer, version: undefined })).toBeUndefined()
   })
 })
 
