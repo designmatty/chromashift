@@ -2,7 +2,8 @@
 // deploys `main` to production and non-production branches to preview URLs.
 // See apps/website/README.md before attaching the custom domain.
 {
-  "name": "chromashift-website",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "chromashift",
   "compatibility_date": "2026-09-27",
   "assets": {
     "directory": "./dist",
