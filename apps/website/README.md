@@ -66,7 +66,7 @@ These are dashboard steps. None of them change DNS.
    installation, then copy the site token.
 2. **Workers Builds.** Create a Worker from this Git repository with these
    settings:
-   - Worker name: `chromashift-website`, matching `wrangler.jsonc`
+   - Worker name: `chromashift`, matching `name` in `wrangler.jsonc`
    - Production branch: `main`
    - Root directory: `apps/website`
    - Build command: `npm ci && npm run build`
@@ -78,6 +78,8 @@ These are dashboard steps. None of them change DNS.
 
    Running `npm ci` inside `apps/website` installs only this workspace from the
    root `package-lock.json`. It does not install the Electron desktop toolchain.
+   Wrangler is pinned as a workspace dev dependency, so `npx wrangler` uses that
+   locked version instead of downloading one during the build.
 
    Until a custom domain is attached, production is served at the Worker's
    `workers.dev` URL. Its canonical and social URLs still point to
