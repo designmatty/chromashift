@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ConfigurationValidationError, parseProfileConfigurationJson } from './configuration.js'
 import type { ConfigurationMigrationNotice, VersionOneProfile } from './migration.js'
-import type { ColorProfile } from './model.js'
+import { createNeutralColorSettings, type ColorProfile } from './model.js'
 import { JsonProfileRepository, type ProfileConfigurationStorage } from './repository.js'
 
 class MemoryStorage implements ProfileConfigurationStorage {
@@ -28,8 +28,7 @@ function profile(id: string): ColorProfile {
     displays: [
       {
         displayId: 'display:primary',
-        color: { saturation: 75 },
-        lastColorValues: { saturation: 75, hue: 20 }
+        color: { ...createNeutralColorSettings(), saturation: 75 }
       }
     ]
   }
@@ -50,7 +49,7 @@ describe('JSON profile repository', () => {
   it('starts with the permanent default profile when storage does not exist', async () => {
     const repository = new JsonProfileRepository(new MemoryStorage())
     await expect(repository.getConfiguration()).resolves.toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       profiles: [
         {
           id: 'default',
@@ -75,7 +74,7 @@ describe('JSON profile repository', () => {
       expect.objectContaining({ id: 'gaming', name: 'Gaming updated' })
     ])
     await expect(repository.findById('GAMING')).resolves.toMatchObject({ id: 'gaming' })
-    expect(parseProfileConfigurationJson(storage.contents!)).toMatchObject({ schemaVersion: 2 })
+    expect(parseProfileConfigurationJson(storage.contents!)).toMatchObject({ schemaVersion: 3 })
   })
 
   it('persists the profile order used by the draggable sidebar', async () => {
@@ -101,8 +100,14 @@ describe('JSON profile repository', () => {
     await repository.save({
       ...profile('gaming'),
       displays: [
-        { displayId: 'display:primary', color: { saturation: 75 } },
-        { displayId: 'display:secondary', color: { brightness: 40 } }
+        {
+          displayId: 'display:primary',
+          color: { ...createNeutralColorSettings(), saturation: 75 }
+        },
+        {
+          displayId: 'display:secondary',
+          color: { ...createNeutralColorSettings(), brightness: 40 }
+        }
       ]
     })
 
@@ -121,10 +126,12 @@ describe('JSON profile repository', () => {
       displays: [
         {
           displayId: 'display:primary',
-          color: { saturation: 75 },
-          lastColorValues: { saturation: 75, hue: 20 }
+          color: { ...createNeutralColorSettings(), saturation: 75 }
         },
-        { displayId: 'display:secondary', color: { brightness: 40 } }
+        {
+          displayId: 'display:secondary',
+          color: { ...createNeutralColorSettings(), brightness: 40 }
+        }
       ]
     })
     const duplicate = await repository.duplicate('gaming', {
@@ -132,21 +139,14 @@ describe('JSON profile repository', () => {
       name: 'Gaming copy'
     })
     duplicate.displays[0]!.color.saturation = 10
-    duplicate.displays[0]!.lastColorValues!.hue = 90
     duplicate.displays[1]!.color.brightness = 5
 
     await expect(repository.findById('gaming')).resolves.toMatchObject({
-      displays: [
-        { color: { saturation: 75 }, lastColorValues: { saturation: 75, hue: 20 } },
-        { color: { brightness: 40 } }
-      ]
+      displays: [{ color: { saturation: 75 } }, { color: { brightness: 40 } }]
     })
     await expect(repository.findById('gaming-copy')).resolves.toMatchObject({
       name: 'Gaming copy',
-      displays: [
-        { color: { saturation: 75 }, lastColorValues: { saturation: 75, hue: 20 } },
-        { color: { brightness: 40 } }
-      ]
+      displays: [{ color: { saturation: 75 } }, { color: { brightness: 40 } }]
     })
   })
 
@@ -172,7 +172,7 @@ describe('JSON profile repository', () => {
 
   it('loads valid persisted configuration', async () => {
     const persisted = JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       profiles: [profile('default')],
       settings: { defaultProfileId: 'default' }
     })
@@ -189,7 +189,7 @@ describe('JSON profile repository', () => {
   it('does not rewrite storage when the configuration is already current', async () => {
     const storage = new MemoryStorage(
       JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         profiles: [profile('default')],
         settings: { defaultProfileId: 'default' }
       })
@@ -211,7 +211,7 @@ describe('JSON profile repository', () => {
     const repository = new JsonProfileRepository(storage)
 
     await expect(repository.getConfiguration()).resolves.toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       profiles: [
         {
           id: 'default',
@@ -221,7 +221,7 @@ describe('JSON profile repository', () => {
       settings: { defaultProfileId: 'default' }
     })
     expect(storage.writes).toHaveLength(1)
-    expect(parseProfileConfigurationJson(storage.writes[0]!)).toMatchObject({ schemaVersion: 2 })
+    expect(parseProfileConfigurationJson(storage.writes[0]!)).toMatchObject({ schemaVersion: 3 })
   })
 
   it('reports migration notices raised while loading', async () => {
@@ -258,10 +258,10 @@ describe('JSON profile repository', () => {
     const repository = new JsonProfileRepository(storage)
 
     await expect(repository.getConfiguration()).resolves.toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       settings: { defaultProfileId: 'default' }
     })
     expect(storage.writes).toHaveLength(1)
-    expect(parseProfileConfigurationJson(storage.writes[0]!)).toMatchObject({ schemaVersion: 2 })
+    expect(parseProfileConfigurationJson(storage.writes[0]!)).toMatchObject({ schemaVersion: 3 })
   })
 })

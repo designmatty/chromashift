@@ -213,7 +213,7 @@ describe('product runtime startup wiring', () => {
 
     expect(harness.logger.has('NativeServiceHealthVerified')).toBe(true)
     expect(harness.client.applied).toEqual([
-      { displayId: 'display:one', settings: { brightness: 60 } }
+      { displayId: 'display:one', settings: { brightness: 60, saturation: 50 } }
     ])
     expect(harness.trayMenusCreated()).toBe(1)
     expect(harness.runtime.productController).toBeDefined()

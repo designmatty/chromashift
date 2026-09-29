@@ -30,8 +30,6 @@ export interface ProfileDetailProps {
   dirty: boolean
   previewing: boolean
   active: boolean
-  expandedDisplayIds: string[]
-  onExpandedDisplaysChange(displayIds: string[]): void
   onEdit(): void
   onChange(profile: ColorProfile): void
   onCancel(): void
@@ -54,6 +52,11 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
     : isDefault && props.active
       ? 'Default profile remains active until you activate another profile.'
       : null
+  const activationTooltip =
+    activationDisabledReason ??
+    (props.active
+      ? 'Deactivate to switch profiles automatically.'
+      : 'Use this profile instead of switching automatically.')
   const activationSwitch = (
     <Switch
       checked={props.active}
@@ -61,6 +64,19 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       ids={{ root: activationSwitchId }}
       onCheckedChange={(details) => props.onActiveChange(details.checked)}
       aria-label="Profile active"
+      colorPalette={'orange'}
+      thumbProps={{
+        css: {
+          _checked: {
+            bg: {
+              base: 'orange.contrast',
+              _dark: 'fg',
+              _disabled: 'orange.muted'
+            },
+            shadow: 'none'
+          }
+        }
+      }}
     />
   )
 
@@ -102,17 +118,13 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           </>
         ) : (
           <>
-            {activationDisabledReason === null ? (
-              activationSwitch
-            ) : (
-              <Tooltip
-                ids={{ trigger: activationSwitchId }}
-                content={activationDisabledReason}
-                positioning={{ placement: 'bottom-start' }}
-              >
-                {activationSwitch}
-              </Tooltip>
-            )}
+            <Tooltip
+              ids={{ trigger: activationSwitchId }}
+              content={activationTooltip}
+              positioning={{ placement: 'bottom-start' }}
+            >
+              {activationSwitch}
+            </Tooltip>
             <Heading as="h1" data-part="profile-name" size="lg" fontWeight="700">
               {profile.name}
             </Heading>
@@ -186,14 +198,12 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
 
       <Box as="section" pt="10px">
         <SectionHeading title="Display color controls">
-          This profile activates on selected displays
+          Select the display you would like to change
         </SectionHeading>
         <DisplayControls
           profile={profile}
           product={props.product}
           editing={props.editing}
-          expandedDisplayIds={props.expandedDisplayIds}
-          onExpandedChange={props.onExpandedDisplaysChange}
           onChange={props.onChange}
         />
       </Box>
@@ -202,7 +212,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         <SectionHeading title="Applications">
           {isDefault
             ? 'This profile activates for applications without ChromaShift assignments'
-            : 'This profile activates for the selected applications'}
+            : 'Activate this profile for the selected applications'}
         </SectionHeading>
         {!isDefault && (
           <ApplicationAssignments

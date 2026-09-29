@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { ColorProfile } from './model.js'
+import { createNeutralColorSettings, type ColorProfile } from './model.js'
 import {
   activeColorTargets,
   findDisplayTarget,
-  hasColorOverrides,
   removeDisplayTarget,
   resolveDisplayColor,
   setDisplayTarget
 } from './targets.js'
+
+const color = (overrides = {}) => ({ ...createNeutralColorSettings(), ...overrides })
 
 function profile(): ColorProfile {
   return {
@@ -16,61 +17,46 @@ function profile(): ColorProfile {
     enabled: true,
     applications: [],
     displays: [
-      { displayId: 'display:a', color: { saturation: 75 } },
-      { displayId: 'display:b', color: {}, lastColorValues: { brightness: 60 } }
+      { displayId: 'display:a', color: color({ saturation: 75 }) },
+      { displayId: 'display:b', color: color() }
     ]
   }
 }
 
 describe('display targets', () => {
-  it('finds a target case-insensitively', () => {
-    expect(findDisplayTarget(profile(), 'DISPLAY:A')?.color).toEqual({ saturation: 75 })
-    expect(findDisplayTarget(profile(), 'display:missing')).toBeNull()
+  it('finds and resolves a target case-insensitively', () => {
+    expect(findDisplayTarget(profile(), 'DISPLAY:A')?.color.saturation).toBe(75)
+    expect(resolveDisplayColor(profile(), 'DISPLAY:A')?.saturation).toBe(75)
+    expect(resolveDisplayColor(profile(), 'display:missing')).toBeNull()
   })
 
-  it('resolves an absent or empty target to baseline', () => {
-    expect(resolveDisplayColor(profile(), 'display:b')).toEqual({})
-    expect(resolveDisplayColor(profile(), 'display:missing')).toEqual({})
-  })
-
-  it('returns a detached copy of the resolved settings', () => {
+  it('returns a detached resolved value', () => {
     const source = profile()
-    const resolved = resolveDisplayColor(source, 'display:a')
+    const resolved = resolveDisplayColor(source, 'display:a')!
     resolved.saturation = 10
-
     expect(source.displays[0]?.color.saturation).toBe(75)
   })
 
-  it('lists only displays with active overrides, in persisted order', () => {
-    expect(activeColorTargets(profile())).toEqual([
-      { displayId: 'display:a', color: { saturation: 75 } }
-    ])
-  })
-
-  it('reports whether a settings object overrides anything', () => {
-    expect(hasColorOverrides({})).toBe(false)
-    expect(hasColorOverrides({ hue: 0 })).toBe(true)
-  })
-
-  it('replaces an existing target in place and appends a new one', () => {
-    const replaced = setDisplayTarget(profile(), {
-      displayId: 'DISPLAY:A',
-      color: { brightness: 20 }
-    })
-    expect(replaced.displays.map((target) => target.displayId)).toEqual([
-      'DISPLAY:A',
+  it('lists every assigned display in persisted order', () => {
+    expect(activeColorTargets(profile()).map((target) => target.displayId)).toEqual([
+      'display:a',
       'display:b'
     ])
-
-    const appended = setDisplayTarget(profile(), { displayId: 'display:c', color: {} })
-    expect(appended.displays).toHaveLength(3)
   })
 
-  it('removes a target case-insensitively without mutating the source', () => {
+  it('replaces, appends, and removes targets without mutating the source', () => {
     const source = profile()
-    const removed = removeDisplayTarget(source, 'DISPLAY:B')
-
-    expect(removed.displays.map((target) => target.displayId)).toEqual(['display:a'])
+    const replaced = setDisplayTarget(source, {
+      displayId: 'DISPLAY:A',
+      color: color({ brightness: 20 })
+    })
+    expect(replaced.displays.map((target) => target.displayId)).toEqual(['DISPLAY:A', 'display:b'])
+    expect(
+      setDisplayTarget(source, { displayId: 'display:c', color: color() }).displays
+    ).toHaveLength(3)
+    expect(
+      removeDisplayTarget(source, 'DISPLAY:B').displays.map((target) => target.displayId)
+    ).toEqual(['display:a'])
     expect(source.displays).toHaveLength(2)
   })
 })

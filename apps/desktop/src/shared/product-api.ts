@@ -1,4 +1,5 @@
 import {
+  colorSettingsSchema,
   colorProfileSchema,
   profileConfigurationSchema,
   type ColorProfile
@@ -6,7 +7,6 @@ import {
 import {
   displayCapabilitiesResultSchema,
   displaySchema,
-  displaySettingsSchema,
   foregroundApplicationSchema
 } from '@chromashift/native-client/protocol'
 import { z } from 'zod'
@@ -61,7 +61,7 @@ export const activationStateSchema = z.object({
 export const previewTargetSchema = z
   .object({
     displayId: z.string().startsWith('display:'),
-    color: displaySettingsSchema
+    color: colorSettingsSchema
   })
   .strict()
 
@@ -306,10 +306,7 @@ export interface ChromaShiftApi {
   hideMiniPanel(): Promise<ProductResult<null>>
   showMiniPanel(): Promise<ProductResult<null>>
   openMiniPanelDevTools(): Promise<ProductResult<null>>
-  setMiniPanelView(
-    view: MiniPanelView,
-    showColorTemperature: boolean
-  ): Promise<ProductResult<null>>
+  setMiniPanelView(view: MiniPanelView, showColorTemperature: boolean): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void

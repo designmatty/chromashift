@@ -68,10 +68,14 @@ version change.
 | `service.shutdown`         | none                    | Restores connected baselines, returns disconnected entries as `reason: "displayDisconnected", discarded: true`, acknowledges, and exits; other restore failures remain retryable |
 
 `display.apply.settings` accepts optional `brightness`, `contrast`, `gamma`,
-`saturation`, `hue`, and `colorTemperature`. Omission means “do not override.”
-Brightness, contrast, saturation, hue, and color temperature use normalized
-product values 0–100. Product gamma is 0.5–2.8. Providers query and map native
-ranges rather than persisting vendor values.
+`saturation`, `hue`, and `colorTemperature`. Although profile targets persist a
+complete vector, Electron capability-filters each endpoint command. Omission at
+this boundary means “use the captured baseline for this capability.” Brightness,
+contrast, saturation, hue, and color temperature use normalized product values
+0–100. Product gamma has a physical range of 0.3–2.8 and must also satisfy the
+brightness-dependent safety envelope in `docs/core-domain.md`. Both the
+TypeScript client and native helper validate that envelope. Providers query and
+map native ranges rather than persisting vendor values.
 
 Native commands always accept the endpoint `id`; `physicalId` is identity
 metadata for Electron grouping. The native baseline table is never keyed by a

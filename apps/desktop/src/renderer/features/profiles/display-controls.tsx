@@ -1,162 +1,135 @@
-import { AbsoluteCenter, Accordion, Badge, Box, Button, Menu, Portal, Text } from '@chakra-ui/react'
+import { Badge, Box, Button, Flex, Menu, Portal, Tabs, Text } from '@chakra-ui/react'
 import { ChevronDown } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
-  removeDisplayTarget,
+  createNeutralColorSettings,
   setDisplayTarget,
   type ColorProfile,
   type ColorSettings
 } from '@chromashift/core'
-import { Checkbox } from '@/components/ui/checkbox'
 import type { ProductState } from '../../../shared/product-api.js'
-import { ColorControls, ColorSummary } from './color-controls'
+import { ColorControls } from './color-controls'
 import { buildDisplayRows, type DisplayRow } from './display-rows'
 
-/**
- * One row per connected display. Saved targets for absent displays remain in
- * the profile but stay out of the normal editor until that display returns.
- * Expanding a row selects that display for editing; the Edit-mode checkbox
- * controls whether this profile overrides the display at all.
- */
+const LAST_DISPLAY_KEY = 'chromashift.profile-editor.selected-display'
+
 export function DisplayControls({
   profile,
   product,
   editing,
-  expandedDisplayIds,
-  onExpandedChange,
   onChange
 }: {
   profile: ColorProfile
   product: ProductState
   editing: boolean
-  expandedDisplayIds: string[]
-  onExpandedChange(displayIds: string[]): void
   onChange(profile: ColorProfile): void
 }): React.JSX.Element {
   const rows = buildDisplayRows(profile, product)
-  if (rows.length === 0) {
-    return <Text color="fg.muted">No displays are connected.</Text>
-  }
+  const [selectedId, setSelectedId] = useState(() => localStorage.getItem(LAST_DISPLAY_KEY))
+  const rememberedRow = rows.find((row) => row.displayId === selectedId)
+  const selected =
+    rememberedRow ??
+    rows.find((row) => row.target !== undefined) ??
+    rows.find((row) => row.display.primary) ??
+    rows[0]
 
-  const copyTargets = rows
+  useEffect(() => {
+    if (selected === undefined || selected.displayId === selectedId) return
+    setSelectedId(selected.displayId)
+    localStorage.setItem(LAST_DISPLAY_KEY, selected.displayId)
+  }, [selected?.displayId, selectedId])
+
+  if (selected === undefined) return <Text color="fg.muted">No displays are connected.</Text>
 
   return (
-    <Accordion.Root
-      value={expandedDisplayIds}
+    <Tabs.Root
+      value={selected.displayId}
       variant="plain"
-      spaceY={4}
-      collapsible
-      multiple
-      unmountOnExit
-      onValueChange={(details) => onExpandedChange(details.value)}
+      onValueChange={({ value }) => {
+        setSelectedId(value)
+        localStorage.setItem(LAST_DISPLAY_KEY, value)
+      }}
+      fitted
+      css={{
+        '--tabs-indicator-fg': 'colors.fg.error',
+        '--tabs-indicator-bg': {base: 'colors.bg.panel', _dark: 'colors.bg.muted'},
+        '--tabs-trigger-radius': 'radii.md'
+      }}
     >
-      {rows.map((row) => {
-        const expanded = expandedDisplayIds.includes(row.displayId)
-        const overridden = row.target !== undefined
-        const color = row.target?.color ?? {}
-        return (
-          <Accordion.Item
+      <Tabs.List
+        overflowX="auto"
+        overflowY="hidden"
+        flexWrap="nowrap"
+        padding={'1'}
+        backgroundColor={{base: 'bg.muted', _dark: 'bg'}}
+        rounded="md"
+      >
+        {rows.map((row) => (
+          <Tabs.Trigger
             key={row.displayId}
             value={row.displayId}
+            flex="none"
+            gap="2"
+            data-part="display-tab"
+            data-display-id={row.displayId}
+            _selected={{
+              color: 'fg'
+            }}
+          >
+            <Text maxW="190px" truncate as="span" color={'inherit'}>
+              {row.display.name}
+            </Text>
+            {row.display.primary && <Badge colorPalette="blue">Primary</Badge>}
+          </Tabs.Trigger>
+        ))}
+        <Tabs.Indicator border={'1px solid {color.red.500}'} />
+      </Tabs.List>
+      {rows.map((row) => {
+        const color = row.target?.color ?? createNeutralColorSettings()
+        return (
+          <Tabs.Content
+            key={row.displayId}
+            value={row.displayId}
+            pt="4"
             data-part="display-control"
             data-display-id={row.displayId}
           >
-            <Box position="relative" rounded="md" bg="bg.subtle">
-              <Accordion.ItemTrigger
-                data-display-control-trigger
-                ps={editing ? '11' : '3'}
-                pe="3"
-                gap={3}
-                color={overridden ? 'inherit' : 'fg.muted'}
-                textAlign="left"
-              >
+            <Flex align="start" gap="3" mb="4">
+              <Box minW="0" flex="1">
                 <Text
-                  as="span"
-                  flex="1"
                   overflow="hidden"
-                  fontSize="18px"
-                  fontWeight="500"
-                  textOverflow="ellipsis"
-                  whiteSpace="nowrap"
-                >
-                  {row.display.name}
-                </Text>
-                {row.display.primary && <Badge colorPalette={'blue'}>Primary</Badge>}
-                <Text
-                  as="span"
-                  overflow="hidden"
+                  color="fg.muted"
                   fontFamily="mono"
                   fontSize="xs"
-                  textAlign="right"
                   textOverflow="ellipsis"
                   whiteSpace="nowrap"
                 >
                   {`${row.display.adapter.name} • ${row.display.connection}`}
                 </Text>
-                <Accordion.ItemIndicator />
-              </Accordion.ItemTrigger>
-              {editing && (
-                <AbsoluteCenter axis="vertical" insetStart="3">
-                  <Checkbox
-                    checked={overridden}
-                    aria-label={`Override ${row.display.name}`}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        onChange(setDisplayTarget(profile, { displayId: row.displayId, color: {} }))
-                        onExpandedChange([...new Set([...expandedDisplayIds, row.displayId])])
-                      } else {
-                        onChange(removeDisplayTarget(profile, row.displayId))
-                        if (expanded) {
-                          onExpandedChange(expandedDisplayIds.filter((id) => id !== row.displayId))
-                        }
-                      }
-                    }}
-                  />
-                </AbsoluteCenter>
-              )}
-            </Box>
-            <Accordion.ItemContent>
-              <Accordion.ItemBody pt="3" px="4">
-                {editing && overridden ? (
-                  <>
-                    <ColorControls
-                      profileId={profile.id}
-                      displayId={row.displayId}
-                      color={color}
-                      lastColorValues={row.target?.lastColorValues}
-                      product={product}
-                      editable
-                      onChange={(nextColor, lastColorValues) =>
-                        onChange(
-                          setDisplayTarget(profile, {
-                            displayId: row.displayId,
-                            color: nextColor,
-                            lastColorValues
-                          })
-                        )
-                      }
-                    />
-                    <CopyToMenu
-                      profile={profile}
-                      sourceDisplayId={row.displayId}
-                      color={color}
-                      lastColorValues={row.target?.lastColorValues}
-                      rows={copyTargets}
-                      onChange={onChange}
-                    />
-                  </>
-                ) : editing ? (
-                  <Text color="fg.muted">
-                    Select this display to give it settings in this profile.
-                  </Text>
-                ) : (
-                  <ColorSummary color={color} displayId={row.displayId} product={product} />
-                )}
-              </Accordion.ItemBody>
-            </Accordion.ItemContent>
-          </Accordion.Item>
+              </Box>
+            </Flex>
+            <ColorControls
+              displayId={row.displayId}
+              color={color}
+              product={product}
+              editable={editing}
+              onChange={(nextColor) =>
+                onChange(setDisplayTarget(profile, { displayId: row.displayId, color: nextColor }))
+              }
+            />
+            {editing && (
+              <CopyToMenu
+                profile={profile}
+                sourceDisplayId={row.displayId}
+                color={color}
+                rows={rows}
+                onChange={onChange}
+              />
+            )}
+          </Tabs.Content>
         )
       })}
-    </Accordion.Root>
+    </Tabs.Root>
   )
 }
 
@@ -164,14 +137,12 @@ function CopyToMenu({
   profile,
   sourceDisplayId,
   color,
-  lastColorValues,
   rows,
   onChange
 }: {
   profile: ColorProfile
   sourceDisplayId: string
   color: ColorSettings
-  lastColorValues: ColorSettings | undefined
   rows: DisplayRow[]
   onChange(profile: ColorProfile): void
 }): React.JSX.Element | null {
@@ -181,13 +152,7 @@ function CopyToMenu({
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
-        <Button
-          size={'2xs'}
-          bg={'bg'}
-          color={'fg'}
-          variant={{ base: 'outline', _dark: 'solid' }}
-          mt={3}
-        >
+        <Button size="2xs" bg="bg" color="fg" variant={{ base: 'outline', _dark: 'solid' }} mt="3">
           Copy to
           <ChevronDown size={16} />
         </Button>
@@ -203,10 +168,7 @@ function CopyToMenu({
                   onChange(
                     setDisplayTarget(profile, {
                       displayId: row.displayId,
-                      color: { ...color },
-                      ...(lastColorValues === undefined
-                        ? {}
-                        : { lastColorValues: { ...lastColorValues } })
+                      color: { ...color }
                     })
                   )
                 }

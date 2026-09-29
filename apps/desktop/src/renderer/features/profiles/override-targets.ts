@@ -7,8 +7,7 @@ export interface AppliedTarget {
 
 /**
  * Overlays a temporary override session's applied settings onto a saved profile,
- * producing the complete draft the user is actually looking at. Targets the
- * session left untouched fall back to baseline, matching what the displays show.
+ * producing the complete draft the user is actually looking at.
  */
 export function applyOverrideTargets(
   profile: ColorProfile,
@@ -19,7 +18,7 @@ export function applyOverrideTargets(
     ...profile,
     displays: profile.displays.map((target) => ({
       ...target,
-      color: applied.get(target.displayId.toLowerCase()) ?? {}
+      color: applied.get(target.displayId.toLowerCase()) ?? { ...target.color }
     }))
   }
 

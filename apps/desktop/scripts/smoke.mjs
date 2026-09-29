@@ -653,6 +653,15 @@ for (const display of guardedDisplays) {
 }
 const guardedProductDisplayId = guardedDisplay.physicalId ?? guardedDisplay.id
 const guardedDisplayRowSelector = `[data-part="display-control"][data-display-id="${guardedProductDisplayId}"]`
+const guardedDisplayTabSelector = `[data-part="display-tab"][data-display-id="${guardedProductDisplayId}"]`
+const neutralColorSettings = {
+  brightness: 50,
+  contrast: 50,
+  gamma: 1,
+  saturation: 50,
+  hue: 0,
+  colorTemperature: 50
+}
 
 let standardOutput = ''
 let standardError = ''
@@ -783,28 +792,18 @@ try {
   miniDebugger.close()
   debuggerClient = recreatedAppDebugger
 
-  const initiallySelectedProfile = productState.result.value?.value?.configuration.profiles[0]
-  const initiallyConfiguredDisplayIds = initiallySelectedProfile?.displays.map(
-    (target) => target.displayId
-  )
-
   const readOnlyProfile = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      const configuredDisplayIds = new Set(${JSON.stringify(initiallyConfiguredDisplayIds ?? [])})
       const displayRows = [...document.querySelectorAll('[data-part="display-control"]')]
+      const colorInputs = [...document.querySelectorAll('[data-part="profile-detail"] [role="slider"]')]
       return {
         hasEdit: document.querySelector('[aria-label="Edit profile"]') !== null,
         hasNameInput: document.querySelector('[aria-label="Profile name"]') !== null,
-        hasColorInput: document.querySelector('[data-part="profile-detail"] [data-slot="slider"]') !== null,
-        hasColorSummary: document.querySelector('[data-part="color-summary"]') !== null,
+        hasColorInput: colorInputs.length > 0,
+        allColorInputsDisabled: colorInputs.every((input) => input.getAttribute('aria-disabled') === 'true'),
         hasOverrideCheckbox: document.querySelector('[aria-label^="Override "]') !== null,
         displayRows: displayRows.length,
-        configuredDisplaysOpen: displayRows
-          .filter((row) => configuredDisplayIds.has(row.dataset.displayId))
-          .every(
-            (row) =>
-              row.querySelector('[data-display-control-trigger][aria-expanded="true"]') !== null
-          )
+        displayTabs: document.querySelectorAll('[data-part="display-tab"]').length
       }
     })()`,
     returnByValue: true
@@ -812,34 +811,27 @@ try {
   if (
     !readOnlyProfile.result.value?.hasEdit ||
     readOnlyProfile.result.value?.hasNameInput ||
-    readOnlyProfile.result.value?.hasColorInput ||
-    !readOnlyProfile.result.value?.hasColorSummary ||
+    !readOnlyProfile.result.value?.hasColorInput ||
+    !readOnlyProfile.result.value?.allColorInputsDisabled ||
     readOnlyProfile.result.value?.hasOverrideCheckbox ||
-    !readOnlyProfile.result.value?.configuredDisplaysOpen ||
-    (readOnlyProfile.result.value?.displayRows ?? 0) === 0
+    (readOnlyProfile.result.value?.displayRows ?? 0) === 0 ||
+    readOnlyProfile.result.value?.displayTabs !== readOnlyProfile.result.value?.displayRows
   ) {
     throw new Error(
-      `Profile navigation did not begin with a read-only per-display summary: ${JSON.stringify(readOnlyProfile.result.value)}`
+      `Profile navigation did not begin with disabled edit-parity controls: ${JSON.stringify(readOnlyProfile.result.value)}`
     )
   }
 
   if ((readOnlyProfile.result.value?.displayRows ?? 0) > 1) {
     for (let index = 0; index < 2; index += 1) {
       await debuggerClient.send('Runtime.evaluate', {
-        expression: `(async () => {
-          const trigger = document.querySelectorAll('[data-display-control-trigger]')[${index}]
-          if (trigger?.getAttribute('aria-expanded') !== 'true') {
-            trigger?.focus()
-            await new Promise((resolve) => requestAnimationFrame(resolve))
-            trigger?.click()
-          }
-        })()`,
+        expression: `document.querySelectorAll('[data-part="display-tab"]')[${index}]?.click()`,
         awaitPromise: true
       })
       await waitForExpression(
         debuggerClient,
-        `[...document.querySelectorAll('[data-display-control-trigger]')].slice(0, ${index + 1}).every((trigger) => trigger.getAttribute('aria-expanded') === 'true')`,
-        `The display accordion did not keep multiple display sections open (step ${index + 1}).`
+        `document.querySelectorAll('[data-part="display-tab"]')[${index}]?.getAttribute('aria-selected') === 'true'`,
+        `The display tab did not become selected (step ${index + 1}).`
       )
     }
   }
@@ -876,6 +868,17 @@ try {
     'Cancel did not restore the Default profile name.'
   )
 
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-nav"] [aria-label="Collapse sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '56px' &&
+      document.querySelector('[data-part="profile-list-footer"] [aria-label="Expand sidebar"] .lucide-panel-left') !== null &&
+      localStorage.getItem('chromashift.app-panel.sidebar-collapsed') === 'true'`,
+    'The profile sidebar did not collapse to its persisted 56-pixel rail.'
+  )
+
   const settingsNavigation = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const button = document.querySelector('[aria-label="Settings"]')
@@ -887,6 +890,22 @@ try {
   if (settingsNavigation.result.value !== true)
     throw new Error('Settings navigation was unavailable.')
   await waitForText(debuggerClient, 'Launch at start up')
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="settings-nav"]')).width === '56px' &&
+      document.querySelector('[data-part="settings-nav-footer"] [aria-label="Expand sidebar"] .lucide-panel-left') !== null`,
+    'The settings sidebar did not share the persisted collapsed state.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="settings-nav"] [aria-label="Expand sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="settings-nav"]')).width === '245px' &&
+      document.querySelector('[data-part="settings-nav-footer"] [aria-label="Collapse sidebar"] .lucide-panel-left-close') !== null &&
+      localStorage.getItem('chromashift.app-panel.sidebar-collapsed') === 'false'`,
+    'The shared sidebar state did not expand from Settings.'
+  )
 
   const originalThemeResult = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
@@ -954,7 +973,7 @@ try {
   })
   await waitForExpression(
     debuggerClient,
-    `getComputedStyle(document.querySelector('[data-part="settings-nav"] button')).backgroundColor !== 'rgba(0, 0, 0, 0)'`,
+    `getComputedStyle(document.querySelector('[data-part="settings-nav"] [aria-label="General"]')).backgroundColor !== 'rgba(0, 0, 0, 0)'`,
     'The active light-mode settings navigation item did not use a visible product surface.'
   )
   await captureScreenshot(debuggerClient, settingsScreenshotPath)
@@ -1046,7 +1065,10 @@ try {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')?.click()`
   })
-  await waitForText(debuggerClient, 'Shortcuts continue to work while ChromaShift runs in the background')
+  await waitForText(
+    debuggerClient,
+    'Shortcuts continue to work while ChromaShift runs in the background'
+  )
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Super+R"]')
@@ -1211,15 +1233,15 @@ try {
   const footerAlignment = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const footer = document.querySelector('[data-part="profile-list-footer"]')
-      const settings = footer?.querySelector('[aria-label="Settings"]')
-      if (!(footer instanceof HTMLElement) || !(settings instanceof HTMLElement)) return null
-      return Math.abs(footer.getBoundingClientRect().right - settings.getBoundingClientRect().right)
+      const collapse = footer?.querySelector('[aria-label="Collapse sidebar"]')
+      if (!(footer instanceof HTMLElement) || !(collapse instanceof HTMLElement)) return null
+      return Math.abs(footer.getBoundingClientRect().right - collapse.getBoundingClientRect().right)
     })()`,
     returnByValue: true
   })
   if (footerAlignment.result.value === null || footerAlignment.result.value > 1) {
     throw new Error(
-      `The settings button was not flush right in the profile sidebar: ${footerAlignment.result.value}`
+      `The collapse button was not flush right in the profile sidebar footer: ${footerAlignment.result.value}`
     )
   }
 
@@ -1438,18 +1460,23 @@ try {
   const editControls = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const nameInput = document.querySelector('[aria-label="Profile name"]')
-      const displayCheckbox = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
-        ?.querySelector('[aria-label^="Override "] [data-slot="checkbox"]')
-      if (nameInput === null || displayCheckbox === null) {
+      document.querySelector(${JSON.stringify(guardedDisplayTabSelector)})?.click()
+      const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+        ?.querySelector('[data-part="color-control"] [role="slider"]')
+      const overrideCheckbox = document.querySelector('[aria-label^="Override "]')
+      if (nameInput === null || slider === null || overrideCheckbox !== null) {
         return {
           ready: false,
           hasNameInput: nameInput !== null,
-          hasDisplayCheckbox: displayCheckbox !== null,
+          hasSlider: slider !== null,
+          hasOverrideCheckbox: overrideCheckbox !== null,
           body: document.body.innerText
         }
       }
-      displayCheckbox.click()
-      return { ready: true }
+      return {
+        ready: slider.getAttribute('aria-disabled') !== 'true',
+        sliderValue: slider.getAttribute('aria-valuenow')
+      }
     })()`,
     returnByValue: true
   })
@@ -1458,22 +1485,10 @@ try {
       `Edit mode did not expose profile name and display controls: ${JSON.stringify(editControls.result.value)}`
     )
   }
-  // Overriding a display expands its row and mounts that display's own controls.
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]') !== null`,
-    'Overriding a display did not expose its per-display color controls.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' && result.value.preview.kind === 'edit'
-    })()`,
-    'Live edit preview did not activate.'
+    `document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true'`,
+    'Edit mode did not expose enabled color controls without a display override step.'
   )
 
   const sliderFocus = await debuggerClient.send('Runtime.evaluate', {
@@ -1516,41 +1531,41 @@ try {
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')?.click()`
+    expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets.length === 0
+        result.value.preview.targets[0]?.color.brightness === 50 &&
+        document.querySelector('[aria-label="Reset brightness to neutral"]') === null
     })()`,
-    'Removing the final color override did not restore a baseline-only preview.'
+    'The brightness reset action did not restore only the neutral brightness value.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')?.click()`
+    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+      return result.ok && result.value.preview.targets[0]?.color.brightness === 51
     })()`,
-    'Re-enabling a color control did not restore its last defined value.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets.length === 0
-    })()`,
-    'The retained color value could not be disabled again.'
+    'Brightness could not be changed again after an individual reset.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
@@ -1566,9 +1581,10 @@ try {
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays[0]
       return profile?.name === 'Smoke profile' && target !== undefined &&
-        Object.keys(target.color).length === 0 && target.lastColorValues?.brightness === 51
+        target.color.brightness === 51 && Object.keys(target.color).length === 6 &&
+        !('lastColorValues' in target)
     })()`,
-    'Saving did not retain the disabled value and restore automatic activation.'
+    'Saving did not persist the complete color vector and restore automatic activation.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
@@ -1580,19 +1596,31 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'edit' &&
-        result.value.preview.targets.length === 0
+        result.value.preview.targets[0]?.color.brightness === 51
     })()`,
     'The saved profile could not re-enter live Edit mode for Cancel coverage.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')?.click()`
+    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.targets[0]?.color.brightness === 52
     })()`,
     'The applied-change Cancel check could not preview brightness.'
   )
@@ -1608,9 +1636,8 @@ try {
         result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays[0]
-      return target !== undefined && Object.keys(target.color).length === 0 &&
-        target.lastColorValues?.brightness === 51 &&
-        document.querySelector('[data-part="color-summary"]') !== null
+      return target?.color.brightness === 51 &&
+        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
     })()`,
     'Cancel did not roll back an applied live-edit change.'
   )
@@ -1623,15 +1650,15 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'edit' &&
-        result.value.preview.targets.length === 0
+        result.value.preview.targets[0]?.color.brightness === 51
     })()`,
     'The profile could not re-enter Edit mode for scheduled-change Cancel coverage.'
   )
   const cancelScheduledChange = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
-      const brightnessCheckbox = document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')
-      if (brightnessCheckbox === null) return false
-      brightnessCheckbox.click()
+      const reset = document.querySelector('[aria-label="Reset brightness to neutral"]')
+      if (reset === null) return false
+      reset.click()
       await new Promise((resolve) => setTimeout(resolve, 20))
       const cancel = [...document.querySelectorAll('button')]
         .find((candidate) => candidate.textContent?.trim() === 'Cancel')
@@ -1655,10 +1682,8 @@ try {
         result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays[0]
-      return target !== undefined && Object.keys(target.color).length === 0 &&
-        target.lastColorValues?.brightness === 51 &&
-        document.querySelector('[data-part="color-summary"]') !== null &&
-        document.querySelector('[data-part="profile-detail"] [data-slot="slider"]') === null
+      return target?.color.brightness === 51 &&
+        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
     })()`,
     awaitPromise: true,
     returnByValue: true
@@ -1693,7 +1718,11 @@ try {
     await delay(100)
   }
   for (const display of guardedDisplays) {
-    await waitForRestoredDisplayState(restorationGuard, display.id, guardedBaselines.get(display.id))
+    await waitForRestoredDisplayState(
+      restorationGuard,
+      display.id,
+      guardedBaselines.get(display.id)
+    )
   }
   const priorNotificationCount = (
     standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
@@ -1766,7 +1795,7 @@ try {
        return result.ok && !result.value.chromaShift.transitionInProgress &&
          document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === '' &&
          document.querySelector('[aria-label="Resume ChromaShift"]') !== null &&
-         document.querySelector('[data-part="color-control"] input:disabled') !== null
+         document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
     })()`,
     'The Paused mini panel did not show status or disable color controls.'
   )
@@ -1828,7 +1857,7 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'inactive' &&
         document.querySelector('[aria-label="Profile name"]') === null &&
-        document.querySelector('[data-part="color-summary"]') !== null
+        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
     })()`,
     'Closing and reopening the app panel did not leave Edit mode and cancel its preview.'
   )
@@ -1902,6 +1931,20 @@ try {
         document.querySelector('[data-part="profile-list-footer"] [data-scope="switch"][data-part="root"]')?.getAttribute('data-state') === 'unchecked'
     })()`,
     'Activating the selected profile did not establish a manual override and disable Auto switch.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `(() => {
+      const profileThumb = document.querySelector('[aria-label="Profile active"] [data-part="thumb"]')
+      if (!(profileThumb instanceof HTMLElement)) return false
+      const orangeProbe = document.createElement('span')
+      orangeProbe.style.backgroundColor = 'var(--chromashift-colors-orange-solid)'
+      document.body.append(orangeProbe)
+      const expectedColor = getComputedStyle(orangeProbe).backgroundColor
+      orangeProbe.remove()
+      return getComputedStyle(profileThumb).backgroundColor === expectedColor
+    })()`,
+    'The active profile switch thumb was not orange.'
   )
 
   await selectMenuItem(debuggerClient, 'More profile actions', 'Turn off')
@@ -2094,10 +2137,10 @@ try {
       const saved = await window.chromaShift.saveProfile({
         ...profile,
         displays: secondDisplay === undefined
-          ? [{ displayId: display.id, color: { brightness: 55 } }]
+          ? [{ displayId: display.id, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 55 } }]
           : [
-              { displayId: display.id, color: { brightness: 55 } },
-              { displayId: secondDisplay.id, color: { brightness: 35, saturation: 60 } }
+              { displayId: display.id, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 55 } },
+              { displayId: secondDisplay.id, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 35, saturation: 60 } }
             ]
       })
       if (!saved.ok) return false
@@ -2114,7 +2157,7 @@ try {
   await waitForExpression(
     debuggerClient,
     `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
-      ?.querySelector('[data-part="color-summary-item"] dd')?.textContent === '55%'`,
+      ?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '55'`,
     'The saved profile color was not rendered before explicit preview coverage.'
   )
   await waitForExpression(
@@ -2124,14 +2167,10 @@ try {
       if (!result.ok) return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       if (profile === undefined) return false
-      const configuredDisplayIds = new Set(profile.displays.map((target) => target.displayId))
-      const configuredRows = [...document.querySelectorAll('[data-part="display-control"]')]
-        .filter((row) => configuredDisplayIds.has(row.dataset.displayId))
-      return configuredRows.length === configuredDisplayIds.size && configuredRows.every((row) =>
-        row.querySelector('[data-display-control-trigger]')?.getAttribute('aria-expanded') === 'true'
-      )
+      return document.querySelector(${JSON.stringify(guardedDisplayTabSelector)})
+        ?.getAttribute('aria-selected') === 'true'
     })()`,
-    'Viewing a profile did not open every display with saved settings.'
+    'The profile view did not retain the selected physical display tab.'
   )
 
   const disconnectedFixtureId = 'display:smoke-disconnected'
@@ -2145,7 +2184,7 @@ try {
         ...profile,
         displays: [
           ...profile.displays,
-          { displayId: ${JSON.stringify(disconnectedFixtureId)}, color: { brightness: 52 } }
+          { displayId: ${JSON.stringify(disconnectedFixtureId)}, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 52 } }
         ]
       })
       return saved.ok
@@ -2279,16 +2318,16 @@ try {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
+      if (!result.ok) return false
+      const profile = result.value.configuration.profiles.find(
+        (item) => item.name === 'Smoke profile'
+      )
+      return result.value.preview.state === 'active' &&
         result.value.preview.kind === 'edit' &&
         document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
-        [...document.querySelectorAll('[data-part="display-control"]')]
-          .filter((row) => row.querySelector('[aria-label^="Override "] input')?.checked === true)
-          .every((row) =>
-            row.querySelector('[data-display-control-trigger]')?.getAttribute('aria-expanded') === 'true'
-          )
+        result.value.preview.targets.length === profile?.displays.length
     })()`,
-    'The same-profile explicit preview did not promote into Edit with every configured display open.'
+    'The same-profile explicit preview did not promote into Edit with complete targets.'
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
@@ -2456,17 +2495,29 @@ try {
   await miniLoaded
   await waitForText(debuggerClient, 'Manually selected')
 
-  const disabledMiniControl = await debuggerClient.send('Runtime.evaluate', {
+  const changedMiniControl = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      const checkbox = document.querySelector('[data-part="color-control"] [data-slot="checkbox"]')
-      checkbox?.click()
-      return checkbox !== null
+      const slider = document.querySelector('[data-part="color-control"] [role="slider"]')
+      slider?.focus()
+      return slider !== null
     })()`,
     returnByValue: true
   })
-  if (disabledMiniControl.result.value !== true) {
+  if (changedMiniControl.result.value !== true) {
     throw new Error('The mini-panel color control was unavailable.')
   }
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2479,18 +2530,18 @@ try {
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const other = profile?.displays.find((target) => target.displayId !== visible?.id)
       const targets = result.value.preview.targets
-      // The edited display returns to baseline while any other display keeps
-      // the settings this profile gives it.
-      const visibleCleared = targets.every((target) => target.displayId !== visible?.id)
+      const visibleChanged = targets.some((target) =>
+        target.displayId === visible?.id && target.color.brightness === 56
+      )
       const otherRetained = other === undefined ||
         targets.some((target) =>
           target.displayId === other.displayId && target.color.brightness === 35
         )
-      return visibleCleared && otherRetained &&
+      return visibleChanged && otherRetained &&
         document.body.innerText.includes('Update profile') &&
         document.body.innerText.includes('Reset changes')
     })()`,
-    'Disabling the visible mini-panel control did not return only that display to baseline.'
+    'Changing the visible mini-panel control did not preserve the other display target.'
   )
 
   await debuggerClient.send('Emulation.setDeviceMetricsOverride', {
@@ -2537,9 +2588,20 @@ try {
     throw new Error('Could not prepare the Default profile mini-panel round-trip check.')
   }
   await waitForText(debuggerClient, 'Default profile')
-  const defaultBrightnessToggle = '[data-part="color-control"] [data-slot="checkbox"]'
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector(${JSON.stringify(defaultBrightnessToggle)})?.click()`
+    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'ArrowRight',
+    code: 'ArrowRight',
+    windowsVirtualKeyCode: 39
   })
   await waitForExpression(
     debuggerClient,
@@ -2547,23 +2609,37 @@ try {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'override' &&
-        document.querySelector(${JSON.stringify(defaultBrightnessToggle)})?.getAttribute('data-state') === 'checked'
+        result.value.preview.targets[0]?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Reset brightness to neutral"]') !== null
     })()`,
-    'Enabling Default brightness did not start the mini-panel override.'
+    'Changing Default brightness did not start the mini-panel override.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector(${JSON.stringify(defaultBrightnessToggle)})?.click()`
+    expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.targets[0]?.color.brightness === 50 &&
+        document.querySelector('[aria-label="Reset brightness to neutral"]') === null
+    })()`,
+    'The Default brightness reset did not restore the neutral value.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector(${JSON.stringify(defaultBrightnessToggle)})?.getAttribute('data-state') === 'unchecked' &&
         !document.body.innerText.includes('Update profile') &&
         !document.body.innerText.includes('Reset changes')
     })()`,
-    'An unchanged Default brightness on/off round trip remained displayed as an override.'
+    'Reset changes did not discard the neutral Default-profile override session.'
   )
   await captureScreenshot(debuggerClient, miniDefaultScreenshotPath)
 

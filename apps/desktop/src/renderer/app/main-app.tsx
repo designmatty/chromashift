@@ -5,7 +5,6 @@ import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
-import { resetRememberedColorValues } from '@/features/profiles/color-controls'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
@@ -27,16 +26,19 @@ import type {
 const DEFAULT_ID = 'default'
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
+const SIDEBAR_COLLAPSED_KEY = 'chromashift.app-panel.sidebar-collapsed'
 
 export function MainApp({ product }: { product: ProductState }): React.JSX.Element {
   const [view, setView] = useState<AppPanelView>(readLastView)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  )
   const [selectedId, setSelectedId] = useState(() => {
     const remembered = localStorage.getItem(LAST_PROFILE_KEY)
     return product.configuration.profiles.some((profile) => profile.id === remembered)
       ? remembered
       : (product.configuration.profiles[0]?.id ?? null)
   })
-  const [expandedDisplayIds, setExpandedDisplayIds] = useState<string[]>([])
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
@@ -62,6 +64,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }, [view])
 
   useEffect(() => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed))
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
     if (selectedId === null) localStorage.removeItem(LAST_PROFILE_KEY)
     else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
   }, [selectedId])
@@ -69,18 +75,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   useEffect(() => {
     if (!editing && selected !== null) replaceDraft(structuredClone(selected))
   }, [selected, editing])
-
-  const connectedDisplayIds = new Set(product.displays.map((display) => display.id.toLowerCase()))
-  const selectedDisplayIds =
-    selected?.displays
-      .map((target) => target.displayId)
-      .filter((displayId) => connectedDisplayIds.has(displayId.toLowerCase())) ?? []
-  const selectedDisplayIdsSignature = selectedDisplayIds.join('\u0000')
-
-  // Viewing or editing a profile starts with every overridden display open.
-  useEffect(() => {
-    setExpandedDisplayIds(selectedDisplayIds)
-  }, [selected?.id, selectedDisplayIdsSignature, editing])
 
   async function rollbackExplicitPreview(): Promise<void> {
     const current = await run(window.chromaShift.getState(), setError)
@@ -109,7 +103,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       : leavingProfile
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
-    if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
     resetTo(profile)
     setEditing(false)
@@ -124,7 +117,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       : view === 'profiles'
         ? rollbackExplicitPreview()
         : Promise.resolve()
-    if (editing) resetRememberedColorValues(selected)
     resetTo(selected)
     setEditing(false)
     setView(nextView)
@@ -150,7 +142,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     window.chromaShift.onAppPanelClosed(() => {
       if (!editing) return
       const rollback = rollbackPreview()
-      resetRememberedColorValues(selected)
       resetTo(selected)
       setEditing(false)
       void rollback
@@ -173,7 +164,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
     invalidateSync()
-    if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
     resetTo(profile)
     setEditing(true)
@@ -194,7 +184,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       : changingProfile
         ? run(window.chromaShift.cancelPreview(), setError)
         : Promise.resolve()
-    if (editing) resetRememberedColorValues(selected)
     setSelectedId(profile.id)
     resetTo(profile)
     setEditing(false)
@@ -208,7 +197,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
 
   async function cancelEdit(): Promise<void> {
     const rollback = rollbackPreview()
-    resetRememberedColorValues(selected)
     resetTo(selected)
     setEditing(false)
     await rollback
@@ -227,7 +215,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       const deletedProfileWasSelected = selected?.id.toLowerCase() === profile.id.toLowerCase()
       if (deletedProfileWasSelected) {
         invalidateSync()
-        if (editing) resetRememberedColorValues(selected)
         setSelectedId(DEFAULT_ID)
         resetTo(null)
         setEditing(false)
@@ -381,6 +368,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         {inSettings ? (
           <SettingsNav
             page={view}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
             onSelect={(page) => void navigate(page)}
             onBack={() => void navigate('profiles')}
           />
@@ -392,6 +381,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             editingProfileId={editing ? (shownProfile?.id ?? null) : null}
             previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
             automatic={product.chromaShift.intendedMode.kind === 'automatic'}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
             onSelect={(profile) => void selectProfile(profile)}
             onCreate={() =>
               void action(window.chromaShift.createProfile('New profile'), (profile) => {
@@ -441,8 +432,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 <ProfileDetail
                   profile={shownProfile}
                   product={product}
-                  expandedDisplayIds={expandedDisplayIds}
-                  onExpandedDisplaysChange={setExpandedDisplayIds}
                   editing={editing}
                   busy={busy}
                   dirty={dirty}

@@ -362,6 +362,13 @@ export function mapProductError(error: unknown): ProductError {
     }
   }
   if (error instanceof NativeServiceError) {
+    if (error.code === 'GAMMA_WRITE_FAILED' || error.code === 'GAMMA_VERIFY_FAILED') {
+      return {
+        code: 'OPERATION_FAILED',
+        message:
+          'The display driver rejected these color settings. Original settings were restored.'
+      }
+    }
     return {
       code: error.code === 'CAPABILITY_UNSUPPORTED' ? 'UNSUPPORTED' : 'OPERATION_FAILED',
       message: error.message

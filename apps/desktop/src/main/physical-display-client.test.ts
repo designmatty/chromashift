@@ -40,7 +40,7 @@ function report(displayId: string, saturationSupported = true): DisplayCapabilit
     capabilities: {
       brightness: supported,
       contrast: supported,
-      gamma: { ...supported, min: 0.5, max: 2.8 },
+      gamma: { ...supported, min: 0.3, max: 2.8 },
       saturation: saturationSupported
         ? { supported: true, provider: 'nvidia', min: 0, max: 100 }
         : { supported: false, provider: 'nvidia', reason: 'Unavailable over this endpoint.' },
@@ -131,13 +131,13 @@ describe('PhysicalDisplayClient', () => {
     const client = new PhysicalDisplayClient(native)
 
     await client.captureBaseline(physicalId)
-    await client.applyDisplaySettings(physicalId, { saturation: 75 })
+    await client.applyDisplaySettings(physicalId, { hue: 75 })
     await client.restoreDisplay(physicalId)
 
     expect(native.captured).toEqual(['display:dp', 'display:hdmi'])
     expect(native.applied).toEqual([
-      { displayId: 'display:dp', settings: { saturation: 75 } },
-      { displayId: 'display:hdmi', settings: { saturation: 75 } }
+      { displayId: 'display:dp', settings: { hue: 75 } },
+      { displayId: 'display:hdmi', settings: { hue: 75 } }
     ])
     expect(native.restored).toEqual(['display:dp', 'display:hdmi'])
   })
@@ -154,6 +154,38 @@ describe('PhysicalDisplayClient', () => {
       provider: 'nvidia',
       reason: 'Unavailable over this endpoint.'
     })
+  })
+
+  it('filters settings not supported by every endpoint', async () => {
+    const native = new FakeEndpointClient()
+    const client = new PhysicalDisplayClient(native)
+
+    await client.applyDisplaySettings(physicalId, {
+      hue: 20,
+      saturation: 75,
+      colorTemperature: 60
+    })
+
+    expect(native.applied).toEqual([
+      { displayId: 'display:dp', settings: { hue: 20 } },
+      { displayId: 'display:hdmi', settings: { hue: 20 } }
+    ])
+  })
+
+  it('omits the neutral Windows gamma tuple to preserve the captured ramp', async () => {
+    const native = new FakeEndpointClient()
+    const client = new PhysicalDisplayClient(native)
+
+    await client.applyDisplaySettings(physicalId, {
+      brightness: 50,
+      contrast: 50,
+      gamma: 1
+    })
+
+    expect(native.applied).toEqual([
+      { displayId: 'display:dp', settings: {} },
+      { displayId: 'display:hdmi', settings: {} }
+    ])
   })
 
   it('maps endpoint restore-all results back to the physical profile target', async () => {

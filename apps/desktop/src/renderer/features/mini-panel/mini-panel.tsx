@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   activeColorTargets,
   colorSettingNames,
+  createNeutralColorSettings,
   findDisplayTarget,
   setDisplayTarget,
   type ColorProfile,
@@ -35,7 +36,7 @@ import {
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
-import { ColorControls, resetRememberedColorValues } from '@/features/profiles/color-controls'
+import { ColorControls } from '@/features/profiles/color-controls'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { useProductTheme } from '@/hooks/use-product-theme'
@@ -104,7 +105,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   useProductTheme(product.settings.theme)
 
   useEffect(() => {
-    if (active !== undefined) resetRememberedColorValues(active)
     resetTo(appliedProfile ?? null, { dirty: override !== null })
     setSelectedDisplayId((current) =>
       current !== null && product.displays.some((display) => display.id === current)
@@ -122,7 +122,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     if (product.preview.state === 'active') {
       await rollbackPreview()
     }
-    resetRememberedColorValues(active ?? null)
     if (profileId === null) await run(window.chromaShift.enableAutomatic(), setError)
     else await run(window.chromaShift.activateProfile(profileId), setError)
     setPicker(false)
@@ -214,7 +213,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
     const selectedTarget =
       selectedDisplayId === null ? undefined : findDisplayTarget(draft, selectedDisplayId)
-    const selectedColor = selectedTarget?.color ?? {}
+    const selectedColor = selectedTarget?.color ?? createNeutralColorSettings()
 
     return (
       <>
@@ -225,7 +224,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               size={'2xs'}
               borderRadius={'full'}
               onClick={() => {
-                resetRememberedColorValues(active)
                 resetTo(active)
                 void rollbackPreview()
               }}
@@ -275,20 +273,16 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             <Empty title="No displays connected" />
           ) : (
             <ColorControls
-              profileId={draft.id}
               displayId={selectedDisplayId}
               color={selectedColor}
-              lastColorValues={selectedTarget?.lastColorValues}
               product={product}
               editable={product.chromaShift.status === 'active'}
-              onChange={(color, lastColorValues) => {
+              onChange={(color) => {
                 const next = setDisplayTarget(draft, {
                   displayId: selectedDisplayId,
-                  color,
-                  lastColorValues
+                  color
                 })
                 if (sameAppliedColors(next, active)) {
-                  resetRememberedColorValues(active)
                   resetTo(active)
                   if (dirty || override !== null) {
                     void rollbackPreview()

@@ -9,10 +9,6 @@ export function sameDisplayId(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase()
 }
 
-export function hasColorOverrides(color: ColorSettings): boolean {
-  return Object.keys(color).length > 0
-}
-
 export function findDisplayTarget(
   profile: ColorProfile,
   displayId: string
@@ -21,21 +17,25 @@ export function findDisplayTarget(
 }
 
 /**
- * The settings this profile applies to one display. An absent target and an empty
- * target both mean the display keeps its captured baseline.
+ * The settings this profile applies to one display. An absent target means the
+ * display keeps its captured baseline.
  */
-export function resolveDisplayColor(profile: ColorProfile, displayId: string): ColorSettings {
-  return { ...(findDisplayTarget(profile, displayId)?.color ?? {}) }
+export function resolveDisplayColor(
+  profile: ColorProfile,
+  displayId: string
+): ColorSettings | null {
+  const target = findDisplayTarget(profile, displayId)
+  return target === null ? null : { ...target.color }
 }
 
 /**
  * Every display this profile actively overrides, in persisted target order.
- * Targets with no settings are excluded because they issue no native write.
  */
 export function activeColorTargets(profile: ColorProfile): DisplayColorTarget[] {
-  return profile.displays
-    .filter((target) => hasColorOverrides(target.color))
-    .map((target) => ({ displayId: target.displayId, color: { ...target.color } }))
+  return profile.displays.map((target) => ({
+    displayId: target.displayId,
+    color: { ...target.color }
+  }))
 }
 
 export function setDisplayTarget(

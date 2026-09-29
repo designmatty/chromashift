@@ -12,10 +12,11 @@ import {
   Text
 } from '@chakra-ui/react'
 import {
-  AppWindow,
   Copy,
   Eclipse,
   Ellipsis,
+  PanelLeft,
+  PanelLeftClose,
   Palette,
   Plus,
   PowerOff,
@@ -23,7 +24,7 @@ import {
   Edit as EditIcon,
   EyeOff,
   ScanEye,
-  Trash2
+  Trash2,
 } from 'lucide-react'
 import { useId, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
@@ -39,6 +40,8 @@ export interface ProfileListProps {
   editingProfileId: string | null
   previewingProfileId: string | null
   automatic: boolean
+  collapsed: boolean
+  onCollapsedChange(collapsed: boolean): void
   onSelect(profile: ColorProfile): void
   onCreate(): void
   onToggleAutomatic(value: boolean): void
@@ -72,29 +75,49 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
   }
 
   return (
-    <Flex as="aside" data-part="settings-nav" direction="column" gap="3" width={'245px'}>
-      <Flex as="header" align="center" gap="3" color="fg.muted">
-        <Text as="strong" fontWeight="500">
-          Profiles
-        </Text>
-        <Flex ml="auto" align="center" gap="2">
-          <Badge aria-label={`${props.profiles.length} profiles`} rounded={'full'}>
-            {props.profiles.length}
-          </Badge>
-          <Tooltip content="New profile" positioning={{ placement: 'top-end' }} showArrow>
-            <IconButton
-              variant="surface"
-              size="sm"
-              rounded={'full'}
-              boxSize="5"
-              minW="5"
-              aria-label="New profile"
-              onClick={props.onCreate}
-            >
-              <Plus size={16} />
-            </IconButton>
-          </Tooltip>
-        </Flex>
+    <Flex
+      as="aside"
+      data-part="profile-nav"
+      direction="column"
+      gap="3"
+      width={props.collapsed ? '40px' : '245px'}
+      flex="none"
+    >
+      <Flex
+        as="header"
+        align="center"
+        justify={props.collapsed ? 'center' : undefined}
+        gap="2"
+        color="fg.muted"
+        flexDir={props.collapsed ? 'column' : 'row'}
+      >
+        {!props.collapsed && (
+          <>
+            <Badge aria-label={`${props.profiles.length} profiles`} rounded="full">
+              {props.profiles.length}
+            </Badge>
+            <Text as="strong" fontWeight="500" mr={'auto'}>
+              Profiles
+            </Text>
+          </>
+        )}
+        <Tooltip content="New profile" positioning={{ placement:  props.collapsed ? "right" : 'bottom-end' }}>
+          <Button
+            variant="surface"
+            size="sm"
+            rounded={'full'}
+            height="5"
+            px={1}
+            minW="5"
+            mt={0.5}
+            gap={0.5}
+            aria-label="New profile"
+            onClick={props.onCreate}
+          >
+            New
+            <Plus size={16} />
+          </Button>
+        </Tooltip>
       </Flex>
       <ScrollArea.Root size={'xs'}>
         <ScrollArea.Viewport
@@ -128,6 +151,7 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
                     editing={profile.id === props.editingProfileId}
                     previewing={profile.id === props.previewingProfileId}
                     dragging={draggedId === profile.id}
+                    collapsed={props.collapsed}
                     onDragStart={(event) => {
                       setDraggedId(profile.id)
                       event.dataTransfer.effectAllowed = 'move'
@@ -161,25 +185,63 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
         data-part="profile-list-footer"
         mt="auto"
         align="center"
+        direction={props.collapsed ? 'column' : 'row'}
         gap={3}
         position={'sticky'}
         bottom={0}
       >
-        <Switch
-          checked={props.automatic}
-          onCheckedChange={(details) => props.onToggleAutomatic(details.checked)}
+        <Tooltip
+          positioning={{ placement: props.collapsed ? 'right' : undefined }}
+          content={
+            props.automatic
+              ? 'Toggle automatic profile switching off'
+              : 'Toggle automatic profile switching on'
+          }
         >
-          Auto switch
-        </Switch>
-        <Tooltip content="Settings" showArrow positioning={{ placement: 'top-end' }}>
+          <Switch
+            checked={props.automatic}
+            onCheckedChange={(details) => props.onToggleAutomatic(details.checked)}
+            colorPalette={'orange'}
+            thumbProps={{
+              css: {
+                _checked: {
+                  bg: {
+                    base: 'orange.contrast',
+                    _dark: 'fg'
+                  },
+                  shadow: 'none'
+                }
+              }
+            }}
+          >
+            {!props.collapsed ? 'Auto switch' : null}
+          </Switch>
+        </Tooltip>
+        <Tooltip
+          content="Settings"
+          positioning={{ placement: props.collapsed ? 'right' : 'top-end' }}
+        >
           <IconButton
             variant="ghost"
             size="xs"
-            ml="auto"
+            ml={props.collapsed ? undefined : 'auto'}
             aria-label="Settings"
             onClick={props.onOpenSettings}
           >
             <SettingsIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip
+          content={props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          positioning={{ placement: props.collapsed ? 'right' : 'top-end' }}
+        >
+          <IconButton
+            variant="ghost"
+            size="xs"
+            aria-label={props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => props.onCollapsedChange(!props.collapsed)}
+          >
+            {props.collapsed ? <PanelLeft /> : <PanelLeftClose />}
           </IconButton>
         </Tooltip>
       </Flex>
@@ -194,6 +256,7 @@ interface ProfileListItemProps {
   editing: boolean
   previewing: boolean
   dragging: boolean
+  collapsed: boolean
   onDragStart(event: React.DragEvent<HTMLDivElement>): void
   onDragEnd(): void
   onDragOver(event: React.DragEvent<HTMLDivElement>): void
@@ -210,14 +273,14 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
   const actionsTriggerId = useId()
   const isDefault = props.profile.id.toLowerCase() === DEFAULT_ID
 
-  return (
+  const item = (
     <Flex
       data-part="profile-item"
       data-selected={props.selected ? '' : undefined}
       data-disabled={props.profile.enabled ? undefined : ''}
       w="full"
       h="40px"
-      px={1}
+      px={props.collapsed ? 0 : 1}
       py="5px"
       align="center"
       gap="1"
@@ -255,81 +318,98 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         minH="30px"
         p="0"
         flex="1"
-        justifyContent="flex-start"
+        justifyContent={props.collapsed ? 'center' : 'flex-start'}
         gap={3}
         color="inherit"
         textAlign="left"
+        aria-label={props.collapsed ? props.profile.name : undefined}
         onClick={props.onSelect}
       >
         <ProfileIcon profile={props.profile} />
         {props.active && (
           <Box
-            boxSize="6px"
+            boxSize={'34px'}
+            position={'absolute'}
+            left={props.collapsed ? undefined : -0.5}
+            opacity={0.7}
+            zIndex={-1}
             rounded="full"
-            bg={{ base: 'orange.solid', _dark: 'orange.solid' }}
+            bg="orange.solid"
             aria-label="Active profile"
           />
         )}
-        <Text
-          as="strong"
-          flex="1"
-          overflow="hidden"
-          color={props.profile.enabled ? 'inherit' : 'fg.muted'}
-          fontSize="16px"
-          fontWeight="500"
-          textOverflow="ellipsis"
-          whiteSpace="nowrap"
-        >
-          {props.profile.name}
-        </Text>
-      </Button>
-      <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
-        <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
-          <Menu.Trigger asChild>
-            <IconButton
-              data-part="profile-actions-trigger"
-              variant="plain"
-              size="2xs"
-              borderRadius={'full'}
-              aria-label="Profile actions"
+        {!props.collapsed && (
+          <Flex direction="column" gap={0}>
+            <Text
+              as="strong"
+              flex="1"
+              overflow="hidden"
+              color={props.profile.enabled ? 'inherit' : 'fg.muted'}
+              fontSize="16px"
+              fontWeight="500"
+              textOverflow="ellipsis"
+              whiteSpace="nowrap"
             >
-              <Ellipsis />
-            </IconButton>
-          </Menu.Trigger>
-        </Tooltip>
-        <Portal>
-          <Menu.Positioner>
-            <Menu.Content>
-              {!props.editing && (
-                <>
-                  <Menu.Item value="edit" onClick={props.onEdit}>
-                    <EditIcon /> Edit
-                  </Menu.Item>
-                  <Menu.Item value="preview" onClick={props.onPreview}>
-                    {props.previewing ? <EyeOff /> : <ScanEye />}
-                    {props.previewing ? 'Stop preview' : 'Preview'}
-                  </Menu.Item>
-                </>
-              )}
-              <Menu.Item value="clone" onClick={props.onDuplicate}>
-                <Copy /> Clone
-              </Menu.Item>
-              {!isDefault && (
-                <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
-                  <PowerOff /> {props.profile.enabled ? 'Turn off' : 'Turn on'}
+              {props.profile.name}
+            </Text>
+            {props.active && (
+              <Text as="small" lineHeight={1} color="orange.solid">
+                Active
+              </Text>
+            )}
+          </Flex>
+        )}
+      </Button>
+      {!props.collapsed && (
+        <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
+          <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
+            <Menu.Trigger asChild>
+              <IconButton
+                data-part="profile-actions-trigger"
+                variant="plain"
+                size="2xs"
+                borderRadius={'full'}
+                aria-label="Profile actions"
+              >
+                <Ellipsis />
+              </IconButton>
+            </Menu.Trigger>
+          </Tooltip>
+          <Portal>
+            <Menu.Positioner>
+              <Menu.Content>
+                {!props.editing && (
+                  <>
+                    <Menu.Item value="edit" onClick={props.onEdit}>
+                      <EditIcon /> Edit
+                    </Menu.Item>
+                    <Menu.Item value="preview" onClick={props.onPreview}>
+                      {props.previewing ? <EyeOff /> : <ScanEye />}
+                      {props.previewing ? 'Stop preview' : 'Preview'}
+                    </Menu.Item>
+                  </>
+                )}
+                <Menu.Item value="clone" onClick={props.onDuplicate}>
+                  <Copy /> Clone
                 </Menu.Item>
-              )}
-              {!isDefault && (
-                <Menu.Item value="delete" onClick={props.onDelete}>
-                  <Trash2 /> Delete
-                </Menu.Item>
-              )}
-            </Menu.Content>
-          </Menu.Positioner>
-        </Portal>
-      </Menu.Root>
+                {!isDefault && (
+                  <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
+                    <PowerOff /> {props.profile.enabled ? 'Turn off' : 'Turn on'}
+                  </Menu.Item>
+                )}
+                {!isDefault && (
+                  <Menu.Item value="delete" onClick={props.onDelete}>
+                    <Trash2 /> Delete
+                  </Menu.Item>
+                )}
+              </Menu.Content>
+            </Menu.Positioner>
+          </Portal>
+        </Menu.Root>
+      )}
     </Flex>
   )
+  return props.collapsed ? <Tooltip content={props.profile.name} positioning={{ placement: 'right' }}>{item}</Tooltip> : item
 }
 
 function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element {
@@ -364,15 +444,15 @@ function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element 
         <Flex
           position="absolute"
           right="-5px"
-          bottom="0"
+          bottom="5px"
           boxSize="20px"
           align="center"
           justify="center"
           borderWidth="1px"
           borderColor="border"
           rounded="full"
-          bg="bg.panel"
-          color="white"
+          bg="bg.inverted"
+          color="fg.inverted"
           fontSize="11px"
           fontWeight="700"
         >
@@ -419,31 +499,29 @@ function ApplicationIcon({
     <Flex
       position={secondary ? 'absolute' : 'relative'}
       right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '0' : undefined}
+      bottom={secondary ? '5px' : undefined}
       boxSize={secondary ? '20px' : '30px'}
       align="center"
       justify="center"
       overflow="hidden"
-      borderWidth="1px"
-      borderColor="border"
+      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
       rounded="full"
       bg="bg.emphasized"
     >
-      <AppWindow size={16} />
+      <Eclipse size={16} />
     </Flex>
   ) : (
     <Image
       position={secondary ? 'absolute' : 'relative'}
       right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '0' : undefined}
+      bottom={secondary ? '5px' : undefined}
       boxSize={secondary ? '20px' : '30px'}
       overflow="hidden"
-      borderWidth="1px"
-      borderColor="border"
+      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
       rounded="full"
       objectFit="cover"
       src={rule.iconDataUrl}
-      alt=""
+      alt={rule.executableName}
     />
   )
 }

@@ -19,7 +19,7 @@ const validProfile = {
 describe('profile configuration', () => {
   it('validates and serializes the current configuration', () => {
     const configuration = parseProfileConfiguration({
-      schemaVersion: 2,
+      schemaVersion: 3,
       profiles: [validProfile],
       settings: { defaultProfileId: 'default' }
     })
@@ -31,7 +31,7 @@ describe('profile configuration', () => {
 
   it('creates an empty configuration at the current version', () => {
     expect(createEmptyConfiguration()).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       profiles: [
         {
           id: 'default',
@@ -49,11 +49,23 @@ describe('profile configuration', () => {
     expect(() => parseProfileConfigurationJson('{')).toThrow(ConfigurationValidationError)
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 2,
+        schemaVersion: 3,
         profiles: [
           {
             ...validProfile,
-            displays: [{ displayId: 'display:a', color: { saturation: 120 } }]
+            displays: [
+              {
+                displayId: 'display:a',
+                color: {
+                  brightness: 50,
+                  contrast: 50,
+                  gamma: 1,
+                  saturation: 120,
+                  hue: 0,
+                  colorTemperature: 50
+                }
+              }
+            ]
           }
         ],
         settings: { defaultProfileId: null }
@@ -64,7 +76,7 @@ describe('profile configuration', () => {
   it('rejects duplicate profile IDs case-insensitively', () => {
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 2,
+        schemaVersion: 3,
         profiles: [validProfile, { ...validProfile, id: 'DEFAULT' }],
         settings: { defaultProfileId: null }
       })
@@ -74,7 +86,7 @@ describe('profile configuration', () => {
   it('rejects a default profile reference that does not exist', () => {
     expect(() =>
       parseProfileConfiguration({
-        schemaVersion: 2,
+        schemaVersion: 3,
         profiles: [],
         settings: { defaultProfileId: 'missing' }
       })

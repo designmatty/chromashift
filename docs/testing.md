@@ -25,14 +25,14 @@ non-interactive session where restoration cannot be observed and recovered.
 
 The TypeScript and native test suites cover these contracts:
 
-- Profile schema version 2, version 0 and 1 migrations, optional settings,
-  remembered values, CRUD, duplication, case-insensitive display IDs, matching,
-  and activation precedence
+- Profile schema version 3, version 0 through 2 migrations, complete color
+  vectors, neutral defaults, gamma safety bounds, CRUD, duplication,
+  case-insensitive display IDs, matching, and activation precedence
 - Serialized activation, baseline capture before apply, baseline-first profile
   changes, duplicate suppression after success, per-display failures, retry,
   disconnected targets, HDR deferral, and topology reapply
 - Preview start, update, promotion, save, rollback after pending writes, dirty
-  navigation, mini-panel overrides, and removal of the final setting
+  navigation, mini-panel overrides, per-control neutral reset, and target removal
 - Physical-display grouping, safe capability intersection, endpoint fanout,
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
@@ -78,11 +78,12 @@ starts a fresh helper and compares the restored gamma-ramp hash.
 checks the sandboxed preload bridge and drives the visible app and mini panel
 through Chromium debugging plus Windows interaction.
 
-The flow covers profile navigation and editing, per-display accordions,
-capability states, application assignment, live preview and rollback, Default and
-manual activation, temporary mini-panel overrides, Pause and Resume, diagnostics,
-theme states, profile deletion focus, app and mini mutual exclusion, native
-caption behavior, mini-panel non-activation, tray reopening, and renderer release.
+The flow covers profile navigation and editing, per-display tabs, read-only
+parity, sidebar collapse, capability states, application assignment, live preview
+and rollback, Default and manual activation, temporary mini-panel overrides,
+Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini
+mutual exclusion, native caption behavior, mini-panel non-activation, tray
+reopening, and renderer release.
 
 It records and fires configurable shortcuts with no renderer alive, fires the
 fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact display

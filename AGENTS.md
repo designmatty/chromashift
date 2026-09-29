@@ -13,7 +13,7 @@ Read `docs/architecture.md` plus the matching skill before changing these areas:
 - `.agents/skills/chromashift-display-safety/SKILL.md` for DisplayService,
   providers, HDR, topology, foreground events, baselines, or hardware validation
 - `.agents/skills/chromashift-profile-model/SKILL.md` for profiles, persistence,
-  migrations, matching, activation, optional settings, or preview rollback
+  migrations, matching, activation, color settings, or preview rollback
 - `.agents/skills/chromashift-packaging-release/SKILL.md` for packaging, helper
   shutdown, signing, versioning, CI, installers, or release automation
 
@@ -77,9 +77,11 @@ tested on an AMD-driven display. Do not describe AMD behavior as verified.
 
 ## Profiles and activation
 
-Color settings live on per-display profile targets. Every setting is optional.
-An omitted setting uses the captured original state; it does not mean a neutral
-number. Keep `lastColorValues` separate from applied settings.
+Color settings live on per-display profile targets. Every assigned target owns a
+complete color vector: brightness 50, contrast 50, gamma 1, saturation 50, hue 0,
+and color temperature 50 are the neutral values. Missing targets, not missing
+fields, mean captured original settings. Persist unsupported values, but filter
+native requests through the display's capabilities.
 
 Activation precedence is:
 
@@ -145,9 +147,9 @@ settings leaves display control Active and preserves the intended target.
   Repeat desktop visual and performance gates after changing that decision.
 - Keep renderer imports light enough to stay inside the fixed gzip budget.
 
-Use the approved Figma references in `docs/per-display-profile-settings.md` for
-profile or mini-panel design changes. Inspect exact nodes and capture the visible
-native window for comparison. A renderer-only screenshot is insufficient.
+The current implementation is the source of truth for profile and mini-panel
+design changes. Capture the visible native window for comparison; a renderer-only
+screenshot is insufficient to verify caption, DPI, focus, or z-order behavior.
 
 ## Persistence and diagnostics
 

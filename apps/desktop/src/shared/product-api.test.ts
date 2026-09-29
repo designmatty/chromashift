@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createNeutralColorSettings } from '@chromashift/core'
 import {
   controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
@@ -17,7 +18,12 @@ describe('product API contracts', () => {
     expect(
       previewUpdateRequestSchema.safeParse({
         profileId: 'gaming',
-        targets: [{ displayId: 'Display 0', color: { saturation: 75 } }]
+        targets: [
+          {
+            displayId: 'Display 0',
+            color: { ...createNeutralColorSettings(), saturation: 75 }
+          }
+        ]
       }).success
     ).toBe(false)
     expect(openAppPanelRequestSchema.safeParse({ view: 'logs' }).success).toBe(false)
@@ -65,8 +71,11 @@ describe('product API contracts', () => {
       previewUpdateRequestSchema.safeParse({
         profileId: 'gaming',
         targets: [
-          { displayId: 'display:one', color: { saturation: 75 } },
-          { displayId: 'display:two', color: {} }
+          {
+            displayId: 'display:one',
+            color: { ...createNeutralColorSettings(), saturation: 75 }
+          },
+          { displayId: 'display:two', color: createNeutralColorSettings() }
         ]
       }).success
     ).toBe(true)
@@ -87,8 +96,14 @@ describe('product API contracts', () => {
       previewUpdateRequestSchema.safeParse({
         profileId: 'gaming',
         targets: [
-          { displayId: 'display:one', color: { saturation: 75 } },
-          { displayId: 'DISPLAY:ONE', color: { brightness: 30 } }
+          {
+            displayId: 'display:one',
+            color: { ...createNeutralColorSettings(), saturation: 75 }
+          },
+          {
+            displayId: 'DISPLAY:ONE',
+            color: { ...createNeutralColorSettings(), brightness: 30 }
+          }
         ]
       }).success
     ).toBe(false)
@@ -98,7 +113,12 @@ describe('product API contracts', () => {
     expect(
       previewUpdateRequestSchema.safeParse({
         profileId: 'gaming',
-        targets: [{ displayId: 'display:one', color: { digitalVibrance: 47 } }]
+        targets: [
+          {
+            displayId: 'display:one',
+            color: { ...createNeutralColorSettings(), digitalVibrance: 47 }
+          }
+        ]
       }).success
     ).toBe(false)
   })
