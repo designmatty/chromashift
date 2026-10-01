@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Updated Electron, Wrangler, and affected transitive dependencies to resolve
+  the dependency-audit findings that blocked canonical verification.
 - The mini-panel profile picker labels the permanent profile Default rather than Global.
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
