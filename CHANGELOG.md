@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Replaced profile activation and automatic-switching toggles with one sidebar
+  profile selector. Profile navigation now distinguishes Current, Will resume,
+  and Pending selections from Enabled and Disabled availability; display control
+  reports Active, Paused, and Safety blocked separately.
+- The profile selector shows the resolved profile in Automatic mode and assigned
+  keyboard shortcuts alongside its dropdown options. Its popover uses a listbox
+  with fully rounded rows, left-side radio indicators, and a divider after Automatic.
 - Replaced monitor accordions with display tabs and aligned read-only profile
   views with the disabled edit layout.
 - Removed the display-level override checkbox. Every connected display tab now
@@ -29,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The mini-panel profile picker labels the permanent profile Default rather than Global.
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 

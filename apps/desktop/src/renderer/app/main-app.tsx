@@ -3,6 +3,7 @@ import { CircleAlert, Power } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
+import { Tooltip } from '@/components/ui/tooltip'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
@@ -21,7 +22,7 @@ import type {
   ProductError,
   ProductResult,
   ProductState
-} from '../../shared/product-api.js'
+} from '../../shared/product-api'
 
 const DEFAULT_ID = 'default'
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
@@ -107,6 +108,33 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     resetTo(profile)
     setEditing(false)
     await rollback
+  }
+
+  async function selectActivation(profileId: string | null): Promise<void> {
+    if (editing && dirty && !confirm('Discard the changes to this profile?')) return
+    setBusy(true)
+    try {
+      if (editing) {
+        await rollbackPreview()
+        resetTo(selected)
+        setEditing(false)
+      } else if (activeSession !== null) {
+        const cancelled = await run(window.chromaShift.cancelPreview(), setError)
+        if (cancelled === undefined) return
+      }
+      await action(
+        profileId === null
+          ? window.chromaShift.enableAutomatic()
+          : window.chromaShift.activateProfile(profileId)
+      )
+    } catch (cause) {
+      setError({
+        code: 'OPERATION_FAILED',
+        message: cause instanceof Error ? cause.message : String(cause)
+      })
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function navigate(nextView: AppPanelView): Promise<void> {
@@ -254,7 +282,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       : savedProfile
 
   const inSettings = view !== 'profiles'
-  const activeProfileId =
+  const currentProfileId =
     product.chromaShift.intendedTarget?.kind === 'profile'
       ? product.chromaShift.intendedTarget.profileId
       : null
@@ -331,23 +359,39 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
       <TitleBar
         brandAccessory={
-          <Button
-            data-part="chromashift-control"
-            data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
-            size="2xs"
-            variant="subtle"
-            colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
-            rounded="sm"
-            disabled={product.chromaShift.transitionInProgress}
-            loading={product.chromaShift.transitionInProgress}
-            aria-label={chromaShiftActionLabel(product)}
-            onClick={() =>
-              void run(window.chromaShift.controlChromaShift(chromaShiftAction(product)), setError)
-            }
-          >
-            <Power size={14} />
-            {product.chromaShift.status === 'active' ? 'Active' : 'Paused'}
-          </Button>
+          <Tooltip content={chromaShiftActionLabel(product)}>
+            <Button
+              data-part="chromashift-control"
+              data-status={product.chromaShift.status}
+              size="2xs"
+              variant="subtle"
+              colorPalette={
+                product.chromaShift.status === 'active'
+                  ? 'green'
+                  : product.chromaShift.status === 'safetyBlocked'
+                    ? 'red'
+                    : 'gray'
+              }
+              rounded="sm"
+              disabled={product.chromaShift.transitionInProgress}
+              loading={product.chromaShift.transitionInProgress}
+              aria-label={chromaShiftActionLabel(product)}
+              onClick={() =>
+                void run(
+                  window.chromaShift.controlChromaShift(chromaShiftAction(product)),
+                  setError
+                )
+              }
+            >
+              <Power size={14} />
+              Status:{' '}
+              {product.chromaShift.status === 'active'
+                ? 'Active'
+                : product.chromaShift.status === 'safetyBlocked'
+                  ? 'Safety blocked'
+                  : 'Paused'}
+            </Button>
+          </Tooltip>
         }
       />
       <OverrideBanner />
@@ -376,11 +420,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         ) : (
           <ProfileList
             profiles={product.configuration.profiles}
+            shortcutBindings={product.settings.shortcutBindings}
             selectedId={shownProfile?.id ?? null}
-            activeId={activeProfileId}
+            currentId={currentProfileId}
             editingProfileId={editing ? (shownProfile?.id ?? null) : null}
             previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
-            automatic={product.chromaShift.intendedMode.kind === 'automatic'}
+            mode={product.chromaShift.intendedMode}
+            controlStatus={product.chromaShift.status}
+            busy={busy || product.chromaShift.transitionInProgress}
             collapsed={sidebarCollapsed}
             onCollapsedChange={setSidebarCollapsed}
             onSelect={(profile) => void selectProfile(profile)}
@@ -391,12 +438,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 setEditing(true)
               })
             }
-            onToggleAutomatic={(value) => {
-              if (value) void action(window.chromaShift.enableAutomatic())
-              else if (activeProfileId !== null) {
-                void action(window.chromaShift.activateProfile(activeProfileId))
-              }
-            }}
+            onSelectionChange={(profileId) => void selectActivation(profileId)}
             onOpenSettings={() => void navigate('settings')}
             onEdit={(profile) => void beginEdit(profile)}
             onPreview={(profile) => void previewProfile(profile)}
@@ -438,7 +480,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   previewing={
                     activeSession?.kind === 'preview' && activeSession.profileId === shownProfile.id
                   }
-                  active={activeProfileId?.toLowerCase() === shownProfile.id.toLowerCase()}
                   onEdit={() => void beginEdit()}
                   onChange={(profile) => updateDraft(profile)}
                   onCancel={() => void cancelEdit()}
@@ -467,13 +508,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                     })
                   }
                   onDelete={() => requestProfileDeletion(shownProfile)}
-                  onActiveChange={(active) =>
-                    void action(
-                      active
-                        ? window.chromaShift.activateProfile(shownProfile.id)
-                        : window.chromaShift.enableAutomatic()
-                    )
-                  }
                   onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
                   onError={setError}
                 />

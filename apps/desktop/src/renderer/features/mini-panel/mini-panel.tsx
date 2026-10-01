@@ -49,7 +49,7 @@ const AUTOMATIC_ID = '__automatic__'
 interface MiniProfilePickerItem {
   label: string
   value: string
-  global?: boolean
+  isDefault?: boolean
 }
 
 export function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
@@ -92,13 +92,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
   const showColorTemperature = selectedDisplay?.adapter.vendor === 'amd'
   const pickerItems = [
-    { label: 'Auto switch', value: AUTOMATIC_ID },
+    { label: 'Automatic Switching', value: AUTOMATIC_ID },
     ...product.configuration.profiles
       .filter((profile) => profile.enabled)
       .map((profile) => ({
         label: profile.name,
         value: profile.id,
-        global: profile.id === DEFAULT_ID
+        isDefault: profile.id === DEFAULT_ID
       }))
   ] satisfies MiniProfilePickerItem[]
 
@@ -313,7 +313,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             <Stack gap="0" flex={1}>
               <Text color="fg.muted" fontSize="md">
                 {product.chromaShift.intendedMode.kind === 'automatic'
-                  ? 'Auto switch'
+                  ? 'Automatic'
                   : 'Manually selected'}
               </Text>
               <Text
@@ -443,9 +443,9 @@ function MiniProfilePickerOption({
       >
         {item.label}
       </RadioGroup.ItemText>
-      {item.global === true && (
+      {item.isDefault === true && (
         <Badge size={'sm'} colorPalette={'blue'}>
-          Global
+          Default
         </Badge>
       )}
     </RadioGroup.Item>
@@ -477,11 +477,17 @@ function MiniPanelTitleBar({
       <Tooltip content={chromaShiftActionLabel(product)}>
         <IconButton
           data-part="chromashift-control"
-          data-status={product.chromaShift.status === 'active' ? 'active' : 'paused'}
+          data-status={product.chromaShift.status}
           variant="ghost"
           size="2xs"
           ml="1"
-          colorPalette={product.chromaShift.status === 'active' ? 'green' : 'gray'}
+          colorPalette={
+            product.chromaShift.status === 'active'
+              ? 'green'
+              : product.chromaShift.status === 'safetyBlocked'
+                ? 'red'
+                : 'gray'
+          }
           css={{ WebkitAppRegion: 'no-drag' }}
           disabled={product.chromaShift.transitionInProgress}
           loading={product.chromaShift.transitionInProgress}

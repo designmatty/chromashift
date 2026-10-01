@@ -59,6 +59,15 @@ targets remain persisted and resume when the same physical display returns.
 
 ## App-panel behavior
 
+- The sidebar profile selector chooses Automatic mode or an enabled profile
+  manually. Automatic shows its resolved profile name; available shortcuts are
+  shown alongside each option. Navigating to a profile does not activate it.
+- Profile availability is Enabled or Disabled. Navigation marks the intended
+  selection as Current while display control is Active, Will resume while
+  Paused, or Pending while Safety blocked. Explicit selection resumes a user
+  pause but never bypasses a safety block.
+- The Status action pauses, resumes, or retries display control independently
+  of profile navigation and availability.
 - Every connected display appears as a tab in edit and read-only modes. The
   selected physical display persists across profiles and restarts.
 - Selection falls back to the first display with saved settings, then the primary display,
@@ -80,7 +89,7 @@ targets remain persisted and resume when the same physical display returns.
 - Brightness, contrast, gamma, saturation, and hue each use a compact identifying
   icon in the app and mini panel.
 - Profile and settings sidebars share one persisted collapsed state. The collapsed
-  rail is 56 pixels wide and uses icon buttons with tooltips; it does not expand
+  rail is 40 pixels wide and uses icon buttons with tooltips; it does not expand
   on hover or change the native window minimum width.
 - `Copy to` copies the selected display's complete vector to chosen destinations.
 

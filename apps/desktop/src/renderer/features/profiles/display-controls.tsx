@@ -52,7 +52,7 @@ export function DisplayControls({
       fitted
       css={{
         '--tabs-indicator-fg': 'colors.fg.error',
-        '--tabs-indicator-bg': {base: 'colors.bg.panel', _dark: 'colors.bg.muted'},
+        '--tabs-indicator-bg': { base: 'colors.bg.panel', _dark: 'colors.bg.muted' },
         '--tabs-trigger-radius': 'radii.md'
       }}
     >
@@ -61,7 +61,7 @@ export function DisplayControls({
         overflowY="hidden"
         flexWrap="nowrap"
         padding={'1'}
-        backgroundColor={{base: 'bg.muted', _dark: 'bg'}}
+        backgroundColor={{ base: 'bg.muted', _dark: 'bg' }}
         rounded="md"
       >
         {rows.map((row) => (

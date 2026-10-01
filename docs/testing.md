@@ -78,18 +78,21 @@ starts a fresh helper and compares the restored gamma-ramp hash.
 checks the sandboxed preload bridge and drives the visible app and mini panel
 through Chromium debugging plus Windows interaction.
 
-The flow covers profile navigation and editing, per-display tabs, read-only
-parity, sidebar collapse, capability states, application assignment, live preview
-and rollback, Default and manual activation, temporary mini-panel overrides,
+The flow covers independent profile navigation and Automatic/manual selection,
+Enabled/Disabled availability, paused selection and resume, profile editing,
+per-display tabs, read-only parity, sidebar collapse, capability states,
+application assignment, live preview and rollback, Default and manual activation,
+temporary mini-panel overrides,
 Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini
 mutual exclusion, native caption behavior, mini-panel non-activation, tray
 reopening, and renderer release.
 
 It records and fires configurable shortcuts with no renderer alive, fires the
 fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact display
-restoration before exit. Screenshots are written under `apps/desktop/out/smoke`
-for visual inspection; they do not replace inspection of the positioned native
-window when pixel or window behavior matters. Electron creates a development
+restoration before exit. Renderer and visible native-window screenshots are
+written under `apps/desktop/out/smoke` for visual inspection. Native captures
+include the app's Windows caption controls and the actual paused mini-panel
+window without activating it. Electron creates a development
 Start menu shortcut when the smoke checks native-notification support. The smoke
 removes that shortcut during cleanup only when it did not exist before the run.
 
