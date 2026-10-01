@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.5] - 2026-10-01
+
 ### Added
 
 - Per-control neutral reset actions and icons for the established color controls
@@ -38,8 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Updated Electron, Wrangler, and affected transitive dependencies to resolve
   the dependency-audit findings that blocked canonical verification.
+- Installed Electron's binary before parallel desktop tests to prevent
+  overlapping extraction failures after a clean dependency install.
 - The mini-panel profile picker labels the permanent profile Default rather than Global.
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.4...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.5...HEAD
+[0.1.0-preview.5]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.4...v0.1.0-preview.5
