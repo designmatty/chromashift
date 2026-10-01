@@ -17,6 +17,11 @@
 GitHub CI. It does not claim native hardware, visible desktop, installation, or
 restoration behavior. Run the relevant real command when changing those paths.
 
+The desktop test command installs Electron's binary once before starting Vitest
+workers. This prevents concurrent first-import extraction after a clean `npm ci`.
+For targeted desktop tests invoked directly through Vitest, first run
+`npm exec --workspace @chromashift/desktop -- install-electron --no`.
+
 Display-mutating tests keep a separate restoration guard alive, use mild values,
 and compare the exact pre-run and post-run state. Do not run them in a remote or
 non-interactive session where restoration cannot be observed and recovered.
