@@ -138,11 +138,42 @@ export class PhysicalDisplayClient {
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
+    const reports = await Promise.all(
+      endpoints.map((display) => this.endpoint.getDisplayCapabilityReport(display.id))
+    )
+    const commonCapabilities = Object.fromEntries(
+      capabilityNames.map((name) => [
+        name,
+        aggregateCapability(reports.map((report) => report.capabilities[name]))
+      ])
+    ) as DisplayCapabilityReport['capabilities']
+    const projected = Object.fromEntries(
+      capabilityNames.flatMap((name) =>
+        commonCapabilities[name].supported && settings[name] !== undefined
+          ? [[name, settings[name]]]
+          : []
+      )
+    ) as DisplaySettings
+
+    const windowsGammaProviders = (['brightness', 'contrast', 'gamma'] as const).every(
+      (name) => commonCapabilities[name].provider === 'windows'
+    )
+    if (
+      windowsGammaProviders &&
+      projected.brightness === 50 &&
+      projected.contrast === 50 &&
+      projected.gamma === 1
+    ) {
+      delete projected.brightness
+      delete projected.contrast
+      delete projected.gamma
+    }
+
     const results = [] as DisplayApplyResult[]
     for (const display of endpoints) {
-      results.push(await this.endpoint.applyDisplaySettings(display.id, settings))
+      results.push(await this.endpoint.applyDisplaySettings(display.id, projected))
     }
-    return { ...results[0]!, displayId, settings }
+    return { ...results[0]!, displayId, settings: projected }
   }
 
   public async restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {

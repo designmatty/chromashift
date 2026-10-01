@@ -1,6 +1,7 @@
 import {
   JsonProfileRepository,
   automaticActivationMode,
+  createNeutralColorSettings,
   manualActivationMode,
   type ActivationTarget,
   type ColorProfile,
@@ -26,7 +27,12 @@ const profiles: ColorProfile[] = [
     name: 'Gaming',
     enabled: true,
     applications: [],
-    displays: [{ displayId: 'display:one', color: { saturation: 75 } }]
+    displays: [
+      {
+        displayId: 'display:one',
+        color: { ...createNeutralColorSettings(), saturation: 75 }
+      }
+    ]
   },
   {
     id: 'disabled',

@@ -85,6 +85,8 @@ internal sealed class BaselineManager(
     {
         lock (_sync)
         {
+            GammaRampTransform.ValidateSettings(
+                new GammaSettings(settings.Brightness, settings.Contrast, settings.Gamma));
             var display = FindDisplay(displayId);
             if (display.Hdr && HasAnySetting(settings))
             {
@@ -130,7 +132,25 @@ internal sealed class BaselineManager(
                     var requested = GammaRampTransform.Apply(
                         baseline.GammaRamp,
                         new GammaSettings(settings.Brightness, settings.Contrast, settings.Gamma));
-                    WriteAndVerify(display, requested);
+                    try
+                    {
+                        WriteAndVerify(display, requested);
+                    }
+                    catch (DisplayOperationException exception) when (
+                        exception.Code is "GAMMA_WRITE_FAILED" or "GAMMA_VERIFY_FAILED")
+                    {
+                        NativeLog.Write(new JsonObject
+                        {
+                            ["level"] = "error",
+                            ["eventName"] = "GammaSettingsRejected",
+                            ["displayId"] = display.Id,
+                            ["code"] = exception.Code,
+                            ["brightness"] = settings.Brightness,
+                            ["contrast"] = settings.Contrast,
+                            ["gamma"] = settings.Gamma
+                        });
+                        throw;
+                    }
                     gammaHash = requested.GetHash();
                 }
 

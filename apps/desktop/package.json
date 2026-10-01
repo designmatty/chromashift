@@ -20,7 +20,7 @@
     "measure:memory": "node scripts/measure-memory.mjs",
     "measure:performance": "node scripts/measure-memory.mjs --packaged --check",
     "smoke:package": "node scripts/package-smoke.mjs",
-    "test": "vitest run src/main src/shared src/renderer",
+    "test": "install-electron --no && vitest run src/main src/shared src/renderer",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
@@ -43,7 +43,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "43.4.0",
+    "electron": "43.7.7",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",

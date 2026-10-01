@@ -1,4 +1,4 @@
-import type { ColorProfile } from '@chromashift/core'
+import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { Display } from '@chromashift/native-client/protocol'
 import { describe, expect, it } from 'vitest'
 import { buildDisplayRows } from './display-rows.js'
@@ -33,8 +33,14 @@ describe('buildDisplayRows', () => {
       enabled: true,
       applications: [],
       displays: [
-        { displayId: connectedDisplay.id, color: { brightness: 55 } },
-        { displayId: 'display:disconnected', color: { contrast: 60 } }
+        {
+          displayId: connectedDisplay.id,
+          color: { ...createNeutralColorSettings(), brightness: 55 }
+        },
+        {
+          displayId: 'display:disconnected',
+          color: { ...createNeutralColorSettings(), contrast: 60 }
+        }
       ]
     }
 

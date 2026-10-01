@@ -12,10 +12,12 @@ description: Use for DisplayService, Windows GPU/display providers, foreground e
 3. Capture one immutable pre-ChromaShift baseline, restore it before applying a
    complete desired state, validate and clamp every value, read writes back, and
    roll back the full display after partial failure.
-4. Treat omitted settings as baseline, never as fixed neutral values. Do not
-   compound transforms across profiles.
+4. Profile targets persist a complete neutral-relative color vector. At the
+   native boundary, omitted settings mean baseline and unsupported profile fields
+   must be filtered. Do not compound transforms across profiles.
 5. Reacquire native handles after topology changes. Gate unsafe Windows gamma
-   controls while HDR is active.
+   controls while HDR is active. Enforce the documented brightness-dependent
+   gamma envelope before every write.
 6. Do not claim AMD or topology behavior is hardware-verified without the
    corresponding real test. Use mild values and retain a restoration guard.
 7. For locked `DisplayService`, exit the owning ChromaShift instance through its

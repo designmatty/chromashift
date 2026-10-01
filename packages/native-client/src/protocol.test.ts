@@ -129,6 +129,18 @@ describe('native protocol', () => {
         settings: { gamma: 2.81 }
       }).success
     ).toBe(false)
+    expect(
+      displayApplyRequestSchema.safeParse({
+        displayId: 'display:abc',
+        settings: { brightness: 100, gamma: 2.31 }
+      }).success
+    ).toBe(false)
+    expect(
+      displayApplyRequestSchema.parse({
+        displayId: 'display:abc',
+        settings: { brightness: 100, gamma: 2.3 }
+      }).settings.gamma
+    ).toBe(2.3)
   })
 
   it('validates Windows and AMD display state results', () => {

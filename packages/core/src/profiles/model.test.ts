@@ -1,107 +1,84 @@
 import { describe, expect, it } from 'vitest'
-import { colorProfileSchema, colorSettingsSchema } from './model.js'
+import {
+  clampGammaForBrightness,
+  colorProfileSchema,
+  colorSettingsSchema,
+  createNeutralColorSettings,
+  gammaRangeForBrightness
+} from './model.js'
+
+function color(overrides: Partial<ReturnType<typeof createNeutralColorSettings>> = {}) {
+  return { ...createNeutralColorSettings(), ...overrides }
+}
 
 function validProfile() {
   return {
     id: 'gaming',
     name: 'Gaming',
     enabled: true,
-    applications: [
-      {
-        executableName: 'Game.exe',
-        executablePath: 'C:\\Games\\Game.exe'
-      }
-    ],
-    displays: [{ displayId: 'display:primary', color: { saturation: 75, gamma: 2.8 } }]
+    applications: [{ executableName: 'Game.exe', executablePath: 'C:\\Games\\Game.exe' }],
+    displays: [{ displayId: 'display:primary', color: color({ saturation: 75, gamma: 2.8 }) }]
   }
 }
 
 describe('profile model', () => {
-  it('accepts vendor-neutral normalized values', () => {
+  it('requires complete vendor-neutral color settings', () => {
     expect(colorProfileSchema.parse(validProfile())).toEqual(validProfile())
-  })
-
-  it('stores different color settings for two displays in one profile', () => {
-    const profile = colorProfileSchema.parse({
-      ...validProfile(),
-      displays: [
-        { displayId: 'display:primary', color: { saturation: 75 } },
-        { displayId: 'display:secondary', color: { brightness: 40, gamma: 1.2 } }
-      ]
-    })
-
-    expect(profile.displays[0]?.color).toEqual({ saturation: 75 })
-    expect(profile.displays[1]?.color).toEqual({ brightness: 40, gamma: 1.2 })
-  })
-
-  it('accepts a display target that overrides nothing', () => {
-    const profile = colorProfileSchema.parse({
-      ...validProfile(),
-      displays: [{ displayId: 'display:primary', color: {} }]
-    })
-
-    expect(profile.displays[0]?.color).toEqual({})
-  })
-
-  it('retains inactive values separately from applied overrides per display', () => {
-    expect(colorProfileSchema.parse({
-      ...validProfile(),
-      displays: [
-        {
-          displayId: 'display:primary',
-          color: {},
-          lastColorValues: { brightness: 75, gamma: 1.3 }
-        }
-      ]
-    })).toMatchObject({
-      displays: [
-        {
-          displayId: 'display:primary',
-          color: {},
-          lastColorValues: { brightness: 75, gamma: 1.3 }
-        }
-      ]
-    })
-  })
-
-  it('rejects a shared profile-level color object', () => {
+    expect(() => colorSettingsSchema.parse({ saturation: 75 })).toThrow()
     expect(() =>
-      colorProfileSchema.parse({ ...validProfile(), color: { saturation: 75 } })
+      colorProfileSchema.parse({
+        ...validProfile(),
+        displays: [{ displayId: 'display:primary', color: {}, lastColorValues: { gamma: 1.2 } }]
+      })
     ).toThrow()
   })
 
-  it('preserves omitted settings as omitted overrides', () => {
-    const settings = colorSettingsSchema.parse({ saturation: 75 })
-
-    expect(settings).toEqual({ saturation: 75 })
-    expect(Object.hasOwn(settings, 'gamma')).toBe(false)
+  it('stores independent complete values for each display', () => {
+    const profile = colorProfileSchema.parse({
+      ...validProfile(),
+      displays: [
+        { displayId: 'display:primary', color: color({ saturation: 75 }) },
+        { displayId: 'display:secondary', color: color({ brightness: 40, gamma: 1.2 }) }
+      ]
+    })
+    expect(profile.displays[0]?.color.saturation).toBe(75)
+    expect(profile.displays[1]?.color).toEqual(color({ brightness: 40, gamma: 1.2 }))
   })
 
   it.each([
-    ['brightness', -1],
-    ['contrast', 101],
-    ['gamma', 0.49],
-    ['gamma', 2.81],
-    ['saturation', Number.NaN]
-  ])('rejects an unsafe %s value of %s', (setting, value) => {
-    expect(() => colorSettingsSchema.parse({ [setting]: value })).toThrow()
+    [0, 0.5, 2.8],
+    [7, 0.4, 2.8],
+    [30, 0.3, 2.8],
+    [87, 0.3, 2.7],
+    [90, 0.3, 2.6],
+    [92, 0.3, 2.5],
+    [97, 0.3, 2.4],
+    [100, 0.3, 2.3]
+  ])('uses the gamma range for %s%% brightness', (brightness, min, max) => {
+    expect(gammaRangeForBrightness(brightness)).toEqual({ min, max })
+    expect(clampGammaForBrightness(0.3, brightness)).toBe(min)
+    expect(clampGammaForBrightness(2.8, brightness)).toBe(max)
   })
 
-  it('rejects vendor-specific persisted controls', () => {
+  it('rejects gamma outside the brightness-dependent range', () => {
+    expect(() => colorSettingsSchema.parse(color({ brightness: 100, gamma: 2.31 }))).toThrow(
+      /between 0.3 and 2.3/
+    )
+    expect(colorSettingsSchema.parse(color({ brightness: 100, gamma: 2.3 }))).toEqual(
+      color({ brightness: 100, gamma: 2.3 })
+    )
+  })
+
+  it('rejects vendor-specific fields and duplicate display targets', () => {
+    expect(() => colorSettingsSchema.parse({ ...color(), digitalVibrance: 47 })).toThrow()
     expect(() =>
-      colorSettingsSchema.parse({ saturation: 75, digitalVibrance: 47 })
-    ).toThrow()
-  })
-
-  it('rejects duplicate display targets case-insensitively', () => {
-    const profile = {
-      ...validProfile(),
-      displays: [
-        { displayId: 'display:primary', color: { saturation: 75 } },
-        { displayId: 'DISPLAY:PRIMARY', color: { brightness: 10 } }
-      ]
-    }
-
-    expect(() => colorProfileSchema.parse(profile)).toThrow(/assigned more than once/)
+      colorProfileSchema.parse({
+        ...validProfile(),
+        displays: [
+          { displayId: 'display:primary', color: color() },
+          { displayId: 'DISPLAY:PRIMARY', color: color() }
+        ]
+      })
+    ).toThrow(/assigned more than once/)
   })
 })

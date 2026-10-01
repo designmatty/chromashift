@@ -1,59 +1,119 @@
-import type { ColorProfile, ColorSettings } from '@chromashift/core'
+import { Box, Flex, IconButton, NumberInput, Stack, Text } from '@chakra-ui/react'
+import { Palette } from 'lucide-react'
+import {
+  clampGammaForBrightness,
+  createNeutralColorSettings,
+  gammaRangeForBrightness,
+  type ColorSettings,
+  type CompleteColorSettings
+} from '@chromashift/core'
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client/protocol'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { ProductState } from '../../../shared/product-api.js'
 
-type ColorKey = keyof ColorSettings
+type VisibleColorKey = Exclude<keyof CompleteColorSettings, 'colorTemperature'>
+
+function ControlIcon({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  )
+}
 
 const controls: Array<{
-  key: ColorKey
+  key: VisibleColorKey
   label: string
   min: number
   max: number
   step: number
-  initial: number
+  neutral: number
+  icon: React.ReactNode
 }> = [
-  { key: 'brightness', label: 'Brightness', min: 0, max: 100, step: 1, initial: 50 },
-  { key: 'contrast', label: 'Contrast', min: 0, max: 100, step: 1, initial: 50 },
-  { key: 'gamma', label: 'Gamma', min: 0.5, max: 2.8, step: 0.05, initial: 1 },
-  { key: 'saturation', label: 'Saturation', min: 0, max: 100, step: 1, initial: 50 },
-  { key: 'hue', label: 'Hue', min: 0, max: 100, step: 1, initial: 0 },
-  { key: 'colorTemperature', label: 'Color temperature', min: 0, max: 100, step: 1, initial: 50 }
-]
-
-/**
- * Slider positions for controls the user has switched off, so re-enabling a
- * control restores the number it last showed. Keyed per profile and display
- * because each display owns its own settings.
- */
-export const rememberedColorValues = new Map<string, ColorSettings>()
-
-function rememberKey(profileId: string, displayId: string): string {
-  return `${profileId.toLowerCase()}::${displayId.toLowerCase()}`
-}
-
-export function resetRememberedColorValues(profile: ColorProfile | null): void {
-  if (profile === null) return
-  for (const target of profile.displays) {
-    rememberedColorValues.set(rememberKey(profile.id, target.displayId), {
-      ...target.lastColorValues,
-      ...target.color
-    })
+  {
+    key: 'brightness',
+    label: 'Brightness',
+    min: 0,
+    max: 100,
+    step: 1,
+    neutral: 50,
+    icon: (
+      <ControlIcon>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
+      </ControlIcon>
+    )
+  },
+  {
+    key: 'contrast',
+    label: 'Contrast',
+    min: 0,
+    max: 100,
+    step: 1,
+    neutral: 50,
+    icon: (
+      <ControlIcon>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 18a6 6 0 0 0 0-12v12z" />
+      </ControlIcon>
+    )
+  },
+  {
+    key: 'gamma',
+    label: 'Gamma',
+    min: 0.3,
+    max: 2.8,
+    step: 0.05,
+    neutral: 1,
+    icon: (
+      <ControlIcon>
+        <path d="m12 14 4-4M3.34 19a10 10 0 1 1 17.32 0" />
+      </ControlIcon>
+    )
+  },
+  {
+    key: 'saturation',
+    label: 'Saturation',
+    min: 0,
+    max: 100,
+    step: 1,
+    neutral: 50,
+    icon: (
+      <ControlIcon>
+        <path d="M12 2S6 9 6 14a6 6 0 0 0 12 0c0-5-6-12-6-12Z" />
+      </ControlIcon>
+    )
+  },
+  {
+    key: 'hue',
+    label: 'Hue',
+    min: 0,
+    max: 100,
+    step: 1,
+    neutral: 0,
+    icon: <Palette size={18} />
   }
-}
+]
 
 export interface ControlSupport {
   available: boolean
-  /** Short inline status shown beside the control when it is unavailable. */
   status: string
   reason: string
-  provider: string
 }
 
 export function controlSupport(
-  key: ColorKey,
+  key: VisibleColorKey,
   display: Display | undefined,
   report: DisplayCapabilityReport | undefined
 ): ControlSupport {
@@ -61,8 +121,7 @@ export function controlSupport(
     return {
       available: false,
       status: 'disconnected',
-      reason: 'This display is not connected.',
-      provider: ''
+      reason: 'This display is not connected.'
     }
   }
 
@@ -71,8 +130,7 @@ export function controlSupport(
     return {
       available: false,
       status: 'unavailable',
-      reason: capability?.reason ?? 'Unsupported by the active provider.',
-      provider: ''
+      reason: capability?.reason ?? 'Unsupported by the active provider.'
     }
   }
 
@@ -84,97 +142,94 @@ export function controlSupport(
     return {
       available: false,
       status: 'unavailable',
-      reason: 'Windows gamma controls are unsafe while HDR is active.',
-      provider: capability.provider
+      reason: 'Windows gamma controls are unsafe while HDR is active.'
     }
   }
 
-  return { available: true, status: '', reason: '', provider: capability.provider }
+  return { available: true, status: '', reason: '' }
 }
 
 export function ColorControls({
-  profileId,
   displayId,
   color,
-  lastColorValues,
   product,
   editable,
   onChange,
   compact = false
 }: {
-  profileId: string
   displayId: string
   color: ColorSettings
-  lastColorValues: ColorSettings | undefined
   product: ProductState
   editable: boolean
-  onChange(color: ColorSettings, lastColorValues: ColorSettings): void
+  onChange(color: CompleteColorSettings): void
   compact?: boolean
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
-  const visibleControls = controls.slice(0, display?.adapter.vendor === 'amd' ? 6 : 5)
-  const key = rememberKey(profileId, displayId)
-  const remembered = { ...lastColorValues, ...rememberedColorValues.get(key) }
-  for (const control of visibleControls) {
-    const value = color[control.key]
-    if (value !== undefined) remembered[control.key] = value
+  const completeColor: CompleteColorSettings = { ...createNeutralColorSettings(), ...color }
+
+  function change(key: VisibleColorKey, nextValue: number): void {
+    const next = { ...completeColor, [key]: nextValue }
+    if (key === 'brightness') {
+      next.gamma = clampGammaForBrightness(next.gamma, next.brightness)
+    }
+    onChange(next)
   }
-  rememberedColorValues.set(key, remembered)
 
   return (
     <Stack gap={compact ? 4 : 3}>
-      {visibleControls.map((control) => {
+      {controls.map((control) => {
         const support = controlSupport(control.key, display, report)
-        const value = color[control.key]
-        const enabled = value !== undefined
-        const rememberedValue = remembered[control.key] ?? control.initial
+        const value = completeColor[control.key]
+        const overridden = value !== control.neutral
+        const gammaRange = gammaRangeForBrightness(completeColor.brightness)
+        const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
+        const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
         const row = (
           <Box
             data-part="color-control"
-            display={'flex'}
+            data-control={control.key}
+            display="flex"
             alignItems="center"
-            gap={compact ? 2 : 2}
+            gap={2}
             flexDirection={compact ? 'column' : 'row'}
             tabIndex={support.available ? undefined : 0}
           >
-            <Flex h={compact ? '21px' : undefined} align="center" gap={3} width={'100%'}>
-              <Checkbox
-                checked={enabled}
-                disabled={!editable || !support.available}
-                onCheckedChange={(checked) => {
-                  const next = { ...color }
-                  if (checked) {
-                    next[control.key] = remembered[control.key] ?? control.initial
-                  } else {
-                    if (value !== undefined) remembered[control.key] = value
-                    delete next[control.key]
-                  }
-                  rememberedColorValues.set(key, remembered)
-                  onChange(next, { ...remembered })
-                }}
-              >
-                {control.label}
-              </Checkbox>
-              {editable && !compact && support.available ? (
+            <Flex h={compact ? '21px' : undefined} align="center" gap={3} width="100%">
+              <Box aria-hidden="true" color={support.available ? 'fg.muted' : 'fg/70'}>
+                {control.icon}
+              </Box>
+              <Text color={support.available ? 'inherit' : 'fg/70'}>{control.label}</Text>
+              {editable && overridden && (
+                <Tooltip content={`Reset ${control.label.toLowerCase()} to neutral`}>
+                  <IconButton
+                    size="2xs"
+                    variant="ghost"
+                    aria-label={`Reset ${control.label.toLowerCase()} to neutral`}
+                    onClick={() => change(control.key, control.neutral)}
+                  >
+                    <Text aria-hidden="true" fontSize="lg" lineHeight="1">
+                      ↺
+                    </Text>
+                  </IconButton>
+                </Tooltip>
+              )}
+              {!compact && support.available ? (
                 <NumberInput.Root
                   ml="auto"
                   flex="none"
-                  onValueChange={({ valueAsNumber: inputValue }) => {
-                    if (!Number.isFinite(inputValue)) return
-                    const nextValue = Math.min(control.max, Math.max(control.min, inputValue))
-                    remembered[control.key] = nextValue
-                    rememberedColorValues.set(key, remembered)
-                    onChange({ ...color, [control.key]: nextValue }, { ...remembered })
-                  }}
-                  min={control.min}
-                  max={control.max}
+                  min={allowedMin}
+                  max={allowedMax}
                   step={control.step}
-                  value={String(value ?? rememberedValue)}
+                  value={String(value)}
                   allowOverflow={false}
-                  disabled={!enabled}
+                  disabled={!editable}
                   width="80px"
                   size="xs"
+                  onValueChange={({ valueAsNumber }) => {
+                    if (!Number.isFinite(valueAsNumber)) return
+                    change(control.key, Math.min(allowedMax, Math.max(allowedMin, valueAsNumber)))
+                  }}
                 >
                   <NumberInput.Control />
                   <NumberInput.Input
@@ -188,33 +243,27 @@ export function ColorControls({
                 <Text
                   ml="auto"
                   flex="none"
-                  bg={compact || !enabled || !support.available ? 'transparent' : 'bg'}
                   color={!support.available ? 'fg/70' : 'inherit'}
                   fontFamily="mono"
-                  fontSize={compact && enabled ? 'sm' : enabled ? 'sm' : 'xs'}
+                  fontSize={support.available ? 'sm' : 'xs'}
                   textAlign="right"
                 >
-                  {!support.available
-                    ? support.status
-                    : enabled
-                      ? formatValue(control.key, value)
-                      : 'Not overridden'}
+                  {support.available ? formatValue(control.key, value) : support.status}
                 </Text>
               )}
             </Flex>
             <Slider
-              value={[value ?? rememberedValue]}
+              value={[value]}
               min={control.min}
               max={control.max}
+              allowedMin={allowedMin}
+              allowedMax={allowedMax}
               step={control.step}
-              disabled={!editable || !enabled || !support.available}
+              disabled={!editable || !support.available}
               aria-label={`${control.label} for ${display?.name ?? displayId}`}
               onValueChange={(values) => {
                 const next = values[0]
-                if (next === undefined) return
-                remembered[control.key] = next
-                rememberedColorValues.set(key, remembered)
-                onChange({ ...color, [control.key]: next }, { ...remembered })
+                if (next !== undefined) change(control.key, next)
               }}
             />
           </Box>
@@ -235,84 +284,8 @@ export function ColorControls({
   )
 }
 
-export function ColorSummary({
-  color,
-  displayId,
-  product
-}: {
-  color: ColorSettings
-  displayId: string
-  product: ProductState
-}): React.JSX.Element {
-  const display = product.displays.find((item) => item.id === displayId)
-  const report = product.capabilityReports[displayId]
-  const visibleControls = controls.slice(0, display?.adapter.vendor === 'amd' ? 6 : 5)
-
-  return (
-    <Grid
-      as="dl"
-      data-part="color-summary"
-      m="0"
-      templateColumns={{ base: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' }}
-      gap="16px 12px"
-    >
-      {visibleControls.map((control) => {
-        const support = controlSupport(control.key, display, report)
-        const value = color[control.key]
-        const showValueBadge = support.available && value !== undefined
-        const valueElement = (
-          <Box
-            as="dd"
-            w={showValueBadge ? '60px' : 'auto'}
-            px={showValueBadge ? '10px' : '0'}
-            rounded="md"
-            bg={showValueBadge ? 'bg.muted' : 'transparent'}
-            fontFamily="mono"
-            fontSize={showValueBadge ? 'md' : 'xs'}
-            lineHeight="short"
-            textAlign={showValueBadge ? 'center' : 'right'}
-            whiteSpace="nowrap"
-            tabIndex={support.available ? undefined : 0}
-            _dark={{
-              bg: showValueBadge ? 'bg.emphasized' : 'transparent'
-            }}
-          >
-            {!support.available
-              ? support.status
-              : value === undefined
-                ? 'Not overridden'
-                : formatValue(control.key, value)}
-          </Box>
-        )
-        return (
-          <Flex data-part="color-summary-item" align="center" gap={3} key={control.key}>
-            <Text
-              as="dt"
-              flex="1"
-              overflow="hidden"
-              color={!support.available || value === undefined ? 'fg.muted' : 'fg'}
-              fontSize="md"
-              fontWeight="500"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {control.label}
-            </Text>
-            {support.available ? (
-              valueElement
-            ) : (
-              <Tooltip content={support.reason}>{valueElement}</Tooltip>
-            )}
-          </Flex>
-        )
-      })}
-    </Grid>
-  )
-}
-
-function formatValue(key: ColorKey, value: number): string {
+function formatValue(key: VisibleColorKey, value: number): string {
   return key === 'gamma'
     ? value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
     : `${Math.round(value)}%`
 }
-import { Box, Flex, Grid, NumberInput, Stack, Text } from '@chakra-ui/react'

@@ -2,20 +2,26 @@ import {
   Badge,
   Box,
   Button,
+  createListCollection,
   Flex,
   IconButton,
   Image,
+  Listbox,
   Menu,
+  Popover,
   Portal,
+  Radiomark,
   ScrollArea,
+  Separator,
   Stack,
-  Text
+  Text,
+  useListbox
 } from '@chakra-ui/react'
 import {
-  AppWindow,
   Copy,
-  Eclipse,
   Ellipsis,
+  PanelLeft,
+  PanelLeftClose,
   Palette,
   Plus,
   PowerOff,
@@ -23,25 +29,34 @@ import {
   Edit as EditIcon,
   EyeOff,
   ScanEye,
-  Trash2
+  Trash2,
+  ListVideo,
+  Power
 } from 'lucide-react'
-import { useId, useState } from 'react'
-import type { ColorProfile } from '@chromashift/core'
-import { Switch } from '@/components/ui/switch'
+import { Fragment, useId, useMemo, useRef, useState } from 'react'
+import type { ActivationMode, ColorProfile } from '@chromashift/core'
+import type { ProductState, ShortcutBinding } from '../../../shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
+import { ShortcutDisplay } from '@/components/ui/shortcut-display'
+import { profileSelectionItems, profileSelectionLabel } from './profile-selection'
 
 const DEFAULT_ID = 'default'
 
 export interface ProfileListProps {
   profiles: ColorProfile[]
+  shortcutBindings: readonly ShortcutBinding[]
   selectedId: string | null
-  activeId: string | null
+  currentId: string | null
   editingProfileId: string | null
   previewingProfileId: string | null
-  automatic: boolean
+  mode: ActivationMode
+  controlStatus: ProductState['chromaShift']['status']
+  busy: boolean
+  collapsed: boolean
+  onCollapsedChange(collapsed: boolean): void
   onSelect(profile: ColorProfile): void
   onCreate(): void
-  onToggleAutomatic(value: boolean): void
+  onSelectionChange(profileId: string | null): void
   onOpenSettings(): void
   onEdit(profile: ColorProfile): void
   onPreview(profile: ColorProfile): void
@@ -53,6 +68,40 @@ export interface ProfileListProps {
 
 export function ProfileList(props: ProfileListProps): React.JSX.Element {
   const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerTriggerRef = useRef<HTMLButtonElement>(null)
+  const pickerContentRef = useRef<HTMLDivElement>(null)
+  const pickerLabelId = useId()
+  const collection = useMemo(
+    () =>
+      createListCollection({
+        items: profileSelectionItems(props.profiles, props.shortcutBindings)
+      }),
+    [props.profiles, props.shortcutBindings]
+  )
+  const manualId = props.mode.kind === 'manual' ? props.mode.profileId : null
+  const selectionValue = manualId === null ? 'automatic' : `profile:${manualId}`
+  const selectionLabel = profileSelectionLabel(props.profiles, props.mode, props.currentId)
+  const currentLabel = `${props.controlStatus === 'paused' ? 'Will resume' : props.controlStatus === 'safetyBlocked' ? 'Pending' : 'Current'} · ${props.mode.kind === 'automatic' ? 'Automatic' : 'Manual'}`
+  const listbox = useListbox({
+    collection,
+    value: [selectionValue],
+    defaultHighlightedValue: selectionValue,
+    selectionMode: 'single',
+    selectOnHighlight: false,
+    deselectable: false,
+    loopFocus: true,
+    disabled: props.busy,
+    onSelect: (details) => selectProfile(details.value)
+  })
+
+  function selectProfile(value: string): void {
+    if (props.busy) return
+    setPickerOpen(false)
+    pickerTriggerRef.current?.focus()
+    if (value === 'automatic') props.onSelectionChange(null)
+    else if (value.startsWith('profile:')) props.onSelectionChange(value.slice(8))
+  }
 
   function dropBefore(targetId: string): void {
     if (draggedId === null || draggedId === targetId) return
@@ -71,30 +120,178 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
     setDraggedId(null)
   }
 
-  return (
-    <Flex as="aside" data-part="settings-nav" direction="column" gap="3" width={'245px'}>
-      <Flex as="header" align="center" gap="3" color="fg.muted">
-        <Text as="strong" fontWeight="500">
-          Profiles
-        </Text>
-        <Flex ml="auto" align="center" gap="2">
-          <Badge aria-label={`${props.profiles.length} profiles`} rounded={'full'}>
-            {props.profiles.length}
-          </Badge>
-          <Tooltip content="New profile" positioning={{ placement: 'top-end' }} showArrow>
-            <IconButton
-              variant="surface"
-              size="sm"
-              rounded={'full'}
-              boxSize="5"
-              minW="5"
-              aria-label="New profile"
-              onClick={props.onCreate}
+  const profileSelector = (
+    <Stack gap="1.5" data-part="profile-selection">
+      <Text id={pickerLabelId} textStyle="xs" fontWeight="medium" srOnly={props.collapsed}>
+        Profile selection
+      </Text>
+      <Popover.Root
+        open={pickerOpen}
+        onOpenChange={(details) => {
+          if (details.open && props.busy) return
+          if (details.open) listbox.highlightValue(selectionValue)
+          setPickerOpen(details.open)
+        }}
+        initialFocusEl={() => pickerContentRef.current}
+        finalFocusEl={() => pickerTriggerRef.current}
+        positioning={{
+          placement: props.collapsed ? 'right-end' : 'top-start'
+        }}
+        lazyMount
+        unmountOnExit
+      >
+        <Tooltip
+          content="Profile selection"
+          positioning={{ placement: 'right' }}
+          disabled={!props.collapsed}
+        >
+          <Box>
+            <Popover.Trigger asChild>
+              <Button
+                ref={pickerTriggerRef}
+                aria-label="Profile selection"
+                aria-describedby={pickerLabelId}
+                variant={props.collapsed ? 'ghost' : 'outline'}
+                size={props.collapsed ? 'md' : 'sm'}
+                w="full"
+                h="8"
+                rounded="l2"
+                fontWeight="normal"
+                disabled={props.busy}
+                px={props.collapsed ? 0 : 3}
+                justifyContent={props.collapsed ? 'center' : 'space-between'}
+              >
+                {props.collapsed ? (
+                  <ListVideo />
+                ) : (
+                  <>
+                    <Text truncate>{selectionLabel}</Text>
+                    <ListVideo />
+                  </>
+                )}
+              </Button>
+            </Popover.Trigger>
+          </Box>
+        </Tooltip>
+        <Portal>
+          <Popover.Positioner>
+            <Popover.Content
+              data-part="profile-selection-content"
+              aria-label="Profile selection"
+              w="340px"
+              maxW="calc(100vw - 2rem)"
+              p="1"
+              rounded="2xl"
+              overflow="hidden"
             >
-              <Plus size={16} />
-            </IconButton>
-          </Tooltip>
-        </Flex>
+              <Listbox.RootProvider value={listbox}>
+                <Listbox.Label srOnly>Choose active profile</Listbox.Label>
+                <Listbox.Content
+                  ref={pickerContentRef}
+                  borderWidth="0"
+                  onKeyDownCapture={(event) => {
+                    // Listbox only emits onSelect for a newly selected value.
+                    // Explicitly reselecting the current value must also resume a pause.
+                    if (
+                      (event.key === 'Enter' || event.key === ' ') &&
+                      !event.nativeEvent.isComposing &&
+                      listbox.highlightedValue === selectionValue
+                    ) {
+                      event.preventDefault()
+                      selectProfile(selectionValue)
+                    }
+                  }}
+                >
+                  {collection.items.map((item) => (
+                    <Fragment key={item.value}>
+                      <Listbox.Item
+                        item={item}
+                        title={item.label}
+                        rounded="full"
+                        flex="none"
+                        px="2"
+                        py="3"
+                        gap="3"
+                        fontWeight="700"
+                        color="fg/70"
+                        _hover={{ bg: 'bg.muted', color: 'fg' }}
+                        _selected={{ bg: 'bg.muted', color: 'fg' }}
+                        onClick={
+                          item.value === selectionValue
+                            ? () => selectProfile(item.value)
+                            : undefined
+                        }
+                      >
+                        <Radiomark checked={item.value === selectionValue} aria-hidden="true" />
+                        <Stack direction="row" flex="1" minW="0" align="start" gap="0.5">
+                          <Listbox.ItemText w="full" truncate>
+                            {item.label}
+                          </Listbox.ItemText>
+                          <ShortcutDisplay label={item.label} accelerator={item.shortcut} />
+                        </Stack>
+                      </Listbox.Item>
+                      {item.value === 'automatic' && collection.items.length > 1 && (
+                        <Separator my="1" aria-hidden="true" borderColor={'border.muted'} />
+                      )}
+                    </Fragment>
+                  ))}
+                </Listbox.Content>
+              </Listbox.RootProvider>
+            </Popover.Content>
+          </Popover.Positioner>
+        </Portal>
+      </Popover.Root>
+    </Stack>
+  )
+
+  return (
+    <Flex
+      as="aside"
+      data-part="profile-nav"
+      direction="column"
+      gap="3"
+      width={props.collapsed ? '40px' : '245px'}
+      flex="none"
+    >
+      {profileSelector}
+      <Flex
+        as="header"
+        align="center"
+        justify={props.collapsed ? 'center' : undefined}
+        gap="2"
+        color="fg.muted"
+        flexDir={props.collapsed ? 'column' : 'row'}
+      >
+        {!props.collapsed && (
+          <>
+            <Badge aria-label={`${props.profiles.length} profiles`} rounded="full">
+              {props.profiles.length}
+            </Badge>
+            <Text as="strong" fontWeight="500" mr={'auto'}>
+              Profiles
+            </Text>
+          </>
+        )}
+        <Tooltip
+          content="New profile"
+          positioning={{ placement: props.collapsed ? 'right' : 'bottom-end' }}
+        >
+          <Button
+            variant="surface"
+            size="sm"
+            rounded={'full'}
+            height="5"
+            px={1}
+            minW="5"
+            mt={0.5}
+            gap={0.5}
+            aria-label="New profile"
+            onClick={props.onCreate}
+          >
+            New
+            <Plus />
+          </Button>
+        </Tooltip>
       </Flex>
       <ScrollArea.Root size={'xs'}>
         <ScrollArea.Viewport
@@ -124,10 +321,15 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
                     key={profile.id}
                     profile={profile}
                     selected={profile.id === props.selectedId}
-                    active={profile.id === props.activeId}
+                    currentLabel={
+                      profile.id.toLowerCase() === props.currentId?.toLowerCase()
+                        ? currentLabel
+                        : null
+                    }
                     editing={profile.id === props.editingProfileId}
                     previewing={profile.id === props.previewingProfileId}
                     dragging={draggedId === profile.id}
+                    collapsed={props.collapsed}
                     onDragStart={(event) => {
                       setDraggedId(profile.id)
                       event.dataTransfer.effectAllowed = 'move'
@@ -160,28 +362,41 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
         as="footer"
         data-part="profile-list-footer"
         mt="auto"
-        align="center"
+        align="stretch"
+        direction="column"
         gap={3}
         position={'sticky'}
         bottom={0}
       >
-        <Switch
-          checked={props.automatic}
-          onCheckedChange={(details) => props.onToggleAutomatic(details.checked)}
-        >
-          Auto switch
-        </Switch>
-        <Tooltip content="Settings" showArrow positioning={{ placement: 'top-end' }}>
-          <IconButton
-            variant="ghost"
-            size="xs"
-            ml="auto"
-            aria-label="Settings"
-            onClick={props.onOpenSettings}
+        <Flex align="center" direction={props.collapsed ? 'column' : 'row'} gap={3}>
+          <Tooltip
+            content="Settings"
+            positioning={{ placement: props.collapsed ? 'right' : 'top-end' }}
           >
-            <SettingsIcon />
-          </IconButton>
-        </Tooltip>
+            <IconButton
+              variant="ghost"
+              size="xs"
+              ml={props.collapsed ? undefined : 'auto'}
+              aria-label="Settings"
+              onClick={props.onOpenSettings}
+            >
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip
+            content={props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            positioning={{ placement: props.collapsed ? 'right' : 'top-end' }}
+          >
+            <IconButton
+              variant="ghost"
+              size="xs"
+              aria-label={props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => props.onCollapsedChange(!props.collapsed)}
+            >
+              {props.collapsed ? <PanelLeft /> : <PanelLeftClose />}
+            </IconButton>
+          </Tooltip>
+        </Flex>
       </Flex>
     </Flex>
   )
@@ -190,10 +405,11 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
 interface ProfileListItemProps {
   profile: ColorProfile
   selected: boolean
-  active: boolean
+  currentLabel: string | null
   editing: boolean
   previewing: boolean
   dragging: boolean
+  collapsed: boolean
   onDragStart(event: React.DragEvent<HTMLDivElement>): void
   onDragEnd(): void
   onDragOver(event: React.DragEvent<HTMLDivElement>): void
@@ -210,14 +426,14 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
   const actionsTriggerId = useId()
   const isDefault = props.profile.id.toLowerCase() === DEFAULT_ID
 
-  return (
+  const item = (
     <Flex
       data-part="profile-item"
       data-selected={props.selected ? '' : undefined}
       data-disabled={props.profile.enabled ? undefined : ''}
       w="full"
       h="40px"
-      px={1}
+      px={props.collapsed ? 0 : 1}
       py="5px"
       align="center"
       gap="1"
@@ -255,80 +471,119 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         minH="30px"
         p="0"
         flex="1"
-        justifyContent="flex-start"
+        justifyContent={props.collapsed ? 'center' : 'flex-start'}
         gap={3}
         color="inherit"
         textAlign="left"
+        aria-label={props.collapsed ? props.profile.name : undefined}
+        aria-current={props.selected ? 'page' : undefined}
         onClick={props.onSelect}
+        css={{
+          '--current-color': {
+            base: 'colors.orange.solid',
+            _dark: 'colors.pink.500'
+          }
+        }}
       >
         <ProfileIcon profile={props.profile} />
-        {props.active && (
+        {props.currentLabel !== null && (
           <Box
-            boxSize="6px"
+            boxSize={'34px'}
+            position={'absolute'}
+            left={props.collapsed ? undefined : -0.5}
+            opacity={0.7}
+            zIndex={-1}
             rounded="full"
-            bg={{ base: 'orange.solid', _dark: 'orange.solid' }}
-            aria-label="Active profile"
+            bg="var(--current-color)"
+            aria-label={props.currentLabel}
           />
         )}
-        <Text
-          as="strong"
-          flex="1"
-          overflow="hidden"
-          color={props.profile.enabled ? 'inherit' : 'fg.muted'}
-          fontSize="16px"
-          fontWeight="500"
-          textOverflow="ellipsis"
-          whiteSpace="nowrap"
-        >
-          {props.profile.name}
-        </Text>
-      </Button>
-      <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
-        <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
-          <Menu.Trigger asChild>
-            <IconButton
-              data-part="profile-actions-trigger"
-              variant="plain"
-              size="2xs"
-              borderRadius={'full'}
-              aria-label="Profile actions"
+        {!props.collapsed && (
+          <Flex direction="column" gap={0}>
+            <Text
+              as="strong"
+              flex="1"
+              overflow="hidden"
+              color={props.profile.enabled ? 'inherit' : 'fg.muted'}
+              fontSize="16px"
+              fontWeight="500"
+              textOverflow="ellipsis"
+              whiteSpace="nowrap"
             >
-              <Ellipsis />
-            </IconButton>
-          </Menu.Trigger>
-        </Tooltip>
-        <Portal>
-          <Menu.Positioner>
-            <Menu.Content>
-              {!props.editing && (
-                <>
-                  <Menu.Item value="edit" onClick={props.onEdit}>
-                    <EditIcon /> Edit
-                  </Menu.Item>
-                  <Menu.Item value="preview" onClick={props.onPreview}>
-                    {props.previewing ? <EyeOff /> : <ScanEye />}
-                    {props.previewing ? 'Stop preview' : 'Preview'}
-                  </Menu.Item>
-                </>
-              )}
-              <Menu.Item value="clone" onClick={props.onDuplicate}>
-                <Copy /> Clone
-              </Menu.Item>
-              {!isDefault && (
-                <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
-                  <PowerOff /> {props.profile.enabled ? 'Turn off' : 'Turn on'}
+              {props.profile.name}
+            </Text>
+            {(props.currentLabel !== null || !props.profile.enabled) && (
+              <Text
+                data-part="profile-status"
+                as="small"
+                lineHeight={1}
+                color={props.profile.enabled ? 'var(--current-color)' : 'fg.muted'}
+              >
+                {props.profile.enabled ? props.currentLabel : 'Disabled'}
+              </Text>
+            )}
+          </Flex>
+        )}
+      </Button>
+      {!props.collapsed && (
+        <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
+          <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
+            <Menu.Trigger asChild>
+              <IconButton
+                data-part="profile-actions-trigger"
+                variant="plain"
+                size="2xs"
+                borderRadius={'full'}
+                aria-label="Profile actions"
+              >
+                <Ellipsis />
+              </IconButton>
+            </Menu.Trigger>
+          </Tooltip>
+          <Portal>
+            <Menu.Positioner>
+              <Menu.Content>
+                {!props.editing && (
+                  <>
+                    <Menu.Item value="edit" onClick={props.onEdit}>
+                      <EditIcon /> Edit
+                    </Menu.Item>
+                    <Menu.Item value="preview" onClick={props.onPreview}>
+                      {props.previewing ? <EyeOff /> : <ScanEye />}
+                      {props.previewing ? 'Stop preview' : 'Preview'}
+                    </Menu.Item>
+                  </>
+                )}
+                <Menu.Item value="clone" onClick={props.onDuplicate}>
+                  <Copy /> Clone
                 </Menu.Item>
-              )}
-              {!isDefault && (
-                <Menu.Item value="delete" onClick={props.onDelete}>
-                  <Trash2 /> Delete
-                </Menu.Item>
-              )}
-            </Menu.Content>
-          </Menu.Positioner>
-        </Portal>
-      </Menu.Root>
+                {!isDefault && (
+                  <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
+                    {props.profile.enabled ? <PowerOff /> : <Power />}
+                    {props.profile.enabled ? 'Disable profile' : 'Enable profile'}
+                  </Menu.Item>
+                )}
+                {!isDefault && (
+                  <Menu.Item value="delete" onClick={props.onDelete}>
+                    <Trash2 /> Delete
+                  </Menu.Item>
+                )}
+              </Menu.Content>
+            </Menu.Positioner>
+          </Portal>
+        </Menu.Root>
+      )}
     </Flex>
+  )
+  return props.collapsed ? (
+    <Tooltip
+      content={`${props.profile.name}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
+      positioning={{ placement: 'right' }}
+    >
+      {item}
+    </Tooltip>
+  ) : (
+    item
   )
 }
 
@@ -336,7 +591,7 @@ function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element 
   if (profile.id.toLowerCase() === DEFAULT_ID) {
     return (
       <ProfileIconFrame>
-        <Eclipse />
+        <Palette />
       </ProfileIconFrame>
     )
   }
@@ -364,15 +619,15 @@ function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element 
         <Flex
           position="absolute"
           right="-5px"
-          bottom="0"
+          bottom="5px"
           boxSize="20px"
           align="center"
           justify="center"
           borderWidth="1px"
           borderColor="border"
           rounded="full"
-          bg="bg.panel"
-          color="white"
+          bg="bg.inverted"
+          color="fg.inverted"
           fontSize="11px"
           fontWeight="700"
         >
@@ -419,31 +674,29 @@ function ApplicationIcon({
     <Flex
       position={secondary ? 'absolute' : 'relative'}
       right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '0' : undefined}
+      bottom={secondary ? '5px' : undefined}
       boxSize={secondary ? '20px' : '30px'}
       align="center"
       justify="center"
       overflow="hidden"
-      borderWidth="1px"
-      borderColor="border"
+      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
       rounded="full"
       bg="bg.emphasized"
     >
-      <AppWindow size={16} />
+      <Palette />
     </Flex>
   ) : (
     <Image
       position={secondary ? 'absolute' : 'relative'}
       right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '0' : undefined}
+      bottom={secondary ? '5px' : undefined}
       boxSize={secondary ? '20px' : '30px'}
       overflow="hidden"
-      borderWidth="1px"
-      borderColor="border"
+      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
       rounded="full"
       objectFit="cover"
       src={rule.iconDataUrl}
-      alt=""
+      alt={rule.executableName}
     />
   )
 }

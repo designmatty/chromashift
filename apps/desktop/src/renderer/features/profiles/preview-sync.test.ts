@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ColorProfile } from '@chromashift/core'
+import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from './preview-sync.js'
 import type { PreviewState, ProductError, ProductResult } from '../../../shared/product-api.js'
 
@@ -8,7 +8,12 @@ const profile: ColorProfile = {
   name: 'Tarkov - Night',
   enabled: true,
   applications: [],
-  displays: [{ displayId: 'display:abc', color: { brightness: 84 } }]
+  displays: [
+    {
+      displayId: 'display:abc',
+      color: { ...createNeutralColorSettings(), brightness: 84 }
+    }
+  ]
 }
 
 const inactive: PreviewState = { state: 'inactive' }

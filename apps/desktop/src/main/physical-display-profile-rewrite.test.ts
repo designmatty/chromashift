@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import type { ColorProfile } from '@chromashift/core'
+import {
+  createNeutralColorSettings,
+  type ColorProfile,
+  type ColorSettings
+} from '@chromashift/core'
 import { rewriteProfile } from './physical-display-profile-rewrite.js'
 
-function profile(displays: ColorProfile['displays']): ColorProfile {
+function profile(
+  displays: Array<{ displayId: string; color: Partial<ColorSettings> }>
+): ColorProfile {
   return {
     id: 'profile',
     name: 'Profile',
     enabled: true,
     applications: [],
-    displays
+    displays: displays.map((target) => ({
+      displayId: target.displayId,
+      color: { ...createNeutralColorSettings(), ...target.color }
+    }))
   }
 }
 
@@ -39,9 +48,9 @@ describe('physical display profile rewrite', () => {
       ])
     )
 
-    expect(result.profile.displays).toEqual([
-      { displayId: 'display:physical', color: { saturation: 80 } }
-    ])
+    expect(result.profile.displays).toEqual(
+      profile([{ displayId: 'display:physical', color: { saturation: 80 } }]).displays
+    )
     expect(result.remappedTargets).toBe(2)
     expect(result.discardedConflicts).toBe(2)
   })

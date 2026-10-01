@@ -10,12 +10,36 @@ export const displaySettingsSchema = z
   .object({
     brightness: normalizedColorValueSchema.optional(),
     contrast: normalizedColorValueSchema.optional(),
-    gamma: z.number().finite().min(0.5).max(2.8).optional(),
+    gamma: z.number().finite().min(0.3).max(2.8).optional(),
     saturation: normalizedColorValueSchema.optional(),
     hue: normalizedColorValueSchema.optional(),
     colorTemperature: normalizedColorValueSchema.optional()
   })
   .strict()
+  .superRefine((settings, context) => {
+    if (settings.gamma === undefined) return
+    const brightness = settings.brightness ?? 50
+    const min = brightness < 7 ? 0.5 : brightness < 30 ? 0.4 : 0.3
+    const max =
+      brightness < 87
+        ? 2.8
+        : brightness < 90
+          ? 2.7
+          : brightness < 92
+            ? 2.6
+            : brightness < 97
+              ? 2.5
+              : brightness < 100
+                ? 2.4
+                : 2.3
+    if (settings.gamma < min || settings.gamma > max) {
+      context.addIssue({
+        code: 'custom',
+        message: `Gamma must be between ${min} and ${max} at ${brightness}% brightness.`,
+        path: ['gamma']
+      })
+    }
+  })
 
 export const displayRequestSchema = z
   .object({

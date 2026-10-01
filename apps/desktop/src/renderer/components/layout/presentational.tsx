@@ -116,20 +116,23 @@ export function NavButton({
   active,
   icon,
   label,
+  collapsed = false,
   onClick
 }: {
   active: boolean
   icon: ReactNode
   label: string
+  collapsed?: boolean
   onClick(): void
 }): React.JSX.Element {
-  return (
+  const button = (
     <Button
+      aria-label={label}
       variant="plain"
       w="full"
       h="40px"
       px={1}
-      justifyContent="flex-start"
+      justifyContent={collapsed ? 'center' : 'flex-start'}
       gap={3}
       rounded="full"
       bg={active ? 'bg.panel' : 'transparent'}
@@ -155,15 +158,24 @@ export function NavButton({
         justify="center"
         rounded="full"
         bg="bg.emphasized"
-        color="fg.muted"
+        color={active ? 'fg' : 'fg.muted'}
         _light={{ bg: active ? 'bg.emphasized' : 'bg.panel' }}
       >
         {icon}
       </Flex>
-      <Text as="span" fontSize="16px" fontWeight="500">
-        {label}
-      </Text>
+      {!collapsed && (
+        <Text as="span" fontSize="16px" fontWeight="500">
+          {label}
+        </Text>
+      )}
     </Button>
+  )
+  return collapsed ? (
+    <Tooltip content={label} positioning={{ placement: 'right' }}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
   )
 }
 

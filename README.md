@@ -23,7 +23,8 @@ known limits.
 ## What is included
 
 - Per-application and manually selected profiles
-- Independent optional settings for each physical display
+- A complete, independently adjustable color vector for each assigned physical
+  display
 - Brightness, contrast, gamma, saturation, hue, and AMD color temperature where
   the active provider reports support
 - Automatic foreground-application matching and a permanent Default profile
@@ -77,7 +78,7 @@ scope and safety requirements of each command.
 - [Core domain](docs/core-domain.md) defines profiles, matching, and activation.
 - [Native protocol](docs/native-protocol.md) documents Electron-to-helper IPC.
 - [Per-display settings](docs/per-display-profile-settings.md) records the current
-  profile and UI contracts plus approved Figma references.
+  profile and UI contracts.
 - [Physical display identity](docs/physical-display-identity.md) explains panel
   identity and endpoint fanout.
 - [Packaging](docs/packaging.md), [performance](docs/performance.md), and

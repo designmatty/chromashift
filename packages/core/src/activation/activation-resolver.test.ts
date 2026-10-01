@@ -9,11 +9,7 @@ import {
   type ActivationContext
 } from './activation-resolver.js'
 
-function profile(
-  id: string,
-  executableName?: string,
-  enabled = true
-): ColorProfile {
+function profile(id: string, executableName?: string, enabled = true): ColorProfile {
   return {
     id,
     name: id,
@@ -28,7 +24,7 @@ function configuration(
   defaultProfileId: string | null = null
 ): ProfileConfiguration {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     profiles,
     settings: { defaultProfileId }
   }
@@ -40,8 +36,7 @@ function context(
 ): ActivationContext {
   return {
     configuration: config,
-    foregroundApplication:
-      executable === null ? null : { executable, path: null },
+    foregroundApplication: executable === null ? null : { executable, path: null },
     mode: automaticActivationMode
   }
 }
@@ -102,7 +97,12 @@ describe('activation selection', () => {
 
 describe('activation transitions', () => {
   const config = configuration(
-    [profile('default'), profile('game-a', 'GameA.exe'), profile('game-b', 'GameB.exe'), profile('manual')],
+    [
+      profile('default'),
+      profile('game-a', 'GameA.exe'),
+      profile('game-b', 'GameB.exe'),
+      profile('manual')
+    ],
     'default'
   )
 
@@ -136,12 +136,10 @@ describe('activation transitions', () => {
 
   it('resolves rapid events in arrival order without retaining stale state', () => {
     const resolver = new ActivationResolver()
-    const profileIds = ['GameA.exe', 'Browser.exe', 'GameB.exe', 'GameA.exe'].map(
-      (executable) => {
-        const target = resolver.resolve(context(config, executable)).target
-        return target.kind === 'profile' ? target.profileId : 'baseline'
-      }
-    )
+    const profileIds = ['GameA.exe', 'Browser.exe', 'GameB.exe', 'GameA.exe'].map((executable) => {
+      const target = resolver.resolve(context(config, executable)).target
+      return target.kind === 'profile' ? target.profileId : 'baseline'
+    })
 
     expect(profileIds).toEqual(['game-a', 'default', 'game-b', 'game-a'])
     expect(resolver.currentTarget).toEqual({ kind: 'profile', profileId: 'game-a' })

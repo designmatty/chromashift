@@ -1,6 +1,5 @@
 import {
   activeColorTargets,
-  hasColorOverrides,
   type ColorProfile,
   type ColorSettingName,
   type ColorSettings,
@@ -111,12 +110,20 @@ export class PreviewSessionController {
 
     const validated = new Map<string, Set<ColorSettingName>>()
     if (kind === 'preview') this.#requirePreviewableDraft(profile, targets)
-    await this.#validateTargets(targets, validated)
+    const displays = await this.native.getDisplays()
+    await this.#validateTargets(targets, validated, displays, true)
     await this.activation.beginPreview()
 
     const applied = new Map<string, DisplayColorTarget>()
     const touched = new Map<string, string>()
-    const disconnected = new Set<string>()
+    const writableDisplayIds = new Set(
+      displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
+    )
+    const disconnected = new Set(
+      targets
+        .filter((target) => !writableDisplayIds.has(target.displayId.toLowerCase()))
+        .map((target) => target.displayId.toLowerCase())
+    )
     try {
       for (const target of targets) {
         const key = target.displayId.toLowerCase()
@@ -156,7 +163,7 @@ export class PreviewSessionController {
 
   async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
     const active = this.#requireActive(profileId)
-    const desired = targets.filter((target) => hasColorOverrides(target.color))
+    const desired = targets
     const connectedDesired = desired.filter(
       (target) => !active.disconnected.has(target.displayId.toLowerCase())
     )
@@ -260,7 +267,9 @@ export class PreviewSessionController {
       if (active === null) return false
 
       const displays = await this.native.getDisplays()
-      const connectedDisplayIds = new Set(displays.map((display) => display.id.toLowerCase()))
+      const connectedDisplayIds = new Set(
+        displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
+      )
       active.disconnected.clear()
       for (const target of active.applied.values()) {
         if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
@@ -369,9 +378,8 @@ export class PreviewSessionController {
     if (profile.displays.length === 0) {
       throw new PreviewValidationError('Select at least one display before previewing.')
     }
-    if (targets.length === 0) {
-      throw new PreviewValidationError('Enable at least one color control before previewing.')
-    }
+    if (targets.length === 0)
+      throw new PreviewValidationError('Select at least one display before previewing.')
   }
 
   /**
@@ -414,11 +422,7 @@ export class PreviewSessionController {
       }
       for (const setting of settings) {
         const capability = report.capabilities[setting]
-        if (!capability.supported) {
-          throw new PreviewValidationError(
-            `${display.name} cannot preview ${formatSetting(setting)}: ${capability.reason ?? 'unsupported by the active provider'}.`
-          )
-        }
+        if (!capability.supported) continue
         if (
           display.hdr &&
           capability.provider === 'windows' &&

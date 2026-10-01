@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   Flex,
+  Group,
   Heading,
   IconButton,
   Input,
@@ -11,10 +12,20 @@ import {
   Stack,
   Text
 } from '@chakra-ui/react'
-import { Copy, Ellipsis, EyeOff, PowerOff, ScanEye, Edit, Trash2 } from 'lucide-react'
+import {
+  Copy,
+  Ellipsis,
+  EyeOff,
+  PowerOff,
+  ScanEye,
+  Edit,
+  Trash2,
+  Monitor,
+  AppWindow,
+  Power
+} from 'lucide-react'
 import { useId } from 'react'
 import type { ColorProfile } from '@chromashift/core'
-import { Switch } from '@/components/ui/switch'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { ProductError, ProductState } from '../../../shared/product-api.js'
 import { ApplicationAssignments } from './application-assignments'
@@ -29,9 +40,6 @@ export interface ProfileDetailProps {
   busy: boolean
   dirty: boolean
   previewing: boolean
-  active: boolean
-  expandedDisplayIds: string[]
-  onExpandedDisplaysChange(displayIds: string[]): void
   onEdit(): void
   onChange(profile: ColorProfile): void
   onCancel(): void
@@ -39,7 +47,6 @@ export interface ProfileDetailProps {
   onPreview(): void
   onCopy(): void
   onDelete(): void
-  onActiveChange(active: boolean): void
   onToggleEnabled(): void
   onError(error: ProductError | null): void
 }
@@ -47,22 +54,7 @@ export interface ProfileDetailProps {
 export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const profile = props.profile
   const isDefault = profile.id.toLowerCase() === DEFAULT_ID
-  const activationSwitchId = useId()
   const actionsTriggerId = useId()
-  const activationDisabledReason = !profile.enabled
-    ? 'Turn this profile on from More profile actions before activating it.'
-    : isDefault && props.active
-      ? 'Default profile remains active until you activate another profile.'
-      : null
-  const activationSwitch = (
-    <Switch
-      checked={props.active}
-      disabled={activationDisabledReason !== null}
-      ids={{ root: activationSwitchId }}
-      onCheckedChange={(details) => props.onActiveChange(details.checked)}
-      aria-label="Profile active"
-    />
-  )
 
   return (
     <Stack
@@ -102,21 +94,11 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           </>
         ) : (
           <>
-            {activationDisabledReason === null ? (
-              activationSwitch
-            ) : (
-              <Tooltip
-                ids={{ trigger: activationSwitchId }}
-                content={activationDisabledReason}
-                positioning={{ placement: 'bottom-start' }}
-              >
-                {activationSwitch}
-              </Tooltip>
-            )}
             <Heading as="h1" data-part="profile-name" size="lg" fontWeight="700">
               {profile.name}
             </Heading>
             {isDefault && <ProfileBadge>Default</ProfileBadge>}
+            {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
             <Flex ml="auto" align="center" gap="5">
               <Tooltip content={props.previewing ? 'Stop preview' : 'Preview'}>
                 <IconButton
@@ -165,8 +147,8 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                       </Menu.Item>
                       {!isDefault && (
                         <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
-                          <PowerOff />
-                          {profile.enabled ? 'Turn off' : 'Turn on'}
+                          {profile.enabled ? <PowerOff /> : <Power />}
+                          {profile.enabled ? 'Disable profile' : 'Enable profile'}
                         </Menu.Item>
                       )}
                       {!isDefault && (
@@ -185,24 +167,24 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       </Flex>
 
       <Box as="section" pt="10px">
-        <SectionHeading title="Display color controls">
-          This profile activates on selected displays
+        <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
+          Select the display you would like to change
         </SectionHeading>
         <DisplayControls
           profile={profile}
           product={props.product}
           editing={props.editing}
-          expandedDisplayIds={props.expandedDisplayIds}
-          onExpandedChange={props.onExpandedDisplaysChange}
           onChange={props.onChange}
         />
       </Box>
 
       <Box as="section" pt="10px">
-        <SectionHeading title="Applications">
+        <SectionHeading title="Applications" icon={<AppWindow size={20} />}>
           {isDefault
-            ? 'This profile activates for applications without ChromaShift assignments'
-            : 'This profile activates for the selected applications'}
+            ? 'Used in Automatic mode when no application profile matches'
+            : profile.applications.length === 0
+              ? 'No applications assigned. Add applications for automatic switching.'
+              : 'Used in Automatic mode when one of these applications is active.'}
         </SectionHeading>
         {!isDefault && (
           <ApplicationAssignments
@@ -227,16 +209,21 @@ function ProfileBadge({ children }: { children: React.ReactNode }): React.JSX.El
 
 function SectionHeading({
   title,
+  icon,
   children
 }: {
   title: string
+  icon?: React.ReactNode
   children: React.ReactNode
 }): React.JSX.Element {
   return (
     <Flex mb="10px" align="start" justify="space-between" gap="0" flexDir={'column'}>
-      <Heading as="h2" fontSize="lg" fontWeight="500">
-        {title}
-      </Heading>
+      <Group>
+        {icon}
+        <Heading as="h2" fontSize="lg" fontWeight="500">
+          {title}
+        </Heading>
+      </Group>
       <Text fontSize="sm" color={'fg.muted'}>
         {children}
       </Text>

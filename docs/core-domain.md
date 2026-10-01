@@ -1,26 +1,22 @@
 # Core domain
 
 `packages/core` has no dependency on Electron, Node APIs, or GPU vendors. It owns
-the profile, matching, migration, and activation-selection contracts that
-Electron main connects to the native client.
+profile persistence, migration, matching, and activation selection.
 
 ## Profile configuration
 
-The persisted root object has schema version 2:
+The persisted root object has schema version 3:
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "profiles": [],
-  "settings": {
-    "defaultProfileId": null
-  }
+  "settings": { "defaultProfileId": null }
 }
 ```
 
-A profile contains application rules and a list of display targets keyed by
-stable display ID. Color settings belong to the target, not the profile, so two
-displays in one profile can hold different values:
+A profile contains application rules and display targets keyed by stable physical
+display ID. Every assigned target owns the complete vendor-neutral color vector:
 
 ```json
 {
@@ -29,89 +25,90 @@ displays in one profile can hold different values:
   "enabled": true,
   "applications": [{ "executableName": "EscapeFromTarkov.exe" }],
   "displays": [
-    { "displayId": "display:abc", "color": { "brightness": 84 } },
-    { "displayId": "display:def", "color": {} }
+    {
+      "displayId": "display:abc",
+      "color": {
+        "brightness": 84,
+        "contrast": 50,
+        "gamma": 1.15,
+        "saturation": 65,
+        "hue": 0,
+        "colorTemperature": 50
+      }
+    }
   ]
 }
 ```
 
-Brightness, contrast, saturation, hue, and color temperature use normalized
-values from 0 through 100. Gamma uses the product range 0.5 through 2.8 accepted
-by the native protocol. Every color setting is optional; an omitted field means
-that target does not override that capability and the display keeps its captured
-pre-ChromaShift baseline. A target whose `color` is empty issues no native write.
-Each target may also persist `lastColorValues`, which remembers the most recent
-number for an inactive control without making it an applied override. This keeps
-the optional-setting contract intact while allowing disable and re-enable to
-restore the user's prior value across application restarts.
+The neutral color settings are brightness 50, contrast 50, gamma 1, saturation
+50, hue 0, and color temperature 50. Brightness, contrast, saturation, hue, and
+color temperature use values from 0 through 100. Gamma uses the physical product
+range 0.3 through 2.8 and the brightness-dependent color safety envelope:
 
-There is exactly one source of applied settings per `(profileId, displayId)`
-pair; no shared profile-level color object remains. `packages/core` exports
-`resolveDisplayColor`, `activeColorTargets`, `findDisplayTarget`,
-`setDisplayTarget`, and `removeDisplayTarget` so every layer resolves targets
-through the same case-insensitive rules.
+| Brightness | Gamma minimum | Gamma maximum |
+| ---------- | ------------- | ------------- |
+| 0-6        | 0.5           | 2.8           |
+| 7-29       | 0.4           | 2.8           |
+| 30-86      | 0.3           | 2.8           |
+| 87-89      | 0.3           | 2.7           |
+| 90-91      | 0.3           | 2.6           |
+| 92-96      | 0.3           | 2.5           |
+| 97-99      | 0.3           | 2.4           |
+| 100        | 0.3           | 2.3           |
 
-For an application profile, presence in `displays` means the display is assigned
-to that profile. For the Default profile, the renderer enumerates all connected
-displays and joins any persisted target by stable ID; a connected display with no
-persisted target stays at baseline, so a newly connected display receives no
-overrides automatically.
+A missing display target means the display stays at its captured original state.
+Individual settings cannot be omitted or disabled in persistence. Unsupported
+values remain stored so user intent survives hardware changes; Electron filters
+them only when constructing capability-aware native commands.
 
-Zod validates the complete persisted document. Profile IDs and display targets
-must be unique case-insensitively, and a configured default must reference an
-existing profile. Unknown fields are rejected so vendor-native values cannot
-silently enter the product model.
+For an application profile, presence in `displays` assigns that display. The
+permanent Default profile implicitly covers every connected display, but a
+missing persisted target still leaves that display at its original settings.
+Disconnected targets remain persisted and are omitted from the normal editor.
 
-`JsonProfileRepository` owns validation, serialization, CRUD, duplication, and
-default-profile maintenance. Its small `ProfileConfigurationStorage` interface
-keeps the app-data filesystem decision in Electron main while allowing the
-repository to be tested without filesystem state. Returned objects are cloned
-so callers cannot mutate repository state without a successful save, and
-duplication deep-copies every target's settings and remembered values.
+Zod validates the complete document and rejects unknown fields. Profile IDs and
+display targets must be unique case-insensitively. `JsonProfileRepository` owns
+validation, serialization, CRUD, duplication, and Default-profile maintenance.
+Returned values are cloned so mutation requires a successful save.
 
-Two explicit migrations run on load. Version 0 moves the former top-level
-`defaultProfileId` into `settings`. Version 1 copies each profile's shared
-`color` and `lastColorValues` into every one of its existing display targets,
-preserving profile IDs, names, enabled state, application rules, target order,
-and stable display IDs. A version 1 profile holding color values but targeting no
-display never reached the hardware and has no version 2 home, so migration
-discards those values and reports a `discardedUnassignedColorSettings` notice
-through `onMigrationNotice` rather than inventing a display target. Loading
-legacy JSON rewrites it at the current version. Invalid or unknown versions fail
-explicitly and are never replaced with an empty configuration.
+## Migration
+
+Loading older JSON rewrites it at schema version 3:
+
+- Version 0 moves the top-level `defaultProfileId` into `settings`.
+- Version 1 copies shared profile color values to every existing display target.
+  Unassigned values are discarded with a structured diagnostic because they were
+  never applied to a display.
+- Version 2 fills every missing target field with its neutral value, discards
+  `lastColorValues`, and clamps gamma to the safety envelope for that target's
+  brightness.
+
+Migration notices are written to structured diagnostics and are not shown in the
+app. Invalid or unknown versions fail explicitly and are never replaced with an
+empty configuration.
 
 ## Application matching
 
 Application matching is Windows-case-insensitive and supports both slash forms.
-Each rule stores an executable filename and may store the preferred full path.
+Each rule stores an executable filename and may store a preferred full path.
 
-- When both the rule and foreground event have a path, only an exact normalized
-  path matches. A same-named executable at a different known path does not.
-- When a path is unavailable on either side, the executable filename is the
-  fallback.
-- Exact path matches outrank filename-only matches. Ties preserve profile order.
+- When both paths are known, only an exact normalized path matches.
+- When either path is unavailable, executable filename is the fallback.
+- Exact path matches outrank filename-only matches; ties preserve profile order.
 - Disabled profiles never match.
-
-This keeps normal access-denied foreground events usable without discarding the
-stronger identity available from a full path.
 
 ## Activation
 
-`selectActivation` implements the required precedence:
+`selectActivation` implements this precedence:
 
 ```text
 valid enabled manual override
   > foreground application profile
-  > valid enabled default profile
-  > baseline
+  > valid enabled Default profile
+  > original settings
 ```
 
-An invalid or newly disabled manual override safely falls back to automatic
-selection. `ActivationResolver` adds only transition state: it reports whether
-the desired target differs from the current target, allowing the integration
-layer to avoid duplicate display writes. `reset()` invalidates that state after
-an external baseline restore or native-service restart.
-
-The resolver remains synchronous and does not call the native service. Electron
-main serializes events around it and performs baseline-aware native apply and
-restore operations.
+`ActivationResolver` reports only target transitions so the integration layer can
+avoid duplicate writes. Electron serializes profile switching, preview, pause,
+restore, and topology work, then restores the immutable captured baseline before
+applying the newly selected complete desired state.

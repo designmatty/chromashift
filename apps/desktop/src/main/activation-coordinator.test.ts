@@ -1,9 +1,9 @@
 import {
   JsonProfileRepository,
+  createNeutralColorSettings,
   manualActivationMode,
   type ColorProfile,
   type ColorSettings,
-  type ProfileConfiguration,
   type ProfileConfigurationStorage
 } from '@chromashift/core'
 import type { NativeEvent } from '@chromashift/native-client'
@@ -35,7 +35,7 @@ class RecordingLogger implements StructuredLogger {
 
 function profile(
   id: string,
-  color: ColorSettings,
+  color: Partial<ColorSettings>,
   displayIds: string[],
   executableName?: string
 ): ColorProfile {
@@ -48,7 +48,7 @@ function profile(
 
 function targetedProfile(
   id: string,
-  displays: ColorProfile['displays'],
+  displays: Array<{ displayId: string; color: Partial<ColorSettings> }>,
   executableName?: string
 ): ColorProfile {
   return {
@@ -56,14 +56,14 @@ function targetedProfile(
     name: id,
     enabled: true,
     applications: executableName === undefined ? [] : [{ executableName }],
-    displays
+    displays: displays.map((target) => ({
+      displayId: target.displayId,
+      color: { ...createNeutralColorSettings(), ...target.color }
+    }))
   }
 }
 
-function configuration(
-  profiles: ColorProfile[],
-  defaultProfileId: string | null = null
-): ProfileConfiguration {
+function configuration(profiles: ColorProfile[], defaultProfileId: string | null = null): object {
   return {
     schemaVersion: 2,
     profiles,
@@ -71,7 +71,7 @@ function configuration(
   }
 }
 
-function repository(configuration: ProfileConfiguration): JsonProfileRepository {
+function repository(configuration: object): JsonProfileRepository {
   return new JsonProfileRepository(new MemoryStorage(JSON.stringify(configuration)))
 }
 
@@ -176,14 +176,19 @@ describe('ActivationCoordinator', () => {
     expect(
       native.calls
         .filter((call) => call.operation === 'apply')
-        .map((call) => [call.displayId, call.settings])
+        .map((call) => [
+          call.displayId,
+          call.settings?.saturation,
+          call.settings?.brightness,
+          call.settings?.gamma
+        ])
     ).toEqual([
-      ['display:one', { saturation: 75 }],
-      ['display:two', { brightness: 30, gamma: 1.4 }]
+      ['display:one', 75, 50, 1],
+      ['display:two', 50, 30, 1.4]
     ])
   })
 
-  it('leaves an empty target at baseline and issues no apply write for it', async () => {
+  it('migrates an empty legacy target to neutral settings', async () => {
     const native = new FakeNativeActivationPort()
     const mixed = targetedProfile(
       'mixed',
@@ -203,11 +208,13 @@ describe('ActivationCoordinator', () => {
 
     expect(native.calls.map((call) => `${call.operation}:${call.displayId ?? 'all'}`)).toEqual([
       'capture:display:one',
-      'apply:display:one'
+      'apply:display:one',
+      'capture:display:two',
+      'apply:display:two'
     ])
   })
 
-  it('restores a display whose target became empty in the next profile', async () => {
+  it('applies neutral settings when a legacy target was empty in the next profile', async () => {
     const native = new FakeNativeActivationPort()
     const both = targetedProfile(
       'both',
@@ -239,9 +246,10 @@ describe('ActivationCoordinator', () => {
       'apply:display:one',
       'capture:display:two',
       'apply:display:two',
-      'restore:display:two',
       'capture:display:one',
-      'apply:display:one'
+      'apply:display:one',
+      'capture:display:two',
+      'apply:display:two'
     ])
   })
 
@@ -272,10 +280,10 @@ describe('ActivationCoordinator', () => {
     expect(
       native.calls
         .filter((call) => call.operation === 'apply')
-        .map((call) => [call.displayId, call.settings])
+        .map((call) => [call.displayId, call.settings?.colorTemperature, call.settings?.brightness])
     ).toEqual([
-      ['display:one', { colorTemperature: 60 }],
-      ['display:two', { brightness: 30 }]
+      ['display:one', 60, 50],
+      ['display:two', 50, 30]
     ])
   })
 

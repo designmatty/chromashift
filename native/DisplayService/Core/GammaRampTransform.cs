@@ -5,9 +5,7 @@ internal static class GammaRampTransform
     internal static GammaRamp Apply(GammaRamp baseline, GammaSettings settings)
     {
         baseline.Validate();
-        ValidateRange(settings.Brightness, 0, 100, nameof(settings.Brightness));
-        ValidateRange(settings.Contrast, 0, 100, nameof(settings.Contrast));
-        ValidateRange(settings.Gamma, 0.5, 2.8, nameof(settings.Gamma));
+        ValidateSettings(settings);
 
         if (settings is { Brightness: null, Contrast: null, Gamma: null })
         {
@@ -18,6 +16,14 @@ internal static class GammaRampTransform
             TransformChannel(baseline.Red, settings),
             TransformChannel(baseline.Green, settings),
             TransformChannel(baseline.Blue, settings));
+    }
+
+    internal static void ValidateSettings(GammaSettings settings)
+    {
+        ValidateRange(settings.Brightness, 0, 100, nameof(settings.Brightness));
+        ValidateRange(settings.Contrast, 0, 100, nameof(settings.Contrast));
+        ValidateRange(settings.Gamma, 0.3, 2.8, nameof(settings.Gamma));
+        ValidateGammaEnvelope(settings);
     }
 
     private static ushort[] TransformChannel(ushort[] channel, GammaSettings settings)
@@ -67,6 +73,29 @@ internal static class GammaRampTransform
         if (value is not null && (double.IsNaN(value.Value) || value < minimum || value > maximum))
         {
             throw new ArgumentOutOfRangeException(name, value, $"Value must be between {minimum} and {maximum}.");
+        }
+    }
+
+    private static void ValidateGammaEnvelope(GammaSettings settings)
+    {
+        if (settings.Gamma is null) return;
+        var brightness = settings.Brightness ?? 50;
+        var minimum = brightness < 7 ? 0.5 : brightness < 30 ? 0.4 : 0.3;
+        var maximum = brightness switch
+        {
+            < 87 => 2.8,
+            < 90 => 2.7,
+            < 92 => 2.6,
+            < 97 => 2.5,
+            < 100 => 2.4,
+            _ => 2.3
+        };
+        if (settings.Gamma < minimum || settings.Gamma > maximum)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(settings.Gamma),
+                settings.Gamma,
+                $"Gamma must be between {minimum} and {maximum} at {brightness}% brightness.");
         }
     }
 }

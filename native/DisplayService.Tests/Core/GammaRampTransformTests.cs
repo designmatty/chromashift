@@ -66,8 +66,10 @@ public sealed class GammaRampTransformTests
     [Theory]
     [InlineData(-1, 50, 1)]
     [InlineData(50, 101, 1)]
-    [InlineData(50, 50, 0.49)]
+    [InlineData(50, 50, 0.29)]
     [InlineData(50, 50, 2.81)]
+    [InlineData(0, 50, 0.49)]
+    [InlineData(100, 50, 2.31)]
     public void ValuesOutsideProductRangesAreRejected(double brightness, double contrast, double gamma)
     {
         var baseline = CreateLinearRamp();

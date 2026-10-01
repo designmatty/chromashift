@@ -1,13 +1,15 @@
 import { z } from 'zod'
 import {
   migrateVersionOneProfiles,
+  migrateVersionTwoProfiles,
   versionOneConfigurationSchema,
+  versionTwoConfigurationSchema,
   versionZeroConfigurationSchema,
   type MigrationNoticeListener
 } from './migration.js'
 import { colorProfileSchema, type ColorProfile } from './model.js'
 
-export const CURRENT_SCHEMA_VERSION = 2 as const
+export const CURRENT_SCHEMA_VERSION = 3 as const
 export const DEFAULT_PROFILE_ID = 'default' as const
 
 export const profileSettingsSchema = z
@@ -128,6 +130,24 @@ export function parseProfileConfiguration(
     return validateCurrentConfiguration(input)
   }
 
+  if (version === 2) {
+    const result = versionTwoConfigurationSchema.safeParse(input)
+    if (!result.success) {
+      throw new ConfigurationValidationError(
+        'Version 2 profile configuration is invalid.',
+        formatIssues(result.error)
+      )
+    }
+    return validateCurrentConfiguration(
+      {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        profiles: migrateVersionTwoProfiles(result.data.profiles, options.onMigrationNotice),
+        settings: result.data.settings
+      },
+      'Migrated profile configuration is invalid.'
+    )
+  }
+
   if (version === 1 || version === 0) {
     const schema = version === 1 ? versionOneConfigurationSchema : versionZeroConfigurationSchema
     const result = schema.safeParse(input)
@@ -138,9 +158,10 @@ export function parseProfileConfiguration(
       )
     }
 
-    const defaultProfileId = 'settings' in result.data
-      ? result.data.settings.defaultProfileId
-      : (result.data.defaultProfileId ?? null)
+    const defaultProfileId =
+      'settings' in result.data
+        ? result.data.settings.defaultProfileId
+        : (result.data.defaultProfileId ?? null)
 
     return validateCurrentConfiguration(
       {
