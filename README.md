@@ -36,6 +36,15 @@ known limits.
 ChromaShift uses normal Windows and GPU display APIs. It does not inject into
 applications, inspect game memory, hook rendering, or install a driver.
 
+## Install on Windows
+
+Download the x64 setup executable from [GitHub Releases](https://github.com/designmatty/chromashift/releases).
+Current release installers are signed with the verified publisher `MATTHEW WILLIAMS`.
+Microsoft Defender SmartScreen may still warn that a new release is unrecognized
+while its reputation builds. Signing does not guarantee removal of that warning.
+Confirm the download source and verified publisher before deciding to proceed.
+See [Windows release signing](docs/signing.md#windows-prompts-and-smartscreen).
+
 ## Build from source
 
 Requirements:

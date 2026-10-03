@@ -1,7 +1,7 @@
 {
   "name": "@chromashift/desktop",
   "version": "0.1.0-preview.6",
-  "description": "Automatic Windows display color profiles",
+  "description": "ChromaShift",
   "productName": "ChromaShift",
   "author": "ChromaShift",
   "private": true,
@@ -14,7 +14,7 @@
     "package:dir": "electron-builder --win dir --x64 --publish never && node scripts/package-footprint.mjs --check",
     "package:win": "electron-builder --win nsis --x64 --publish never && node scripts/package-footprint.mjs --check --installer",
     "package:release:prepare": "electron-builder --win dir --x64 --publish never && node scripts/package-footprint.mjs --check",
-    "package:release:installer": "electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never",
+    "package:release:installer": "electron-builder --config electron-builder.release.yml --win nsis --x64 --prepackaged release/win-unpacked --publish never",
     "package:release:finalize": "node ../../scripts/finalize-release-metadata.mjs && node scripts/package-footprint.mjs --check --installer",
     "check:package-budget": "node scripts/package-footprint.mjs --check --installer",
     "measure:memory": "node scripts/measure-memory.mjs",

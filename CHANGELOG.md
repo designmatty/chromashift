@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- ChromaShift artwork on the installer and uninstaller welcome and finish pages.
+
+### Changed
+
+- Windows elevation prompts identify the installer as ChromaShift.
+- Documented the SmartScreen reputation warning that can appear for signed releases.
+
+### Fixed
+
+- Release builds sign the generated uninstaller before embedding it, so uninstall
+  can identify the verified publisher after upgrading to the updated installer.
+- Release preflight verifies the uninstaller extracted from the finished installer.
+
 ## [0.1.0-preview.6] - 2026-10-03
 
 ### Added

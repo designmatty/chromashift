@@ -70,4 +70,6 @@ nsis:
   uninstallDisplayName: ChromaShift
   # NSIS requires a 150 x 57 BMP; this is derived from chromashift-logo-lightmode.png.
   installerHeader: build/chromashift-logo-lightmode.bmp
+  installerSidebar: build/chromashift-installer-sidebar.bmp
+  uninstallerSidebar: build/chromashift-installer-sidebar.bmp
   deleteAppDataOnUninstall: false
