@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ProductError, ProductState } from '../../shared/product-api.js'
+import type { ProductError, ProductState } from '@shared/product-api.js'
 
 export function useProduct(): {
   state: ProductState | null

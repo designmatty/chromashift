@@ -10,19 +10,19 @@ import {
   type SystemInfo
 } from '@chromashift/native-client'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { UserPreferences } from '../shared/product-api.js'
+import type { UserPreferences } from '@shared/product-api.js'
 import {
   defaultChromaShiftIntent,
   defaultUserPreferences,
   type ChromaShiftIntent
-} from './app-settings.js'
+} from '@main/app-settings.js'
 import {
   createProductRuntime,
   type ProductRuntime,
   type ProductRuntimePorts
-} from './product-runtime.js'
-import type { StructuredLogEvent, StructuredLogger } from './structured-logger.js'
-import { FakeNativeDisplayPort } from './testing/fake-native-display.js'
+} from '@main/product-runtime.js'
+import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
+import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
 
 class RecordingLogger implements StructuredLogger {
   public readonly events: StructuredLogEvent[] = []

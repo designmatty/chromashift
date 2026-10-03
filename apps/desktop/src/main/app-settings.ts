@@ -7,8 +7,8 @@ import {
   userPreferencesSchema,
   windowBoundsSchema,
   type UserPreferences
-} from '../shared/product-api.js'
-import { SettingsSliceStore } from './settings-slice-store.js'
+} from '@shared/product-api.js'
+import { SettingsSliceStore } from '@main/settings-slice-store.js'
 
 // Settings persist as three slice files under the user-data directory, one per
 // owner: user preferences (renderer-editable), window state (Electron shell),

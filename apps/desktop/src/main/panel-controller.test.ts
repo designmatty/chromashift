@@ -1,6 +1,6 @@
 import type { Rectangle } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
-import { PanelController, type PanelWindowPort } from './panel-controller.js'
+import { PanelController, type PanelWindowPort } from '@main/panel-controller.js'
 
 function panelWindow(visible: boolean): PanelWindowPort {
   return {

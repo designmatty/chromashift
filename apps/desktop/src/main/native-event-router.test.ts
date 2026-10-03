@@ -6,8 +6,8 @@ import {
   type NativeEventDisplayTransitionPort,
   type NativeEventRecoveryPort,
   type NativeEventRouterPorts
-} from './native-event-router.js'
-import type { StructuredLogEvent } from './structured-logger.js'
+} from '@main/native-event-router.js'
+import type { StructuredLogEvent } from '@main/structured-logger.js'
 
 class FakeNativeEventSource {
   #eventListeners: Array<(event: NativeEvent) => void> = []

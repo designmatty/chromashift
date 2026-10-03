@@ -1,4 +1,4 @@
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface ShutdownActivationPort {
   waitForIdle(): Promise<void>

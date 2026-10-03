@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ShutdownCoordinator } from './shutdown-coordinator.js'
-import type { StructuredLogEvent, StructuredLogger } from './structured-logger.js'
+import { ShutdownCoordinator } from '@main/shutdown-coordinator.js'
+import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
 class RecordingLogger implements StructuredLogger {
   public readonly events: StructuredLogEvent[] = []

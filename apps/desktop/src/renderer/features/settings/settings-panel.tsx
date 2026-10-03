@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { SettingsRow } from '@/components/layout/presentational'
 import { Switch } from '@/components/ui/switch'
 import { run } from '@/lib/product-result'
-import type { ProductError, ProductState } from '../../../shared/product-api.js'
+import type { ProductError, ProductState } from '@shared/product-api.js'
 
 interface SelectItem<T extends string> {
   label: string

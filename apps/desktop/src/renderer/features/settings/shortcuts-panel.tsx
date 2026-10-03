@@ -8,9 +8,9 @@ import {
   type ProductState,
   type ShortcutAction,
   type ShortcutBinding
-} from '../../../shared/product-api.js'
-import { EMERGENCY_RESTORE_ACCELERATOR } from '../../../shared/shortcut-constants.js'
-import { recordShortcut } from './shortcut-recording.js'
+} from '@shared/product-api.js'
+import { EMERGENCY_RESTORE_ACCELERATOR } from '@shared/shortcut-constants.js'
+import { recordShortcut } from '@/features/settings/shortcut-recording.js'
 import { Trash2 } from 'lucide-react'
 
 type ShortcutRowDefinition = {

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { PersistentJsonLogger, readDiagnosticLog } from './structured-logger.js'
+import { PersistentJsonLogger, readDiagnosticLog } from '@main/structured-logger.js'
 
 const directories: string[] = []
 

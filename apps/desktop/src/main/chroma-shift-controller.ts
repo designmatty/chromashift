@@ -10,8 +10,8 @@ import type {
   ConfigurationChange,
   ActivationOrigin,
   ActivationSource
-} from './automatic-activation-controller.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+} from '@main/automatic-activation-controller.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export type ChromaShiftStatus = 'active' | 'paused' | 'safetyBlocked'
 

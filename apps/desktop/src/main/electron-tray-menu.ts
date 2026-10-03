@@ -5,7 +5,7 @@ import {
   type NativeImage,
   type Rectangle
 } from 'electron'
-import type { TrayCommands, TrayMenuPort, TrayReadModel } from './tray-controller.js'
+import type { TrayCommands, TrayMenuPort, TrayReadModel } from '@main/tray-controller.js'
 
 export function createAutomaticMenuItem(
   model: TrayReadModel,

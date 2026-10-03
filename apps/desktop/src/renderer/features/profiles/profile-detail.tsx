@@ -27,9 +27,9 @@ import {
 import { useId } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Tooltip } from '@/components/ui/tooltip'
-import type { ProductError, ProductState } from '../../../shared/product-api.js'
-import { ApplicationAssignments } from './application-assignments'
-import { DisplayControls } from './display-controls'
+import type { ProductError, ProductState } from '@shared/product-api.js'
+import { ApplicationAssignments } from '@/features/profiles/application-assignments'
+import { DisplayControls } from '@/features/profiles/display-controls'
 
 const DEFAULT_ID = 'default'
 

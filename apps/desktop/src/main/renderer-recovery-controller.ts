@@ -1,4 +1,4 @@
-import type { StructuredLogger } from './structured-logger.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 export type RendererSurface = 'appPanel' | 'miniPanel'
 export type RendererExitReason =

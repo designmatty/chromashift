@@ -1,6 +1,6 @@
-import { isOnAnyWorkArea, type WindowBounds, type WorkArea } from '../shared/layout.js'
-import type { WindowState } from './app-settings.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { isOnAnyWorkArea, type WindowBounds, type WorkArea } from '@shared/layout.js'
+import type { WindowState } from '@main/app-settings.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface WindowStatePort {
   isDestroyed(): boolean

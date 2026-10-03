@@ -17,8 +17,8 @@ import {
   type DemoProfile,
   type DemoScene,
   type Point
-} from './demo-model'
-import { createTour, type TourStep } from './demo-tour'
+} from '@/demo-model'
+import { createTour, type TourStep } from '@/demo-tour'
 
 const rampFilter = 'url(#demo-ramp)'
 const svgNamespace = 'http://www.w3.org/2000/svg'

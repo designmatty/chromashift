@@ -1,12 +1,12 @@
 import { JsonProfileRepository, type ProfileConfigurationStorage } from '@chromashift/core'
 import { describe, expect, it, vi } from 'vitest'
-import { defaultUserPreferences as defaultAppSettings } from './app-settings.js'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
+import { defaultUserPreferences as defaultAppSettings } from '@main/app-settings.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
 import {
   ProfileNotificationController,
   type ProductNotification,
   type ProductNotificationPort
-} from './profile-notification-controller.js'
+} from '@main/profile-notification-controller.js'
 
 class MemoryStorage implements ProfileConfigurationStorage {
   public read(): Promise<string> {

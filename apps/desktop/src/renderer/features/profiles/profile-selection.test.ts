@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ColorProfile } from '@chromashift/core'
-import type { ShortcutBinding } from '../../../shared/product-api.js'
-import { profileSelectionItems, profileSelectionLabel } from './profile-selection.js'
+import type { ShortcutBinding } from '@shared/product-api.js'
+import { profileSelectionItems, profileSelectionLabel } from '@/features/profiles/profile-selection'
 
 const profiles: ColorProfile[] = [
   { id: 'default', name: 'Default profile', enabled: true, applications: [], displays: [] },

@@ -6,7 +6,7 @@ import {
   MIN_WINDOW_WIDTH,
   isOnAnyWorkArea,
   resolveWindowBounds
-} from './layout.js'
+} from '@shared/layout.js'
 
 const primary = { x: 0, y: 0, width: 2560, height: 1400 }
 const secondary = { x: 2560, y: 0, width: 1920, height: 1080 }

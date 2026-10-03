@@ -10,7 +10,7 @@ import {
 import type { Draggable, KeyboardSensorOptions } from '@dnd-kit/dom'
 import { DOMRectangle, scrollIntoViewIfNeeded } from '@dnd-kit/dom/utilities'
 import { isSortable } from '@dnd-kit/react/sortable'
-import type { ProfileReorderDiagnostic } from '../../../shared/product-api'
+import type { ProfileReorderDiagnostic } from '@shared/product-api'
 
 // Extend the library's keyboard sensor only for our existing Home/End shortcuts.
 class ProfileKeyboardSensor extends KeyboardSensor {

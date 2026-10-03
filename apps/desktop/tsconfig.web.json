@@ -1,7 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "paths": { "@/*": ["./src/renderer/*"] },
+    "paths": {
+      "@/*": ["./src/renderer/*"],
+      "@shared/*": ["./src/shared/*"]
+    },
     "jsx": "react-jsx",
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "module": "ESNext",

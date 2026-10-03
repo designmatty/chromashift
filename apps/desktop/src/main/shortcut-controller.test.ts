@@ -1,13 +1,13 @@
 import { JsonProfileRepository, type ActivationTarget } from '@chromashift/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { ShortcutAction, ShortcutBinding } from '../shared/product-api.js'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
+import type { ShortcutAction, ShortcutBinding } from '@shared/product-api.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
 import {
   ShortcutController,
   ShortcutRegistrationError,
   type ShortcutActivationPort,
   type ShortcutRegistrationPort
-} from './shortcut-controller.js'
+} from '@main/shortcut-controller.js'
 
 class MemoryStorage {
   public contents: string | null = null

@@ -8,10 +8,10 @@ import {
   type ProfileConfigurationStorage
 } from '@chromashift/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { ActivationOutcome } from './activation-coordinator.js'
-import type { ActivationControllerState } from './automatic-activation-controller.js'
-import type { ChromaShiftState } from './chroma-shift-controller.js'
-import type { StructuredLogger } from './structured-logger.js'
+import type { ActivationOutcome } from '@main/activation-coordinator.js'
+import type { ActivationControllerState } from '@main/automatic-activation-controller.js'
+import type { ChromaShiftState } from '@main/chroma-shift-controller.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 import {
   TrayController,
   createTrayReadModel,
@@ -19,7 +19,7 @@ import {
   type TrayCommands,
   type TrayMenuPort,
   type TrayReadModel
-} from './tray-controller.js'
+} from '@main/tray-controller.js'
 
 const profiles: ColorProfile[] = [
   {

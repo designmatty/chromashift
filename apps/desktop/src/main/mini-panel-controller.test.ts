@@ -1,6 +1,6 @@
 import type { BrowserWindow, Display, Rectangle } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MiniPanelController } from './mini-panel-controller.js'
+import { MiniPanelController } from '@main/mini-panel-controller.js'
 
 function fakePanel() {
   let visible = false

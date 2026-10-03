@@ -10,7 +10,7 @@ import {
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client/protocol'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip } from '@/components/ui/tooltip'
-import type { ProductState } from '../../../shared/product-api.js'
+import type { ProductState } from '@shared/product-api.js'
 
 type VisibleColorKey = Exclude<keyof CompleteColorSettings, 'colorTemperature'>
 

@@ -3,7 +3,7 @@ import { useProduct } from '@/hooks/use-product'
 import { lazy, Suspense } from 'react'
 
 const MainApp = lazy(async () => {
-  const module = await import('./main-app')
+  const module = await import('@/app/main-app')
   return { default: module.MainApp }
 })
 const MiniPanel = lazy(async () => {

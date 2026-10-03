@@ -5,47 +5,47 @@ import {
   type ProfileRepository
 } from '@chromashift/core'
 import { PROTOCOL_VERSION, type ForegroundApplication } from '@chromashift/native-client'
-import { ActivationCoordinator } from './activation-coordinator.js'
-import type { UserPreferences } from '../shared/product-api.js'
-import type { ChromaShiftIntent } from './app-settings.js'
-import { attachActivationOutcomeRouter } from './activation-outcome-router.js'
-import { applicationFriendlyName } from './application-friendly-name.js'
-import { AutomaticActivationController } from './automatic-activation-controller.js'
-import { ChromaShiftController } from './chroma-shift-controller.js'
-import { DisplayTransitionController } from './display-transition-controller.js'
-import { EmergencyRestoreController } from './emergency-restore-controller.js'
-import { attachNativeEventRouter, type NativeEventSource } from './native-event-router.js'
+import { ActivationCoordinator } from '@main/activation-coordinator.js'
+import type { UserPreferences } from '@shared/product-api.js'
+import type { ChromaShiftIntent } from '@main/app-settings.js'
+import { attachActivationOutcomeRouter } from '@main/activation-outcome-router.js'
+import { applicationFriendlyName } from '@main/application-friendly-name.js'
+import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { ChromaShiftController } from '@main/chroma-shift-controller.js'
+import { DisplayTransitionController } from '@main/display-transition-controller.js'
+import { EmergencyRestoreController } from '@main/emergency-restore-controller.js'
+import { attachNativeEventRouter, type NativeEventSource } from '@main/native-event-router.js'
 import {
   nativeRecoveryTerminalMessage,
   nativeRecoveryTerminalTitle
-} from './native-recovery-user-message.js'
+} from '@main/native-recovery-user-message.js'
 import {
   NativeServiceRecoveryController,
   type RecoverableNativeServicePort
-} from './native-service-recovery-controller.js'
-import { PhysicalDisplayClient, type EndpointDisplayPort } from './physical-display-client.js'
-import { rewriteProfilesForPhysicalDisplays } from './physical-display-profile-rewrite.js'
-import { PowerEventAdapter, type PowerMonitorPort } from './power-event-adapter.js'
-import { PreviewSessionController } from './preview-session-controller.js'
-import { ProductController } from './product-controller.js'
-import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
-import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+} from '@main/native-service-recovery-controller.js'
+import { PhysicalDisplayClient, type EndpointDisplayPort } from '@main/physical-display-client.js'
+import { rewriteProfilesForPhysicalDisplays } from '@main/physical-display-profile-rewrite.js'
+import { PowerEventAdapter, type PowerMonitorPort } from '@main/power-event-adapter.js'
+import { PreviewSessionController } from '@main/preview-session-controller.js'
+import { ProductController } from '@main/product-controller.js'
+import { migrateLegacyProfileConfiguration } from '@main/profile-configuration-migration.js'
+import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
 import {
   ProfileNotificationController,
   type ProductNotificationPort
-} from './profile-notification-controller.js'
+} from '@main/profile-notification-controller.js'
 import {
   EMERGENCY_RESTORE_ACCELERATOR,
   ShortcutController,
   type ShortcutRegistrationPort
-} from './shortcut-controller.js'
+} from '@main/shortcut-controller.js'
 import {
   ShutdownCoordinator,
   type ShutdownApplicationPort,
   type ShutdownNativePort
-} from './shutdown-coordinator.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
-import { TrayController, type TrayMenuPort } from './tray-controller.js'
+} from '@main/shutdown-coordinator.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
+import { TrayController, type TrayMenuPort } from '@main/tray-controller.js'
 
 /**
  * Everything the runtime needs from the DisplayService connection: lifecycle

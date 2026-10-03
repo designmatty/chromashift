@@ -1,4 +1,4 @@
-import type { ProductError, ProductResult } from '../../shared/product-api.js'
+import type { ProductError, ProductResult } from '@shared/product-api.js'
 
 export async function run<T>(
   request: Promise<ProductResult<T>>,

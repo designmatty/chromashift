@@ -16,13 +16,13 @@ import type {
   ProductState,
   ShortcutBinding,
   UserPreferences
-} from '../shared/product-api.js'
-import type { ActivationOutcome } from './activation-coordinator.js'
+} from '@shared/product-api.js'
+import type { ActivationOutcome } from '@main/activation-coordinator.js'
 import type {
   ActivationControllerState,
   ConfigurationChange
-} from './automatic-activation-controller.js'
-import type { PreviewSessionController } from './preview-session-controller.js'
+} from '@main/automatic-activation-controller.js'
+import type { PreviewSessionController } from '@main/preview-session-controller.js'
 
 export interface ProductNativePort {
   getDisplays(): Promise<Display[]>

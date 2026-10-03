@@ -1,5 +1,5 @@
-import type { DiagnosticLogEntry, ProfileReorderDiagnostic } from '../shared/product-api.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import type { DiagnosticLogEntry, ProfileReorderDiagnostic } from '@shared/product-api.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 interface DiagnosticsPorts {
   read(): DiagnosticLogEntry[]

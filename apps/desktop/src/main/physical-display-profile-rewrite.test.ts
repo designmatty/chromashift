@@ -4,7 +4,7 @@ import {
   type ColorProfile,
   type ColorSettings
 } from '@chromashift/core'
-import { rewriteProfile } from './physical-display-profile-rewrite.js'
+import { rewriteProfile } from '@main/physical-display-profile-rewrite.js'
 
 function profile(
   displays: Array<{ displayId: string; color: Partial<ColorSettings> }>

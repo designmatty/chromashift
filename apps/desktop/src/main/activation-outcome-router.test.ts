@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   attachActivationOutcomeRouter,
   type OutcomeNotificationPort
-} from './activation-outcome-router.js'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
-import type { StructuredLogEvent } from './structured-logger.js'
+} from '@main/activation-outcome-router.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
+import type { StructuredLogEvent } from '@main/structured-logger.js'
 
 function outcome(overrides: Partial<CompletedActivationOutcome> = {}): CompletedActivationOutcome {
   return {

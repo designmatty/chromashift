@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createAutomaticMenuItem } from './electron-tray-menu.js'
-import type { TrayCommands, TrayReadModel } from './tray-controller.js'
+import { createAutomaticMenuItem } from '@main/electron-tray-menu.js'
+import type { TrayCommands, TrayReadModel } from '@main/tray-controller.js'
 
 const commands = {
   openAppPanel: vi.fn(),

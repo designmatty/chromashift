@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { z } from 'zod'
-import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
 
 /**
  * One persisted settings slice: a single JSON document with one owner concern.

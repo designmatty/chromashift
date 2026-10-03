@@ -1,7 +1,7 @@
 import { Badge, Box, Button, Flex, Heading, SimpleGrid, Stack, Text } from '@chakra-ui/react'
 import { RefreshCcwDot } from 'lucide-react'
 import { formatName, run } from '@/lib/product-result'
-import type { ProductError, ProductState } from '../../../shared/product-api.js'
+import type { ProductError, ProductState } from '@shared/product-api.js'
 
 export function DisplaysView({
   product,

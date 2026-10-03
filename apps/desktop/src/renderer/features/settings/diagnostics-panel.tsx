@@ -2,7 +2,7 @@ import { Badge, Box, Button, Flex, Heading, Stack, Text } from '@chakra-ui/react
 import { useEffect, useState } from 'react'
 import { Check, Copy, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { run } from '@/lib/product-result'
-import type { DiagnosticLogEntry, ProductError } from '../../../shared/product-api.js'
+import type { DiagnosticLogEntry, ProductError } from '@shared/product-api.js'
 
 export function DiagnosticsPanel({
   onError

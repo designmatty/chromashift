@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSameDocumentNavigation, isTrustedRendererUrl } from './renderer-security.js'
+import { isSameDocumentNavigation, isTrustedRendererUrl } from '@main/renderer-security.js'
 
 describe('renderer security policy', () => {
   it('accepts only the exact packaged renderer file', () => {

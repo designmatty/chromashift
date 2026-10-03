@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeBubble } from './demo-tour'
+import { placeBubble } from '@/demo-tour'
 
 const viewport = { width: 1200, height: 800 }
 const bubble = { width: 300, height: 160 }

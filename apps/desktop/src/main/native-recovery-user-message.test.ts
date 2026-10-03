@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   nativeRecoveryTerminalMessage,
   nativeRecoveryTerminalTitle
-} from './native-recovery-user-message.js'
+} from '@main/native-recovery-user-message.js'
 
 describe('native recovery user message', () => {
   it('uses actionable product language without exposing raw display identifiers', () => {

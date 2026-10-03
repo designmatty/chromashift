@@ -1,5 +1,5 @@
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
-import type { ShortcutBinding } from '../../../shared/product-api.js'
+import type { ShortcutBinding } from '@shared/product-api.js'
 
 export function profileSelectionLabel(
   profiles: readonly ColorProfile[],

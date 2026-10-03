@@ -62,7 +62,8 @@ npm run smoke --workspace @chromashift/website
 
 The favicons, app icons, mini-panel mark, full header logo, and 1200 × 630
 social card in `public/`
-are committed. They are generated from the root brand PNGs and
+are committed. They are generated from the website's brand PNGs in
+`src/assets/brand/` and
 `social/social-card.html`:
 
 ```powershell

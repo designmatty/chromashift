@@ -12,8 +12,8 @@ import type {
   DisplayCapabilityReport,
   DisplayRestoreResult
 } from '@chromashift/native-client'
-import type { PreviewState } from '../shared/product-api.js'
-import { describeError } from './structured-logger.js'
+import type { PreviewState } from '@shared/product-api.js'
+import { describeError } from '@main/structured-logger.js'
 
 export interface PreviewNativePort {
   getDisplays(): Promise<Display[]>

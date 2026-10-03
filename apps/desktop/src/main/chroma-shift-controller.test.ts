@@ -1,11 +1,11 @@
 import { manualActivationMode, type ActivationMode, type ActivationTarget } from '@chromashift/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
 import {
   ChromaShiftController,
   type ChromaShiftActivationPort,
   type ChromaShiftPersistedState
-} from './chroma-shift-controller.js'
+} from '@main/chroma-shift-controller.js'
 
 function outcome(
   target: ActivationTarget = { kind: 'profile', profileId: 'gaming' },

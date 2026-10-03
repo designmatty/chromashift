@@ -18,7 +18,7 @@ import type {
   DisplaySettings,
   RestoreAllResult
 } from '@chromashift/native-client'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface NativeActivationPort {
   getDisplays(): Promise<Display[]>

@@ -2,8 +2,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { findGitWorktreeRoot, resolveApplicationDataPaths } from './application-data-path.js'
-import { migrateLegacyProfileConfiguration } from './profile-configuration-migration.js'
+import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
+import { migrateLegacyProfileConfiguration } from '@main/profile-configuration-migration.js'
 
 const directories: string[] = []
 

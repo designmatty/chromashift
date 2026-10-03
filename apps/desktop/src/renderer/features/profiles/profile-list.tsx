@@ -36,10 +36,10 @@ import {
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
-import type { ProductState, ShortcutBinding } from '../../../shared/product-api'
+import type { ProductState, ShortcutBinding } from '@shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
-import { profileSelectionItems, profileSelectionLabel } from './profile-selection'
+import { profileSelectionItems, profileSelectionLabel } from '@/features/profiles/profile-selection'
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers'
@@ -47,7 +47,7 @@ import {
   useProfileReorder,
   profileReorderSensors,
   profileReorderAccessibility
-} from './use-profile-reorder'
+} from '@/features/profiles/use-profile-reorder'
 
 const DEFAULT_ID = 'default'
 

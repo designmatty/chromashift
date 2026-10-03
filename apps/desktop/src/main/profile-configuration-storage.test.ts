@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AppDataProfileConfigurationStorage } from './profile-configuration-storage.js'
+import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
 
 const temporaryDirectories: string[] = []
 

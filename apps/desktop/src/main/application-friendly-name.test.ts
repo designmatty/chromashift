@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applicationFriendlyName } from './application-friendly-name.js'
+import { applicationFriendlyName } from '@main/application-friendly-name.js'
 
 describe('applicationFriendlyName', () => {
   it('uses the application suffix from a document-style window title', () => {

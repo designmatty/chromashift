@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
-import { PowerEventAdapter, type PowerTransitionEvent } from './power-event-adapter.js'
+import { PowerEventAdapter, type PowerTransitionEvent } from '@main/power-event-adapter.js'
 
 describe('PowerEventAdapter', () => {
   it('maps Electron power events and removes every listener on dispose', () => {

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { defaultWindowState, type WindowState } from './app-settings.js'
+import { defaultWindowState, type WindowState } from '@main/app-settings.js'
 import {
   AppWindowStateController,
   type WindowStatePort,
   type WindowStateStorePort
-} from './app-window-state-controller.js'
-import type { StructuredLogger } from './structured-logger.js'
+} from '@main/app-window-state-controller.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 function windowState(bounds = { x: 40, y: 50, width: 1000, height: 700 }): WindowStatePort {
   return {

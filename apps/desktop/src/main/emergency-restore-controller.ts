@@ -1,5 +1,5 @@
-import type { ActivationOutcome } from './activation-coordinator.js'
-import type { StructuredLogger } from './structured-logger.js'
+import type { ActivationOutcome } from '@main/activation-coordinator.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 export interface EmergencyPreviewPort {
   dispose(): Promise<void>

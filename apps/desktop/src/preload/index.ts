@@ -28,7 +28,7 @@ import {
   setDefaultProfileRequestSchema,
   voidResultSchema,
   type ChromaShiftApi
-} from '../shared/product-api.js'
+} from '@shared/product-api.js'
 
 async function invoke<TRequest, TResult>(
   channel: string,

@@ -8,10 +8,10 @@ import {
 } from '@chromashift/core'
 import type { NativeEvent } from '@chromashift/native-client'
 import { describe, expect, it } from 'vitest'
-import { ActivationCoordinator } from './activation-coordinator.js'
-import { AutomaticActivationController } from './automatic-activation-controller.js'
-import { FakeNativeDisplayPort as FakeNativeActivationPort } from './testing/fake-native-display.js'
-import type { StructuredLogEvent, StructuredLogger } from './structured-logger.js'
+import { ActivationCoordinator } from '@main/activation-coordinator.js'
+import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { FakeNativeDisplayPort as FakeNativeActivationPort } from '@main/testing/fake-native-display.js'
+import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
 class MemoryStorage implements ProfileConfigurationStorage {
   public constructor(private contents: string | null) {}
