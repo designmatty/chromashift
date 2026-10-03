@@ -6,12 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.9] - 2026-10-03
+
 ### Added
 
-- Update checks in About, with preview-aware version comparison, automatic
-  installer downloads, download progress, and a Restart and install action.
+- Update checks in About, with preview-aware version comparison and automatic
+  installer downloads.
 - Update installation verifies the release hash and Windows publisher signature
   and waits for confirmed display restoration before running the installer.
+
+### Changed
+
+- About shows update download progress and offers Restart and install when the
+  verified installer is ready.
 
 ### Fixed
 
@@ -115,7 +122,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...HEAD
+[0.1.0-preview.9]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...v0.1.0-preview.9
 [0.1.0-preview.8]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.7...v0.1.0-preview.8
 [0.1.0-preview.7]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.6...v0.1.0-preview.7
 [0.1.0-preview.6]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.5...v0.1.0-preview.6
