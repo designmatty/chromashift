@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.6] - 2026-10-03
+
+### Added
+
+- Profile reordering events in Diagnostics to trace drag interactions and saved order.
+- Copy logs, Download logs, and Clear logs actions with brief inline confirmations.
+- Interactive website demos with selectable scenes, color controls, and a draggable mini panel.
+
+### Changed
+
+- Replaced custom sidebar drag handling with dnd-kit optimistic sorting.
+- Tightened the Diagnostics layout so log entries sit closer to their actions.
+
+### Fixed
+
+- Reordering profiles no longer resets activation or reapplies an unchanged profile.
+  Application matching still respects the saved profile priority.
+- Retained the dropped order until persistence confirms it to prevent items snapping back.
+- Removed the vulnerable HTTP cache dependency from Electron Builder's download tooling.
+
 ## [0.1.0-preview.5] - 2026-10-01
 
 ### Added
@@ -46,5 +66,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.5...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.6...HEAD
+[0.1.0-preview.6]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.5...v0.1.0-preview.6
 [0.1.0-preview.5]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.4...v0.1.0-preview.5
