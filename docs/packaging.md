@@ -109,7 +109,9 @@ deleted by the NSIS uninstaller.
 
 Both assisted installer and uninstaller use the branded 164 x 314 BMP sidebar in
 `apps/desktop/build/chromashift-installer-sidebar.bmp`. This is maintained artwork;
-replace the BMP directly when updating the design. The smaller branded header
+replace the BMP directly when updating the design. Export an uncompressed 24-bit
+Windows 3.x BMP with a 40-byte header; a Windows V5 header renders as a blank
+sidebar in NSIS. The smaller branded header
 remains separate. The package description is
 `ChromaShift`, which Builder also uses as the NSIS file description shown by UAC.
 

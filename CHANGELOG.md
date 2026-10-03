@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Converted the supplied sidebar artwork to the BMP format supported by NSIS.
 - Release builds sign the generated uninstaller before embedding it, so uninstall
   can identify the verified publisher after upgrading to the updated installer.
 - Release preflight verifies the uninstaller extracted from the finished installer.
