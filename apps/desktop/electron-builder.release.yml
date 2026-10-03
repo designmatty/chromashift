@@ -1,0 +1,8 @@
+# Local package commands use electron-builder.yml and remain unsigned.
+extends: ./electron-builder.yml
+forceCodeSigning: true
+win:
+  signtoolOptions:
+    sign: ./scripts/sign-release-executable.mjs
+    signingHashAlgorithms:
+      - sha256

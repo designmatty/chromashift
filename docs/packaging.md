@@ -107,6 +107,12 @@ Start menu shortcut, but preserves Electron's user-data directory.
 `profiles.json` therefore remains outside the install directory and is not
 deleted by the NSIS uninstaller.
 
+Both assisted installer and uninstaller use the branded 164 x 314 BMP sidebar in
+`apps/desktop/build/chromashift-installer-sidebar.bmp`. This is maintained artwork;
+replace the BMP directly when updating the design. The smaller branded header
+remains separate. The package description is
+`ChromaShift`, which Builder also uses as the NSIS file description shown by UAC.
+
 The configuration location is explicitly pinned to
 `%APPDATA%\ChromaShift\profiles.json`. On first startup after upgrading from a
 pre-packaging build, ChromaShift copies the legacy
@@ -131,9 +137,13 @@ path or direct filesystem access.
 No certificate or secret is committed. The tag workflow authenticates to Azure
 through GitHub OIDC and signs through the `release-signing` environment. It signs
 `ChromaShift.exe` and `ChromaShift.DisplayService.exe` in the unpacked directory,
-then builds NSIS from that signed directory and signs the installer. After signing
-changes the installer bytes, the workflow regenerates its block map and update
-manifest hashes. Unsigned local builds remain supported. See `signing.md`.
+then uses `electron-builder.release.yml` to sign the generated uninstaller before
+NSIS embeds it and sign the finished installer. The hook verifies each signature
+immediately. After signing changes the installer bytes, the workflow regenerates
+its block map and update manifest hashes. Final preflight checks the uninstaller
+extracted from the finished installer as well as the other signed executables.
+Unsigned local builds use the base configuration. See `signing.md` for signing
+order and SmartScreen expectations.
 
 The LGPL-3.0 `NvAPIWrapper.dll` already ships beside the helper with its license
 texts, notice, corresponding-source link, and replacement-loading coverage.

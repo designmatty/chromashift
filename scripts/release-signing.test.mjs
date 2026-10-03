@@ -32,8 +32,8 @@ test('the release workflow signs every executable in package order through Azure
     'npm run package:release:prepare',
     'name: Sign packaged executables',
     'name: Verify packaged executable signatures',
+    'name: Build and sign Windows installer and embedded uninstaller',
     'npm run package:release:installer',
-    'name: Sign Windows installer',
     'npm run package:release:finalize',
     'npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts --signatures'
   ]
@@ -48,11 +48,7 @@ test('the release workflow signs every executable in package order through Azure
     workflow,
     /files:\s+\|\s+\$\{\{ github\.workspace \}\}\\apps\\desktop\\release\\win-unpacked\\ChromaShift\.exe\s+\$\{\{ github\.workspace \}\}\\apps\\desktop\\release\\win-unpacked\\resources\\display-service\\ChromaShift\.DisplayService\.exe/
   )
-  assert.match(
-    workflow,
-    /files: \$\{\{ github\.workspace \}\}\\apps\\desktop\\release\\ChromaShift-\$\{\{ steps\.version\.outputs\.value \}\}-x64-setup\.exe/
-  )
-  assert.equal(workflow.match(/uses: azure\/artifact-signing-action@v2/g)?.length, 2)
+  assert.equal(workflow.match(/uses: azure\/artifact-signing-action@v2/g)?.length, 1)
   assert.match(workflow, /endpoint: \$\{\{ vars\.AZURE_ARTIFACT_SIGNING_ENDPOINT \}\}/)
   assert.match(workflow, /signing-account-name: \$\{\{ vars\.AZURE_ARTIFACT_SIGNING_ACCOUNT \}\}/)
   assert.match(
@@ -61,7 +57,7 @@ test('the release workflow signs every executable in package order through Azure
   )
   assert.match(workflow, /timestamp-rfc3161: http:\/\/timestamp\.acs\.microsoft\.com/)
   assert.match(workflow, /timestamp-digest: SHA256/)
-  assert.equal(workflow.match(/vars\.AZURE_ARTIFACT_SIGNING_PUBLISHER/g)?.length, 2)
+  assert.equal(workflow.match(/vars\.AZURE_ARTIFACT_SIGNING_PUBLISHER/g)?.length, 3)
   assert.doesNotMatch(workflow, /steps\.packaged-signatures\.outputs\.publisher/)
   assert.doesNotMatch(workflow, /WIN_CSC|signed=false|isPrerelease/)
 
@@ -73,6 +69,31 @@ test('the release workflow signs every executable in package order through Azure
   const preflight = await text('scripts/release-preflight.mjs')
   assert.match(preflight, /'--signatures requires --artifacts\.'/)
   assert.match(preflight, /'--signatures requires --expected-publisher\.'/)
+  assert.match(preflight, /await extractInstallerUninstaller\(/)
+  assert.match(
+    preflight,
+    /const paths = \[\s*join\(releaseDirectory, installerName\),\s*uninstallerPath,/
+  )
+
+  const releaseConfiguration = await text('apps/desktop/electron-builder.release.yml')
+  assert.match(releaseConfiguration, /extends: \.\/electron-builder\.yml/)
+  assert.match(releaseConfiguration, /forceCodeSigning: true/)
+  assert.match(releaseConfiguration, /sign: \.\/scripts\/sign-release-executable\.mjs/)
+  assert.match(releaseConfiguration, /signingHashAlgorithms:\s+- sha256/)
+  const localConfiguration = await text('apps/desktop/electron-builder.yml')
+  assert.doesNotMatch(localConfiguration, /sign-release-executable|forceCodeSigning/)
+  assert.match(
+    workflow,
+    /AZURE_ARTIFACT_SIGNING_ENDPOINT: \$\{\{ vars\.AZURE_ARTIFACT_SIGNING_ENDPOINT \}\}/
+  )
+  assert.match(
+    workflow,
+    /AZURE_ARTIFACT_SIGNING_ACCOUNT: \$\{\{ vars\.AZURE_ARTIFACT_SIGNING_ACCOUNT \}\}/
+  )
+  assert.match(
+    workflow,
+    /AZURE_ARTIFACT_SIGNING_PROFILE: \$\{\{ vars\.AZURE_ARTIFACT_SIGNING_PROFILE \}\}/
+  )
 
   assert.match(rootPackage.scripts['package:release:prepare'], /package:release:prepare/)
   assert.match(rootPackage.scripts['package:release:installer'], /package:release:installer/)
@@ -83,7 +104,7 @@ test('the release workflow signs every executable in package order through Azure
   )
   assert.match(
     desktopPackage.scripts['package:release:installer'],
-    /electron-builder --win nsis --x64 --prepackaged release\/win-unpacked/
+    /electron-builder --config electron-builder\.release\.yml --win nsis --x64 --prepackaged release\/win-unpacked/
   )
 })
 

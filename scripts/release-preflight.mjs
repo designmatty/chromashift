@@ -5,6 +5,7 @@ import { createReadStream } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
+import { extractInstallerUninstaller } from './extract-installer-uninstaller.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseDirectory = join(repositoryRoot, 'apps', 'desktop', 'release')
@@ -32,13 +33,18 @@ function parseArguments(arguments_) {
   return options
 }
 
-function verifySignatures(version, expectedPublisher) {
+async function verifySignatures(version, expectedPublisher) {
   if (!expectedPublisher) {
     throw new Error('--signatures requires --expected-publisher.')
   }
   const installerName = `ChromaShift-${version}-x64-setup.exe`
+  const uninstallerPath = await extractInstallerUninstaller(
+    join(releaseDirectory, installerName),
+    join(releaseDirectory, 'installer-validation', 'Uninstall ChromaShift.exe')
+  )
   const paths = [
     join(releaseDirectory, installerName),
+    uninstallerPath,
     join(releaseDirectory, 'win-unpacked', 'ChromaShift.exe'),
     join(
       releaseDirectory,
@@ -140,6 +146,9 @@ const [rootPackage, desktopPackage, lockfile, builderConfiguration] = await Prom
 ])
 const version = rootPackage.version
 requireMatch(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'Application version')
+if (desktopPackage.description !== 'ChromaShift') {
+  throw new Error('The Windows installer file description must be ChromaShift.')
+}
 
 const versions = new Map([
   ['desktop package', desktopPackage.version],
@@ -174,7 +183,7 @@ if (options.signatures && !options.artifacts) {
   throw new Error('--signatures requires --artifacts.')
 }
 if (options.artifacts) await verifyArtifacts(version)
-if (options.signatures) verifySignatures(version, options.expectedPublisher)
+if (options.signatures) await verifySignatures(version, options.expectedPublisher)
 
 globalThis.console.log(
   `Release preflight passed: version=${version}, tag=${options.tag ?? 'not-required'}, architecture=x64, artifacts=${options.artifacts ? 'verified' : 'not-requested'}, signatures=${options.signatures ? 'verified' : 'not-requested'}`
