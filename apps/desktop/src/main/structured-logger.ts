@@ -68,6 +68,19 @@ export class PersistentJsonLogger implements StructuredLogger {
     }
     renameSync(this.filePath, `${this.filePath}.1`)
   }
+
+  public clear(): void {
+    try {
+      for (let index = 1; index <= this.retainedFiles; index += 1) {
+        rmSync(`${this.filePath}.${index}`, { force: true })
+      }
+      mkdirSync(dirname(this.filePath), { recursive: true })
+      writeFileSync(this.filePath, '', 'utf8')
+      this.#fileEnabled = true
+    } catch {
+      throw new Error('Could not clear the logs. Please try again.')
+    }
+  }
 }
 
 export function readDiagnosticLog(
@@ -167,6 +180,7 @@ import {
   readSync,
   renameSync,
   rmSync,
-  statSync
+  statSync,
+  writeFileSync
 } from 'node:fs'
 import { dirname } from 'node:path'

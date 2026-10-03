@@ -25,6 +25,7 @@ import {
   Palette,
   Plus,
   PowerOff,
+  GripVertical,
   Settings as SettingsIcon,
   Edit as EditIcon,
   EyeOff,
@@ -33,12 +34,20 @@ import {
   ListVideo,
   Power
 } from 'lucide-react'
-import { Fragment, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
 import type { ProductState, ShortcutBinding } from '../../../shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
 import { profileSelectionItems, profileSelectionLabel } from './profile-selection'
+import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
+import { useSortable } from '@dnd-kit/react/sortable'
+import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers'
+import {
+  useProfileReorder,
+  profileReorderSensors,
+  profileReorderAccessibility
+} from './use-profile-reorder'
 
 const DEFAULT_ID = 'default'
 
@@ -63,11 +72,19 @@ export interface ProfileListProps {
   onDuplicate(profile: ColorProfile): void
   onToggleEnabled(profile: ColorProfile): void
   onDelete(profile: ColorProfile): void
-  onReorder(profileIds: string[]): void
+  onReorder(profileIds: string[], interactionId?: string): Promise<void>
 }
 
 export function ProfileList(props: ProfileListProps): React.JSX.Element {
-  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const reorder = useProfileReorder({
+    ids: props.profiles.map((profile) => profile.id),
+    disabled: props.busy,
+    collapsed: props.collapsed,
+    selectedProfileId: props.selectedId,
+    previewingProfileId: props.previewingProfileId,
+    onReorder: props.onReorder
+  })
+  const reorderInstructionsId = useId()
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerTriggerRef = useRef<HTMLButtonElement>(null)
   const pickerContentRef = useRef<HTMLDivElement>(null)
@@ -103,21 +120,28 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
     else if (value.startsWith('profile:')) props.onSelectionChange(value.slice(8))
   }
 
-  function dropBefore(targetId: string): void {
-    if (draggedId === null || draggedId === targetId) return
-    const defaultProfile = props.profiles.find((profile) => profile.id.toLowerCase() === DEFAULT_ID)
-    const movable = props.profiles.filter(
-      (profile) => profile.id.toLowerCase() !== DEFAULT_ID && profile.id !== draggedId
-    )
-    const targetIndex = movable.findIndex((profile) => profile.id === targetId)
-    const dragged = props.profiles.find((profile) => profile.id === draggedId)
-    if (dragged === undefined || targetIndex < 0) return
-    movable.splice(targetIndex, 0, dragged)
-    props.onReorder([
-      ...(defaultProfile === undefined ? [] : [defaultProfile.id]),
-      ...movable.map((profile) => profile.id)
-    ])
-    setDraggedId(null)
+  function rowProps(profile: ColorProfile, index: number): ProfileListItemProps {
+    return {
+      profile,
+      index,
+      selected: profile.id === props.selectedId,
+      currentLabel:
+        profile.id.toLowerCase() === props.currentId?.toLowerCase() ? currentLabel : null,
+      editing: profile.id === props.editingProfileId,
+      previewing: profile.id === props.previewingProfileId,
+      reorderDisabled: props.busy || reorder.saving || props.profiles.length < 3,
+      reorderInstructionsId:
+        profile.id.toLowerCase() === DEFAULT_ID ? undefined : reorderInstructionsId,
+      collapsed: props.collapsed,
+      onKeyDown: (event) => reorder.onKeyDown(profile.id, event),
+      suppressClick: reorder.suppressClick,
+      onSelect: () => props.onSelect(profile),
+      onEdit: () => props.onEdit(profile),
+      onPreview: () => props.onPreview(profile),
+      onDuplicate: () => props.onDuplicate(profile),
+      onToggleEnabled: () => props.onToggleEnabled(profile),
+      onDelete: () => props.onDelete(profile)
+    }
   }
 
   const profileSelector = (
@@ -293,70 +317,70 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
           </Button>
         </Tooltip>
       </Flex>
-      <ScrollArea.Root size={'xs'}>
-        <ScrollArea.Viewport
-          css={{
-            '--scroll-shadow-size': '4rem',
-            maskImage: 'linear-gradient(#000, #000)',
-            '&[data-overflow-y]': {
-              maskImage:
-                'linear-gradient(#000,#000,transparent 0,#000 var(--scroll-shadow-size),#000 calc(100% - var(--scroll-shadow-size)),transparent)',
-              '&[data-at-top]': {
+      <Text id={reorderInstructionsId} srOnly>
+        Drag to reorder. On the reorder handle, press Space or Enter to pick up, use arrow keys to
+        move, then Space or Enter to drop. Escape cancels. Alt and arrow keys move a profile one
+        position from either button.
+      </Text>
+      <Text role="status" aria-live="polite" aria-atomic="true" srOnly>
+        {reorder.announcement}
+      </Text>
+      <DragDropProvider
+        sensors={profileReorderSensors}
+        plugins={(defaults) => [...defaults, profileReorderAccessibility]}
+        onBeforeDragStart={(event) => {
+          if (props.busy || reorder.saving) event.preventDefault()
+        }}
+        onDragStart={reorder.onDragStart}
+        onDragOver={reorder.onDragOver}
+        onDragEnd={reorder.onDragEnd}
+      >
+        <ScrollArea.Root size={'xs'} flex="1" minH="0">
+          <ScrollArea.Viewport
+            ref={reorder.viewportRef}
+            data-reordering={reorder.activeId !== null ? '' : undefined}
+            css={{
+              '--scroll-shadow-size': '4rem',
+              maskImage: 'linear-gradient(#000, #000)',
+              '&[data-overflow-y]': {
                 maskImage:
-                  'linear-gradient(180deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
+                  'linear-gradient(#000,#000,transparent 0,#000 var(--scroll-shadow-size),#000 calc(100% - var(--scroll-shadow-size)),transparent)',
+                '&[data-at-top]': {
+                  maskImage:
+                    'linear-gradient(180deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
+                },
+                '&[data-at-bottom]': {
+                  maskImage:
+                    'linear-gradient(0deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
+                }
               },
-              '&[data-at-bottom]': {
-                maskImage:
-                  'linear-gradient(0deg,#000 calc(100% - var(--scroll-shadow-size)),transparent)'
-              }
-            }
+              '&[data-reordering]': { maskImage: 'none' }
+            }}
+          >
+            <ScrollArea.Content>
+              <Stack data-part="profile-rows" alignContent="start" gap={3}>
+                {reorder.ids.map((id, index) => {
+                  const profile = props.profiles.find((profile) => profile.id === id)
+                  if (profile === undefined) return null
+                  return <ProfileListItem key={profile.id} {...rowProps(profile, index)} />
+                })}
+              </Stack>
+            </ScrollArea.Content>
+          </ScrollArea.Viewport>
+          <ScrollArea.Scrollbar />
+        </ScrollArea.Root>
+        <DragOverlay>
+          {(source) => {
+            const profile = props.profiles.find((profile) => profile.id === source.id)
+            if (!profile) return null
+            return (
+              <Box inert aria-hidden="true">
+                <ProfileListRow {...rowProps(profile, reorder.ids.indexOf(profile.id))} overlay />
+              </Box>
+            )
           }}
-        >
-          <ScrollArea.Content>
-            <Stack alignContent="start" gap={3}>
-              {props.profiles.map((profile) => {
-                const isDefault = profile.id.toLowerCase() === DEFAULT_ID
-                return (
-                  <ProfileListItem
-                    key={profile.id}
-                    profile={profile}
-                    selected={profile.id === props.selectedId}
-                    currentLabel={
-                      profile.id.toLowerCase() === props.currentId?.toLowerCase()
-                        ? currentLabel
-                        : null
-                    }
-                    editing={profile.id === props.editingProfileId}
-                    previewing={profile.id === props.previewingProfileId}
-                    dragging={draggedId === profile.id}
-                    collapsed={props.collapsed}
-                    onDragStart={(event) => {
-                      setDraggedId(profile.id)
-                      event.dataTransfer.effectAllowed = 'move'
-                      event.dataTransfer.setData('text/plain', profile.id)
-                    }}
-                    onDragEnd={() => setDraggedId(null)}
-                    onDragOver={(event) => {
-                      if (!isDefault && draggedId !== null) event.preventDefault()
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault()
-                      dropBefore(profile.id)
-                    }}
-                    onSelect={() => props.onSelect(profile)}
-                    onEdit={() => props.onEdit(profile)}
-                    onPreview={() => props.onPreview(profile)}
-                    onDuplicate={() => props.onDuplicate(profile)}
-                    onToggleEnabled={() => props.onToggleEnabled(profile)}
-                    onDelete={() => props.onDelete(profile)}
-                  />
-                )
-              })}
-            </Stack>
-          </ScrollArea.Content>
-        </ScrollArea.Viewport>
-        <ScrollArea.Scrollbar />
-      </ScrollArea.Root>
+        </DragOverlay>
+      </DragDropProvider>
 
       <Flex
         as="footer"
@@ -404,16 +428,16 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
 
 interface ProfileListItemProps {
   profile: ColorProfile
+  index: number
   selected: boolean
   currentLabel: string | null
   editing: boolean
   previewing: boolean
-  dragging: boolean
+  reorderDisabled: boolean
+  reorderInstructionsId: string | undefined
   collapsed: boolean
-  onDragStart(event: React.DragEvent<HTMLDivElement>): void
-  onDragEnd(): void
-  onDragOver(event: React.DragEvent<HTMLDivElement>): void
-  onDrop(event: React.DragEvent<HTMLDivElement>): void
+  onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void
+  suppressClick(profileId: string): boolean
   onSelect(): void
   onEdit(): void
   onPreview(): void
@@ -423,14 +447,62 @@ interface ProfileListItemProps {
 }
 
 function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
+  const isDefault = props.profile.id.toLowerCase() === DEFAULT_ID
+  return isDefault ? <ProfileListRow {...props} /> : <SortableProfileListItem {...props} />
+}
+
+function SortableProfileListItem(props: ProfileListItemProps): React.JSX.Element {
+  const handle = useRef<HTMLElement | null>(null)
+  const wasDragging = useRef(false)
+  const sortable = useSortable({
+    id: props.profile.id,
+    index: props.index - 1,
+    disabled: props.reorderDisabled,
+    data: { name: props.profile.name },
+    transition: { duration: 160 },
+    modifiers: [RestrictToVerticalAxis]
+  })
+  const { handleRef: setSortableHandle } = sortable
+  const handleRef = useCallback(
+    (element: Element | null) => {
+      handle.current = element as HTMLElement | null
+      setSortableHandle(element)
+    },
+    [setSortableHandle]
+  )
+  useEffect(() => {
+    if (sortable.isDragSource) wasDragging.current = true
+    else if (wasDragging.current) {
+      wasDragging.current = false
+      // Moving a focused node through the drag overlay can leave focus on body.
+      // Restore the handle without taking focus from a different control.
+      if (document.activeElement === document.body) handle.current?.focus({ preventScroll: true })
+    }
+  }, [sortable.isDragSource])
+  return <ProfileListRow {...props} sortable={sortable} handleRef={handleRef} />
+}
+
+function ProfileListRow(
+  props: ProfileListItemProps & {
+    sortable?: ReturnType<typeof useSortable>
+    handleRef?: (element: Element | null) => void
+    overlay?: boolean
+  }
+): React.JSX.Element {
   const actionsTriggerId = useId()
   const isDefault = props.profile.id.toLowerCase() === DEFAULT_ID
+  const { sortable } = props
+  const dragging = sortable?.isDragSource ?? false
 
   const item = (
     <Flex
+      ref={sortable?.ref}
       data-part="profile-item"
+      data-reorder-id={props.overlay ? undefined : props.profile.id}
       data-selected={props.selected ? '' : undefined}
       data-disabled={props.profile.enabled ? undefined : ''}
+      data-dragging={dragging ? '' : undefined}
+      data-drag-preview={props.overlay ? '' : undefined}
       w="full"
       h="40px"
       px={props.collapsed ? 0 : 1}
@@ -441,7 +513,8 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
       bg={props.selected ? 'bg.panel' : 'transparent'}
       borderWidth={props.selected ? '1px' : '0'}
       borderColor="border"
-      opacity={props.dragging ? '0.55' : '1'}
+      position="relative"
+      userSelect="none"
       _hover={{ bg: 'bg.panel' }}
       _dark={{
         borderWidth: '0',
@@ -451,6 +524,22 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         }
       }}
       css={{
+        '&[data-dragging]': { visibility: 'hidden' },
+        '&[data-drag-preview]': {
+          zIndex: 2,
+          bg: 'bg.panel',
+          boxShadow: 'md',
+          outline: '1px solid {colors.border.emphasized}',
+          transition: 'none',
+          cursor: 'grabbing'
+        },
+        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+        '& [data-part="profile-reorder-handle"]': {
+          opacity: 0,
+          transition: 'opacity 120ms ease'
+        },
+        '&:hover [data-part="profile-reorder-handle"], &:focus-within [data-part="profile-reorder-handle"], &[data-drag-preview] [data-part="profile-reorder-handle"]':
+          { opacity: 1 },
         '& [data-part="profile-actions-trigger"] svg': {
           opacity: 0,
           transition: 'opacity 120ms ease'
@@ -458,12 +547,13 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         '&:hover [data-part="profile-actions-trigger"] svg, &:focus-within [data-part="profile-actions-trigger"] svg, & [data-part="profile-actions-trigger"][aria-expanded="true"] svg':
           { opacity: 1 }
       }}
-      draggable={!isDefault}
       className="group"
-      onDragStart={props.onDragStart}
-      onDragEnd={props.onDragEnd}
-      onDragOver={props.onDragOver}
-      onDrop={props.onDrop}
+      onClickCapture={(event) => {
+        if (event.detail > 0 && props.suppressClick(props.profile.id)) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      }}
     >
       <Button
         data-part="profile-select"
@@ -471,12 +561,18 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
         minH="30px"
         p="0"
         flex="1"
+        minW="0"
         justifyContent={props.collapsed ? 'center' : 'flex-start'}
         gap={3}
         color="inherit"
         textAlign="left"
         aria-label={props.collapsed ? props.profile.name : undefined}
         aria-current={props.selected ? 'page' : undefined}
+        aria-describedby={props.reorderInstructionsId}
+        onKeyDown={isDefault ? undefined : (event) => props.onKeyDown(event)}
+        onDragStart={(event) => event.preventDefault()}
+        touchAction={isDefault ? undefined : 'none'}
+        cursor={dragging ? 'grabbing' : undefined}
         onClick={props.onSelect}
         css={{
           '--current-color': {
@@ -499,7 +595,7 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
           />
         )}
         {!props.collapsed && (
-          <Flex direction="column" gap={0}>
+          <Flex direction="column" gap={0} minW="0">
             <Text
               as="strong"
               flex="1"
@@ -525,6 +621,27 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
           </Flex>
         )}
       </Button>
+      {!isDefault && (
+        <IconButton
+          ref={props.handleRef}
+          srOnly={props.collapsed}
+          data-part="profile-reorder-handle"
+          aria-label={`Reorder ${props.profile.name}`}
+          aria-describedby={props.reorderInstructionsId}
+          aria-pressed={dragging}
+          title="Drag to reorder"
+          variant="plain"
+          size="2xs"
+          rounded="full"
+          color="fg.muted"
+          cursor={dragging ? 'grabbing' : 'grab'}
+          touchAction="none"
+          disabled={props.reorderDisabled}
+          onKeyDown={props.onKeyDown}
+        >
+          <GripVertical size={14} />
+        </IconButton>
+      )}
       {!props.collapsed && (
         <Menu.Root ids={{ trigger: actionsTriggerId }} positioning={{ placement: 'right-start' }}>
           <Tooltip ids={{ trigger: actionsTriggerId }} content="Profile actions">
@@ -575,7 +692,7 @@ function ProfileListItem(props: ProfileListItemProps): React.JSX.Element {
       )}
     </Flex>
   )
-  return props.collapsed ? (
+  return props.collapsed && !props.overlay ? (
     <Tooltip
       content={`${props.profile.name}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
       positioning={{ placement: 'right' }}

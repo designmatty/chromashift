@@ -4,7 +4,10 @@
 @import './base.css';
 @import './button.css';
 @import './header.css';
+@import './app-ui.css';
 @import './hero.css';
+@import './app-replica.css';
+@import './color-demo.css';
 @import './features.css';
 @import './faq.css';
 @import './closing.css';

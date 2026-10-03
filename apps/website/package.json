@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "render:assets": "install-electron --no && electron scripts/render-assets.mjs",
     "test": "vitest run",
+    "smoke": "npm run build && install-electron --no && electron scripts/smoke.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

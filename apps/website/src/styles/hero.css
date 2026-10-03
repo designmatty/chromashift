@@ -51,45 +51,146 @@
   box-shadow: 0 40px 90px rgb(0 0 0 / 55%);
 }
 
-.hero-media img,
-.hero-media__slot {
-  width: 100%;
+.hero-media__frame {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 14px;
 }
 
-.hero-media img {
-  height: auto;
-}
-
-.hero-media__slot {
+/* "Try it out" covers the whole replica, so the picture is the target. */
+.hero-try {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  aspect-ratio: 1000 / 700;
+  gap: 12px;
+  width: 100%;
   padding: 24px;
-  background-color: var(--color-surface-sunken);
-  background-image: repeating-linear-gradient(
-    135deg,
-    rgb(245 245 247 / 2.6%) 0 10px,
-    rgb(245 245 247 / 0%) 10px 20px
+  border: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(14 14 17 / 72%) 0%,
+    rgb(14 14 17 / 40%) 55%,
+    rgb(14 14 17 / 10%) 100%
   );
-  text-align: center;
+  color: var(--color-foreground);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
-.hero-media__slot-path,
-.hero-media__slot-size {
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  color: var(--color-subtle);
+.hero-try[hidden] {
+  display: none;
 }
 
-.hero-media__slot-path {
-  font-size: 13px;
+.hero-try__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-radius: var(--radius-pill);
+  background: var(--color-foreground);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 50%);
+  color: var(--color-background);
+  font-size: 17px;
+  font-weight: 600;
+  translate: 0 8px;
+  transition:
+    translate 240ms cubic-bezier(0.2, 0, 0, 1),
+    background-color 120ms ease;
 }
 
-.hero-media__slot-size {
-  font-size: 11px;
+.hero-try__pill .i {
+  font-size: 18px;
+}
+
+.hero-try__hint {
+  color: var(--color-foreground);
+  font-size: 14px;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 80%);
+  translate: 0 8px;
+  transition: translate 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.hero-media__frame:hover .hero-try,
+.hero-try:focus-visible {
+  opacity: 1;
+}
+
+.hero-media__frame:hover .hero-try__pill,
+.hero-media__frame:hover .hero-try__hint,
+.hero-try:focus-visible .hero-try__pill,
+.hero-try:focus-visible .hero-try__hint {
+  translate: 0 0;
+}
+
+.hero-try:hover .hero-try__pill {
+  background: var(--color-foreground-strong);
+}
+
+.hero-try:focus-visible {
+  outline: none;
+}
+
+.hero-try:focus-visible .hero-try__pill {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: 3px;
+}
+
+.hero-media__frame:hover .cs-app,
+.hero-media__frame:has(.hero-try:focus-visible) .cs-app {
+  filter: blur(1.5px);
+}
+
+/* Touch screens can't hover, so the action stays pinned at the bottom. */
+@media (hover: none) {
+  .hero-try {
+    justify-content: flex-end;
+    background: linear-gradient(to top, rgb(14 14 17 / 70%), rgb(14 14 17 / 0%) 50%);
+    opacity: 1;
+  }
+
+  .hero-try__pill {
+    translate: 0 0;
+  }
+
+  .hero-try__hint {
+    display: none;
+  }
+
+  .hero-media__frame:hover .cs-app {
+    filter: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero-media {
+    padding: 6px;
+    border-radius: 16px;
+  }
+
+  .hero-media__frame {
+    border-radius: 10px;
+  }
+
+  .hero-try {
+    padding: 14px;
+  }
+
+  .hero-try__pill {
+    padding: 10px 20px;
+    font-size: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-try,
+  .hero-try__pill,
+  .hero-try__hint {
+    transition: none;
+  }
 }

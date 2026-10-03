@@ -7,6 +7,7 @@ import {
 } from '@chromashift/core'
 import type {
   CompletedActivationOutcome,
+  ConfigurationChange,
   ActivationOrigin,
   ActivationSource
 } from './automatic-activation-controller.js'
@@ -54,7 +55,7 @@ export interface ChromaShiftActivationPort {
     source: ActivationSource
     origin: 'automaticSelection' | 'shortcut'
   }): Promise<CompletedActivationOutcome>
-  refreshAfterConfigurationChange(): Promise<void>
+  refreshAfterConfigurationChange(change?: ConfigurationChange): Promise<void>
 }
 
 export interface ChromaShiftTopologyPort {
@@ -259,8 +260,8 @@ export class ChromaShiftController {
     )
   }
 
-  public refreshAfterConfigurationChange(): Promise<void> {
-    return this.activation.refreshAfterConfigurationChange()
+  public refreshAfterConfigurationChange(change?: ConfigurationChange): Promise<void> {
+    return this.activation.refreshAfterConfigurationChange(change)
   }
 
   public async reconcileAutomaticIntent(): Promise<void> {

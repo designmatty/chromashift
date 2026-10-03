@@ -85,7 +85,9 @@ through Chromium debugging plus Windows interaction.
 
 The flow covers independent profile navigation and Automatic/manual selection,
 Enabled/Disabled availability, paused selection and resume, profile editing,
-per-display tabs, read-only parity, sidebar collapse, capability states,
+per-display tabs, read-only parity, sidebar collapse, pointer and keyboard profile
+reordering, cancelled drops, saved order, disabled rows, pinned Default, and list
+edge scrolling, capability states,
 application assignment, live preview and rollback, Default and manual activation,
 temporary mini-panel overrides,
 Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini

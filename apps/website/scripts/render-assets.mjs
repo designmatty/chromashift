@@ -14,6 +14,7 @@ const icons = {
   darkmode: join(repositoryRoot, 'chromashift-icon-darkmode.png'),
   lightmode: join(repositoryRoot, 'chromashift-icon-lightmode.png')
 }
+const logo = join(repositoryRoot, 'chromashift-logo-darkmode.png')
 const background = '#0e0e11'
 
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
@@ -30,6 +31,13 @@ function resizedPng(source, size) {
   const image = nativeImage.createFromPath(source)
   if (image.isEmpty()) throw new Error(`Could not read ${source}`)
   return image.resize({ width: size, height: size, quality: 'best' }).toPNG()
+}
+
+// The full wordmark keeps its aspect ratio; 66px covers 22px at 3x density.
+function resizedLogo(source, height) {
+  const image = nativeImage.createFromPath(source)
+  if (image.isEmpty()) throw new Error(`Could not read ${source}`)
+  return image.resize({ height, quality: 'best' }).toPNG()
 }
 
 // PNG-compressed ICO entries are supported by every browser that requests /favicon.ico.
@@ -91,6 +99,7 @@ async function paddedIcon(window, size, scale) {
 
 async function render() {
   await write('icons/mark-darkmode.png', resizedPng(icons.darkmode, 60))
+  await write('icons/logo-darkmode.png', resizedLogo(logo, 66))
   await write('icons/favicon-darkmode.png', resizedPng(icons.darkmode, 96))
   await write('icons/favicon-lightmode.png', resizedPng(icons.lightmode, 96))
   await write(

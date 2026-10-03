@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,6 +11,37 @@ afterEach(() => {
 })
 
 describe('PersistentJsonLogger', () => {
+  it('clears the current and rotated logs, preserves other files, and continues logging', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chromashift-log-'))
+    directories.push(directory)
+    const path = join(directory, 'main.jsonl')
+    const logger = new PersistentJsonLogger(path)
+    logger.write({ level: 'information', eventName: 'BeforeClear' })
+    for (let index = 1; index <= 3; index += 1) writeFileSync(`${path}.${index}`, 'old log')
+    const unrelated = join(directory, 'profiles.json')
+    writeFileSync(unrelated, 'user profiles')
+
+    logger.clear()
+
+    expect(readDiagnosticLog(path)).toEqual([])
+    expect(readFileSync(path, 'utf8')).toBe('')
+    for (let index = 1; index <= 3; index += 1) expect(existsSync(`${path}.${index}`)).toBe(false)
+    expect(readFileSync(unrelated, 'utf8')).toBe('user profiles')
+    logger.write({ level: 'information', eventName: 'AfterClear' })
+    expect(readDiagnosticLog(path).map((event) => event.eventName)).toEqual(['AfterClear'])
+  })
+
+  it('reports clearing failures without exposing the log path', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chromashift-log-'))
+    directories.push(directory)
+    const path = join(directory, 'main.jsonl')
+    const logger = new PersistentJsonLogger(path)
+    logger.write({ level: 'information', eventName: 'BeforeClear' })
+    mkdirSync(`${path}.1`)
+    expect(() => logger.clear()).toThrow('Could not clear the logs. Please try again.')
+    expect(readDiagnosticLog(path)).toHaveLength(1)
+  })
+
   it('writes newline-delimited structured diagnostics to disk', () => {
     const directory = mkdtempSync(join(tmpdir(), 'chromashift-log-'))
     directories.push(directory)

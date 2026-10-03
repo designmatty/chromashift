@@ -9,6 +9,7 @@ with Workers Static Assets. The canonical production origin is
 npm run website:dev
 npm run website:build
 npm run test --workspace @chromashift/website
+npm run smoke --workspace @chromashift/website
 ```
 
 ## Page behavior
@@ -22,13 +23,45 @@ npm run test --workspace @chromashift/website
   release with an x64 installer and links it directly. If that request fails,
   the releases-page fallback stays in place.
 - Static metadata names no release version or channel.
-- The hero app-panel image is still the design's placeholder slot. Replace it
-  with a `public/media/app-profiles.webp` capture at 2000 × 1400 before
-  production launch.
+- The hero is an HTML and CSS replica of the dark app panel, laid out at its
+  1044 × 680 window size and scaled to fit. Icons are inline Lucide 1.31.0 SVG
+  symbols, the same set the desktop app uses. Hover or focus the replica to
+  reveal **Try it out**; touch screens show the action without hovering.
+- **Try it out** opens a native modal dialog. A screenshot, shown whole with
+  `object-fit: contain`, stands in for the monitor and a copy of the mini panel
+  floats above it. Drag the panel by its title bar. The bottom row switches the
+  foreground app (Escape from Tarkov, Rust, Blender, Figma) and the time of
+  day, beside **Hold to compare**.
+- A guided tour (`src/demo-tour.ts`) spotlights the panel, its sliders, the app
+  switcher, day and night, and **Hold to compare**. It starts on the first open,
+  is remembered in `localStorage`, and never blocks the demo. Escape, its close
+  button, or **Skip tour** dismiss it; **Tour** restarts it.
+- The demo follows the app's activation rules in memory. Automatic mode
+  resolves the foreground app's profile, then Default; Figma has no profile.
+  Executable names match case-insensitively, as on Windows. Tarkov and Rust
+  also have night profiles that the demo selects for their night scenes. This
+  is a demo-only refinement: the desktop app matches profiles by executable
+  alone.
+  The picker makes a manual selection. Slider changes show **Reset changes**
+  and **Update profile**. Power pauses, the restore button shows the original
+  until the next change, and **Hold to compare** shows it while pressed.
+  Updating the Escape from Tarkov profile also updates the hero replica.
+- `src/demo-model.ts` mirrors the app's control ranges and brightness-dependent
+  gamma envelope. Brightness, contrast, and gamma use a port of the display
+  helper's `GammaRampTransform` as an SVG lookup table. Saturation and hue use
+  CSS `saturate()` and `hue-rotate()`. Filters affect only the screenshot.
+- Screenshots load when the demo opens or an app is chosen. They are
+  self-hosted, and each scene shows its credit. Sources and asset rights are
+  recorded in [demo-media.md](demo-media.md).
+- The browser smoke runs against the production build with its CSP, using the
+  existing Electron runtime. It checks the demo's interactions and pixel
+  changes, then writes desktop and mobile captures to `out/smoke`. It never
+  starts the display helper or changes displays.
 
 ## Generated images
 
-The favicons, app icons, header mark, and 1200 × 630 social card in `public/`
+The favicons, app icons, mini-panel mark, full header logo, and 1200 × 630
+social card in `public/`
 are committed. They are generated from the root brand PNGs and
 `social/social-card.html`:
 
