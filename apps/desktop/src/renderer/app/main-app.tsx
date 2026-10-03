@@ -17,12 +17,7 @@ import { SettingsPanel } from '@/features/settings/settings-panel'
 import { ShortcutsPanel } from '@/features/settings/shortcuts-panel'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
-import type {
-  AppPanelView,
-  ProductError,
-  ProductResult,
-  ProductState
-} from '../../shared/product-api'
+import type { AppPanelView, ProductError, ProductResult, ProductState } from '@shared/product-api'
 
 const DEFAULT_ID = 'default'
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'

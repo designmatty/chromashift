@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
-import { PreviewSyncSession, type PreviewSyncKind, type PreviewSyncPort } from './preview-sync.js'
-import type { PreviewState, ProductError } from '../../../shared/product-api.js'
+import {
+  PreviewSyncSession,
+  type PreviewSyncKind,
+  type PreviewSyncPort
+} from '@/features/profiles/preview-sync.js'
+import type { PreviewState, ProductError } from '@shared/product-api.js'
 
 export interface UsePreviewDraftOptions {
   kind: PreviewSyncKind

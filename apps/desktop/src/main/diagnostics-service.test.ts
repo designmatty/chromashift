@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DiagnosticsService, formatDiagnosticLog } from './diagnostics-service.js'
-import type { DiagnosticLogEntry, ProfileReorderDiagnostic } from '../shared/product-api.js'
-import type { StructuredLogEvent } from './structured-logger.js'
+import { DiagnosticsService, formatDiagnosticLog } from '@main/diagnostics-service.js'
+import type { DiagnosticLogEntry, ProfileReorderDiagnostic } from '@shared/product-api.js'
+import type { StructuredLogEvent } from '@main/structured-logger.js'
 
 const interactionId = 'aef45b59-728e-4ce8-b411-68d08f32305d'
 const event: ProfileReorderDiagnostic = {

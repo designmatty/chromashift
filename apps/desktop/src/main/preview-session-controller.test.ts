@@ -9,12 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PreviewSessionController,
   type PreviewActivationPort
-} from './preview-session-controller.js'
+} from '@main/preview-session-controller.js'
 import {
   FakeNativeDisplayPort,
   testCapabilityReport as report,
   testDisplay
-} from './testing/fake-native-display.js'
+} from '@main/testing/fake-native-display.js'
 
 const display = testDisplay('display:one', false, 'Test display', true)
 const secondDisplay = testDisplay('display:two', false, 'Second display', false)

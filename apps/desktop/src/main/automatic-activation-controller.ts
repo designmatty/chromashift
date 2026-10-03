@@ -11,8 +11,8 @@ import {
   type ForegroundApplication as NativeForegroundApplication,
   type NativeEvent
 } from '@chromashift/native-client'
-import { ActivationCoordinator, type ActivationOutcome } from './activation-coordinator.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { ActivationCoordinator, type ActivationOutcome } from '@main/activation-coordinator.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export class AutomaticActivationController {
   readonly #pendingApplications: Array<ForegroundApplication | null> = []

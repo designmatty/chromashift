@@ -6,10 +6,10 @@ import {
 import {
   type ShortcutAction,
   type ShortcutBinding
-} from '../shared/product-api.js'
-import { EMERGENCY_RESTORE_ACCELERATOR } from '../shared/shortcut-constants.js'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+} from '@shared/product-api.js'
+import { EMERGENCY_RESTORE_ACCELERATOR } from '@shared/shortcut-constants.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export { EMERGENCY_RESTORE_ACCELERATOR }
 

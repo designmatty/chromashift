@@ -59,7 +59,7 @@
       .copy {
         position: relative;
         margin-top: auto;
-        max-width: 720px;
+        max-width: 520px;
       }
 
       h1 {
@@ -80,19 +80,24 @@
       .meta {
         position: relative;
         display: flex;
+        flex-direction: column;
         justify-content: space-between;
+        gap: 8px;
         margin-top: 52px;
         font-family: 'Geist Mono Variable', monospace;
         font-size: 20px;
         color: #9393a4;
       }
 
-      .mark {
+      .app-preview {
         position: absolute;
-        top: 128px;
-        right: 72px;
-        width: 300px;
-        height: 300px;
+        top: 64px;
+        right: -210px;
+        width: 760px;
+        height: auto;
+        border: 1px solid #1D1C22;
+        border-radius: 12px;
+        box-shadow: 0 24px 72px rgb(0 0 0 / 20%);
       }
     </style>
   </head>
@@ -100,17 +105,21 @@
     <main class="card">
       <div class="glow"></div>
       <div class="brand">
-        <img src="../../../chromashift-icon-darkmode.png" alt="" />
+        <img src="../src/assets/brand/chromashift-icon-darkmode.png" alt="" />
         <span>chromashift</span>
       </div>
-      <img class="mark" src="../../../chromashift-icon-darkmode.png" alt="" />
+      <img
+        class="app-preview"
+        src="../public/media/chromaShift-app-preview.jpg"
+        alt="ChromaShift display color controls and application profiles"
+      />
       <div class="copy">
-        <h1>Color profiles that switch with your apps.</h1>
-        <p>Automatic display color profiles for Windows 11.</p>
+        <h1>Auto switching color profiles</h1>
+        <p>ChromaShift changes your display's color settings when you switch apps.</p>
       </div>
       <div class="meta">
         <span>chromashift.io</span>
-        <span>Windows 11 x64 · free and open source</span>
+        <span>Windows 11 · Free and open source</span>
       </div>
     </main>
   </body>

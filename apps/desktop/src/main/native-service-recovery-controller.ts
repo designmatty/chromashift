@@ -5,7 +5,7 @@ import {
   type ServiceHealth,
   type SystemInfo
 } from '@chromashift/native-client'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface RecoverableNativeServicePort {
   readonly potentialBaselineDisplayIds: readonly string[]

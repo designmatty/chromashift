@@ -4,10 +4,10 @@ import type {
   ColorProfile,
   ProfileRepository
 } from '@chromashift/core'
-import type { ActivationOutcome } from './activation-coordinator.js'
-import type { ActivationControllerState } from './automatic-activation-controller.js'
-import type { ChromaShiftState } from './chroma-shift-controller.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import type { ActivationOutcome } from '@main/activation-coordinator.js'
+import type { ActivationControllerState } from '@main/automatic-activation-controller.js'
+import type { ChromaShiftState } from '@main/chroma-shift-controller.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface TrayProfileItem {
   id: string

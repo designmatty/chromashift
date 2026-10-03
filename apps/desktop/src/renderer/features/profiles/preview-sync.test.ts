@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
-import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from './preview-sync.js'
-import type { PreviewState, ProductError, ProductResult } from '../../../shared/product-api.js'
+import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
+import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
 
 const profile: ColorProfile = {
   id: 'tarkov-night',

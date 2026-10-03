@@ -1,6 +1,6 @@
 import type { DisplayTopologyRefreshResult } from '@chromashift/native-client'
-import type { PowerTransitionEvent } from './power-event-adapter.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import type { PowerTransitionEvent } from '@main/power-event-adapter.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export type DisplayTransitionReason =
   | PowerTransitionEvent

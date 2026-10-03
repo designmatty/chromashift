@@ -1,10 +1,22 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "paths": {
+      "@main/*": ["./src/main/*"],
+      "@preload/*": ["./src/preload/*"],
+      "@shared/*": ["./src/shared/*"]
+    },
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2023",
     "types": ["node"]
   },
-  "include": ["electron.vite.config.ts", "src/main", "src/preload", "src/shared"]
+  "include": [
+    "electron.vite.config.ts",
+    "vitest.config.ts",
+    "import-aliases.ts",
+    "src/main",
+    "src/preload",
+    "src/shared"
+  ]
 }

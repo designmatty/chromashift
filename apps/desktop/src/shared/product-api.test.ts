@@ -10,7 +10,7 @@ import {
   setMiniPanelViewRequestSchema,
   saveProfileRequestSchema,
   userPreferencesSchema
-} from './product-api.js'
+} from '@shared/product-api.js'
 
 describe('product API contracts', () => {
   it('rejects malformed renderer profile writes and preview display IDs', () => {

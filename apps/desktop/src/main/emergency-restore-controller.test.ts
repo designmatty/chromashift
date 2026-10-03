@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { EmergencyRestoreController } from './emergency-restore-controller.js'
-import type { StructuredLogger } from './structured-logger.js'
+import { EmergencyRestoreController } from '@main/emergency-restore-controller.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 const logger: StructuredLogger = { write: () => undefined }
 

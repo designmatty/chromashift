@@ -30,14 +30,14 @@ import {
   type DiagnosticLogEntry,
   type MiniPanelView,
   type ProductError
-} from '../shared/product-api.js'
-import { PreviewRestoreError, PreviewValidationError } from './preview-session-controller.js'
-import type { DiagnosticsService } from './diagnostics-service.js'
+} from '@shared/product-api.js'
+import { PreviewRestoreError, PreviewValidationError } from '@main/preview-session-controller.js'
+import type { DiagnosticsService } from '@main/diagnostics-service.js'
 import {
   ProductConflictError,
   ProductController,
   ProductNotFoundError
-} from './product-controller.js'
+} from '@main/product-controller.js'
 
 export function registerProductIpcHandlers(
   ipc: IpcMain,

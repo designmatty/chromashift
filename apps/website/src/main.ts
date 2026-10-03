@@ -1,6 +1,6 @@
-import './styles/index.css'
-import { initColorDemo } from './color-demo'
-import { fetchLatestInstaller, installerLine } from './release'
+import '@/styles/index.css'
+import { initColorDemo } from '@/color-demo'
+import { fetchLatestInstaller, installerLine } from '@/release'
 
 initColorDemo()
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { RendererRecoveryController } from './renderer-recovery-controller.js'
-import type { StructuredLogger } from './structured-logger.js'
+import { RendererRecoveryController } from '@main/renderer-recovery-controller.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 const logger: StructuredLogger = { write: () => undefined }
 

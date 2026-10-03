@@ -9,8 +9,8 @@ import {
   NativeServiceRecoveryController,
   type RecoverableActivationPort,
   type RecoverableNativeServicePort
-} from './native-service-recovery-controller.js'
-import type { StructuredLogEvent, StructuredLogger } from './structured-logger.js'
+} from '@main/native-service-recovery-controller.js'
+import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
 const info: SystemInfo = {
   protocolVersion: 1,

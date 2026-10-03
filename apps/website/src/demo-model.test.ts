@@ -13,7 +13,7 @@ import {
   screenshotFilter,
   setControl,
   type ActivationMode
-} from './demo-model'
+} from '@/demo-model'
 
 const ramp = 'url(#ramp)'
 

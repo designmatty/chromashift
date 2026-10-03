@@ -1,6 +1,6 @@
 import type { ColorProfile, ProfileRepository } from '@chromashift/core'
-import type { UserPreferences } from '../shared/product-api.js'
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
+import type { UserPreferences } from '@shared/product-api.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
 
 export interface ProductNotification {
   title: string

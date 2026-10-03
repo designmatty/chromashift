@@ -3,7 +3,7 @@ import {
   foregroundApplicationChangedDataSchema,
   type NativeEvent
 } from '@chromashift/native-client'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface NativeEventSource {
   on(event: 'event', listener: (event: NativeEvent) => void): unknown

@@ -7,9 +7,9 @@ import {
   defaultChromaShiftIntent,
   defaultUserPreferences,
   defaultWindowState
-} from './app-settings.js'
-import { SettingsSliceStore } from './settings-slice-store.js'
-import { userPreferencesSchema } from '../shared/product-api.js'
+} from '@main/app-settings.js'
+import { SettingsSliceStore } from '@main/settings-slice-store.js'
+import { userPreferencesSchema } from '@shared/product-api.js'
 
 const directories: string[] = []
 

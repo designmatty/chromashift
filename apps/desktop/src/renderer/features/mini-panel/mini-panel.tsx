@@ -41,7 +41,7 @@ import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
-import type { ProductError, ProductState } from '../../../shared/product-api.js'
+import type { ProductError, ProductState } from '@shared/product-api.js'
 
 const DEFAULT_ID = 'default'
 const AUTOMATIC_ID = '__automatic__'

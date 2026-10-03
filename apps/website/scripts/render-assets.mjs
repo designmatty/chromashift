@@ -1,5 +1,5 @@
 // Renders the website's committed icon and social-card images from the brand
-// PNGs at the repository root. Run with `npm run render:assets --workspace
+// PNGs in src/assets/brand. Run with `npm run render:assets --workspace
 // @chromashift/website` after changing the brand assets or social/social-card.html.
 import { app, BrowserWindow, nativeImage } from 'electron'
 import { Buffer } from 'node:buffer'
@@ -8,13 +8,13 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const websiteDirectory = resolve(import.meta.dirname, '..')
-const repositoryRoot = resolve(websiteDirectory, '..', '..')
+const brandDirectory = join(websiteDirectory, 'src', 'assets', 'brand')
 const publicDirectory = join(websiteDirectory, 'public')
 const icons = {
-  darkmode: join(repositoryRoot, 'chromashift-icon-darkmode.png'),
-  lightmode: join(repositoryRoot, 'chromashift-icon-lightmode.png')
+  darkmode: join(brandDirectory, 'chromashift-icon-darkmode.png'),
+  lightmode: join(brandDirectory, 'chromashift-icon-lightmode.png')
 }
-const logo = join(repositoryRoot, 'chromashift-logo-darkmode.png')
+const logo = join(brandDirectory, 'chromashift-logo-darkmode.png')
 const background = '#0e0e11'
 
 app.commandLine.appendSwitch('force-device-scale-factor', '1')

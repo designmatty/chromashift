@@ -1,9 +1,9 @@
 import { JsonProfileRepository, type ColorProfile } from '@chromashift/core'
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client'
 import { describe, expect, it, vi } from 'vitest'
-import type { UserPreferences } from '../shared/product-api.js'
-import { PreviewSessionController } from './preview-session-controller.js'
-import { defaultUserPreferences as defaultAppSettings } from './app-settings.js'
+import type { UserPreferences } from '@shared/product-api.js'
+import { PreviewSessionController } from '@main/preview-session-controller.js'
+import { defaultUserPreferences as defaultAppSettings } from '@main/app-settings.js'
 import {
   type ApplicationPickerPort,
   ProductConflictError,
@@ -11,7 +11,7 @@ import {
   type ProductActivationPort,
   type ProductNativePort,
   type ProductSettingsPort
-} from './product-controller.js'
+} from '@main/product-controller.js'
 
 class MemoryStorage {
   public contents: string | null = null

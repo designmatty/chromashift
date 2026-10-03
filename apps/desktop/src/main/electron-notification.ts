@@ -2,8 +2,8 @@ import { Notification } from 'electron'
 import type {
   ProductNotification,
   ProductNotificationPort
-} from './profile-notification-controller.js'
-import type { StructuredLogger } from './structured-logger.js'
+} from '@main/profile-notification-controller.js'
+import type { StructuredLogger } from '@main/structured-logger.js'
 
 export class ElectronNotificationPort implements ProductNotificationPort {
   readonly #active = new Set<Notification>()

@@ -1,7 +1,7 @@
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { Display } from '@chromashift/native-client/protocol'
 import { describe, expect, it } from 'vitest'
-import { buildDisplayRows } from './display-rows.js'
+import { buildDisplayRows } from '@/features/profiles/display-rows.js'
 
 const connectedDisplay: Display = {
   id: 'display:connected',

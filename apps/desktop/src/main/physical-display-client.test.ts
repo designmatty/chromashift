@@ -8,7 +8,7 @@ import type {
   DisplaySettings,
   RestoreAllResult
 } from '@chromashift/native-client'
-import { PhysicalDisplayClient } from './physical-display-client.js'
+import { PhysicalDisplayClient } from '@main/physical-display-client.js'
 
 const physicalId = 'display:physical-g60'
 

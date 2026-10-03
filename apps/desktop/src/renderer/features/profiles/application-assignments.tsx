@@ -3,7 +3,7 @@ import { AppWindow, ChevronDown, FolderOpen, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { run } from '@/lib/product-result'
-import type { ApplicationSelection, ProductError } from '../../../shared/product-api.js'
+import type { ApplicationSelection, ProductError } from '@shared/product-api.js'
 
 export function ApplicationAssignments({
   profile,

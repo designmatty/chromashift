@@ -2,10 +2,10 @@ import { Box, Button, Center, Flex, Heading, Icon, IconButton, Image, Text } fro
 import type { ReactNode } from 'react'
 import { Palette, PanelsTopLeft, PanelTop } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
-import logoDark from '../../../../../../chromashift-logo-darkmode.png'
-import logoLight from '../../../../../../chromashift-logo-lightmode.png'
-import iconDark from '../../../../../../chromashift-icon-darkmode.png'
-import iconLight from '../../../../../../chromashift-icon-lightmode.png'
+import logoDark from '@/assets/brand/chromashift-logo-darkmode.png'
+import logoLight from '@/assets/brand/chromashift-logo-lightmode.png'
+import iconDark from '@/assets/brand/chromashift-icon-darkmode.png'
+import iconLight from '@/assets/brand/chromashift-icon-lightmode.png'
 
 export function Brand({ compact = false }: { compact?: boolean }): React.JSX.Element {
   const source = compact

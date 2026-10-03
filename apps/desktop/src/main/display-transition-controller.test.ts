@@ -1,7 +1,7 @@
 import type { DisplayTopologyRefreshResult } from '@chromashift/native-client'
 import { describe, expect, it } from 'vitest'
-import { DisplayTransitionController } from './display-transition-controller.js'
-import type { StructuredLogEvent, StructuredLogger } from './structured-logger.js'
+import { DisplayTransitionController } from '@main/display-transition-controller.js'
+import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
 class Logger implements StructuredLogger {
   readonly events: StructuredLogEvent[] = []

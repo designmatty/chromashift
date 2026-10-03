@@ -29,6 +29,9 @@ function deploymentPlugin(): Plugin {
 
 export default defineConfig({
   appType: 'mpa',
+  resolve: {
+    alias: { '@': resolve(import.meta.dirname, 'src') }
+  },
   build: {
     target: 'es2022',
     rollupOptions: {

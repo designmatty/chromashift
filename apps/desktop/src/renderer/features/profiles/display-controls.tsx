@@ -7,9 +7,9 @@ import {
   type ColorProfile,
   type ColorSettings
 } from '@chromashift/core'
-import type { ProductState } from '../../../shared/product-api.js'
-import { ColorControls } from './color-controls'
-import { buildDisplayRows, type DisplayRow } from './display-rows'
+import type { ProductState } from '@shared/product-api.js'
+import { ColorControls } from '@/features/profiles/color-controls'
+import { buildDisplayRows, type DisplayRow } from '@/features/profiles/display-rows'
 
 const LAST_DISPLAY_KEY = 'chromashift.profile-editor.selected-display'
 

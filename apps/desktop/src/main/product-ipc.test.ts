@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { registerProductIpcHandlers } from './product-ipc.js'
-import { DiagnosticsService } from './diagnostics-service.js'
-import { productIpcChannels } from '../shared/product-api.js'
+import { registerProductIpcHandlers } from '@main/product-ipc.js'
+import { DiagnosticsService } from '@main/diagnostics-service.js'
+import { productIpcChannels } from '@shared/product-api.js'
 
 function harness() {
   const handlers = new Map<

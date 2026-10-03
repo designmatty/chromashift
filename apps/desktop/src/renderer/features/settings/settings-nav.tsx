@@ -12,7 +12,7 @@ import { Button, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
 
 import { NavButton } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
-import type { AppPanelView } from '../../../shared/product-api.js'
+import type { AppPanelView } from '@shared/product-api.js'
 
 export type SettingsPage = Extract<
   AppPanelView,

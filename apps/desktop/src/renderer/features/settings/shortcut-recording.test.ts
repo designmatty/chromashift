@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { recordShortcut } from './shortcut-recording.js'
+import { recordShortcut } from '@/features/settings/shortcut-recording.js'
 
 describe('recordShortcut', () => {
   it('records a modifier and non-modifier key as an Electron accelerator', () => {

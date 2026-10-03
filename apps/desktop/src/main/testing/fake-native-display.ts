@@ -8,8 +8,8 @@ import {
   type DisplaySettings,
   type RestoreAllResult
 } from '@chromashift/native-client'
-import type { NativeActivationPort } from '../activation-coordinator.js'
-import type { PreviewNativePort } from '../preview-session-controller.js'
+import type { NativeActivationPort } from '@main/activation-coordinator.js'
+import type { PreviewNativePort } from '@main/preview-session-controller.js'
 
 export interface NativeCall {
   operation: 'capture' | 'apply' | 'restore' | 'restoreAll'

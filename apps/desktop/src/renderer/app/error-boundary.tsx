@@ -1,6 +1,6 @@
 import { Button, Text } from '@chakra-ui/react'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { CenterState } from './root'
+import { CenterState } from '@/app/root'
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   public override state = { error: null as Error | null }

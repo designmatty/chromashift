@@ -1,6 +1,6 @@
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
-import { run } from '../../lib/product-result.js'
-import type { PreviewState, ProductError, ProductResult } from '../../../shared/product-api.js'
+import { run } from '@/lib/product-result.js'
+import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
 
 export const PREVIEW_SYNC_DEBOUNCE_MS = 120
 

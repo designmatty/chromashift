@@ -4,7 +4,7 @@ import {
   installerLine,
   releasesApiUrl,
   selectLatestInstaller
-} from './release'
+} from '@/release'
 
 const download = 'https://github.com/designmatty/chromashift/releases/download'
 

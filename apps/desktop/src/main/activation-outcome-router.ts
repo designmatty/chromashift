@@ -1,5 +1,5 @@
-import type { CompletedActivationOutcome } from './automatic-activation-controller.js'
-import { describeError, type StructuredLogger } from './structured-logger.js'
+import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface OutcomeActivationSource {
   subscribe(listener: () => void): () => void

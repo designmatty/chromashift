@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { WindowController, type ManagedWindowPort } from './window-controller.js'
+import { WindowController, type ManagedWindowPort } from '@main/window-controller.js'
 
 function windowPort(overrides: Partial<ManagedWindowPort> = {}): ManagedWindowPort {
   return {
