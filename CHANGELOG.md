@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   preventing an Electron shell launcher from remaining after ChromaShift exits.
 - Development and test runners remove owned shortcut leftovers after Electron exits,
   including leftovers from earlier runs and forced exits.
+- Updated the desktop smoke check to follow the current Diagnostics wording.
 
 ## [0.1.0-preview.7] - 2026-10-03
 

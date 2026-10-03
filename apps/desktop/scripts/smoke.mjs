@@ -1329,7 +1329,10 @@ async function runSmoke() {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Diagnostics')?.click()`
   })
-  await waitForText(debuggerClient, 'Latest events from this ChromaShift data directory')
+  await waitForText(
+    debuggerClient,
+    'Copy or download the latest 250 events, including event details, as JSON Lines.'
+  )
   await waitForText(debuggerClient, 'ApplicationStarted')
   await captureScreenshot(debuggerClient, diagnosticsScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
