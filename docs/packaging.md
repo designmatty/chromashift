@@ -4,6 +4,12 @@ ChromaShift uses Electron Builder 26.15.3 for Windows x64. Application JavaScrip
 is stored in ASAR. The native helper is published self-contained and copied
 outside ASAR with every runtime and native dependency it needs.
 
+The root npm override pins `@electron/get` to 5.1.0 for Electron Builder and
+Electron itself. This removes Builder's older `got` download chain, including
+the unpatched `http-cache-semantics` advisory GHSA-ch52-4w7c-c8xp. Keep the
+override until Builder depends on the current downloader. Validate changes with
+`npm ci`, `npm run verify`, and `npm run package:win`.
+
 ## Commands
 
 Run from the repository root:
