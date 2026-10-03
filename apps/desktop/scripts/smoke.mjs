@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import electronPath from 'electron'
 import { NativeClient } from '@chromashift/native-client'
 import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mjs'
+import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
@@ -708,7 +709,7 @@ const developmentElectronShortcut = join(
   'Programs',
   'Electron.lnk'
 )
-const developmentElectronShortcutExisted = await pathExists(developmentElectronShortcut)
+cleanupDevelopmentShortcut(electronPath)
 const forceElectronTermination = globalThis.process.argv.includes('--force-exit')
 const testNativeRecovery = globalThis.process.argv.includes('--native-recovery')
 
@@ -1328,7 +1329,10 @@ async function runSmoke() {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Diagnostics')?.click()`
   })
-  await waitForText(debuggerClient, 'Latest events from this ChromaShift data directory')
+  await waitForText(
+    debuggerClient,
+    'Copy or download the latest 250 events, including event details, as JSON Lines.'
+  )
   await waitForText(debuggerClient, 'ApplicationStarted')
   await captureScreenshot(debuggerClient, diagnosticsScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
@@ -2827,6 +2831,9 @@ try {
     await waitForExit(electron)
   } catch (error) {
     electron.kill()
+    await waitForExit(electron).catch((exitError) => {
+      smokeFailure ??= exitError
+    })
     smokeFailure ??= error
   }
   try {
@@ -2860,8 +2867,10 @@ try {
     maxRetries: 10,
     retryDelay: 250
   })
-  if (!developmentElectronShortcutExisted) {
-    await rm(developmentElectronShortcut, { force: true })
+  cleanupDevelopmentShortcut(electronPath)
+  if (await pathExists(developmentElectronShortcut)) {
+    // A shortcut for a different Electron application is intentionally preserved.
+    globalThis.console.log('Preserved the existing Electron shortcut owned by another application.')
   }
 }
 

@@ -100,8 +100,13 @@ restoration before exit. Renderer and visible native-window screenshots are
 written under `apps/desktop/out/smoke` for visual inspection. Native captures
 include the app's Windows caption controls and the actual paused mini-panel
 window without activating it. Electron creates a development
-Start menu shortcut when the smoke checks native-notification support. The smoke
-removes that shortcut during cleanup only when it did not exist before the run.
+Start menu shortcut when a development notification initializes. Development
+ChromaShift uses a separate development notification identity and removes its bare
+`Electron.lnk` at startup and on normal exit. The development launcher, desktop
+smoke, and development performance runner also clean it up after their child exits.
+Cleanup checks the shortcut's target, arguments,
+and application ID; packaged-app shortcuts and other Electron apps are preserved.
+Owned leftovers are removed even when they existed before the run.
 
 `npm run smoke:desktop:crash` forcibly terminates Electron and requires the
 detached helper to restore before exiting. `npm run
@@ -123,6 +128,14 @@ and remove the application directory and Start menu shortcut while preserving
 profile data. The smoke also creates a disposable profile,
 dispatches its global shortcut, verifies native notification delivery, clicks the
 notification in Windows Notification Center, and checks profile routing.
+
+Also inspect the visible Start menu after uninstall. Windows 11 24H2 and 25H2
+can retain a dead entry after the shortcut and shell app registration are gone.
+Microsoft documents this [Start menu cache issue](https://jpwinsup.github.io/blog/2026/04/16/Shell/Explorer/installed-applications-dont-appear-in-new-StartMenu/)
+and a workaround of refreshing the current user's `StartMenuExperienceHost`
+process. Distinguish this from a remaining shortcut by checking both user and
+common Start menu folders and `Get-StartApps`. Application cleanup must not
+automatically restart the user's shell or delete their Start menu database.
 
 `npm run measure:performance` measures packaged startup, app-to-mini and app
 reopen latency, visible, mini, and tray private memory, renderer release, idle

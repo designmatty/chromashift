@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.8] - 2026-10-03
+
+### Added
+
+- Ownership checks that preserve shortcuts belonging to other Electron applications.
+
+### Changed
+
+- Development notifications use a separate identity from installed ChromaShift.
+- Uninstall validation documents the stale app entries Windows 11 can retain in Start.
+
+### Fixed
+
+- Development notifications clean up their bare Electron Start menu shortcut,
+  preventing an Electron shell launcher from remaining after ChromaShift exits.
+- Development and test runners remove owned shortcut leftovers after Electron exits,
+  including leftovers from earlier runs and forced exits.
+- Updated the desktop smoke check to follow the current Diagnostics wording.
+
 ## [0.1.0-preview.7] - 2026-10-03
 
 ### Added
@@ -84,6 +103,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.6...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...HEAD
+[0.1.0-preview.8]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.7...v0.1.0-preview.8
+[0.1.0-preview.7]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.6...v0.1.0-preview.7
 [0.1.0-preview.6]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.5...v0.1.0-preview.6
 [0.1.0-preview.5]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.4...v0.1.0-preview.5

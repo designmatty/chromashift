@@ -1,6 +1,6 @@
 {
   "name": "@chromashift/desktop",
-  "version": "0.1.0-preview.7",
+  "version": "0.1.0-preview.8",
   "description": "ChromaShift",
   "productName": "ChromaShift",
   "author": "ChromaShift",
@@ -8,7 +8,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "install-electron --no && electron-vite dev",
+    "dev": "install-electron --no && node scripts/run-development.mjs",
     "build": "electron-vite build",
     "check:renderer-budget": "node scripts/check-renderer-budget.mjs",
     "package:dir": "electron-builder --win dir --x64 --publish never && node scripts/package-footprint.mjs --check",

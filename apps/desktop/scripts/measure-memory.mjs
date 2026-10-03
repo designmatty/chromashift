@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 import electronPath from 'electron'
+import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 
 const execFileAsync = promisify(execFile)
 const require = createRequire(import.meta.url)
@@ -567,6 +568,8 @@ try {
     await waitForExit(electron)
   } catch {
     electron.kill()
+    await waitForExit(electron)
   }
   await rm(userDataDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  if (!packaged) cleanupDevelopmentShortcut(electronPath)
 }

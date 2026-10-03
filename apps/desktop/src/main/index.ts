@@ -9,6 +9,7 @@ import {
   nativeTheme,
   powerMonitor,
   screen,
+  shell,
   type IpcMainInvokeEvent,
   type NativeImage,
   type OpenDialogOptions
@@ -22,6 +23,7 @@ import { AppWindowStateController } from '@main/app-window-state-controller.js'
 import { createSettingsStores } from '@main/app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
 import { ElectronNotificationPort } from '@main/electron-notification.js'
+import { createDevelopmentShortcutCleanup } from '@main/development-shortcut-cleanup.js'
 import { resolveDisplayServicePath } from '@main/display-service-path.js'
 import { ElectronTrayMenu } from '@main/electron-tray-menu.js'
 import { MiniPanelController } from '@main/mini-panel-controller.js'
@@ -41,7 +43,11 @@ import { WindowController } from '@main/window-controller.js'
 
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-software-rasterizer')
-if (process.platform === 'win32') app.setAppUserModelId('com.chromashift.desktop')
+if (process.platform === 'win32') {
+  app.setAppUserModelId(
+    app.isPackaged ? 'com.chromashift.desktop' : 'com.chromashift.desktop.development'
+  )
+}
 
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined
@@ -58,6 +64,14 @@ const applicationDataPaths = resolveApplicationDataPaths(
 )
 const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
 const logger = new PersistentJsonLogger(diagnosticLogPath)
+const cleanupDevelopmentShortcut = createDevelopmentShortcutCleanup({
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  appDataDirectory: app.getPath('appData'),
+  executablePath: process.execPath,
+  readShortcutLink: (path) => shell.readShortcutLink(path),
+  logger
+})
 const rendererRecoveryController = new RendererRecoveryController(logger)
 const settingsStores = createSettingsStores(applicationDataPaths.userDataDirectory)
 const appWindowStateController = new AppWindowStateController(
@@ -465,6 +479,7 @@ function openProfile(profileId: string | null): void {
 }
 
 if (ownsSingleInstanceLock) {
+  cleanupDevelopmentShortcut()
   app.on('second-instance', () => {
     if (app.isReady()) openWindow()
   })
@@ -614,6 +629,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
+  if (ownsSingleInstanceLock) cleanupDevelopmentShortcut()
   runtime.dispose()
   appWindowStateController.dispose()
   globalShortcut.unregister(EMERGENCY_RESTORE_ACCELERATOR)
