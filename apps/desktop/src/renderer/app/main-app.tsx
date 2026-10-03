@@ -87,12 +87,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   async function action<T>(
     request: Promise<ProductResult<T>>,
     done?: (value: T) => void
-  ): Promise<void> {
+  ): Promise<boolean> {
     setBusy(true)
     setError(null)
     const value = await run(request, setError)
     if (value !== undefined) done?.(value)
     setBusy(false)
+    return value !== undefined
   }
 
   async function selectProfile(profile: ColorProfile): Promise<void> {
@@ -450,7 +451,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             }
             onToggleEnabled={toggleProfileEnabled}
             onDelete={requestProfileDeletion}
-            onReorder={(profileIds) => void action(window.chromaShift.reorderProfiles(profileIds))}
+            onReorder={async (profileIds, interactionId) => {
+              if (!(await action(window.chromaShift.reorderProfiles(profileIds, interactionId))))
+                throw new Error('Could not save profile order.')
+            }}
           />
         )}
         <Flex

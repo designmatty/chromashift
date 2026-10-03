@@ -26,6 +26,10 @@ export const productIpcChannels = {
   pickApplication: 'product:pick-application',
   listApplications: 'product:list-applications',
   getDiagnostics: 'product:get-diagnostics',
+  copyDiagnostics: 'product:copy-diagnostics',
+  downloadDiagnostics: 'product:download-diagnostics',
+  clearDiagnostics: 'product:clear-diagnostics',
+  recordProfileReorder: 'product:record-profile-reorder',
   updateSettings: 'product:update-settings',
   startPreview: 'product:start-preview',
   updatePreview: 'product:update-preview',
@@ -190,7 +194,26 @@ export const controlChromaShiftRequestSchema = z
   .strict()
 export const reorderProfilesRequestSchema = z
   .object({
-    profileIds: z.array(z.string().trim().min(1)).min(1)
+    profileIds: z.array(z.string().trim().min(1)).min(1),
+    interactionId: z.uuid().optional()
+  })
+  .strict()
+export const profileReorderDiagnosticSchema = z
+  .object({
+    phase: z.enum(['started', 'positionChanged', 'dropped', 'cancelled', 'clickSuppressed']),
+    interactionId: z.uuid(),
+    clientTimestamp: z.iso.datetime(),
+    profileId: z.string().min(1).max(200),
+    input: z.enum(['pointer', 'keyboard', 'shortcut']),
+    fromIndex: z.number().int().min(1).max(9999),
+    toIndex: z.number().int().min(1).max(9999),
+    selectedProfileId: z.string().max(200).nullable(),
+    previewingProfileId: z.string().max(200).nullable(),
+    profileIds: z.array(z.string().min(1).max(200)).max(1000).optional(),
+    clickedProfileId: z.string().min(1).max(200).optional(),
+    cancelReason: z
+      .enum(['escape', 'outsideSidebar', 'windowBlur', 'stateChanged', 'sensor'])
+      .optional()
   })
   .strict()
 export const createProfileRequestSchema = z
@@ -268,6 +291,7 @@ export type PreviewTarget = z.infer<typeof previewTargetSchema>
 export type ProductError = z.infer<typeof productErrorSchema>
 export type ApplicationSelection = z.infer<typeof applicationSelectionSchema>
 export type DiagnosticLogEntry = z.infer<typeof diagnosticLogEntrySchema>
+export type ProfileReorderDiagnostic = z.infer<typeof profileReorderDiagnosticSchema>
 export type UserPreferences = z.infer<typeof userPreferencesSchema>
 export type ShortcutAction = z.infer<typeof shortcutActionSchema>
 export type ShortcutBinding = z.infer<typeof shortcutBindingSchema>
@@ -281,7 +305,7 @@ export interface ChromaShiftApi {
   saveProfile(profile: ColorProfile, removeShortcut?: boolean): Promise<ProductResult<ColorProfile>>
   duplicateProfile(profileId: string): Promise<ProductResult<ColorProfile>>
   deleteProfile(profileId: string): Promise<ProductResult<boolean>>
-  reorderProfiles(profileIds: string[]): Promise<ProductResult<null>>
+  reorderProfiles(profileIds: string[], interactionId?: string): Promise<ProductResult<null>>
   setDefaultProfile(profileId: string | null): Promise<ProductResult<null>>
   activateProfile(profileId: string): Promise<ProductResult<null>>
   enableAutomatic(): Promise<ProductResult<null>>
@@ -290,6 +314,10 @@ export interface ChromaShiftApi {
   pickApplication(): Promise<ProductResult<ApplicationSelection | null>>
   listApplications(): Promise<ProductResult<ApplicationSelection[]>>
   getDiagnostics(): Promise<ProductResult<DiagnosticLogEntry[]>>
+  copyDiagnostics(): Promise<ProductResult<null>>
+  downloadDiagnostics(): Promise<ProductResult<boolean>>
+  clearDiagnostics(): Promise<ProductResult<null>>
+  recordProfileReorder(event: ProfileReorderDiagnostic): Promise<ProductResult<null>>
   updateSettings(settings: UserPreferences): Promise<ProductResult<UserPreferences>>
   startPreview(
     profile: ColorProfile,

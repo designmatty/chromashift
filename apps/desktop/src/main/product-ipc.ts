@@ -11,6 +11,7 @@ import {
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
+  profileReorderDiagnosticSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
   commitSessionRequestSchema,
@@ -31,6 +32,7 @@ import {
   type ProductError
 } from '../shared/product-api.js'
 import { PreviewRestoreError, PreviewValidationError } from './preview-session-controller.js'
+import type { DiagnosticsService } from './diagnostics-service.js'
 import {
   ProductConflictError,
   ProductController,
@@ -47,7 +49,8 @@ export function registerProductIpcHandlers(
   showMiniPanel: () => void,
   openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
   setMiniPanelView: (view: MiniPanelView, showColorTemperature: boolean) => void,
-  getDiagnostics: () => DiagnosticLogEntry[]
+  getDiagnostics: () => DiagnosticLogEntry[],
+  diagnostics: DiagnosticsService
 ): void {
   const controller = (): ProductController => {
     const value = getController()
@@ -102,7 +105,9 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async (request) => {
-      await controller().reorderProfiles(request.profileIds)
+      await diagnostics.persistReorder(request.profileIds, request.interactionId, () =>
+        controller().reorderProfiles(request.profileIds)
+      )
       return null
     }
   )
@@ -124,7 +129,9 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async (request) => {
-      await controller().activateProfile(request.profileId)
+      await diagnostics.profileAction('ProfileActivation', { profileId: request.profileId }, () =>
+        controller().activateProfile(request.profileId)
+      )
       return null
     }
   )
@@ -195,12 +202,57 @@ export function registerProductIpcHandlers(
   )
   register(
     ipc,
+    productIpcChannels.copyDiagnostics,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
+      diagnostics.copy()
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.downloadDiagnostics,
+    emptyRequestSchema,
+    booleanResultSchema,
+    assertTrustedRenderer,
+    async () => diagnostics.download()
+  )
+  register(
+    ipc,
+    productIpcChannels.recordProfileReorder,
+    profileReorderDiagnosticSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (event) => {
+      diagnostics.recordReorder(event)
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.clearDiagnostics,
+    emptyRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async () => {
+      diagnostics.clear()
+      return null
+    }
+  )
+  register(
+    ipc,
     productIpcChannels.startPreview,
     startSessionRequestSchema,
     voidResultSchema,
     assertTrustedRenderer,
     async (request) => {
-      await controller().startPreview(request.profile, request.kind)
+      await diagnostics.profileAction(
+        'ProfilePreview',
+        { profileId: request.profile.id, kind: request.kind },
+        () => controller().startPreview(request.profile, request.kind)
+      )
       return null
     }
   )
@@ -230,7 +282,9 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async () => {
-      await controller().cancelPreview()
+      await diagnostics.profileAction('ProfilePreviewCancel', {}, () =>
+        controller().cancelPreview()
+      )
       return null
     }
   )

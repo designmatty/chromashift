@@ -1,5 +1,6 @@
 import { Badge, Box, Button, Flex, Heading, Stack, Text } from '@chakra-ui/react'
 import { useEffect, useState } from 'react'
+import { Check, Copy, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { run } from '@/lib/product-result'
 import type { DiagnosticLogEntry, ProductError } from '../../../shared/product-api.js'
 
@@ -10,6 +11,14 @@ export function DiagnosticsPanel({
 }): React.JSX.Element {
   const [entries, setEntries] = useState<DiagnosticLogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [sharing, setSharing] = useState<'copy' | 'download' | 'clear' | null>(null)
+  const [completed, setCompleted] = useState<{ action: 'copy' | 'download' } | null>(null)
+
+  useEffect(() => {
+    if (completed === null) return
+    const timeout = window.setTimeout(() => setCompleted(null), 2000)
+    return () => window.clearTimeout(timeout)
+  }, [completed])
 
   async function refresh(): Promise<void> {
     setLoading(true)
@@ -18,32 +27,105 @@ export function DiagnosticsPanel({
     setLoading(false)
   }
 
+  async function share(action: 'copy' | 'download'): Promise<void> {
+    setSharing(action)
+    setCompleted(null)
+    onError(null)
+    try {
+      if (action === 'copy') {
+        const value = await run(window.chromaShift.copyDiagnostics(), onError)
+        if (value !== undefined) setCompleted({ action: 'copy' })
+      } else {
+        const saved = await run(window.chromaShift.downloadDiagnostics(), onError)
+        if (saved) setCompleted({ action: 'download' })
+      }
+    } finally {
+      setSharing(null)
+    }
+  }
+
+  async function clear(): Promise<void> {
+    setSharing('clear')
+    setCompleted(null)
+    onError(null)
+    try {
+      const value = await run(window.chromaShift.clearDiagnostics(), onError)
+      if (value !== undefined) setEntries([])
+    } finally {
+      setSharing(null)
+    }
+  }
+
   useEffect(() => {
     void refresh()
   }, [])
 
   return (
-    <Stack as="section" gap="4">
-      <Flex as="header" align="center" justify="space-between" gap="4">
+    <Stack as="section" gap="3">
+      <Stack as="header" gap="3">
         <Stack gap="0">
           <Heading as="h1" size="lg">
             Diagnostics
           </Heading>
           <Text color="fg.muted" fontSize="sm">
-            Latest events from this ChromaShift data directory
+            Copy or download the latest 250 events, including event details, as JSON Lines.
           </Text>
         </Stack>
-        <Button
-          aria-label="Refresh diagnostics"
-          variant="outline"
-          size="xs"
-          borderRadius="full"
-          loading={loading}
-          onClick={() => void refresh()}
-        >
-          Refresh
-        </Button>
-      </Flex>
+        <Flex gap="2" wrap="wrap">
+          <Button
+            aria-label="Copy logs"
+            variant="outline"
+            size="xs"
+            rounded="full"
+            minW="28"
+            loading={sharing === 'copy'}
+            disabled={sharing !== null || loading || entries.length === 0}
+            onClick={() => void share('copy')}
+          >
+            {completed?.action === 'copy' ? <Check /> : <Copy />}
+            <Text as="span" aria-live="polite" aria-atomic="true">
+              {completed?.action === 'copy' ? 'Copied' : 'Copy logs'}
+            </Text>
+          </Button>
+          <Button
+            aria-label="Download logs"
+            variant="outline"
+            size="xs"
+            rounded="full"
+            minW="32"
+            loading={sharing === 'download'}
+            disabled={sharing !== null || loading || entries.length === 0}
+            onClick={() => void share('download')}
+          >
+            {completed?.action === 'download' ? <Check /> : <Download />}
+            <Text as="span" aria-live="polite" aria-atomic="true">
+              {completed?.action === 'download' ? 'Saved' : 'Download logs'}
+            </Text>
+          </Button>
+          <Button
+            aria-label="Refresh diagnostics"
+            variant="outline"
+            size="xs"
+            borderRadius="full"
+            loading={loading}
+            disabled={sharing !== null}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw /> Refresh
+          </Button>
+          <Button
+            aria-label="Clear logs"
+            variant="outline"
+            size="xs"
+            rounded="full"
+            loading={sharing === 'clear'}
+            disabled={sharing !== null || loading || entries.length === 0}
+            onClick={() => void clear()}
+          >
+            <Trash2 /> Clear logs
+          </Button>
+        </Flex>
+      </Stack>
       <Stack gap="2" aria-live="polite">
         {!loading && entries.length === 0 && (
           <Text color="fg.muted">No diagnostic events are available yet.</Text>

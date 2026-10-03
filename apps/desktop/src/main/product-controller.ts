@@ -18,7 +18,10 @@ import type {
   UserPreferences
 } from '../shared/product-api.js'
 import type { ActivationOutcome } from './activation-coordinator.js'
-import type { ActivationControllerState } from './automatic-activation-controller.js'
+import type {
+  ActivationControllerState,
+  ConfigurationChange
+} from './automatic-activation-controller.js'
 import type { PreviewSessionController } from './preview-session-controller.js'
 
 export interface ProductNativePort {
@@ -38,7 +41,7 @@ export interface ProductActivationPort {
   resume(source: 'manual'): Promise<ActivationOutcome>
   retrySafetyCheck(source: 'manual'): Promise<ActivationOutcome>
   reconcileAutomaticIntent(): Promise<void>
-  refreshAfterConfigurationChange(): Promise<void>
+  refreshAfterConfigurationChange(change?: ConfigurationChange): Promise<void>
 }
 
 export interface ApplicationPickerPort {
@@ -79,6 +82,14 @@ export class ProductController {
     private readonly refresh: ProductRefreshPort,
     private readonly version: string = '0.0.0'
   ) {}
+
+  public getProfileDiagnosticContext(): Record<string, unknown> {
+    return {
+      activation: this.activation.state,
+      preview: this.preview.state,
+      chromaShift: this.activation.chromaShiftState
+    }
+  }
 
   public async getState(): Promise<ProductState> {
     const displays = await this.native.getDisplays()
@@ -270,7 +281,7 @@ export class ProductController {
       throw new ProductConflictError('Profile reordering is unavailable.')
     }
     await this.repository.reorder(profileIds)
-    await this.#configurationChanged()
+    await this.#configurationChanged('profileOrder')
   }
 
   public async setDefaultProfile(profileId: string | null): Promise<void> {
@@ -362,8 +373,8 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
-  async #configurationChanged(): Promise<void> {
-    await this.activation.refreshAfterConfigurationChange()
+  async #configurationChanged(change: ConfigurationChange = 'profileContent'): Promise<void> {
+    await this.activation.refreshAfterConfigurationChange(change)
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }

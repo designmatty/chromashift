@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import electronPath from 'electron'
 import { NativeClient } from '@chromashift/native-client'
+import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
@@ -280,7 +281,7 @@ async function captureScreenshot(debuggerClient, path) {
   await writeFile(path, globalThis.Buffer.from(screenshot.data, 'base64'))
 }
 
-async function captureNativeWindow(processId, path) {
+async function captureNativeWindow(processId, path, raiseApp = false) {
   // Capture the visible desktop surface, including Windows caption controls.
   // Do not activate the window: the mini panel must retain its foreground contract.
   const command = `
@@ -295,6 +296,9 @@ public static class ChromaShiftSmokeCapture {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+  [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int length);
 }
 '@
 $captureWindows = [System.Collections.Generic.List[ChromaShiftSmokeCapture+Rect]]::new()
@@ -303,9 +307,14 @@ $captureWindows = [System.Collections.Generic.List[ChromaShiftSmokeCapture+Rect]
   $ownerId = [uint32]0
   [void][ChromaShiftSmokeCapture]::GetWindowThreadProcessId($window, [ref]$ownerId)
   if ($ownerId -eq ${processId} -and [ChromaShiftSmokeCapture]::IsWindowVisible($window)) {
+    $title = [System.Text.StringBuilder]::new(256)
+    [void][ChromaShiftSmokeCapture]::GetWindowText($window, $title, $title.Capacity)
     $rect = [ChromaShiftSmokeCapture+Rect]::new()
-    if ([ChromaShiftSmokeCapture]::GetWindowRect($window, [ref]$rect) -and
-        $rect.Right -gt $rect.Left -and $rect.Bottom -gt $rect.Top) { $captureWindows.Add($rect) }
+    if ($title.ToString() -eq 'ChromaShift' -and [ChromaShiftSmokeCapture]::GetWindowRect($window, [ref]$rect) -and
+        $rect.Right -gt $rect.Left -and $rect.Bottom -gt $rect.Top) {
+      ${raiseApp ? '[void][ChromaShiftSmokeCapture]::SetWindowPos($window, [IntPtr](-1), 0, 0, 0, 0, 0x53)' : ''}
+      $captureWindows.Add($rect)
+    }
   }
   return $true
 }, [IntPtr]::Zero) | Out-Null
@@ -314,6 +323,7 @@ if ($null -eq $captureRect) { throw 'No visible ChromaShift window available for
 $captureBitmap = [System.Drawing.Bitmap]::new($captureRect.Right - $captureRect.Left, $captureRect.Bottom - $captureRect.Top)
 $captureGraphics = [System.Drawing.Graphics]::FromImage($captureBitmap)
 try {
+  [void][ChromaShiftSmokeCapture]::DwmFlush()
   $captureGraphics.CopyFromScreen($captureRect.Left, $captureRect.Top, 0, 0, $captureBitmap.Size)
   $captureBitmap.Save('${path.replaceAll("'", "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
 } finally { $captureGraphics.Dispose(); $captureBitmap.Dispose() }
@@ -756,12 +766,22 @@ let standardOutput = ''
 let standardError = ''
 const electron = spawn(
   electronPath,
-  [`--remote-debugging-port=${debuggingPort}`, `--user-data-dir=${userDataDirectory}`, '.'],
+  [
+    `--remote-debugging-port=${debuggingPort}`,
+    `--user-data-dir=${userDataDirectory}`,
+    // Native occlusion can incorrectly hide a window under CDP input and stop
+    // its animation frames. This applies only to the interactive smoke process.
+    '--disable-features=CalculateNativeWinOcclusion',
+    '--disable-backgrounding-occluded-windows',
+    '.'
+  ],
   {
     cwd: desktopDirectory,
     env: environment,
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
+    // This is an interactive desktop gate. Hiding the launched GUI process can
+    // leave native windows invisible and stop the renderer's animation frames.
+    windowsHide: false
   }
 )
 electron.stdout.setEncoding('utf8')
@@ -774,8 +794,17 @@ electron.stderr.on('data', (data) => {
 })
 
 let debuggerClient
-let smokeFailure
-try {
+async function runProfileReorder() {
+  await verifyProfileReorder({
+    debuggerClient,
+    waitForExpression,
+    captureNativeWindow,
+    processId: electron.pid,
+    screenshotPath: join(screenshotDirectory, 'profile-reorder-native.png')
+  })
+}
+
+async function runSmoke() {
   const target = await waitForDebuggerTarget(
     debuggingPort,
     (candidate) => !candidate.url.includes('panel=mini')
@@ -826,6 +855,11 @@ try {
     )
   }
 
+  if (globalThis.process.argv.includes('--profile-reorder-only')) {
+    await runProfileReorder()
+    return
+  }
+
   const miniPanelOpened = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => (await window.chromaShift.showMiniPanel()).ok)()`,
     awaitPromise: true,
@@ -871,6 +905,7 @@ try {
   await recreatedAppDebugger.send('Page.enable')
   await recreatedAppDebugger.send('Log.enable')
   await waitForUi(recreatedAppDebugger)
+  await focusNativeApp(electron.pid)
   await waitForExpression(
     recreatedAppDebugger,
     `document.visibilityState === 'visible'`,
@@ -1333,6 +1368,9 @@ try {
       `The collapse button was not flush right in the profile sidebar footer: ${footerAlignment.result.value}`
     )
   }
+
+  // Keep the earlier diagnostics check within its bounded startup-log tail.
+  await runProfileReorder()
 
   // The renderer must not draw replacement caption buttons over the reserved
   // title-bar overlay rectangle, and the bar itself must remain a drag region.
@@ -2758,6 +2796,11 @@ try {
   globalThis.console.log(`Delete dialog screenshot: ${deleteDialogScreenshotPath}`)
   globalThis.console.log(`Mini picker screenshot: ${miniPickerScreenshotPath}`)
   globalThis.console.log(`Mini Default restored screenshot: ${miniDefaultScreenshotPath}`)
+}
+
+let smokeFailure
+try {
+  await runSmoke()
 } catch (error) {
   smokeFailure = error
 } finally {

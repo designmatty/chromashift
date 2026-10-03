@@ -221,10 +221,14 @@ export class AutomaticActivationController {
     }
   }
 
-  public async refreshAfterConfigurationChange(): Promise<void> {
+  public async refreshAfterConfigurationChange(
+    change: ConfigurationChange = 'profileContent'
+  ): Promise<void> {
     if (!this.#enabled || this.#previewing || this.#systemTransitioning || this.#writesSuspended)
       return
-    await this.coordinator.resetAfterExternalRestore()
+    // Order-only changes preserve successful-target deduplication and baseline
+    // ownership. Resolving again still handles changes to matching priority.
+    if (change !== 'profileOrder') await this.coordinator.resetAfterExternalRestore()
     await this.#activateCurrentApplication({
       source: 'automatic',
       origin: 'configurationChange'
@@ -383,6 +387,8 @@ export interface ActivationControllerState {
   mode: ActivationMode
   currentTarget: ActivationTarget | null
 }
+
+export type ConfigurationChange = 'profileContent' | 'profileOrder'
 
 export type ActivationSource = 'automatic' | 'manual' | 'shortcut'
 

@@ -1,0 +1,157 @@
+/* Shared pieces of the ChromaShift desktop UI, reproduced for the hero replica
+   and the demo mini panel. Colors are the app's dark Chakra semantic tokens. */
+
+.svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.i {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cs-ui {
+  --cs-bg: #09090b;
+  --cs-bg-subtle: #111114;
+  --cs-bg-muted: #1c1c21;
+  --cs-bg-emphasized: #34343d;
+  --cs-border: #34343d;
+  --cs-border-muted: #1c1c21;
+  --cs-fg: #f1f1f3;
+  --cs-fg-muted: #9393a4;
+  --cs-range: #606071;
+  --cs-green-bg: #042713;
+  --cs-green-fg: #86efac;
+  --cs-blue-bg: #14204a;
+  --cs-blue-fg: #a3cfff;
+  --cs-pink: #ec4899;
+
+  color: var(--cs-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  user-select: none;
+}
+
+/* Zero specificity so component rules can set margins and fonts. */
+:where(.cs-ui button) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+:where(.cs-ui button:disabled) {
+  cursor: default;
+}
+
+.cs-panel-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 3px;
+  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+  background: var(--cs-bg-subtle);
+  translate: -50% -50%;
+}
+
+.cs-panel-toggle__button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--cs-fg);
+  font-size: 16px;
+}
+
+.cs-panel-toggle__button.is-pressed {
+  background: var(--cs-bg-muted);
+}
+
+.cs-ui button.cs-panel-toggle__button:not(.is-pressed):hover,
+.cs-icon-button:hover:not(:disabled) {
+  background: var(--cs-bg-muted);
+}
+
+.cs-icon-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+.cs-icon-button--md {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 20px;
+}
+
+.cs-icon-button:disabled {
+  opacity: 0.5;
+}
+
+.cs-pill {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cs-pill--solid {
+  background: var(--cs-fg);
+  color: var(--cs-bg);
+}
+
+.cs-pill--solid:hover {
+  background: #ffffff;
+}
+
+.cs-pill--subtle {
+  background: var(--cs-bg-muted);
+}
+
+.cs-pill--subtle:hover {
+  background: var(--cs-bg-emphasized);
+}
+
+.cs-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--cs-blue-bg);
+  color: var(--cs-blue-fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.cs-ui :focus-visible {
+  outline: 2px solid var(--cs-fg);
+  outline-offset: 1px;
+}

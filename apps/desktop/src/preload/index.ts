@@ -11,6 +11,7 @@ import {
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
   diagnosticLogEntriesResultSchema,
+  profileReorderDiagnosticSchema,
   emptyRequestSchema,
   openAppPanelRequestSchema,
   setMiniPanelViewRequestSchema,
@@ -60,9 +61,10 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.deleteProfile, profileIdRequestSchema, booleanResultSchema, {
       profileId
     }),
-  reorderProfiles: (profileIds) =>
+  reorderProfiles: (profileIds, interactionId) =>
     invoke(productIpcChannels.reorderProfiles, reorderProfilesRequestSchema, voidResultSchema, {
-      profileIds
+      profileIds,
+      interactionId
     }),
   setDefaultProfile: (profileId) =>
     invoke(productIpcChannels.setDefaultProfile, setDefaultProfileRequestSchema, voidResultSchema, {
@@ -103,6 +105,19 @@ const api: ChromaShiftApi = {
       emptyRequestSchema,
       diagnosticLogEntriesResultSchema,
       {}
+    ),
+  copyDiagnostics: () =>
+    invoke(productIpcChannels.copyDiagnostics, emptyRequestSchema, voidResultSchema, {}),
+  downloadDiagnostics: () =>
+    invoke(productIpcChannels.downloadDiagnostics, emptyRequestSchema, booleanResultSchema, {}),
+  clearDiagnostics: () =>
+    invoke(productIpcChannels.clearDiagnostics, emptyRequestSchema, voidResultSchema, {}),
+  recordProfileReorder: (event) =>
+    invoke(
+      productIpcChannels.recordProfileReorder,
+      profileReorderDiagnosticSchema,
+      voidResultSchema,
+      event
     ),
   updateSettings: (settings) =>
     invoke(

@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -13,6 +14,7 @@ import {
   type OpenDialogOptions
 } from 'electron'
 import { join, resolve } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { NativeClient } from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '../shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '../shared/product-api.js'
@@ -25,6 +27,7 @@ import { ElectronTrayMenu } from './electron-tray-menu.js'
 import { MiniPanelController } from './mini-panel-controller.js'
 import { PanelController } from './panel-controller.js'
 import { registerProductIpcHandlers } from './product-ipc.js'
+import { DiagnosticsService } from './diagnostics-service.js'
 import { createProductRuntime } from './product-runtime.js'
 import {
   RendererRecoveryController,
@@ -544,9 +547,40 @@ registerProductIpcHandlers(
       contents.openDevTools({ mode: 'detach', activate: true })
     })
   },
-  (view, showColorTemperature) =>
-    miniPanelController.setView(view, showColorTemperature),
-  () => readDiagnosticLog(diagnosticLogPath)
+  (view, showColorTemperature) => miniPanelController.setView(view, showColorTemperature),
+  () => readDiagnosticLog(diagnosticLogPath),
+  new DiagnosticsService({
+    read: () => readDiagnosticLog(diagnosticLogPath),
+    copy: (text) => clipboard.writeText(text),
+    clear: () => logger.clear(),
+    download: async (text) => {
+      const options = {
+        title: 'Download ChromaShift logs',
+        defaultPath: join(
+          app.getPath('downloads'),
+          `ChromaShift-logs-${new Date().toISOString().replace(/[:.]/gu, '-')}.jsonl`
+        ),
+        filters: [{ name: 'JSON Lines logs', extensions: ['jsonl'] }]
+      }
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options)
+      if (result.canceled || !result.filePath) return false
+      try {
+        await writeFile(result.filePath, text, 'utf8')
+      } catch (error) {
+        logger.write({
+          level: 'warning',
+          eventName: 'DiagnosticExportFailed',
+          ...describeError(error)
+        })
+        throw new Error('Could not save the logs. Try a different location.')
+      }
+      return true
+    },
+    context: () => runtime.productController?.getProfileDiagnosticContext() ?? {},
+    logger
+  })
 )
 
 void app.whenReady().then(async () => {
