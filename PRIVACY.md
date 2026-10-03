@@ -1,8 +1,19 @@
 # Privacy
 
-The production ChromaShift app has no telemetry, analytics, or outbound network
-requests. ChromaShift does not send profile data, display details, application
+The production ChromaShift app has no telemetry or analytics.
+ChromaShift does not send profile data, display details, application
 activity, diagnostics, or usage data to the maintainer or a third party.
+
+Choosing **Check for updates** sends a request to the public GitHub releases API.
+GitHub receives your IP address and a user-agent containing the ChromaShift
+version. The request contains no credentials or local product data. There are
+no background update checks. When a newer version is available in an installed
+release, ChromaShift automatically downloads its metadata and installer from
+GitHub's release download service. GitHub and its download CDN receive ordinary
+network request information. The installer stays in Electron's per-user updater
+cache until you choose **Restart and install**. ChromaShift verifies the release
+hash and Windows publisher signature, restores display settings, and installs
+the update before reopening the app.
 
 ## Data stored on this computer
 

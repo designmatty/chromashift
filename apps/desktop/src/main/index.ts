@@ -7,6 +7,7 @@ import {
   ipcMain,
   nativeImage,
   nativeTheme,
+  net,
   powerMonitor,
   screen,
   shell,
@@ -30,6 +31,9 @@ import { MiniPanelController } from '@main/mini-panel-controller.js'
 import { PanelController } from '@main/panel-controller.js'
 import { registerProductIpcHandlers } from '@main/product-ipc.js'
 import { DiagnosticsService } from '@main/diagnostics-service.js'
+import { UpdateChecker } from '@main/update-checker.js'
+import { AppUpdateService } from '@main/app-update-service.js'
+import { NsisUpdateInstaller } from '@main/nsis-update-installer.js'
 import { createProductRuntime } from '@main/product-runtime.js'
 import {
   RendererRecoveryController,
@@ -207,7 +211,12 @@ const runtime = createProductRuntime({
     applicationIconDataUrl: (executablePath) => applicationIconDataUrl(executablePath)
   },
   system: {
-    application: app,
+    application: {
+      exit: (code) => {
+        if (code === 0 && updates?.installOnExit()) return
+        app.exit(code)
+      }
+    },
     shortcutRegistrations: globalShortcut,
     powerMonitor,
     registerEmergencyRestoreShortcut: (handler) =>
@@ -536,6 +545,18 @@ function scheduleProductStateBroadcast(): void {
   }, 25)
 }
 
+const updates = new AppUpdateService({
+  checker: new UpdateChecker({
+    currentVersion: app.getVersion(),
+    fetch: (input, init) => net.fetch(input, init)
+  }),
+  installer:
+    app.isPackaged && process.platform === 'win32'
+      ? new NsisUpdateInstaller({ executablePath: app.getPath('exe'), logger })
+      : undefined,
+  requestExit: () => runtime.shutdownCoordinator?.request('application') ?? Promise.resolve(false)
+})
+
 registerProductIpcHandlers(
   ipcMain,
   () => runtime.productController,
@@ -595,7 +616,8 @@ registerProductIpcHandlers(
     },
     context: () => runtime.productController?.getProfileDiagnosticContext() ?? {},
     logger
-  })
+  }),
+  updates
 )
 
 void app.whenReady().then(async () => {

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Update checks in About, with preview-aware version comparison, automatic
+  installer downloads, download progress, and a Restart and install action.
+- Update installation verifies the release hash and Windows publisher signature
+  and waits for confirmed display restoration before running the installer.
+
+### Fixed
+
+- About shows the actual time of the last successful update check instead of a
+  placeholder date.
+
 ## [0.1.0-preview.8] - 2026-10-03
 
 ### Added

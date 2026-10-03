@@ -7,6 +7,8 @@ import {
   appPanelViewSchema,
   userPreferencesRequestSchema,
   userPreferencesResultSchema,
+  updateStatusResultSchema,
+  updateCheckResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
@@ -44,6 +46,12 @@ async function invoke<TRequest, TResult>(
 const api: ChromaShiftApi = {
   getState: () =>
     invoke(productIpcChannels.getState, emptyRequestSchema, productStateResultSchema, {}),
+  getUpdateStatus: () =>
+    invoke(productIpcChannels.getUpdateStatus, emptyRequestSchema, updateStatusResultSchema, {}),
+  checkForUpdates: () =>
+    invoke(productIpcChannels.checkForUpdates, emptyRequestSchema, updateCheckResultSchema, {}),
+  installUpdate: () =>
+    invoke(productIpcChannels.installUpdate, emptyRequestSchema, booleanResultSchema, {}),
   createProfile: (name) =>
     invoke(productIpcChannels.createProfile, createProfileRequestSchema, profileResultSchema, {
       name

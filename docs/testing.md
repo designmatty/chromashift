@@ -108,6 +108,26 @@ Cleanup checks the shortcut's target, arguments,
 and application ID; packaged-app shortcuts and other Electron apps are preserved.
 Owned leftovers are removed even when they existed before the run.
 
+After a build, `node apps/desktop/scripts/smoke.mjs --updates-only` runs the
+About update flow against the real public GitHub API, verifies that navigation
+retains the last successful check, and captures the visible native window before
+and after checking. It uses the same isolated user data and restoration guard as
+the full smoke. Deterministic tests cover newer installers, preview and stable
+channels, failed requests, timeouts, download URL validation, manifest agreement,
+publisher signatures, cache tampering, and restoration before installer launch.
+
+In-app download and installation run only in packaged Windows builds. Before a
+release, validate a signed installed build against a newer signed release using
+the normal package restoration guard. An unsigned local build must reject
+automatic installation; a development launch exercises checking only.
+
+`node apps/desktop/scripts/update-download-smoke.mjs` downloads the real signed
+preview.8 installer from a preview.7 test identity and revalidates its hash and
+publisher against the signed `release/win-unpacked/ChromaShift.exe`. Optional
+arguments are the signed app path, source version, and target version. This
+harness uses an isolated cache, starts no display helper, and never runs NSIS.
+It proves the download and verification path, not an installed upgrade.
+
 `npm run smoke:desktop:crash` forcibly terminates Electron and requires the
 detached helper to restore before exiting. `npm run
 smoke:desktop:native-recovery` terminates the exact baseline-free helper owned by

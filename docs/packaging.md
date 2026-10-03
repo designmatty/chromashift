@@ -150,6 +150,22 @@ order and SmartScreen expectations.
 The LGPL-3.0 `NvAPIWrapper.dll` already ships beside the helper with its license
 texts, notice, corresponding-source link, and replacement-loading coverage.
 
+## In-app updates
+
+Installed Windows builds use `electron-updater` 6.8.10 for NSIS downloads and
+installation. About checks the public release list, includes previews only for
+preview builds, and pins the selected release's existing `latest.yml` URL.
+Downloads require manifest version and filename agreement, SHA-512 integrity,
+and a valid Authenticode signature with the same publisher subject as the running
+application. The cached hash and signature are rechecked before installation.
+Unsigned local builds cannot install updates automatically.
+
+The updater's automatic install-on-quit option is disabled. **Restart and install**
+uses the normal shutdown coordinator and starts the silent per-user NSIS upgrade
+only after confirmed display restoration. NSIS reopens ChromaShift when complete.
+Closing to the tray does not install an update, and a failed restoration retains
+the application and downloaded installer for retry.
+
 ## Release preflight
 
 `npm run release:preflight` is part of canonical verification and checks that the

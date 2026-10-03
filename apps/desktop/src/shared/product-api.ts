@@ -10,9 +10,13 @@ import {
   foregroundApplicationSchema
 } from '@chromashift/native-client/protocol'
 import { z } from 'zod'
+import { appUpdateStatusSchema, type AppUpdateStatus } from '@shared/app-updates.js'
 
 export const productIpcChannels = {
   getState: 'product:get-state',
+  getUpdateStatus: 'application:get-update-status',
+  checkForUpdates: 'application:check-for-updates',
+  installUpdate: 'application:install-update',
   createProfile: 'product:create-profile',
   saveProfile: 'product:save-profile',
   duplicateProfile: 'product:duplicate-profile',
@@ -262,6 +266,8 @@ export const previewUpdateRequestSchema = z
   })
 
 export const productStateResultSchema = productResultSchema(productStateSchema)
+export const updateStatusResultSchema = productResultSchema(appUpdateStatusSchema)
+export const updateCheckResultSchema = updateStatusResultSchema
 export const profileResultSchema = productResultSchema(colorProfileSchema)
 export const booleanResultSchema = productResultSchema(z.boolean())
 export const voidResultSchema = productResultSchema(z.null())
@@ -301,6 +307,9 @@ export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: Prod
 
 export interface ChromaShiftApi {
   getState(): Promise<ProductResult<ProductState>>
+  getUpdateStatus(): Promise<ProductResult<AppUpdateStatus>>
+  checkForUpdates(): Promise<ProductResult<AppUpdateStatus>>
+  installUpdate(): Promise<ProductResult<boolean>>
   createProfile(name: string): Promise<ProductResult<ColorProfile>>
   saveProfile(profile: ColorProfile, removeShortcut?: boolean): Promise<ProductResult<ColorProfile>>
   duplicateProfile(profileId: string): Promise<ProductResult<ColorProfile>>
