@@ -861,6 +861,81 @@ async function runSmoke() {
     return
   }
 
+  if (globalThis.process.argv.includes('--updates-only')) {
+    await focusNativeApp(electron.pid)
+    const before = await debuggerClient.send('Runtime.evaluate', {
+      expression: 'window.chromaShift.getUpdateStatus()',
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (!before.result.value?.ok || before.result.value.value.phase !== 'idle') {
+      throw new Error('Update status should be empty before a user-requested check.')
+    }
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `window.chromaShift.openAppPanel('about')`,
+      awaitPromise: true
+    })
+    await waitForExpression(
+      debuggerClient,
+      `document.body.innerText.includes('Check GitHub for a newer version.') && [...document.querySelectorAll('button')].some(button => button.textContent === 'Check for updates' && !button.disabled)`,
+      'About did not show the initial update status.'
+    )
+    await captureNativeWindow(
+      electron.pid,
+      join(screenshotDirectory, 'about-updates-initial-native.png'),
+      true
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('button')].find(button => button.textContent === 'Check for updates').click()`
+    })
+    await waitForExpression(
+      debuggerClient,
+      `document.body.innerText.includes('Last checked') && [...document.querySelectorAll('button')].some(button => button.textContent === 'Check for updates' && !button.disabled)`,
+      'The real GitHub update check did not complete.'
+    )
+    const checked = await debuggerClient.send('Runtime.evaluate', {
+      expression: 'window.chromaShift.getUpdateStatus()',
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (!checked.result.value?.ok || checked.result.value.value === null) {
+      throw new Error('Update status did not retain the completed check.')
+    }
+    await captureNativeWindow(
+      electron.pid,
+      join(screenshotDirectory, 'about-updates-checked-native.png'),
+      true
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `window.chromaShift.openAppPanel('settings')`,
+      awaitPromise: true
+    })
+    await waitForExpression(
+      debuggerClient,
+      `!document.body.innerText.includes('Check for updates')`,
+      'About did not unmount.'
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `window.chromaShift.openAppPanel('about')`,
+      awaitPromise: true
+    })
+    await waitForExpression(
+      debuggerClient,
+      `document.body.innerText.includes('Last checked')`,
+      'About lost its last successful check after navigation.'
+    )
+    const errors = debuggerClient.events.filter(
+      (event) =>
+        event.method === 'Runtime.exceptionThrown' ||
+        (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error')
+    )
+    if (errors.length) throw new Error(`Update UI reported errors: ${JSON.stringify(errors)}`)
+    globalThis.console.log(
+      'Update check: real GitHub request, About result, and retained status passed.'
+    )
+    return
+  }
+
   const miniPanelOpened = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => (await window.chromaShift.showMiniPanel()).ok)()`,
     awaitPromise: true,

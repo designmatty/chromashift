@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { registerProductIpcHandlers } from '@main/product-ipc.js'
 import { DiagnosticsService } from '@main/diagnostics-service.js'
+import { UpdateChecker } from '@main/update-checker.js'
+import { AppUpdateService } from '@main/app-update-service.js'
 import { productIpcChannels } from '@shared/product-api.js'
 
 function harness() {
@@ -14,6 +16,8 @@ function harness() {
   const clear = vi.fn()
   const write = vi.fn()
   const trusted = vi.fn()
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json([]))
+  const installUpdate = vi.fn(async () => true)
   registerProductIpcHandlers(
     {
       handle: (name: string, handler: typeof handlers extends Map<string, infer T> ? T : never) =>
@@ -35,12 +39,54 @@ function harness() {
       clear,
       context: () => ({}),
       logger: { write }
+    }),
+    new AppUpdateService({
+      checker: new UpdateChecker({ currentVersion: '0.1.0-preview.8', fetch }),
+      requestExit: installUpdate
     })
   )
   const invoke = (name: string, input: unknown = {}) =>
     handlers.get(name)!({} as IpcMainInvokeEvent, input)
-  return { copy, download, clear, write, trusted, invoke }
+  return { copy, download, clear, write, trusted, invoke, fetch, installUpdate }
 }
+
+describe('update IPC security', () => {
+  it('validates senders before reading status, requesting releases, or opening the installer', async () => {
+    const h = harness()
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    for (const name of ['getUpdateStatus', 'checkForUpdates', 'installUpdate'] as const) {
+      await expect(h.invoke(productIpcChannels[name])).rejects.toThrow('Untrusted renderer')
+    }
+    expect(h.fetch).not.toHaveBeenCalled()
+    expect(h.installUpdate).not.toHaveBeenCalled()
+  })
+
+  it('rejects renderer-selected URLs and works without a native controller', async () => {
+    const h = harness()
+    for (const name of ['getUpdateStatus', 'checkForUpdates', 'installUpdate'] as const) {
+      expect(
+        await h.invoke(productIpcChannels[name], { url: 'https://attacker.example' })
+      ).toMatchObject({
+        ok: false,
+        error: { code: 'INVALID_REQUEST' }
+      })
+    }
+    expect(h.fetch).not.toHaveBeenCalled()
+    expect(h.installUpdate).not.toHaveBeenCalled()
+    expect(await h.invoke(productIpcChannels.getUpdateStatus)).toMatchObject({
+      ok: true,
+      value: { phase: 'idle' }
+    })
+    h.fetch.mockRejectedValueOnce(new TypeError('offline'))
+    expect(await h.invoke(productIpcChannels.checkForUpdates)).toMatchObject({
+      ok: true,
+      value: { phase: 'error', error: expect.stringContaining('Could not reach GitHub') }
+    })
+    expect(await h.invoke(productIpcChannels.installUpdate)).toMatchObject({ ok: false })
+  })
+})
 
 describe('diagnostic IPC security', () => {
   it('checks the renderer before reading logs, copying, downloading, or recording an event', async () => {

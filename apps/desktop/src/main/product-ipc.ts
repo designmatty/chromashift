@@ -7,6 +7,8 @@ import {
   applicationSelectionsResultSchema,
   userPreferencesRequestSchema,
   userPreferencesResultSchema,
+  updateStatusResultSchema,
+  updateCheckResultSchema,
   booleanResultSchema,
   createProfileRequestSchema,
   controlChromaShiftRequestSchema,
@@ -33,6 +35,7 @@ import {
 } from '@shared/product-api.js'
 import { PreviewRestoreError, PreviewValidationError } from '@main/preview-session-controller.js'
 import type { DiagnosticsService } from '@main/diagnostics-service.js'
+import type { AppUpdateService } from '@main/app-update-service.js'
 import {
   ProductConflictError,
   ProductController,
@@ -50,8 +53,33 @@ export function registerProductIpcHandlers(
   openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
   setMiniPanelView: (view: MiniPanelView, showColorTemperature: boolean) => void,
   getDiagnostics: () => DiagnosticLogEntry[],
-  diagnostics: DiagnosticsService
+  diagnostics: DiagnosticsService,
+  updates: AppUpdateService
 ): void {
+  register(
+    ipc,
+    productIpcChannels.getUpdateStatus,
+    emptyRequestSchema,
+    updateStatusResultSchema,
+    assertTrustedRenderer,
+    async () => updates.getStatus()
+  )
+  register(
+    ipc,
+    productIpcChannels.checkForUpdates,
+    emptyRequestSchema,
+    updateCheckResultSchema,
+    assertTrustedRenderer,
+    () => updates.check()
+  )
+  register(
+    ipc,
+    productIpcChannels.installUpdate,
+    emptyRequestSchema,
+    booleanResultSchema,
+    assertTrustedRenderer,
+    () => updates.install()
+  )
   const controller = (): ProductController => {
     const value = getController()
     if (value === undefined) throw new ProductControllerUnavailableError()

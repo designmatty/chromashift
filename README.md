@@ -99,7 +99,10 @@ scope and safety requirements of each command.
 
 ## Project policy
 
-The production app has no telemetry, analytics, or outbound network requests.
+The production app has no telemetry or analytics. About offers a manual update
+check against GitHub, downloads newer installers automatically, and offers
+**Restart and install** after verification. Preview builds
+include preview releases; stable builds check stable releases only.
 Read [Privacy](PRIVACY.md), [Security](SECURITY.md), and
 [Contributing](CONTRIBUTING.md) for the public project policies.
 

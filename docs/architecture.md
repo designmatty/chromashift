@@ -120,6 +120,20 @@ privileged request, validates its response before returning it, and maps native,
 persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
+The About page requests update checks through that same validated preload API.
+The main-owned `UpdateChecker` contacts the fixed public GitHub releases endpoint
+only on request, compares semantic versions on the current release channel, and
+retains the last successful result for the session. Only an exact version-matched
+Windows x64 installer from this repository can be selected. `AppUpdateService`
+retains download progress and install intent across renderer lifetimes. Installed
+Windows builds use `electron-updater` with the exact release's `latest.yml` feed;
+the installer hash and a valid Authenticode publisher matching the running app
+are required. Both are rechecked before installation. Automatic install-on-quit is
+disabled. **Restart and install** requests the existing shutdown coordinator;
+only its exit port, after queued writes and confirmed restoration, starts NSIS.
+Failed restoration keeps the application alive and leaves the download retryable.
+Development builds support checking only. No background checks run.
+
 The renderer uses Chakra UI v3 for accessible primitives, semantic theme tokens,
 and product layout. `src.tsx` is bootstrap-only; app composition, Profiles,
 Displays, Settings, and the mini panel live in focused modules under `app/`,
