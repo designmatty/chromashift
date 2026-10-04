@@ -121,10 +121,14 @@ persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
 The About page requests update checks through that same validated preload API.
-The main-owned `UpdateChecker` contacts the fixed public GitHub releases endpoint
-only on request, compares semantic versions on the current release channel, and
-retains the last successful result for the session. Only an exact version-matched
-Windows x64 installer from this repository can be selected. `AppUpdateService`
+The main-owned `UpdateChecker` contacts the fixed HTTPS feed at
+`updates.chromashift.io/v1/releases.json` only on request, compares semantic
+versions on the current release channel, and retains the last successful result
+for the session. A separate static Cloudflare Worker serves the newest complete
+published stable and preview releases. The feed pins ChromaShift's numeric GitHub
+repository ID and supplies its current owner/name, so an organization transfer or
+rename does not change the app's check URL. Installer URLs must exactly match
+that repository, version, and Windows x64 filename. `AppUpdateService`
 retains download progress and install intent across renderer lifetimes. Installed
 Windows builds use `electron-updater` with the exact release's `latest.yml` feed;
 the installer hash and a valid Authenticode publisher matching the running app

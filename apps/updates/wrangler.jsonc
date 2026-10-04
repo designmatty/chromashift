@@ -1,0 +1,14 @@
+// A separate static Worker keeps website deployments independent of app updates.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "chromashift-updates",
+  "compatibility_date": "2026-10-04",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "routes": [{ "pattern": "updates.chromashift.io", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

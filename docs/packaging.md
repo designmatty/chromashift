@@ -153,8 +153,13 @@ texts, notice, corresponding-source link, and replacement-loading coverage.
 ## In-app updates
 
 Installed Windows builds use `electron-updater` 6.8.10 for NSIS downloads and
-installation. About checks the public release list, includes previews only for
-preview builds, and pins the selected release's existing `latest.yml` URL.
+installation. About checks `https://updates.chromashift.io/v1/releases.json`,
+includes previews only for preview builds, and pins the selected release's
+existing GitHub `latest.yml` URL. The feed is published by a separate static
+Cloudflare Worker after a GitHub release is public. It pins the repository's
+numeric ID and carries its current owner/name, so repository transfers and
+renames do not require another client update. See
+[`update-service.md`](update-service.md) for deployment and release procedures.
 Downloads require manifest version and filename agreement, SHA-512 integrity,
 and a valid Authenticode signature with the same publisher subject as the running
 application. The cached hash and signature are rechecked before installation.
@@ -164,8 +169,9 @@ Unsigned local builds cannot install updates automatically.
 release workflow builds a `dir` target, then uses `--prepackaged` for NSIS, which
 does not generate this configuration automatically. The package footprint gate
 and artifact preflight require its updater cache configuration. The download
-smoke uses the configuration beside the supplied signed application, without
-creating a substitute, and never starts the display helper or installer:
+smoke checks the public Cloudflare feed and uses the configuration beside the
+supplied signed application, without creating a substitute. It never starts the
+display helper or installer:
 
 ```powershell
 node apps/desktop/scripts/update-download-smoke.mjs <signed-app.exe> <installed-version> <update-version>
