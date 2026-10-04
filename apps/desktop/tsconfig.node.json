@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@/*": ["./src/renderer/*"],
       "@main/*": ["./src/main/*"],
       "@preload/*": ["./src/preload/*"],
       "@shared/*": ["./src/shared/*"]
