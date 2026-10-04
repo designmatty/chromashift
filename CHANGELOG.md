@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.10] - 2026-10-04
+
+### Added
+
+- None.
+
+### Changed
+
+- Preview edits wait for pending rollback before starting a fresh session.
+
+### Fixed
+
+- Continuing a mini-panel slider adjustment through the saved profile value no
+  longer sends an update to a cancelled preview or shows "No preview is active."
+- Successful preview updates and resets clear stale preview error messages.
+
 ## [0.1.0-preview.9] - 2026-10-03
 
 ### Added
@@ -122,7 +138,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.10...HEAD
+[0.1.0-preview.10]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...v0.1.0-preview.10
 [0.1.0-preview.9]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...v0.1.0-preview.9
 [0.1.0-preview.8]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.7...v0.1.0-preview.8
 [0.1.0-preview.7]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.6...v0.1.0-preview.7
