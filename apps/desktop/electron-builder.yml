@@ -36,6 +36,8 @@ electronLanguages:
 downloadAlternateFFmpeg: true
 
 extraResources:
+  - from: build/app-update.yml
+    to: app-update.yml
   - from: build/chromashift-icon-lightmode.png
     to: chromashift-icon-lightmode.png
   - from: ../../native/DisplayService/bin/Release/net10.0-windows/win-x64/publish

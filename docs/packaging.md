@@ -160,6 +160,17 @@ and a valid Authenticode signature with the same publisher subject as the runnin
 application. The cached hash and signature are rechecked before installation.
 Unsigned local builds cannot install updates automatically.
 
+`build/app-update.yml` is copied explicitly into packaged `resources`. The signed
+release workflow builds a `dir` target, then uses `--prepackaged` for NSIS, which
+does not generate this configuration automatically. The package footprint gate
+and artifact preflight require its updater cache configuration. The download
+smoke uses the configuration beside the supplied signed application, without
+creating a substitute, and never starts the display helper or installer:
+
+```powershell
+node apps/desktop/scripts/update-download-smoke.mjs <signed-app.exe> <installed-version> <update-version>
+```
+
 The updater's automatic install-on-quit option is disabled. **Restart and install**
 uses the normal shutdown coordinator and starts the silent per-user NSIS upgrade
 only after confirmed display restoration. NSIS reopens ChromaShift when complete.

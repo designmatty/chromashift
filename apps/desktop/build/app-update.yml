@@ -1,0 +1,6 @@
+# The signing workflow builds a dir target before using --prepackaged for NSIS.
+# Electron Builder does not generate updater configuration for that path.
+provider: github
+owner: designmatty
+repo: chromashift
+updaterCacheDirName: '@chromashiftdesktop-updater'

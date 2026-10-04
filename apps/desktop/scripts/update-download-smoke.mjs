@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { build } from 'vite'
 import electronPath from 'electron'
@@ -37,7 +37,6 @@ try {
       main: 'built/main.cjs'
     })
   )
-  await writeFile(join(temporaryRoot, 'dev-app-update.yml'), 'updaterCacheDirName: downloads\n')
   // This harness starts no display helper, never launches NSIS, and owns its cache.
   await writeFile(
     source,
@@ -57,7 +56,8 @@ try {
         createUpdater: options => {
           const updater = new electronUpdater.NsisUpdater(options)
           updater.forceDevUpdateConfig = true
-          updater.updateConfigPath = join(root, 'dev-app-update.yml')
+          // Exercise the shipped configuration instead of supplying a test-only file.
+          updater.updateConfigPath = ${JSON.stringify(join(dirname(signedApplication), 'resources/app-update.yml'))}
           updater.setFeedURL(options)
           Object.defineProperty(updater.app, 'baseCachePath', { value: join(root, 'cache') })
           return updater
