@@ -31,6 +31,7 @@ class FakePort {
   public readonly calls: string[] = []
   public deferStart: (() => void) | undefined
   public startResult: ProductResult<null> = ok
+  public cancelResult: ProductResult<null> = ok
 
   public startPreview(
     target: ColorProfile,
@@ -52,7 +53,7 @@ class FakePort {
 
   public cancelPreview(): Promise<ProductResult<null>> {
     this.calls.push('cancel')
-    return Promise.resolve(ok)
+    return Promise.resolve(this.cancelResult)
   }
 }
 
@@ -154,5 +155,50 @@ describe('preview sync session', () => {
     overrideSession.schedule(profile, inactive)
     vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
     expect(port.calls).toEqual([`start:override:${profile.id}`])
+  })
+
+  it('drops a new draft invalidated while it is waiting for rollback', async () => {
+    let releaseCancel!: () => void
+    port.cancelPreview = () => {
+      port.calls.push('cancel')
+      return new Promise((resolve) => {
+        releaseCancel = () => resolve(ok)
+      })
+    }
+    const rollback = session.rollback()
+    session.schedule(profile, activeSession('edit'))
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    session.invalidate()
+    releaseCancel()
+    await rollback
+    await vi.runAllTimersAsync()
+    expect(port.calls).toEqual(['cancel'])
+  })
+
+  it('does not start a new preview when the rollback it is waiting for fails', async () => {
+    port.cancelResult = {
+      ok: false,
+      error: { code: 'OPERATION_FAILED', message: 'restoration failed' }
+    }
+    const rollback = session.rollback()
+    session.schedule(profile, activeSession('edit'))
+    vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+    await rollback
+    await vi.runAllTimersAsync()
+    expect(port.calls).toEqual(['cancel'])
+    expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: 'restoration failed' }])
+  })
+
+  it('clears a previous synchronization error after a successful send', async () => {
+    port.startResult = {
+      ok: false,
+      error: { code: 'OPERATION_FAILED', message: 'No preview is active.' }
+    }
+    session.schedule(profile, inactive)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    port.startResult = ok
+    session.schedule(profile, inactive)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(errors.at(-1)).toBe(null)
   })
 })

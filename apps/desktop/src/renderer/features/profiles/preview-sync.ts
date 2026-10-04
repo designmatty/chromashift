@@ -28,6 +28,8 @@ export class PreviewSyncSession {
   #generation = 0
   readonly #pending = new Set<Promise<unknown>>()
   #timer: ReturnType<typeof setTimeout> | undefined
+  #rollback: Promise<boolean> | undefined
+  #needsStart = false
 
   public constructor(
     private readonly port: PreviewSyncPort,
@@ -42,12 +44,26 @@ export class PreviewSyncSession {
     this.#timer = setTimeout(() => {
       this.#timer = undefined
       if (generation !== this.#generation) return
-      const joinsCurrentSession =
-        session.state === 'active' && session.kind === this.kind && session.profileId === draft.id
-      const request = joinsCurrentSession
-        ? this.port.updatePreview(draft.id, activeColorTargets(draft))
-        : this.port.startPreview(draft, this.kind)
-      const pending = run(request, this.onError)
+      const rollback = this.#rollback
+      const pending = (async () => {
+        // A new slider change can arrive before rollback's inactive state has
+        // reached the renderer. Wait for cancellation and start a fresh session.
+        if (rollback !== undefined && !(await rollback)) return
+        if (generation !== this.#generation) return
+        const joinsCurrentSession =
+          !this.#needsStart &&
+          session.state === 'active' &&
+          session.kind === this.kind &&
+          session.profileId === draft.id
+        const request = joinsCurrentSession
+          ? this.port.updatePreview(draft.id, activeColorTargets(draft))
+          : this.port.startPreview(draft, this.kind)
+        const result = await run(request, this.onError)
+        if (result !== undefined && generation === this.#generation) {
+          this.#needsStart = false
+          this.onError(null)
+        }
+      })()
       this.#pending.add(pending)
       void pending.finally(() => this.#pending.delete(pending))
     }, this.debounceMs)
@@ -66,7 +82,21 @@ export class PreviewSyncSession {
 
   public async rollback(): Promise<void> {
     this.invalidate()
-    await Promise.allSettled([...this.#pending])
-    await run(this.port.cancelPreview(), this.onError)
+    this.#needsStart = true
+    const pending = [...this.#pending]
+    const previousRollback = this.#rollback
+    const rollback = (async () => {
+      await previousRollback
+      await Promise.allSettled(pending)
+      const result = await run(this.port.cancelPreview(), this.onError)
+      if (result !== undefined) this.onError(null)
+      return result !== undefined
+    })()
+    this.#rollback = rollback
+    try {
+      await rollback
+    } finally {
+      if (this.#rollback === rollback) this.#rollback = undefined
+    }
   }
 }
