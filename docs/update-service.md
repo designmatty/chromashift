@@ -54,6 +54,15 @@ the intended account and `chromashift.io` zone. Enter the token locally with
 The workflow uses the `update-feed` GitHub environment. Add environment protection
 only if release-feed deployments should require a separate human approval.
 
+The feed must accept non-browser requests without a browser challenge. On the
+Cloudflare Free plan, Bot Fight Mode cannot exempt a hostname or path. Turn it
+off for the `chromashift.io` zone when using this feed. This also removes Bot
+Fight Mode protection from the website; keep the other security settings enabled.
+If Bot Fight Mode protection is required, use a plan with Super Bot Fight Mode
+and a scoped exception instead. Confirm access from GitHub Actions as well as
+locally, since a local HTTP 200 does not prove hosted update clients are allowed.
+See [Cloudflare's Bot Fight Mode limitations](https://developers.cloudflare.com/bots/get-started/bot-fight-mode/).
+
 ## Repository transfers
 
 After a transfer, reconnect the repository's GitHub Actions and Cloudflare
