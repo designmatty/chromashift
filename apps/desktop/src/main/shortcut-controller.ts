@@ -7,7 +7,7 @@ import {
   type ShortcutAction,
   type ShortcutBinding
 } from '@shared/product-api.js'
-import { EMERGENCY_RESTORE_ACCELERATOR } from '@shared/shortcut-constants.js'
+import { EMERGENCY_RESTORE_ACCELERATOR, formatShortcutAccelerator } from '@shared/shortcut-constants.js'
 import type { CompletedActivationOutcome } from '@main/automatic-activation-controller.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
@@ -131,7 +131,7 @@ export class ShortcutController {
         })
         if (!accepted) {
           throw new ShortcutRegistrationError(
-            `${shortcutActionLabel(binding.action)} (${binding.accelerator}) could not be registered. It may be in use by Windows or another application.`
+            `${shortcutActionLabel(binding.action)} (${formatShortcutAccelerator(binding.accelerator)}) could not be registered. It may be in use by Windows or another application.`
           )
         }
         registered.push(binding)
@@ -197,20 +197,20 @@ function normalizeBindings(bindings: readonly ShortcutBinding[]): ShortcutBindin
       accelerator = normalizeAccelerator(binding.accelerator)
     } catch (error) {
       if (error instanceof ShortcutValidationError) {
-        throw new ShortcutValidationError(`${label} (${binding.accelerator}): ${error.message}`)
+        throw new ShortcutValidationError(`${label} (${formatShortcutAccelerator(binding.accelerator)}): ${error.message}`)
       }
       throw error
     }
     if (accelerator.toLowerCase() === EMERGENCY_RESTORE_ACCELERATOR.toLowerCase()) {
       throw new ShortcutValidationError(
-        `${label} (${accelerator}) cannot use the shortcut reserved for emergency restore.`
+        `${label} (${formatShortcutAccelerator(accelerator)}) cannot use the shortcut reserved for emergency restore.`
       )
     }
     const normalizedAccelerator = accelerator.toLowerCase()
     const existingAction = accelerators.get(normalizedAccelerator)
     if (existingAction !== undefined) {
       throw new ShortcutValidationError(
-        `${label} (${accelerator}) conflicts with ${existingAction}, which already uses that combination.`
+        `${label} (${formatShortcutAccelerator(accelerator)}) conflicts with ${existingAction}, which already uses that combination.`
       )
     }
     accelerators.set(normalizedAccelerator, label)

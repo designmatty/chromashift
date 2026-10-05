@@ -139,17 +139,17 @@ describe('ShortcutController registration', () => {
         binding({ kind: 'defaultProfile' }, 'Ctrl+Shift+D'),
         binding({ kind: 'automatic' }, 'Control+Shift+D')
       ])
-    ).toThrow('Return to Automatic (CommandOrControl+Shift+D) conflicts with Default')
+    ).toThrow('Return to Automatic (Ctrl+Shift+D) conflicts with Default')
     expect(() => controller.replace([binding({ kind: 'automatic' }, 'Control+Shift')])).toThrow(
       'non-modifier'
     )
     expect(() =>
       controller.replace([binding({ kind: 'defaultProfile' }, 'CommandOrControl+Alt+Super+R')])
-    ).toThrow('reserved for emergency restore')
+    ).toThrow('Default (Ctrl+Alt+Win+R) cannot use the shortcut reserved for emergency restore.')
 
     expect(() =>
       controller.replace([binding({ kind: 'toggleChromaShift' }, 'Control+Shift')])
-    ).toThrow('Toggle ChromaShift (Control+Shift)')
+    ).toThrow('Toggle ChromaShift (Ctrl+Shift)')
   })
 })
 
