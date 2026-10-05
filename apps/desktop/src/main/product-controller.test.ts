@@ -234,7 +234,7 @@ describe('ProductController profile shortcut lifecycle', () => {
     })
 
     await expect(product.saveProfile({ ...profile, enabled: false })).rejects.toThrow(
-      'Turning off Gaming requires removing its Control+G shortcut.'
+      'Turning off Gaming requires removing its Ctrl+G shortcut.'
     )
     await expect(product.saveProfile({ ...profile, enabled: false }, true)).resolves.toMatchObject({
       enabled: false

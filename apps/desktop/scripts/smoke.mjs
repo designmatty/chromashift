@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import electronPath from 'electron'
 import { NativeClient } from '@chromashift/native-client'
 import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mjs'
+import { verifyShortcuts } from './shortcuts-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -805,6 +806,16 @@ async function runProfileReorder() {
   })
 }
 
+async function runShortcuts() {
+  await verifyShortcuts({
+    debuggerClient,
+    waitForExpression,
+    captureNativeWindow,
+    processId: electron.pid,
+    screenshotDirectory
+  })
+}
+
 async function runSmoke() {
   const target = await waitForDebuggerTarget(
     debuggingPort,
@@ -858,6 +869,11 @@ async function runSmoke() {
 
   if (globalThis.process.argv.includes('--profile-reorder-only')) {
     await runProfileReorder()
+    return
+  }
+
+  if (globalThis.process.argv.includes('--shortcuts-only')) {
+    await runShortcuts()
     return
   }
 
@@ -1277,120 +1293,7 @@ async function runSmoke() {
       document.querySelector('button[aria-label="Restore original display settings shortcut"]') === null`,
     'The fixed restore-original-display-settings shortcut was not exposed as a read-only Safety action.'
   )
-  const recordedToggleShortcut = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
-      if (!(button instanceof HTMLButtonElement)) return false
-      button.click()
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      button.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'F9', code: 'F9', ctrlKey: true, altKey: true, shiftKey: true,
-        bubbles: true, cancelable: true
-      }))
-      return true
-    })()`,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  if (recordedToggleShortcut.result.value !== true) {
-    throw new Error('The Toggle ChromaShift shortcut recorder was unavailable.')
-  }
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
-    'The shortcut recorder did not capture the key combination.'
-  )
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.settings.shortcutBindings.some((binding) =>
-        binding.action.kind === 'toggleChromaShift' &&
-        binding.accelerator === 'CommandOrControl+Alt+Shift+F9') &&
-        ![...document.querySelectorAll('button')]
-          .some((candidate) => candidate.textContent?.trim() === 'Save shortcuts')
-    })()`,
-    'The recorded Toggle ChromaShift shortcut was not automatically registered and persisted.'
-  )
-  const canceledUnfocusedShortcutRecording = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
-      const alternateFocus = [...document.querySelectorAll('[data-part="settings-nav"] button')]
-        .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')
-      if (!(button instanceof HTMLButtonElement) || !(alternateFocus instanceof HTMLButtonElement)) {
-        return false
-      }
-      button.click()
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      alternateFocus.focus()
-      alternateFocus.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
-      }))
-      return document.activeElement === alternateFocus
-    })()`,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  if (canceledUnfocusedShortcutRecording.result.value !== true) {
-    throw new Error('The shortcut recorder focus-loss cancellation check was unavailable.')
-  }
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')?.textContent?.trim() === 'Record' &&
-      document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
-    'Escape did not cancel shortcut recording after the Record button lost focus.'
-  )
-  const clearedUnfocusedShortcutRecording = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
-      const alternateFocus = [...document.querySelectorAll('[data-part="settings-nav"] button')]
-        .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')
-      if (!(button instanceof HTMLButtonElement) || !(alternateFocus instanceof HTMLButtonElement)) {
-        return false
-      }
-      button.click()
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      alternateFocus.focus()
-      alternateFocus.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
-      }))
-      return document.activeElement === alternateFocus
-    })()`,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  if (clearedUnfocusedShortcutRecording.result.value !== true) {
-    throw new Error('The shortcut recorder focus-loss clearing check was unavailable.')
-  }
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok &&
-        document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')?.textContent?.trim() === 'Record' &&
-        !result.value.settings.shortcutBindings.some((binding) =>
-          binding.action.kind === 'toggleChromaShift')
-    })()`,
-    'Delete did not clear the shortcut after the Record button lost focus.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const button = document.querySelector('button[aria-label="Toggle ChromaShift shortcut"]')
-      if (!(button instanceof HTMLButtonElement)) return
-      button.click()
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      button.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'F9', code: 'F9', ctrlKey: true, altKey: true, shiftKey: true,
-        bubbles: true, cancelable: true
-      }))
-    })()`,
-    awaitPromise: true
-  })
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Shift+F9"]') !== null`,
-    'The shortcut recorder did not restore the Toggle ChromaShift smoke binding.'
-  )
+  await runShortcuts()
   await captureScreenshot(debuggerClient, shortcutsScreenshotPath)
 
   // Settings replaces the profile sidebar with its own settings-section navigation.

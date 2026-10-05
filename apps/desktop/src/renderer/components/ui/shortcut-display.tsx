@@ -1,4 +1,5 @@
 import { Kbd } from '@chakra-ui/react'
+import { formatShortcutAccelerator } from '@shared/shortcut-constants.js'
 
 export function ShortcutDisplay({
   label,
@@ -24,7 +25,7 @@ export function ShortcutDisplay({
 }
 
 function displayAccelerator(accelerator: string | null): string {
-  return accelerator?.replace('CommandOrControl', 'Ctrl').replace('Super', 'Win') ?? 'Not set'
+  return accelerator === null ? 'Not set' : formatShortcutAccelerator(accelerator)
 }
 
 export function acceleratorKeys(accelerator: string | null): string[] {

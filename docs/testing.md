@@ -116,6 +116,14 @@ the full smoke. Deterministic tests cover newer installers, preview and stable
 channels, failed requests, timeouts, download URL validation, manifest agreement,
 publisher signatures, cache tampering, and restoration before installer launch.
 
+After a build, `node apps/desktop/scripts/smoke.mjs --shortcuts-only` checks the
+compact shortcut editor in the real Electron window using isolated user data and
+the restoration guard. It covers capture before Save, registration, rejected
+reserved bindings, cancellation, keyboard focus, removal, hover, and the overflow
+menu. Native window captures of the idle, hover, recording, draft, menu, and
+rejected states, plus light-theme captures, are written under
+`apps/desktop/out/smoke`.
+
 In-app download and installation run only in packaged Windows builds. Before a
 release, validate a signed installed build against a newer signed release using
 the normal package restoration guard. An unsigned local build must reject

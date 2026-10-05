@@ -1,4 +1,16 @@
-import { Alert, Button, Flex, Group, Heading, IconButton, Kbd, Stack, Text } from '@chakra-ui/react'
+import {
+  Alert,
+  Button,
+  Flex,
+  Heading,
+  IconButton,
+  Input,
+  Kbd,
+  Menu,
+  Portal,
+  Stack,
+  Text
+} from '@chakra-ui/react'
 import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_PROFILE_ID } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
@@ -11,7 +23,7 @@ import {
 } from '@shared/product-api.js'
 import { EMERGENCY_RESTORE_ACCELERATOR } from '@shared/shortcut-constants.js'
 import { recordShortcut } from '@/features/settings/shortcut-recording.js'
-import { Trash2 } from 'lucide-react'
+import { Ellipsis } from 'lucide-react'
 
 type ShortcutRowDefinition = {
   action: ShortcutAction
@@ -63,8 +75,11 @@ export function ShortcutsPanel({
     (profile) => profile.enabled && profile.id.toLowerCase() !== DEFAULT_PROFILE_ID
   )
 
-  async function replaceBinding(action: ShortcutAction, accelerator: string | null): Promise<void> {
-    if (savingRef.current) return
+  async function replaceBinding(
+    action: ShortcutAction,
+    accelerator: string | null
+  ): Promise<boolean> {
+    if (savingRef.current) return false
     const retained = product.settings.shortcutBindings.filter(
       (binding) => actionId(binding.action) !== actionId(action)
     )
@@ -90,9 +105,11 @@ export function ShortcutsPanel({
     if (!result.ok) {
       onError(result.error)
       setMessage(result.error.message)
-      return
+      return false
     }
     onError(null)
+    setRecording(null)
+    return true
   }
 
   return (
@@ -103,13 +120,8 @@ export function ShortcutsPanel({
         </Heading>
         <Stack gap="2.5">
           <Text color="fg.muted" fontSize="sm">
-            Shortcuts continue to work while ChromaShift runs in the background. Use a modifier key:{' '}
-            <Kbd>Ctrl</Kbd>, <Kbd>Alt</Kbd>, <Kbd>Shift</Kbd>, <Kbd>Windows</Kbd> + another key.{' '}
-            <Kbd>Fn</Kbd> cannot be used as a shortcut.
-          </Text>
-          <Text color="fg.muted" fontSize="sm">
-            When recording, press <Kbd>Esc</Kbd> to cancel or <Kbd>DEL</Kbd>/<Kbd>Backspace</Kbd> to
-            remove a shortcut.
+            Shortcuts work while ChromaShift runs in the background. Supports <Kbd>Ctrl</Kbd>,{' '}
+            <Kbd>Alt</Kbd>, <Kbd>Shift</Kbd>, <Kbd>Windows</Kbd> + another key.
           </Text>
         </Stack>
       </Stack>
@@ -134,7 +146,7 @@ export function ShortcutsPanel({
         recording={recording}
         disabled={saving}
         onRecordingChange={setRecording}
-        onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
+        onBindingChange={replaceBinding}
         onMessage={setMessage}
       />
       {profiles.length > 0 && (
@@ -143,13 +155,13 @@ export function ShortcutsPanel({
           rows={profiles.map((profile) => ({
             action: { kind: 'profile' as const, profileId: profile.id },
             label: profile.name,
-            description: 'Select this profile directly'
+            description: 'Select this profile'
           }))}
           bindings={product.settings.shortcutBindings}
           recording={recording}
           disabled={saving}
           onRecordingChange={setRecording}
-          onBindingChange={(action, accelerator) => void replaceBinding(action, accelerator)}
+          onBindingChange={replaceBinding}
           onMessage={setMessage}
         />
       )}
@@ -198,7 +210,7 @@ function ShortcutGroup({
   recording: string | null
   disabled: boolean
   onRecordingChange(value: string | null): void
-  onBindingChange(action: ShortcutAction, accelerator: string | null): void
+  onBindingChange(action: ShortcutAction, accelerator: string | null): Promise<boolean>
   onMessage(value: string | null): void
 }): React.JSX.Element {
   return (
@@ -227,10 +239,7 @@ function ShortcutGroup({
                 onMessage(null)
                 onRecordingChange(null)
               }}
-              onChange={(accelerator) => {
-                onBindingChange(row.action, accelerator)
-                onRecordingChange(null)
-              }}
+              onChange={(accelerator) => onBindingChange(row.action, accelerator)}
               onMessage={onMessage}
             />
           )
@@ -258,68 +267,164 @@ function ShortcutRow({
   disabled: boolean
   onRecord(): void
   onCancel(): void
-  onChange(accelerator: string | null): void
-  onMessage(message: string): void
+  onChange(accelerator: string | null): Promise<boolean>
+  onMessage(message: string | null): void
 }): React.JSX.Element {
+  const control = useRef<HTMLDivElement>(null)
   const recordButton = useRef<HTMLButtonElement>(null)
-  const displayKeys = acceleratorKeys(accelerator)
+  const input = useRef<HTMLInputElement>(null)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const draftLabel = acceleratorKeys(draft).join(' + ')
 
   useEffect(() => {
-    if (!recording) return
+    if (recording) input.current?.focus()
+  }, [recording])
+
+  function cancel(): void {
+    onCancel()
+    requestAnimationFrame(() => recordButton.current?.focus())
+  }
+
+  async function save(value: string | null): Promise<void> {
+    if (await onChange(value)) {
+      requestAnimationFrame(() => recordButton.current?.focus())
+    } else {
+      requestAnimationFrame(() => {
+        input.current?.focus()
+        input.current?.scrollIntoView({ block: 'nearest' })
+      })
+    }
+  }
+
+  useEffect(() => {
+    if (!recording || disabled) return
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      const bareKey = !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+      // Keep bare Tab available for navigation; modified Tab can be a binding.
+      if (event.key === 'Tab' && bareKey) return
+      if (bareKey && event.key === ' ' && event.target !== input.current) return
       event.preventDefault()
       event.stopPropagation()
+      if (event.repeat) return
+      if (bareKey && event.key === 'Enter' && draft !== null) {
+        void save(draft)
+        return
+      }
       const result = recordShortcut(event)
-      if (result.kind === 'cancel') onCancel()
-      else if (result.kind === 'clear') onChange(null)
+      if (result.kind === 'cancel') cancel()
+      else if (result.kind === 'clear') void save(null)
       else if (result.kind === 'invalid') onMessage(result.message)
-      else if (result.kind === 'binding') onChange(result.accelerator)
+      else if (result.kind === 'binding') {
+        setDraft(result.accelerator)
+        onMessage(null)
+      }
+    }
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !control.current?.contains(event.target)) onCancel()
     }
 
     window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onCancel, onChange, onMessage, recording])
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+    }
+  })
 
   return (
     <SettingsRow title={label} description={description}>
-      <Flex gap="2" align="flex-end" direction={'column'}>
+      <Flex ref={control} className="group" gap="1.5" align="center" flexShrink={0}>
         {recording ? (
-          <Text lineHeight={1} fontSize="xs" fontStyle={'italic'} color={'fg.muted'}>
-            Press shortcut...
-          </Text>
-        ) : (
-          <ShortcutDisplay label={label} accelerator={accelerator} />
-        )}
-        <Group attached>
-          <Button
-            ref={recordButton}
-            size="2xs"
-            variant="surface"
-            disabled={disabled}
-            aria-label={`${label} shortcut`}
-            margin={0}
-            onClick={() => {
-              if (!recording) {
-                onRecord()
-                requestAnimationFrame(() => recordButton.current?.focus())
-              }
-            }}
-          >
-            {recording ? 'Recording…' : 'Record'}
-          </Button>
-          {displayKeys.length && (
-            <IconButton
-              aria-label="Clear shortcut"
+          <>
+            <Input
+              ref={input}
+              aria-label={`${label} shortcut`}
+              placeholder="Press shortcut"
+              value={draftLabel}
+              readOnly
+              disabled={disabled}
               size="2xs"
-              variant="surface"
-              disabled={disabled || accelerator === null}
-              onClick={() => onChange(null)}
+              w={`${Math.max(180, draftLabel.length * 8 + 24)}px`}
+              fontFamily="mono"
+              order={2}
+            />
+            {draft !== null && (
+              <Button
+                size="2xs"
+                aria-label={`Save ${label} shortcut`}
+                disabled={disabled}
+                loading={disabled}
+                order={1}
+                onClick={() => void save(draft)}
+              >
+                Save
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            {accelerator !== null && (
+              <Menu.Root
+                open={menuOpen}
+                onOpenChange={({ open }) => setMenuOpen(open)}
+                positioning={{ placement: 'bottom-end' }}
+              >
+                <Menu.Trigger asChild>
+                  <IconButton
+                    aria-label={`${label} shortcut options`}
+                    size="2xs"
+                    variant="ghost"
+                    disabled={disabled}
+                    opacity={menuOpen ? 1 : 0}
+                    _groupHover={{ opacity: 1 }}
+                    _groupFocusWithin={{ opacity: 1 }}
+                    _hover={{ bg: 'bg.emphasized' }}
+                  >
+                    <Ellipsis />
+                  </IconButton>
+                </Menu.Trigger>
+                <Portal>
+                  <Menu.Positioner>
+                    <Menu.Content minW="160px">
+                      <Menu.Item value="remove" color="fg.error" onClick={() => void save(null)}>
+                        Remove shortcut
+                      </Menu.Item>
+                    </Menu.Content>
+                  </Menu.Positioner>
+                </Portal>
+              </Menu.Root>
+            )}
+            <Button
+              ref={recordButton}
+              size="2xs"
+              variant="ghost"
+              px="1"
+              gap="1"
+              rounded="md"
+              disabled={disabled}
+              aria-label={`${label} shortcut`}
+              _hover={{ bg: 'bg.emphasized' }}
+              onClick={() => {
+                setDraft(null)
+                onRecord()
+              }}
             >
-              <Trash2 />
-            </IconButton>
-          )}
-        </Group>
+              {accelerator === null ? (
+                <Text as="span" fontSize="xs" color="fg.muted">
+                  Add shortcut
+                </Text>
+              ) : (
+                acceleratorKeys(accelerator).map((key, index) => (
+                  <Kbd key={index} size="sm" data-part="shortcut-key">
+                    {key}
+                  </Kbd>
+                ))
+              )}
+            </Button>
+          </>
+        )}
       </Flex>
     </SettingsRow>
   )

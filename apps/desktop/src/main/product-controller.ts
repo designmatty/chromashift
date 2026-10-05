@@ -23,6 +23,7 @@ import type {
   ConfigurationChange
 } from '@main/automatic-activation-controller.js'
 import type { PreviewSessionController } from '@main/preview-session-controller.js'
+import { formatShortcutAccelerator } from '@shared/shortcut-constants.js'
 
 export interface ProductNativePort {
   getDisplays(): Promise<Display[]>
@@ -187,7 +188,7 @@ export class ProductController {
     )
     if (!normalized.enabled && binding !== undefined && !removeShortcut) {
       throw new ProductConflictError(
-        `Turning off ${normalized.name} requires removing its ${binding.accelerator} shortcut.`
+        `Turning off ${normalized.name} requires removing its ${formatShortcutAccelerator(binding.accelerator)} shortcut.`
       )
     }
     const settingsTransaction =
