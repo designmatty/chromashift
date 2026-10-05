@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -53,6 +53,18 @@ async function newestInstaller() {
 
 if (!(await exists(unpackedDirectory))) {
   throw new Error(`Packaged directory is missing: ${unpackedDirectory}`)
+}
+
+// A dir build followed by --prepackaged NSIS does not generate this file.
+// The updater requires it even when its release feed is supplied at runtime.
+const updateConfiguration = await readFile(
+  join(unpackedDirectory, 'resources', 'app-update.yml'),
+  'utf8'
+)
+if (
+  !/^updaterCacheDirName:\s*['"]?@chromashiftdesktop-updater['"]?\s*$/m.test(updateConfiguration)
+) {
+  throw new Error('Packaged updater configuration is missing its expected cache directory.')
 }
 
 const paths = {

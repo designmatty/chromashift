@@ -20,10 +20,11 @@ test('states the production privacy boundary and local data', async () => {
   const privacy = await text('PRIVACY.md')
 
   assert.match(privacy, /no telemetry or analytics/i)
-  assert.match(privacy, /Check for updates.*public GitHub releases API/i)
-  assert.match(privacy, /no credentials or local product data/i)
+  assert.match(privacy, /Check for updates[\s\S]*updates\.chromashift\.io/)
+  assert.match(privacy, /Cloudflare receives your[\s\S]*IP address/)
+  assert.match(privacy, /no credentials or local\s+product data/i)
   assert.match(privacy, /no background update checks/i)
-  assert.match(privacy, /automatically downloads.*metadata and installer/i)
+  assert.match(privacy, /automatically downloads[\s\S]*metadata and installer/i)
   assert.match(privacy, /Restart and install/i)
   for (const filename of [
     'profiles.json',

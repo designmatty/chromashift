@@ -64,6 +64,19 @@ async function harness() {
 }
 
 describe('NSIS update installation', () => {
+  it('downloads from the canonical release feed after an organization transfer', async () => {
+    const h = await harness()
+    await h.installer.download(
+      { version, downloadUrl: installerDownloadUrl(version, 'future-org/renamed-repo') },
+      () => {}
+    )
+    expect(fixture.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: `https://github.com/future-org/renamed-repo/releases/download/v${version}/`
+      })
+    )
+    expect(h.readPublisher.mock.calls).toEqual([['C:\\ChromaShift.exe'], [h.path]])
+  })
   it('pins the exact release feed, checks the publisher, disables unguarded install-on-quit, and installs silently', async () => {
     const h = await harness()
     await h.installer.download(release, () => {})

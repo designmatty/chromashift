@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { setTimeout, clearTimeout } from 'node:timers'
 import { build } from 'vite'
 import electronPath from 'electron'
@@ -13,8 +13,8 @@ const temporaryRoot = await mkdtemp(join(outputDirectory, 'update-download-smoke
 const signedApplication = resolve(
   globalThis.process.argv[2] ?? join(desktopDirectory, 'release/win-unpacked/ChromaShift.exe')
 )
-const fromVersion = globalThis.process.argv[3] ?? '0.1.0-preview.7'
-const toVersion = globalThis.process.argv[4] ?? '0.1.0-preview.8'
+const fromVersion = globalThis.process.argv[3] ?? '0.1.0-preview.9'
+const toVersion = globalThis.process.argv[4] ?? '0.1.0-preview.10'
 
 async function removeSmokeDirectory(path) {
   if (
@@ -37,16 +37,15 @@ try {
       main: 'built/main.cjs'
     })
   )
-  await writeFile(join(temporaryRoot, 'dev-app-update.yml'), 'updaterCacheDirName: downloads\n')
   // This harness starts no display helper, never launches NSIS, and owns its cache.
   await writeFile(
     source,
     `
-    import { app } from 'electron'
+    import { app, net } from 'electron'
     import { join } from 'node:path'
     import electronUpdater from 'electron-updater'
     import { NsisUpdateInstaller } from '@main/nsis-update-installer.js'
-    import { installerDownloadUrl } from '@shared/app-updates.js'
+    import { UpdateChecker } from '@main/update-checker.js'
     const root = ${JSON.stringify(temporaryRoot)}
     app.setPath('userData', join(root, 'user-data'))
     void app.whenReady().then(async () => {
@@ -57,14 +56,18 @@ try {
         createUpdater: options => {
           const updater = new electronUpdater.NsisUpdater(options)
           updater.forceDevUpdateConfig = true
-          updater.updateConfigPath = join(root, 'dev-app-update.yml')
+          // Exercise the shipped configuration instead of supplying a test-only file.
+          updater.updateConfigPath = ${JSON.stringify(join(dirname(signedApplication), 'resources/app-update.yml'))}
           updater.setFeedURL(options)
           Object.defineProperty(updater.app, 'baseCachePath', { value: join(root, 'cache') })
           return updater
         }
       })
       const version = ${JSON.stringify(toVersion)}
-      await installer.download({ version, downloadUrl: installerDownloadUrl(version) }, () => {})
+      const checker = new UpdateChecker({ currentVersion: ${JSON.stringify(fromVersion)}, fetch: (input, init) => net.fetch(input, init) })
+      const check = await checker.check()
+      if (check.release?.version !== version) throw new Error('The update feed did not select the expected release.')
+      await installer.download(check.release, () => {})
       await installer.prepareInstall()
       console.log('Signed update download passed: release manifest, SHA-512, publisher trust, and cached installer revalidation. NSIS was not launched.')
       app.exit(0)

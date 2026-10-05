@@ -82,7 +82,10 @@ describe('update IPC security', () => {
     h.fetch.mockRejectedValueOnce(new TypeError('offline'))
     expect(await h.invoke(productIpcChannels.checkForUpdates)).toMatchObject({
       ok: true,
-      value: { phase: 'error', error: expect.stringContaining('Could not reach GitHub') }
+      value: {
+        phase: 'error',
+        error: expect.stringContaining('Could not reach the update service')
+      }
     })
     expect(await h.invoke(productIpcChannels.installUpdate)).toMatchObject({ ok: false })
   })

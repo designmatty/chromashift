@@ -1,20 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { UpdateChecker } from '@main/update-checker.js'
-import { installerDownloadUrl, releasesApiUrl } from '@shared/app-updates.js'
+import { installerDownloadUrl, updateFeedUrl, updateRepositoryId } from '@shared/app-updates.js'
 
 function release(version: string, extra: Record<string, unknown> = {}) {
   return {
-    tag_name: `v${version}`,
-    draft: false,
+    version,
+    downloadUrl: installerDownloadUrl(version),
     prerelease: version.includes('-'),
-    assets: [
-      {
-        name: `ChromaShift-${version}-x64-setup.exe`,
-        state: 'uploaded',
-        size: 100,
-        browser_download_url: installerDownloadUrl(version)
-      }
-    ],
     ...extra
   }
 }
@@ -23,13 +15,19 @@ function harness(
   currentVersion = '0.1.0-preview.8',
   releases: unknown = [release('0.1.0-preview.9')]
 ) {
-  const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json(releases))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({
+      schemaVersion: 1,
+      repository: { id: updateRepositoryId, fullName: 'designmatty/chromashift' },
+      releases
+    })
+  )
   const checker = new UpdateChecker({ currentVersion, fetch })
   return { checker, fetch }
 }
 
 describe('manual update checks', () => {
-  it('does not contact GitHub until asked and retains the exact published installer', async () => {
+  it('contacts only the fixed update feed when asked and retains the exact published installer', async () => {
     const h = harness()
     expect(h.checker.getStatus()).toBeNull()
     expect(h.fetch).not.toHaveBeenCalled()
@@ -41,7 +39,7 @@ describe('manual update checks', () => {
     expect(Date.parse(result.checkedAt)).not.toBeNaN()
     expect(h.checker.getStatus()).toEqual(result)
     expect(h.fetch).toHaveBeenCalledWith(
-      releasesApiUrl,
+      updateFeedUrl,
       expect.objectContaining({
         credentials: 'omit',
         redirect: 'error',
@@ -71,34 +69,54 @@ describe('manual update checks', () => {
     expect((await h.checker.check()).release?.version ?? null).toBe(expected)
   })
 
-  it('ignores drafts, invalid tags, missing installers, and untrusted or mismatched asset URLs', async () => {
-    const h = harness('0.1.0-preview.8', [
-      release('0.1.0-preview.9'),
-      release('0.1.0-preview.10', { draft: true }),
-      release('0.1.0-preview.11', { assets: [] }),
-      release('0.1.0-preview.12', {
-        assets: [
-          {
-            name: 'ChromaShift-0.1.0-preview.12-x64-setup.exe',
-            state: 'uploaded',
-            size: 100,
-            browser_download_url:
-              'https://github.com/attacker/chromashift/releases/download/setup.exe'
-          }
-        ]
-      }),
-      release('0.1.0-preview.13', { assets: release('0.1.0-preview.14').assets }),
-      release('0.1.0-preview.15', { tag_name: 'v0.1.0-preview.015' }),
-      { tag_name: 'v9.0.0' }
-    ])
-    expect((await h.checker.check()).release?.version).toBe('0.1.0-preview.9')
+  it('accepts a transferred repository supplied by the feed and retains its canonical installer URL', async () => {
+    const h = harness()
+    const downloadUrl = installerDownloadUrl('0.1.0-preview.9', 'future-org/renamed-repo')
+    h.fetch.mockResolvedValueOnce(
+      Response.json({
+        schemaVersion: 1,
+        repository: { id: updateRepositoryId, fullName: 'future-org/renamed-repo' },
+        releases: [release('0.1.0-preview.9', { downloadUrl })]
+      })
+    )
+    expect((await h.checker.check()).release?.downloadUrl).toBe(downloadUrl)
+    expect(h.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects another repository identity, a mismatched URL, or an unknown feed version', async () => {
+    const h = harness()
+    for (const feed of [
+      {
+        schemaVersion: 1,
+        repository: { id: 123, fullName: 'designmatty/chromashift' },
+        releases: [release('0.1.0-preview.9')]
+      },
+      {
+        schemaVersion: 1,
+        repository: { id: updateRepositoryId, fullName: 'future-org/chromashift' },
+        releases: [release('0.1.0-preview.9')]
+      },
+      {
+        schemaVersion: 2,
+        repository: { id: updateRepositoryId, fullName: 'designmatty/chromashift' },
+        releases: [release('0.1.0-preview.9')]
+      }
+    ]) {
+      h.fetch.mockResolvedValueOnce(Response.json(feed))
+      await expect(h.checker.check()).rejects.toThrow('invalid release data')
+      expect(h.checker.getStatus()).toBeNull()
+    }
   })
 
   it('never reports up to date when release metadata has no valid installer', async () => {
-    for (const releases of [[], {}, [release('0.1.0', { assets: [] })]]) {
+    for (const releases of [
+      [],
+      {},
+      [release('0.1.0', { downloadUrl: 'https://attacker.example/setup.exe' })]
+    ]) {
       const h = harness('0.1.0-preview.8', releases)
       await expect(h.checker.check()).rejects.toThrow(
-        /invalid release list|No published installer/u
+        /invalid release data|No published installer/u
       )
       expect(h.checker.getStatus()).toBeNull()
     }
@@ -126,10 +144,10 @@ describe('manual update checks', () => {
   it('reports offline, invalid JSON, and excessive responses without setting a checked date', async () => {
     const h = harness()
     h.fetch.mockRejectedValueOnce(new TypeError('fetch failed'))
-    await expect(h.checker.check()).rejects.toThrow('Could not reach GitHub')
+    await expect(h.checker.check()).rejects.toThrow('Could not reach the update service')
     h.fetch.mockResolvedValueOnce(new Response('{'))
     await expect(h.checker.check()).rejects.toThrow('invalid release data')
-    h.fetch.mockResolvedValueOnce(new Response(' '.repeat(5 * 1024 * 1024 + 1)))
+    h.fetch.mockResolvedValueOnce(new Response(' '.repeat(64 * 1024 + 1)))
     await expect(h.checker.check()).rejects.toThrow('too much release data')
     expect(h.checker.getStatus()).toBeNull()
   })

@@ -97,6 +97,15 @@ async function sha512(path) {
 }
 
 async function verifyArtifacts(version) {
+  const updateConfiguration = await readFile(
+    join(releaseDirectory, 'win-unpacked', 'resources', 'app-update.yml'),
+    'utf8'
+  )
+  requireMatch(
+    updateConfiguration,
+    /^updaterCacheDirName:\s*['"]?@chromashiftdesktop-updater['"]?\s*$/m,
+    'Packaged updater cache configuration'
+  )
   const installerName = `ChromaShift-${version}-x64-setup.exe`
   const required = [installerName, `${installerName}.blockmap`, 'latest.yml']
   await Promise.all(required.map((name) => access(join(releaseDirectory, name))))
