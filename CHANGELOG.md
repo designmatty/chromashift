@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.12] - 2026-10-04
+
+### Added
+
+- An explicit Save action for captured shortcuts and an overflow menu to remove
+  existing bindings.
+
+### Changed
+
+- Shortcut settings use compact keycaps that become an inline recorder when
+  clicked. Escape or clicking elsewhere discards an unsaved replacement.
+
+### Fixed
+
+- Shortcut labels, errors, and confirmations use Windows key names such as Ctrl
+  and Win.
+- Longer captured shortcuts remain fully visible in the recording input.
+- Release-feed verification waits for cached metadata to refresh after deployment.
+
 ## [0.1.0-preview.11] - 2026-10-04
 
 ### Added
@@ -155,7 +174,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.11...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.12...HEAD
+[0.1.0-preview.12]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.11...v0.1.0-preview.12
 [0.1.0-preview.11]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.10...v0.1.0-preview.11
 [0.1.0-preview.10]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...v0.1.0-preview.10
 [0.1.0-preview.9]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...v0.1.0-preview.9
