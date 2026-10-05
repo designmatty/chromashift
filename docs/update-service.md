@@ -35,6 +35,8 @@ with a human-authenticated GitHub session or dispatch this workflow explicitly;
 GitHub does not trigger additional workflows for events created with the
 repository's `GITHUB_TOKEN`. If publishing metadata fails, the previous feed
 remains available; retry with manual dispatch after fixing the deployment.
+Post-deployment verification retries for up to 75 seconds to allow the previous
+feed's 60-second cache lifetime and deployment propagation to expire.
 
 ## Cloudflare setup
 
