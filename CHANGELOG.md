@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.11] - 2026-10-04
+
+### Added
+
+- A Cloudflare release feed with automatic publication after GitHub releases.
+
+### Changed
+
+- Update checks use `updates.chromashift.io`, allowing future repository moves
+  without changing the update address in installed clients.
+
+### Fixed
+
+- Signed Windows packages include the updater configuration required to download
+  installers, fixing the download and verification failure in Preview 9 and 10.
+- Packaging and release checks reject a missing updater cache configuration.
+
 ## [0.1.0-preview.10] - 2026-10-04
 
 ### Added
@@ -138,7 +155,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.10...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.11...HEAD
+[0.1.0-preview.11]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.10...v0.1.0-preview.11
 [0.1.0-preview.10]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...v0.1.0-preview.10
 [0.1.0-preview.9]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.8...v0.1.0-preview.9
 [0.1.0-preview.8]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.7...v0.1.0-preview.8
