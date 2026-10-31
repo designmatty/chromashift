@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
@@ -77,8 +77,9 @@ Import-Module ArtifactSigning
       assert.match(unsigned.stderr, /signature or timestamp is invalid/)
       const signed = run('valid', true)
       assert.equal(signed.status, 0, signed.stderr)
-      assert.deepEqual((await readFile(record, 'utf8')).trim().split(/\r?\n/u), [
-        join(payload, 'new.native')
+      const signedPaths = (await readFile(record, 'utf8')).trim().split(/\r?\n/u)
+      assert.deepEqual(await Promise.all(signedPaths.map((path) => realpath(path))), [
+        await realpath(join(payload, 'new.native'))
       ])
       assert.equal(run('valid').status, 0)
       for (const mode of ['invalid', 'no-timestamp']) {
