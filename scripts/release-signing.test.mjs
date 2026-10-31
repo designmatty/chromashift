@@ -32,10 +32,12 @@ test('the release workflow signs every executable in package order through Azure
     'npm run package:release:prepare',
     'name: Sign packaged executables',
     'name: Verify packaged executable signatures',
+    'name: Sign unsigned payload binaries and preserve vendor signatures',
     'name: Build and sign Windows installer and embedded uninstaller',
     'npm run package:release:installer',
     'npm run package:release:finalize',
-    'npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts --signatures'
+    'npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts --signatures',
+    'name: Verify every packaged Portable Executable signature'
   ]
   let previous = -1
   for (const stage of stages) {
@@ -57,7 +59,7 @@ test('the release workflow signs every executable in package order through Azure
   )
   assert.match(workflow, /timestamp-rfc3161: http:\/\/timestamp\.acs\.microsoft\.com/)
   assert.match(workflow, /timestamp-digest: SHA256/)
-  assert.equal(workflow.match(/vars\.AZURE_ARTIFACT_SIGNING_PUBLISHER/g)?.length, 3)
+  assert.equal(workflow.match(/vars\.AZURE_ARTIFACT_SIGNING_PUBLISHER/g)?.length, 5)
   assert.doesNotMatch(workflow, /steps\.packaged-signatures\.outputs\.publisher/)
   assert.doesNotMatch(workflow, /WIN_CSC|signed=false|isPrerelease/)
 

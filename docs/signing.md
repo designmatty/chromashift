@@ -59,6 +59,10 @@ The build must sign files in this order:
 
 1. Build the unpacked Electron application and publish the native helper.
 2. Sign `ChromaShift.exe` and `ChromaShift.DisplayService.exe`.
+   Scan the entire unpacked payload for Portable Executable headers, sign remaining
+   unsigned binaries through the same hook, and preserve valid vendor signatures.
+   This includes Electron's unsigned DLLs and the replaceable `NvAPIWrapper.dll`.
+   Invalid existing signatures fail the build instead of being overwritten.
 3. Build NSIS with those signed executables embedded. The release-only Builder
    configuration invokes `scripts/sign-release-executable.ps1` through a signing
    hook to sign and verify the generated uninstaller before embedding it.
@@ -69,8 +73,12 @@ The build must sign files in this order:
 6. Extract `Uninstall ChromaShift.exe` from the finished installer and verify it
    alongside the installer, app, and display helper. All four signatures must be
    valid, timestamped, and issued to the approved publisher before draft creation.
+   The full unpacked payload is checked again after Builder finishes, including
+   files it adds during installer creation. Every Portable Executable must have a
+   valid timestamped signature. Product executable publisher checks remain strict;
+   existing trusted vendor signatures on dependencies are accepted.
 
-Both verification stages compare every signer certificate with the independently
+Product executable verification compares each signer certificate with the independently
 recorded subject from the approved certificate profile. Final preflight also
 requires a valid Windows trust result and a timestamp certificate for every file.
 

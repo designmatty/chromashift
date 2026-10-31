@@ -78,6 +78,15 @@ jobs:
         env:
           CHROMASHIFT_EXPECTED_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
 
+      - name: Sign unsigned payload binaries and preserve vendor signatures
+        shell: pwsh
+        run: ./scripts/verify-release-payload.ps1 -Directory apps/desktop/release/win-unpacked -ExpectedPublisher $env:AZURE_ARTIFACT_SIGNING_PUBLISHER -SignUnsigned
+        env:
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          AZURE_ARTIFACT_SIGNING_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
+
       - name: Build and sign Windows installer and embedded uninstaller
         run: npm run package:release:installer
         env:
@@ -91,6 +100,12 @@ jobs:
 
       - name: Verify release artifacts and Authenticode signatures
         run: npm run release:preflight -- --tag $env:GITHUB_REF_NAME --artifacts --signatures --expected-publisher $env:CHROMASHIFT_EXPECTED_PUBLISHER
+        env:
+          CHROMASHIFT_EXPECTED_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
+
+      - name: Verify every packaged Portable Executable signature
+        shell: pwsh
+        run: ./scripts/verify-release-payload.ps1 -Directory apps/desktop/release/win-unpacked -ExpectedPublisher $env:CHROMASHIFT_EXPECTED_PUBLISHER
         env:
           CHROMASHIFT_EXPECTED_PUBLISHER: ${{ vars.AZURE_ARTIFACT_SIGNING_PUBLISHER }}
 

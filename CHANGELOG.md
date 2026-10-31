@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.13] - 2026-10-31
+
+### Added
+
+- None.
+
+### Changed
+
+- Signed releases now sign unsigned payload DLLs and verify all packaged Portable
+  Executable signatures while preserving valid vendor signatures.
+- Updated Electron and compatible dependencies to patched versions required by
+  the release security audit.
+
+### Fixed
+
+- Release validation rejects unsigned, invalid, or untimestamped payload binaries
+  before publication.
+
 ## [0.1.0-preview.12] - 2026-10-04
 
 ### Added
