@@ -1,7 +1,7 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
 import { CircleAlert, Power } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { activeColorTargets, type ColorProfile } from '@chromashift/core'
+import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DisplaysView } from '@/features/settings/displays-view'
@@ -16,6 +16,7 @@ import {
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
+import { commitAppPreview, deleteAppProfile } from '@/features/profiles/app-preview-actions'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { SettingsNav } from '@/features/settings/settings-nav'
@@ -125,27 +126,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (state.preview.state === 'active')
       throw new Error('The preview could not be ended. Try again.')
   }
-  async function updateProfile(): Promise<void> {
-    if (draft === null) return
-    await settlePreview()
-    const state = await value(window.chromaShift.getState())
-    if (
-      state.preview.state === 'active' &&
-      state.preview.kind === 'preview' &&
-      state.preview.profileId === draft.id
-    ) {
-      await value(
-        window.chromaShift.startPreview({ ...draft, displays: state.preview.targets }, 'edit')
-      )
-    } else if (
-      state.preview.state !== 'active' ||
-      state.preview.kind !== 'edit' ||
-      state.preview.profileId !== draft.id
-    ) {
-      await value(window.chromaShift.startPreview(draft, 'edit'))
-    }
-    await value(window.chromaShift.updatePreview(draft.id, activeColorTargets(draft)))
-    resetTo(await value(window.chromaShift.confirmPreview(draft, 'preserve')))
+  async function updateProfile(profile = draft): Promise<void> {
+    if (profile === null) return
+    resetTo(await commitAppPreview(profile, settlePreview, window.chromaShift))
   }
   function continueAfterChanges(work: () => Promise<void>): void {
     if (dirty) requestAnimationFrame(() => setPendingContinuation(() => work))
@@ -252,10 +235,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     const profile = profilePendingDeletion
     if (profile === null) return
     perform(async () => {
-      await rollback()
-      await value(window.chromaShift.deleteProfile(profile.id))
+      await deleteAppProfile(profile.id, rollback, window.chromaShift)
       setProfilePendingDeletion(null)
-      await returnToLive()
+      if (selected?.id.toLowerCase() === profile.id.toLowerCase()) await returnToLive()
     })
   }
   function toggleProfileEnabled(profile: ColorProfile): void {
@@ -345,23 +327,34 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         <Button
           size={'xs'}
           variant={'subtle'}
-          onClick={() => void action(window.chromaShift.cancelPreview())}
+          disabled={busy}
+          onClick={() => {
+            invalidateSync()
+            perform(async () => {
+              await rollback()
+              await returnToLive()
+            })
+          }}
         >
           Discard changes
         </Button>
         <Button
           size={'xs'}
+          disabled={busy}
           onClick={() => {
+            invalidateSync()
             const profile = product.configuration.profiles.find(
               (item) => item.id === temporaryOverride.profileId
             )
             if (profile !== undefined) {
-              void action(
-                window.chromaShift.confirmPreview(
-                  applyOverrideTargets(profile, temporaryOverride.targets),
-                  'preserve'
+              perform(async () => {
+                await updateProfile(
+                  dirty && draft?.id === profile.id
+                    ? draft
+                    : applyOverrideTargets(profile, temporaryOverride.targets)
                 )
-              )
+                await returnToLive()
+              })
             }
           }}
         >
