@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { applyColorScheme } from '@/lib/color-scheme'
 import type { ProductState } from '@shared/product-api.js'
 
 export function useProductTheme(theme: ProductState['settings']['theme']): void {
@@ -6,10 +7,7 @@ export function useProductTheme(theme: ProductState['settings']['theme']): void 
     const root = document.documentElement
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = (): void => {
-      const resolved = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme
-      root.classList.toggle('dark', resolved === 'dark')
-      root.classList.toggle('light', resolved === 'light')
-      root.style.colorScheme = resolved
+      applyColorScheme(root, theme === 'system' ? (media.matches ? 'dark' : 'light') : theme)
     }
 
     apply()
