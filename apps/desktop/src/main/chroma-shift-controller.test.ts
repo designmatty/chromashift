@@ -47,9 +47,16 @@ class FakeActivation implements ChromaShiftActivationPort {
     this.calls.push('idle')
     return Promise.resolve()
   }
-  public restoreBaseline(): Promise<CompletedActivationOutcome> {
+  public readonly restoreContexts: Array<
+    Parameters<ChromaShiftActivationPort['restoreBaseline']>[0]
+  > = []
+
+  public restoreBaseline(
+    context?: Parameters<ChromaShiftActivationPort['restoreBaseline']>[0]
+  ): Promise<CompletedActivationOutcome> {
     this.calls.push('restore')
-    return Promise.resolve(this.restoreOutcome)
+    this.restoreContexts.push(context)
+    return Promise.resolve({ ...this.restoreOutcome, ...context })
   }
   public resumeCurrent(
     _currentApplication?: null,
@@ -147,23 +154,26 @@ describe('ChromaShiftController pause safety', () => {
     expect(activation.calls.filter((call) => call === 'restore')).toHaveLength(2)
   })
 
-  it('fails closed when preview teardown cannot confirm rollback', async () => {
-    const { controller, cancelPreview } = create()
-    const operationalOutcomes: CompletedActivationOutcome[] = []
-    controller.subscribeOperationalOutcomes((value) => operationalOutcomes.push(value))
-    cancelPreview.mockRejectedValueOnce(new Error('Preview restore failed.'))
+  it.each(['pause', 'restoreBaseline'] as const)(
+    'fails closed when %s preview teardown cannot confirm rollback',
+    async (operation) => {
+      const { controller, cancelPreview } = create()
+      const operationalOutcomes: CompletedActivationOutcome[] = []
+      controller.subscribeOperationalOutcomes((value) => operationalOutcomes.push(value))
+      cancelPreview.mockRejectedValueOnce(new Error('Preview restore failed.'))
 
-    await expect(controller.pause('manual')).rejects.toThrow('Preview restore failed.')
+      await expect(controller[operation]('manual')).rejects.toThrow('Preview restore failed.')
 
-    expect(controller.chromaShiftState.status).toBe('safetyBlocked')
-    expect(operationalOutcomes).toMatchObject([
-      {
-        status: 'failed',
-        origin: 'pause',
-        failures: [{ operation: 'control', message: 'Preview restore failed.' }]
-      }
-    ])
-  })
+      expect(controller.chromaShiftState.status).toBe('safetyBlocked')
+      expect(operationalOutcomes).toMatchObject([
+        {
+          status: 'failed',
+          origin: operation === 'pause' ? 'pause' : 'originalSettingsRestore',
+          failures: [{ operation: 'control', message: 'Preview restore failed.' }]
+        }
+      ])
+    }
+  )
 
   it('persists a fail-safe marker before restoration and still reports a later persistence failure', async () => {
     const activation = new FakeActivation()
@@ -229,16 +239,153 @@ describe('ChromaShiftController pause safety', () => {
 })
 
 describe('ChromaShiftController resume and intent', () => {
-  it('keeps the Intended target Active after one-shot Original settings restoration', async () => {
-    const { controller } = create()
+  it('pauses after Original settings restoration and preserves the Intended target', async () => {
+    const { activation, controller, persisted, cancelPreview } = create()
+    const operationalOutcomes: CompletedActivationOutcome[] = []
+    controller.subscribeOperationalOutcomes((value) => operationalOutcomes.push(value))
 
     await controller.restoreBaseline()
 
+    expect(persisted[0]).toMatchObject({ status: 'safetyBlocked', pendingOperation: 'pause' })
+    expect(cancelPreview).toHaveBeenCalledOnce()
+    expect(activation.calls).toEqual(['suspend', 'idle', 'restore'])
+    expect(activation.restoreContexts).toEqual([
+      { source: 'manual', origin: 'originalSettingsRestore' }
+    ])
     expect(controller.chromaShiftState).toMatchObject({
-      status: 'active',
+      status: 'paused',
+      pendingOperation: null,
+      transitionInProgress: false,
       intendedMode: { kind: 'manual', profileId: 'gaming' },
       intendedTarget: { kind: 'profile', profileId: 'gaming' }
     })
+    expect(persisted.at(-1)).toMatchObject({ status: 'paused', pendingOperation: null })
+    expect(operationalOutcomes).toHaveLength(1)
+    expect(operationalOutcomes[0]).toMatchObject({
+      status: 'activated',
+      origin: 'originalSettingsRestore',
+      source: 'manual'
+    })
+  })
+
+  it('pauses with the intent captured before an external emergency restore', async () => {
+    const activation = new FakeActivation()
+    activation.state = {
+      ...activation.state,
+      mode: manualActivationMode('gaming'),
+      currentTarget: { kind: 'baseline' }
+    }
+    const { controller, persisted } = create(activation)
+
+    await controller.restoreBaseline('shortcut', {
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+
+    expect(activation.calls).toEqual(['suspend', 'idle', 'restore'])
+    expect(persisted.at(-1)).toEqual({
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+  })
+
+  it.each([
+    { status: 'failed' as const },
+    { status: 'partialFailure' as const },
+    { deferredDisplayIds: ['display:one'] }
+  ])('fails closed when Original settings restoration is incomplete: %j', async (incomplete) => {
+    const { activation, controller, persisted } = create()
+    activation.restoreOutcome = outcome({ kind: 'baseline' }, incomplete)
+
+    await controller.restoreBaseline('shortcut')
+
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'pause'
+    })
+    expect(persisted.at(-1)).toMatchObject({ status: 'safetyBlocked', pendingOperation: 'pause' })
+
+    activation.restoreOutcome = outcome({ kind: 'baseline' })
+    await controller.retrySafetyCheck('manual')
+    expect(controller.chromaShiftState.status).toBe('paused')
+  })
+
+  it('reports a thrown Original settings restoration with its own origin and fails closed', async () => {
+    const { activation, controller } = create()
+    activation.restoreBaseline = () => Promise.reject(new Error('Restore failed.'))
+    const operationalOutcomes: CompletedActivationOutcome[] = []
+    controller.subscribeOperationalOutcomes((value) => operationalOutcomes.push(value))
+
+    await expect(controller.restoreBaseline()).rejects.toThrow('Restore failed.')
+
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'pause'
+    })
+    expect(operationalOutcomes).toMatchObject([
+      {
+        status: 'failed',
+        origin: 'originalSettingsRestore',
+        failures: [{ operation: 'control', message: 'Restore failed.' }]
+      }
+    ])
+  })
+
+  it.each([
+    ['paused', null],
+    ['safetyBlocked', 'pause'],
+    ['safetyBlocked', 'resume']
+  ] as const)(
+    'leaves %s (%s) display control unchanged on Original settings restoration',
+    async (status, pendingOperation) => {
+      const initial: ChromaShiftPersistedState = {
+        status,
+        pendingOperation,
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      }
+      const { activation, controller, persisted, cancelPreview } = create(
+        new FakeActivation(),
+        initial
+      )
+
+      const result = await controller.restoreBaseline()
+
+      expect(result).toMatchObject({ status: 'skipped', origin: 'statusControl' })
+      expect(activation.calls).toEqual([])
+      expect(cancelPreview).not.toHaveBeenCalled()
+      expect(persisted).toEqual([])
+      expect(controller.chromaShiftState).toMatchObject(initial)
+    }
+  )
+
+  it('waits for an in-flight resume before restoring and pausing', async () => {
+    const activation = new FakeActivation()
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const resume = activation.resumeCurrent.bind(activation)
+    activation.resumeCurrent = async (application, context) => {
+      await pending
+      return resume(application, context)
+    }
+    const { controller } = create(activation, {
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+
+    const resuming = controller.resume('manual')
+    const restoring = controller.restoreBaseline()
+    release()
+    await Promise.all([resuming, restoring])
+
+    expect(activation.calls.slice(-4)).toEqual(['resume', 'suspend', 'idle', 'restore'])
+    expect(controller.chromaShiftState.status).toBe('paused')
   })
 
   it('validates topology and resumes the preserved intent from Paused', async () => {
