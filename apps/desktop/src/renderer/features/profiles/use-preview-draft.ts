@@ -37,7 +37,7 @@ export interface PreviewDraft {
    * Invalidate, wait for every in-flight synchronization, then cancel the
    * native session. Resolves only once the session is safely rolled back.
    */
-  rollbackPreview(): Promise<boolean>
+  rollbackPreview(throwOnError?: boolean): Promise<boolean>
 }
 
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
@@ -81,6 +81,6 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     },
     invalidateSync: () => sync.invalidate(),
     settlePreview: () => sync.settle(),
-    rollbackPreview: () => sync.rollback()
+    rollbackPreview: (throwOnError) => sync.rollback(throwOnError)
   }
 }

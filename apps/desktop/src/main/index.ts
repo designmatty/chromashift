@@ -389,10 +389,7 @@ function createWindow(): BrowserWindow {
     if (mainWindow === window) mainWindow = undefined
   })
   window.on('minimize', () => {
-    window.webContents.send(productIpcChannels.appPanelClosed)
-    void runtime.previewController?.cancelNonOverride().catch((error: unknown) => {
-      logger.write({ level: 'warning', eventName: 'PreviewCancelOnMinimizeFailed', ...describeError(error) })
-    })
+    window.webContents.send(productIpcChannels.appPanelMinimized, {})
   })
   if (settingsStores.windowState.current.windowMaximized === true) window.maximize()
   window.on('resize', () => appWindowStateController.schedule(window))

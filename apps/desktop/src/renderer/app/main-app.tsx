@@ -120,7 +120,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     resetTo(profile)
   }
   async function rollback(): Promise<void> {
-    if (!(await rollbackPreview())) throw new Error('The preview could not be ended. Try again.')
+    await rollbackPreview(true)
     const state = await value(window.chromaShift.getState())
     if (state.preview.state === 'active')
       throw new Error('The preview could not be ended. Try again.')
@@ -226,14 +226,16 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   })
   useEffect(() => {
-    window.chromaShift.onAppPanelClosed(() => {
+    const endAppPreview = () => {
       invalidateSync()
       setPendingContinuation(null)
       perform(async () => {
         if (temporaryOverride === null) await rollback()
         await returnToLive()
       })
-    })
+    }
+    window.chromaShift.onAppPanelClosed(endAppPreview)
+    window.chromaShift.onAppPanelMinimized(endAppPreview)
   })
   function endPreview(): void {
     continueAfterChanges(async () => {

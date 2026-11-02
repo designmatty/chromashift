@@ -110,7 +110,7 @@ export class PreviewSyncSession {
     await Promise.allSettled([...this.#pending])
   }
 
-  public async rollback(): Promise<boolean> {
+  public async rollback(throwOnError = false): Promise<boolean> {
     this.invalidate()
     this.#needsStart = true
     this.#promotedProfileId = null
@@ -119,7 +119,12 @@ export class PreviewSyncSession {
     const rollback = (async () => {
       await previousRollback
       await Promise.allSettled(pending)
-      const result = await run(this.port.cancelPreview(), this.onError)
+      let failure: ProductError | null = null
+      const result = await run(this.port.cancelPreview(), (error) => {
+        failure = error
+        this.onError(error)
+      })
+      if (failure !== null && throwOnError) throw failure
       if (result !== undefined) this.onError(null)
       return result !== undefined
     })()

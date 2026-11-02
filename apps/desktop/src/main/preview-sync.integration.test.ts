@@ -1,6 +1,7 @@
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
+import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
 import {
   PreviewSyncSession,
@@ -19,6 +20,33 @@ const profile: ColorProfile = {
 }
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
+it('app rollback reports PreviewRestoreError even when teardown has published inactive', async () => {
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const controller = new PreviewSessionController(native, {
+    beginPreview: async () => undefined,
+    cancelPreview: async () => undefined,
+    confirmPreview: async () => undefined
+  }, () => undefined)
+  await controller.start(profile, 'preview')
+  native.failRestoreDisplayIds.add('display:abc')
+  const errors: (ProductError | null)[] = []
+  const sync = new PreviewSyncSession({
+    startPreview: async () => ok,
+    updatePreview: async () => ok,
+    cancelPreview: async () => {
+      try {
+        await controller.cancel()
+        return ok
+      } catch (error) {
+        expect(error).toBeInstanceOf(PreviewRestoreError)
+        return { ok: false, error: { code: 'OPERATION_FAILED', message: (error as Error).message } }
+      }
+    }
+  }, 'edit', (error) => errors.push(error))
+  await expect(sync.rollback(true)).rejects.toMatchObject({ message: expect.stringContaining('Some displays could not be restored.') })
+  expect(controller.state).toEqual({ state: 'inactive' })
+  expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: expect.stringContaining('Some displays could not be restored.') }])
+})
 it('promotes a clicked preview before applying edits without restoring or recapturing', async () => {
   vi.useFakeTimers()
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])

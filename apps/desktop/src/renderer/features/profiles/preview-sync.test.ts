@@ -192,6 +192,22 @@ describe('preview sync session', () => {
     expect(port.calls).toEqual(['cancel'])
   })
 
+  it('surfaces failed restoration to the serialized app action even after the session ends', async () => {
+    const failure = { code: 'OPERATION_FAILED' as const, message: 'Preview restoration failed.' }
+    port.cancelResult = { ok: false, error: failure }
+    session.schedule(profile, activeSession('edit'))
+    await expect(session.rollback(true)).rejects.toEqual(failure)
+    await vi.runAllTimersAsync()
+    expect(port.calls).toEqual(['cancel'])
+    expect(errors).toEqual([failure])
+  })
+
+  it('preserves the mini-panel boolean failure result for a rejected rollback request', async () => {
+    port.cancelPreview = () => Promise.reject(new Error('IPC connection failed'))
+    expect(await session.rollback()).toBe(false)
+    expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: 'IPC connection failed' }])
+  })
+
   it('reports send failures through onError', async () => {
     port.startResult = {
       ok: false,
