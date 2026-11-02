@@ -29,8 +29,28 @@ import {
   saveProfileRequestSchema,
   setDefaultProfileRequestSchema,
   voidResultSchema,
+  type AppPanelView,
   type ChromaShiftApi
 } from '@shared/product-api.js'
+import { LatestEventRelay } from '@shared/latest-event-relay.js'
+
+// Main may request app-panel navigation before the renderer has mounted its
+// listener (a fresh renderer waits for DisplayService and the lazy app chunk).
+// Listen from preload time and keep the latest request until the app subscribes.
+const appPanelNavigation = new LatestEventRelay<AppPanelView>()
+const appPanelProfileSelection = new LatestEventRelay<string>()
+
+ipcRenderer.on(productIpcChannels.navigateAppPanel, (_event, input: unknown) => {
+  const view = appPanelViewSchema.safeParse(input)
+  if (view.success) appPanelNavigation.publish(view.data)
+  else console.error('Rejected invalid app-panel navigation event.', view.error)
+})
+
+ipcRenderer.on(productIpcChannels.selectAppPanelProfile, (_event, input: unknown) => {
+  const request = profileIdRequestSchema.safeParse(input)
+  if (request.success) appPanelProfileSelection.publish(request.data.profileId)
+  else console.error('Rejected invalid app-panel profile selection event.', request.error)
+})
 
 async function invoke<TRequest, TResult>(
   channel: string,
@@ -180,22 +200,8 @@ const api: ChromaShiftApi = {
     ipcRenderer.removeAllListeners(productIpcChannels.appPanelClosed)
     ipcRenderer.on(productIpcChannels.appPanelClosed, () => listener())
   },
-  onAppPanelNavigation: (listener) => {
-    ipcRenderer.removeAllListeners(productIpcChannels.navigateAppPanel)
-    ipcRenderer.on(productIpcChannels.navigateAppPanel, (_event, input: unknown) => {
-      const view = appPanelViewSchema.safeParse(input)
-      if (view.success) listener(view.data)
-      else console.error('Rejected invalid app-panel navigation event.', view.error)
-    })
-  },
-  onAppPanelProfileSelection: (listener) => {
-    ipcRenderer.removeAllListeners(productIpcChannels.selectAppPanelProfile)
-    ipcRenderer.on(productIpcChannels.selectAppPanelProfile, (_event, input: unknown) => {
-      const request = profileIdRequestSchema.safeParse(input)
-      if (request.success) listener(request.data.profileId)
-      else console.error('Rejected invalid app-panel profile selection event.', request.error)
-    })
-  }
+  onAppPanelNavigation: (listener) => appPanelNavigation.subscribe(listener),
+  onAppPanelProfileSelection: (listener) => appPanelProfileSelection.subscribe(listener)
 }
 
 contextBridge.exposeInMainWorld('chromaShift', api)
