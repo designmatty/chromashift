@@ -26,7 +26,7 @@ afterEach(() => vi.useRealTimers())
 it('app rollback reports PreviewRestoreError even when teardown has published inactive', async () => {
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
   const controller = new PreviewSessionController(native, {
-    beginPreview: async () => undefined,
+    beginPreview: async () => [],
     cancelPreview: async () => undefined,
     confirmPreview: async () => undefined
   }, () => undefined)
@@ -54,7 +54,7 @@ it('promotes a clicked preview before applying edits without restoring or recapt
   vi.useFakeTimers()
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
   const controller = new PreviewSessionController(native, {
-    beginPreview: async () => undefined,
+    beginPreview: async () => [],
     cancelPreview: async () => undefined,
     confirmPreview: async () => undefined
   }, () => undefined)
@@ -91,7 +91,7 @@ it.each(['pending', 'completed'] as const)(
     const controller = new PreviewSessionController(
       native,
       {
-        beginPreview: async () => undefined,
+        beginPreview: async () => [],
         cancelPreview: () => cancelling,
         confirmPreview: async () => undefined
       },

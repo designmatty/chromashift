@@ -120,6 +120,11 @@ export class ActivationCoordinator {
     await this.#queue
   }
 
+  /** Snapshot only; the native service remains the immutable baseline owner. */
+  public get capturedDisplayIds(): readonly string[] {
+    return [...this.#capturedDisplayIds]
+  }
+
   async #transition(
     foregroundApplication: ForegroundApplication | null,
     mode: ActivationMode
