@@ -157,6 +157,37 @@ describe('ProfileNotificationController', () => {
     ])
   })
 
+  it('reports that Original settings restoration leaves ChromaShift paused', async () => {
+    const notifications = new RecordingNotifications()
+    const controller = new ProfileNotificationController(
+      new JsonProfileRepository(new MemoryStorage()),
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
+      notifications,
+      () => undefined
+    )
+
+    await controller.handle(
+      completed({
+        resolution: {
+          target: { kind: 'baseline' },
+          reason: 'baseline',
+          changed: true,
+          previousTarget: { kind: 'profile', profileId: 'gaming' }
+        },
+        source: 'shortcut',
+        origin: 'originalSettingsRestore'
+      })
+    )
+
+    expect(notifications.messages).toMatchObject([
+      {
+        title: 'Original settings restored',
+        body: 'ChromaShift is paused.',
+        severity: 'information'
+      }
+    ])
+  })
+
   it('suppresses restoration, control, and safety notifications when notifications are off', async () => {
     const notifications = new RecordingNotifications()
     const controller = new ProfileNotificationController(
