@@ -128,6 +128,7 @@ export function NavButton({
   const button = (
     <Button
       aria-label={label}
+      aria-current={active ? 'page' : undefined}
       variant="plain"
       w="full"
       h="40px"

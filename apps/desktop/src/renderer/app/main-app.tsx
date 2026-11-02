@@ -1,6 +1,6 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
 import { CircleAlert, Power } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -148,11 +148,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     await rollback
   }
 
-  useEffect(() => {
+  // Layout effects apply a request that preload buffered while this renderer was
+  // still starting before the first paint, instead of flashing the remembered view.
+  useLayoutEffect(() => {
     window.chromaShift.onAppPanelNavigation((nextView) => void navigate(nextView))
   })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     window.chromaShift.onAppPanelProfileSelection((profileId) => {
       const profile = product.configuration.profiles.find(
         (candidate) => candidate.id.toLowerCase() === profileId.toLowerCase()
