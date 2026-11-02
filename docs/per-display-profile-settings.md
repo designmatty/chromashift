@@ -80,12 +80,10 @@ targets remain persisted and resume when the same physical display returns.
   values, and the first change creates its complete display target.
 - Opening the app selects the Intended target's profile, or Default, and scrolls
   it into view. Non-profile views remain remembered; profile requests from main win.
-- Clicking a profile previews its saved values unless it is already live. Empty
-  profiles show the preview banner and End preview without native restore/apply,
-  with the line "No display settings saved — your displays keep <live profile name
-  or 'their current settings'> until you change a value." The first color change
-  creates that display's complete target and starts Edit. This exception is pending
-  product-owner decision on baseline-only preview.
+- Clicking a profile previews its saved values unless it is already live. Displays
+  without a target are held at Original settings, including when the profile has
+  no targets. The first color change creates that display's complete target and
+  promotes Preview to Edit.
   Disabled profiles remain openable, previewable, and editable.
 - While Paused or Safety blocked, profile clicks show values without applying
   them. Inputs are disabled and a Resume action remains available.
@@ -128,6 +126,16 @@ without restoring or recapturing. Draft changes then apply immediately and remai
 unsaved until `Update profile`. `Discard changes`, navigation, or failure waits
 for pending writes and restores the prior automatic or manual target. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
+
+During app-panel Preview or Edit, connected SDR displays without a draft target
+are held at Original settings. The session restores any existing immutable native
+baseline without capturing modified output. A display without a captured baseline
+needs no write. Adding a target uses normal capture-before-apply; removing it
+restores Original settings. HDR and disconnected baselines remain retained and
+deferred. Teardown restores all session and activation-owned baselines before
+serialized activation rollback resets deduplication and reapplies the prior target
+on every display, including displays held at Original settings. Restore failures
+surface as preview failures.
 
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete

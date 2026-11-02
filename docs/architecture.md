@@ -166,7 +166,11 @@ app.
 
 Live preview is an explicit activation session. It suspends automatic display
 writes while still remembering foreground changes and applies only validated
-settings from the native service's immutable baseline. Both renderer surfaces
+settings from the native service's immutable baseline. During app-panel Preview or Edit, displays
+without a target are held at Original settings by restoring existing baselines,
+with no capture or write on displays that have no baseline. Teardown hands retained
+baselines back to activation and resets deduplication before reapplying the prior
+target, including displays held at Original settings. Both renderer surfaces
 drive their sessions through one shared seam: `use-preview-draft.ts` owns the
 draft and dirty state, and the framework-free `preview-sync.ts` session owns
 debounced draft synchronization, the start-versus-update decision, and

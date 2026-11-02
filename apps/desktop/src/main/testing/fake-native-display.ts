@@ -84,6 +84,9 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public readonly applied: Array<{ displayId: string; settings: DisplaySettings }> = []
   public readonly captured: string[] = []
   public readonly restored: string[] = []
+  /** Provider state, independent of product-neutral values, for exact rollback assertions. */
+  public readonly currentSettings = new Map<string, DisplaySettings>()
+  public readonly baselineCaptures: Array<{ displayId: string; settings: DisplaySettings }> = []
   public readonly failApplyDisplayIds = new Set<string>()
   public readonly failRestoreDisplayIds = new Set<string>()
   public readonly failRestoreAllDisplayIds = new Set<string>()
@@ -94,6 +97,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public displays: Display[]
   public reports = new Map<string, DisplayCapabilityReport>()
   readonly #capturedDisplayIds = new Set<string>()
+  readonly #baselineSettings = new Map<string, DisplaySettings>()
   #activeCalls = 0
 
   public constructor(
@@ -132,6 +136,13 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
         )
       }
       const alreadyCaptured = this.#capturedDisplayIds.has(displayId)
+      if (!alreadyCaptured) {
+        this.#baselineSettings.set(displayId, { ...this.currentSettings.get(displayId) })
+        this.baselineCaptures.push({
+          displayId,
+          settings: { ...this.currentSettings.get(displayId) }
+        })
+      }
       this.#capturedDisplayIds.add(displayId)
       this.captured.push(displayId)
       return { displayId, state: alreadyCaptured ? 'alreadyCaptured' : 'captured' }
@@ -163,6 +174,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
         )
       }
       this.applied.push({ displayId, settings })
+      this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId), ...settings })
       return { displayId, settings, applied: {} }
     })
   }
@@ -189,6 +201,10 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
         )
       }
       const wasCaptured = this.#capturedDisplayIds.delete(displayId)
+      if (wasCaptured) {
+        this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId) })
+        this.#baselineSettings.delete(displayId)
+      }
       this.restored.push(displayId)
       return wasCaptured
         ? { displayId, restored: true }
@@ -214,6 +230,8 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
           return { displayId, restored: false as const, error: `Restore failed on ${displayId}` }
         }
         this.#capturedDisplayIds.delete(displayId)
+        this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId) })
+        this.#baselineSettings.delete(displayId)
         return { displayId, restored: true as const }
       })
       return { displays }

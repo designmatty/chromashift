@@ -12,7 +12,6 @@ import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import {
   liveProfile,
   shouldPreviewProfile,
-  emptyPreviewMessage,
   automaticProfileName
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
@@ -287,7 +286,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     temporaryOverride === null &&
     shownProfile !== null &&
     shownProfile.id !== currentProfileId &&
-    (activeSession !== null || emptyPreviewMessage(product, shownProfile) !== null)
+    activeSession !== null
   const OverrideBanner = () => {
     return temporaryOverride !== null ? (
       <Flex
@@ -542,11 +541,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 <Text color="fg.muted" fontSize="sm">
                   Automatic would use: {automaticProfileName(product)}
                 </Text>
-                {emptyPreviewMessage(product, shownProfile) !== null && (
-                  <Text color="fg.muted" fontSize="sm">
-                    {emptyPreviewMessage(product, shownProfile)}
-                  </Text>
-                )}
               </Stack>
               <Button
                 size="xs"

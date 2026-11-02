@@ -18,7 +18,6 @@ export function liveProfile(product: AppPreviewState): ColorProfile | null {
 export function shouldPreviewProfile(product: AppPreviewState, profile: ColorProfile): boolean {
   return (
     product.chromaShift.status === 'active' &&
-    profile.displays.length > 0 &&
     liveProfile(product)?.id.toLowerCase() !== profile.id.toLowerCase()
   )
 }
@@ -34,24 +33,4 @@ export function automaticProfileName(product: AppPreviewState): string {
         (profile) => profile.id.toLowerCase() === target.profileId.toLowerCase()
       )?.name ?? 'Original settings')
     : 'Original settings'
-}
-
-export function emptyPreviewMessage(
-  product: AppPreviewState,
-  profile: ColorProfile
-): string | null {
-  if (
-    product.chromaShift.status !== 'active' ||
-    profile.displays.length > 0 ||
-    liveProfile(product)?.id.toLowerCase() === profile.id.toLowerCase()
-  )
-    return null
-  const target = product.chromaShift.intendedTarget
-  const name =
-    target?.kind === 'profile'
-      ? product.configuration.profiles.find(
-          (item) => item.id.toLowerCase() === target.profileId.toLowerCase()
-        )?.name
-      : undefined
-  return `No display settings saved — your displays keep ${name ?? 'their current settings'} until you change a value.`
 }
