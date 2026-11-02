@@ -557,10 +557,16 @@ async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
 }
 
 async function openProfileFromSidebar(debuggerClient, profileName) {
+  // IPC completion precedes the React paint after saveProfile/openAppPanel.
+  // Wait for the renamed row and the serialized navigation to settle before
+  // clicking; otherwise the optional lookup silently misses the stale label.
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="profile-nav"]') !== null`,
-    'The profile sidebar was unavailable.'
+    `document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+      [...document.querySelectorAll('[data-part="profile-select"]')]
+        .some((item) => item.getClientRects().length > 0 &&
+          item.querySelector('strong')?.textContent?.trim().replace(/ •$/, '') === ${JSON.stringify(profileName)})`,
+    `The sidebar row ${profileName} was not ready for editing.`
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
