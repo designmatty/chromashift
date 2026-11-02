@@ -388,6 +388,12 @@ function createWindow(): BrowserWindow {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
+  window.on('minimize', () => {
+    window.webContents.send(productIpcChannels.appPanelClosed)
+    void runtime.previewController?.cancelNonOverride().catch((error: unknown) => {
+      logger.write({ level: 'warning', eventName: 'PreviewCancelOnMinimizeFailed', ...describeError(error) })
+    })
+  })
   if (settingsStores.windowState.current.windowMaximized === true) window.maximize()
   window.on('resize', () => appWindowStateController.schedule(window))
   window.on('move', () => appWindowStateController.schedule(window))

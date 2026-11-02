@@ -33,10 +33,12 @@ export function Brand({ compact = false }: { compact?: boolean }): React.JSX.Ele
  */
 export function TitleBar({
   brandAccessory,
-  children
+  children,
+  onShowMiniPanel
 }: {
   brandAccessory?: ReactNode
   children?: ReactNode
+  onShowMiniPanel?: (() => void) | undefined
 }): React.JSX.Element {
   return (
     <Flex
@@ -55,7 +57,7 @@ export function TitleBar({
           {brandAccessory}
         </Flex>
       )}
-      <PanelViewToggle />
+      <PanelViewToggle onShowMiniPanel={onShowMiniPanel} />
       {children !== undefined && (
         <Flex ml="auto" align="center" gap={3} css={{ WebkitAppRegion: 'no-drag' }}>
           {children}
@@ -66,7 +68,13 @@ export function TitleBar({
 }
 
 /** Switches between the app panel and the mini panel (Figma 35:1609). */
-export function PanelViewToggle({ mini = false }: { mini?: boolean }): React.JSX.Element {
+export function PanelViewToggle({
+  mini = false,
+  onShowMiniPanel
+}: {
+  mini?: boolean
+  onShowMiniPanel?: (() => void) | undefined
+}): React.JSX.Element {
   return (
     <Flex
       data-part="panel-toggle"
@@ -102,7 +110,7 @@ export function PanelViewToggle({ mini = false }: { mini?: boolean }): React.JSX
           size="2xs"
           aria-label="Mini view"
           aria-pressed={mini}
-          onClick={() => void window.chromaShift.showMiniPanel()}
+          onClick={onShowMiniPanel ?? (() => void window.chromaShift.showMiniPanel())}
           _pressed={{ bg: 'control.active' }}
         >
           <PanelTop size={16} />

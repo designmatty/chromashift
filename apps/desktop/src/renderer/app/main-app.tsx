@@ -1,13 +1,19 @@
 import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
 import { CircleAlert, Power } from 'lucide-react'
-import { useEffect, useLayoutEffect, useState } from 'react'
-import type { ColorProfile } from '@chromashift/core'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { activeColorTargets, type ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileList } from '@/features/profiles/profile-list'
+import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
+import {
+  liveProfile,
+  shouldPreviewProfile,
+  automaticProfileName
+} from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
@@ -20,7 +26,6 @@ import { run } from '@/lib/product-result'
 import type { AppPanelView, ProductError, ProductResult, ProductState } from '@shared/product-api'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants'
 
-const DEFAULT_ID = 'default'
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
 const SIDEBAR_COLLAPSED_KEY = 'chromashift.app-panel.sidebar-collapsed'
@@ -30,262 +35,274 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   )
-  const [selectedId, setSelectedId] = useState(() => {
-    const remembered = localStorage.getItem(LAST_PROFILE_KEY)
-    return product.configuration.profiles.some((profile) => profile.id === remembered)
-      ? remembered
-      : (product.configuration.profiles[0]?.id ?? null)
-  })
-  const [editing, setEditing] = useState(false)
+  const [selectedId, setSelectedId] = useState(() => liveProfile(product)?.id ?? null)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
   const [profilePendingDeletion, setProfilePendingDeletion] = useState<ColorProfile | null>(null)
-  const { draft, dirty, updateDraft, replaceDraft, resetTo, invalidateSync, rollbackPreview } =
+  const [pendingContinuation, setPendingContinuation] = useState<(() => Promise<void>) | null>(null)
+  const [pendingDisable, setPendingDisable] = useState<{
+    profile: ColorProfile
+    accelerator: string
+  } | null>(null)
+  const taskTail = useRef(Promise.resolve())
+  const followingLive = useRef(true)
+  const { draft, dirty, updateDraft, resetTo, invalidateSync, settlePreview, rollbackPreview } =
     usePreviewDraft({
       kind: 'edit',
       session: product.preview,
-      enabled: editing,
-      onError: setError
+      enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
+      onError: setError,
+      initialDraft: () => liveProfile(product)
     })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
-    product.configuration.profiles[0] ??
-    null
+    liveProfile(product)
   const activeSession = product.preview.state === 'active' ? product.preview : null
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
-
+  const currentProfileId = liveProfile(product)?.id ?? null
+  const inSettings = view !== 'profiles'
   useProductTheme(product.settings.theme)
-
   useEffect(() => {
     localStorage.setItem(LAST_VIEW_KEY, view)
   }, [view])
-
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed))
   }, [sidebarCollapsed])
-
   useEffect(() => {
     if (selectedId === null) localStorage.removeItem(LAST_PROFILE_KEY)
     else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
   }, [selectedId])
-
   useEffect(() => {
-    if (!editing && selected !== null) replaceDraft(structuredClone(selected))
-  }, [selected, editing])
+    if (!dirty && selected !== null) resetTo(selected)
+  }, [selected])
+  useEffect(() => {
+    if (followingLive.current && !dirty && activeSession === null) setSelectedId(currentProfileId)
+  }, [currentProfileId, activeSession, dirty])
 
-  async function rollbackExplicitPreview(): Promise<void> {
-    const current = await run(window.chromaShift.getState(), setError)
-    if (current?.preview.state === 'active' && current.preview.kind === 'preview') {
-      await run(window.chromaShift.cancelPreview(), setError)
-    }
+  async function value<T>(request: Promise<ProductResult<T>>): Promise<T> {
+    const result = await request
+    if (!result.ok) throw result.error
+    return result.value
   }
-
+  // Serialize buffered main requests and clicks arriving before the busy paint.
+  function perform(work: () => Promise<void>): void {
+    taskTail.current = taskTail.current.then(async () => {
+      setBusy(true)
+      setError(null)
+      try {
+        await work()
+      } catch (cause) {
+        setError(
+          typeof cause === 'object' && cause !== null && 'code' in cause
+            ? (cause as ProductError)
+            : {
+                code: 'OPERATION_FAILED',
+                message: cause instanceof Error ? cause.message : String(cause)
+              }
+        )
+      } finally {
+        setBusy(false)
+      }
+    })
+  }
   async function action<T>(
     request: Promise<ProductResult<T>>,
-    done?: (value: T) => void
+    done?: (result: T) => void
   ): Promise<boolean> {
-    setBusy(true)
-    setError(null)
-    const value = await run(request, setError)
-    if (value !== undefined) done?.(value)
-    setBusy(false)
-    return value !== undefined
+    const result = await run(request, setError)
+    if (result !== undefined) done?.(result)
+    return result !== undefined
   }
-
-  async function selectProfile(profile: ColorProfile): Promise<void> {
-    if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    const leavingProfile =
-      selected !== null && selected.id.toLowerCase() !== profile.id.toLowerCase()
-    const rollback = editing
-      ? rollbackPreview()
-      : leavingProfile
-        ? run(window.chromaShift.cancelPreview(), setError)
-        : Promise.resolve()
-    setSelectedId(profile.id)
+  async function returnToLive(): Promise<void> {
+    const profile = liveProfile(await value(window.chromaShift.getState()))
+    followingLive.current = true
+    setSelectedId(profile?.id ?? null)
     resetTo(profile)
-    setEditing(false)
-    await rollback
   }
-
-  async function selectActivation(profileId: string | null): Promise<void> {
-    if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    setBusy(true)
-    try {
-      if (editing) {
-        await rollbackPreview()
+  async function rollback(): Promise<void> {
+    if (!(await rollbackPreview())) throw new Error('The preview could not be ended. Try again.')
+    const state = await value(window.chromaShift.getState())
+    if (state.preview.state === 'active')
+      throw new Error('The preview could not be ended. Try again.')
+  }
+  async function updateProfile(): Promise<void> {
+    if (draft === null) return
+    await settlePreview()
+    const state = await value(window.chromaShift.getState())
+    if (
+      state.preview.state === 'active' &&
+      state.preview.kind === 'preview' &&
+      state.preview.profileId === draft.id
+    ) {
+      await value(
+        window.chromaShift.startPreview({ ...draft, displays: state.preview.targets }, 'edit')
+      )
+    } else if (
+      state.preview.state !== 'active' ||
+      state.preview.kind !== 'edit' ||
+      state.preview.profileId !== draft.id
+    ) {
+      await value(window.chromaShift.startPreview(draft, 'edit'))
+    }
+    await value(window.chromaShift.updatePreview(draft.id, activeColorTargets(draft)))
+    resetTo(await value(window.chromaShift.confirmPreview(draft, 'preserve')))
+  }
+  function continueAfterChanges(work: () => Promise<void>): void {
+    if (dirty) requestAnimationFrame(() => setPendingContinuation(() => work))
+    else perform(work)
+  }
+  function resolveChanges(update: boolean): void {
+    const next = pendingContinuation
+    if (next === null) return
+    perform(async () => {
+      if (update) await updateProfile()
+      else {
+        await rollback()
         resetTo(selected)
-        setEditing(false)
-      } else if (activeSession !== null) {
-        const cancelled = await run(window.chromaShift.cancelPreview(), setError)
-        if (cancelled === undefined) return
       }
-      await action(
+      setPendingContinuation(null)
+      await next()
+    })
+  }
+  async function openProfile(profile: ColorProfile): Promise<void> {
+    const before = await value(window.chromaShift.getState())
+    const keepingOverride =
+      before.preview.state === 'active' &&
+      before.preview.kind === 'override' &&
+      before.preview.profileId === profile.id
+    if (before.chromaShift.status !== 'active') await settlePreview()
+    else if (!keepingOverride) await rollback()
+    const state = await value(window.chromaShift.getState())
+    const current = state.configuration.profiles.find((item) => item.id === profile.id)
+    if (current === undefined) return
+    followingLive.current = liveProfile(state)?.id === current.id
+    setSelectedId(current.id)
+    resetTo(current)
+    setView('profiles')
+    if (shouldPreviewProfile(state, current))
+      await value(window.chromaShift.startPreview(current, 'preview'))
+  }
+  function selectProfile(profile: ColorProfile): void {
+    if (view === 'profiles' && profile.id === selected?.id && profile.id !== currentProfileId)
+      return
+    if (!dirty) {
+      followingLive.current = profile.id === currentProfileId
+      setSelectedId(profile.id)
+      resetTo(profile)
+      setView('profiles')
+    }
+    continueAfterChanges(() => openProfile(profile))
+  }
+  function selectActivation(profileId: string | null): void {
+    continueAfterChanges(async () => {
+      await rollback()
+      await value(
         profileId === null
           ? window.chromaShift.enableAutomatic()
           : window.chromaShift.activateProfile(profileId)
       )
-    } catch (cause) {
-      setError({
-        code: 'OPERATION_FAILED',
-        message: cause instanceof Error ? cause.message : String(cause)
-      })
-    } finally {
-      setBusy(false)
-    }
+      await returnToLive()
+    })
   }
-
-  async function navigate(nextView: AppPanelView): Promise<void> {
+  function navigate(nextView: AppPanelView): void {
     if (nextView === view) return
-    if (editing && dirty && !confirm('Discard the changes to this profile?')) return
-    const rollback = editing
-      ? rollbackPreview()
-      : view === 'profiles'
-        ? rollbackExplicitPreview()
-        : Promise.resolve()
-    resetTo(selected)
-    setEditing(false)
-    setView(nextView)
-    await rollback
+    if (!dirty) setView(nextView)
+    continueAfterChanges(async () => {
+      if (view === 'profiles' && temporaryOverride === null) await rollback()
+      await returnToLive()
+      setView(nextView)
+    })
   }
-
-  // Layout effects apply a request that preload buffered while this renderer was
-  // still starting before the first paint, instead of flashing the remembered view.
+  // Main's buffered navigation and profile requests win over initial selection.
   useLayoutEffect(() => {
-    window.chromaShift.onAppPanelNavigation((nextView) => void navigate(nextView))
+    window.chromaShift.onAppPanelNavigation(navigate)
   })
-
   useLayoutEffect(() => {
     window.chromaShift.onAppPanelProfileSelection((profileId) => {
       const profile = product.configuration.profiles.find(
-        (candidate) => candidate.id.toLowerCase() === profileId.toLowerCase()
+        (item) => item.id.toLowerCase() === profileId.toLowerCase()
       )
-      if (profile === undefined) return
-      setView('profiles')
-      void selectProfile(profile)
+      if (profile !== undefined) selectProfile(profile)
     })
   })
-
   useEffect(() => {
     window.chromaShift.onAppPanelClosed(() => {
-      if (!editing) return
-      const rollback = rollbackPreview()
-      resetTo(selected)
-      setEditing(false)
-      void rollback
+      invalidateSync()
+      setPendingContinuation(null)
+      perform(async () => {
+        if (temporaryOverride === null) await rollback()
+        await returnToLive()
+      })
     })
   })
-
-  async function beginEdit(profile: ColorProfile | null = selected): Promise<void> {
-    if (profile === null) return
-    const changingProfile = selected?.id !== profile.id
-    const promotingPreview =
-      !changingProfile &&
-      activeSession?.kind === 'preview' &&
-      activeSession.profileId.toLowerCase() === profile.id.toLowerCase()
-    if (changingProfile && editing && dirty && !confirm('Discard the changes to this profile?')) {
-      return
-    }
-    const rollback = editing
-      ? rollbackPreview()
-      : activeSession?.kind === 'preview' && !promotingPreview
-        ? run(window.chromaShift.cancelPreview(), setError)
-        : Promise.resolve()
-    invalidateSync()
-    setSelectedId(profile.id)
-    resetTo(profile)
-    setEditing(true)
-    await rollback
-    if (promotingPreview) {
-      const result = await window.chromaShift.startPreview(profile, 'edit')
-      if (!result.ok) setError(result.error)
-    }
+  function endPreview(): void {
+    continueAfterChanges(async () => {
+      await rollback()
+      await returnToLive()
+    })
   }
-
-  async function previewProfile(profile: ColorProfile): Promise<void> {
-    const changingProfile = selected?.id !== profile.id
-    if (changingProfile && editing && dirty && !confirm('Discard the changes to this profile?')) {
-      return
-    }
-    const rollback = editing
-      ? rollbackPreview()
-      : changingProfile
-        ? run(window.chromaShift.cancelPreview(), setError)
-        : Promise.resolve()
-    setSelectedId(profile.id)
-    resetTo(profile)
-    setEditing(false)
-    await rollback
-    await action(
-      activeSession?.kind === 'preview' && activeSession.profileId === profile.id
-        ? window.chromaShift.cancelPreview()
-        : window.chromaShift.startPreview(profile, 'preview')
-    )
-  }
-
-  async function cancelEdit(): Promise<void> {
-    const rollback = rollbackPreview()
-    resetTo(selected)
-    setEditing(false)
-    await rollback
-  }
-
   function requestProfileDeletion(profile: ColorProfile): void {
-    // Let the Chakra menu close and restore focus to its trigger before opening
-    // the modal dialog. The trigger may disappear after deletion succeeds.
-    requestAnimationFrame(() => setProfilePendingDeletion(profile))
+    continueAfterChanges(async () => {
+      requestAnimationFrame(() => setProfilePendingDeletion(profile))
+    })
   }
-
   function confirmProfileDeletion(): void {
     const profile = profilePendingDeletion
     if (profile === null) return
-    void action(window.chromaShift.deleteProfile(profile.id), () => {
-      const deletedProfileWasSelected = selected?.id.toLowerCase() === profile.id.toLowerCase()
-      if (deletedProfileWasSelected) {
-        invalidateSync()
-        setSelectedId(DEFAULT_ID)
-        resetTo(null)
-        setEditing(false)
-      }
+    perform(async () => {
+      await rollback()
+      await value(window.chromaShift.deleteProfile(profile.id))
       setProfilePendingDeletion(null)
+      await returnToLive()
     })
   }
-
   function toggleProfileEnabled(profile: ColorProfile): void {
-    const enabled = !profile.enabled
-    const binding = product.settings.shortcutBindings.find(
-      (candidate) =>
-        candidate.action.kind === 'profile' &&
-        candidate.action.profileId.toLowerCase() === profile.id.toLowerCase()
-    )
-    const removeShortcut = !enabled && binding !== undefined
-    if (
-      removeShortcut &&
-      !confirm(
-        `This will remove the ${formatShortcutAccelerator(binding.accelerator)} shortcut from "${profile.name}". Continue?`
+    continueAfterChanges(async () => {
+      const state = await value(window.chromaShift.getState())
+      const current = state.configuration.profiles.find((item) => item.id === profile.id)
+      if (current === undefined) return
+      if (current.id === selectedId) followingLive.current = false
+      const binding = state.settings.shortcutBindings.find(
+        (item) =>
+          item.action.kind === 'profile' &&
+          item.action.profileId.toLowerCase() === current.id.toLowerCase()
       )
-    ) {
-      return
-    }
-    void action(window.chromaShift.saveProfile({ ...profile, enabled }, removeShortcut))
+      if (current.enabled && binding !== undefined)
+        requestAnimationFrame(() =>
+          setPendingDisable({
+            profile: current,
+            accelerator: formatShortcutAccelerator(binding.accelerator)
+          })
+        )
+      else await value(window.chromaShift.saveProfile({ ...current, enabled: !current.enabled }))
+    })
   }
-
+  function createProfile(copy?: ColorProfile): void {
+    continueAfterChanges(async () => {
+      await rollback()
+      const profile = await value(
+        copy === undefined
+          ? window.chromaShift.createProfile('New profile')
+          : window.chromaShift.duplicateProfile(copy.id)
+      )
+      await openProfile(profile)
+    })
+  }
   const savedProfile = draft ?? selected
-  // A temporary override replaces the saved values on the displays it touched, so
-  // the read-only view shows what is actually applied right now.
   const shownProfile =
-    !editing &&
+    !dirty &&
     temporaryOverride !== null &&
     savedProfile !== null &&
     temporaryOverride.profileId === savedProfile.id
       ? applyOverrideTargets(savedProfile, temporaryOverride.targets)
       : savedProfile
-
-  const inSettings = view !== 'profiles'
-  const currentProfileId =
-    product.chromaShift.intendedTarget?.kind === 'profile'
-      ? product.chromaShift.intendedTarget.profileId
-      : null
-
+  const showPreviewBanner =
+    view === 'profiles' &&
+    product.chromaShift.status === 'active' &&
+    activeSession !== null &&
+    activeSession.kind !== 'override' &&
+    shownProfile !== null &&
+    shownProfile.id !== currentProfileId
   const OverrideBanner = () => {
     return temporaryOverride !== null ? (
       <Flex
@@ -307,7 +324,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         <CircleAlert />
         <Stack flex="1" gap="0">
           <Heading overflow="hidden" size="lg" textOverflow="ellipsis" whiteSpace="nowrap">
-            You have temporary overrides on{' '}
+            You have unsaved changes on{' '}
             {product.configuration.profiles.find(
               (profile) => profile.id === temporaryOverride.profileId
             )?.name ?? 'profile'}
@@ -328,7 +345,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           variant={'subtle'}
           onClick={() => void action(window.chromaShift.cancelPreview())}
         >
-          Reset changes
+          Discard changes
         </Button>
         <Button
           size={'xs'}
@@ -357,6 +374,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   return (
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
       <TitleBar
+        onShowMiniPanel={() =>
+          continueAfterChanges(async () => {
+            if (temporaryOverride === null) await rollback()
+            await returnToLive()
+            await value(window.chromaShift.showMiniPanel())
+          })
+        }
         brandAccessory={
           <Tooltip content={chromaShiftActionLabel(product)}>
             <Button
@@ -375,12 +399,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               disabled={product.chromaShift.transitionInProgress}
               loading={product.chromaShift.transitionInProgress}
               aria-label={chromaShiftActionLabel(product)}
-              onClick={() =>
-                void run(
-                  window.chromaShift.controlChromaShift(chromaShiftAction(product)),
-                  setError
-                )
-              }
+              onClick={() => {
+                const control = async (): Promise<void> => {
+                  if (product.chromaShift.status === 'active') await rollback()
+                  await value(window.chromaShift.controlChromaShift(chromaShiftAction(product)))
+                  if (!dirty) await returnToLive()
+                }
+                if (product.chromaShift.status === 'active') continueAfterChanges(control)
+                else perform(control)
+              }}
             >
               <Power size={14} />
               Status:{' '}
@@ -394,6 +421,49 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         }
       />
       <OverrideBanner />
+      {showPreviewBanner && shownProfile !== null && (
+        <Flex
+          data-part="preview-banner"
+          mx="2.5"
+          p="3"
+          gap="3"
+          align="center"
+          rounded="lg"
+          bg="colorPalette.subtle"
+          color="fg"
+          colorPalette="blue"
+        >
+          <Stack flex="1" minW="0" gap="0">
+            <Text fontWeight="medium" truncate>
+              ◉ Previewing {shownProfile.name}
+            </Text>
+            <Text color="fg.muted" fontSize="sm">
+              Automatic would use: {automaticProfileName(product)}
+            </Text>
+          </Stack>
+          <Button
+            size="xs"
+            disabled={busy}
+            onClick={() => {
+              if (!shownProfile.enabled) {
+                toggleProfileEnabled(shownProfile)
+                return
+              }
+              perform(async () => {
+                if (dirty) await updateProfile()
+                else await rollback()
+                await value(window.chromaShift.activateProfile(shownProfile.id))
+                await returnToLive()
+              })
+            }}
+          >
+            {shownProfile.enabled ? 'Use this profile' : 'Enable'}
+          </Button>
+          <Button size="xs" variant="outline" disabled={busy} onClick={endPreview}>
+            End preview
+          </Button>
+        </Flex>
+      )}
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
           <Alert.Indicator />
@@ -422,7 +492,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             shortcutBindings={product.settings.shortcutBindings}
             selectedId={shownProfile?.id ?? null}
             currentId={currentProfileId}
-            editingProfileId={editing ? (shownProfile?.id ?? null) : null}
+            dirtyProfileId={dirty ? (shownProfile?.id ?? null) : null}
             previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
             mode={product.chromaShift.intendedMode}
             controlStatus={product.chromaShift.status}
@@ -430,23 +500,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             collapsed={sidebarCollapsed}
             onCollapsedChange={setSidebarCollapsed}
             onSelect={(profile) => void selectProfile(profile)}
-            onCreate={() =>
-              void action(window.chromaShift.createProfile('New profile'), (profile) => {
-                setSelectedId(profile.id)
-                replaceDraft(profile)
-                setEditing(true)
-              })
-            }
-            onSelectionChange={(profileId) => void selectActivation(profileId)}
-            onOpenSettings={() => void navigate('settings')}
-            onEdit={(profile) => void beginEdit(profile)}
-            onPreview={(profile) => void previewProfile(profile)}
-            onDuplicate={(profile) =>
-              void action(window.chromaShift.duplicateProfile(profile.id), (copy) => {
-                setSelectedId(copy.id)
-                replaceDraft(copy)
-              })
-            }
+            onCreate={() => createProfile()}
+            onSelectionChange={selectActivation}
+            onOpenSettings={() => navigate('settings')}
+            onDuplicate={createProfile}
             onToggleEnabled={toggleProfileEnabled}
             onDelete={requestProfileDeletion}
             onReorder={async (profileIds, interactionId) => {
@@ -476,39 +533,22 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 <ProfileDetail
                   profile={shownProfile}
                   product={product}
-                  editing={editing}
                   busy={busy}
                   dirty={dirty}
-                  previewing={
-                    activeSession?.kind === 'preview' && activeSession.profileId === shownProfile.id
-                  }
-                  onEdit={() => void beginEdit()}
-                  onChange={(profile) => updateDraft(profile)}
-                  onCancel={() => void cancelEdit()}
-                  onSave={() =>
-                    void action(
-                      activeSession?.kind === 'edit'
-                        ? window.chromaShift.confirmPreview(shownProfile, 'preserve')
-                        : window.chromaShift.saveProfile(shownProfile),
-                      (saved) => {
-                        resetTo(saved)
-                        setEditing(false)
-                      }
-                    )
-                  }
-                  onPreview={() =>
-                    void action(
-                      activeSession?.kind === 'preview'
-                        ? window.chromaShift.cancelPreview()
-                        : window.chromaShift.startPreview(shownProfile, 'preview')
-                    )
-                  }
-                  onCopy={() =>
-                    void action(window.chromaShift.duplicateProfile(shownProfile.id), (copy) => {
-                      setSelectedId(copy.id)
-                      replaceDraft(copy)
+                  onChange={updateDraft}
+                  onCancel={() =>
+                    perform(async () => {
+                      await rollback()
+                      await returnToLive()
                     })
                   }
+                  onSave={() =>
+                    perform(async () => {
+                      await updateProfile()
+                      await returnToLive()
+                    })
+                  }
+                  onCopy={() => createProfile(shownProfile)}
                   onDelete={() => requestProfileDeletion(shownProfile)}
                   onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
                   onError={setError}
@@ -523,6 +563,35 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           {view === 'about' && <AboutPanel version={product.version} />}
         </Flex>
       </Flex>
+      <ProfileActionDialog
+        open={pendingContinuation !== null}
+        title={`${shownProfile?.name ?? 'Profile'} has unsaved changes`}
+        description="Update or discard them before continuing."
+        primaryLabel="Update profile"
+        busy={busy}
+        onPrimary={() => resolveChanges(true)}
+        onDiscard={() => resolveChanges(false)}
+        onCancel={() => setPendingContinuation(null)}
+      />
+      <ProfileActionDialog
+        open={pendingDisable !== null}
+        title={`Disable ${pendingDisable?.profile.name ?? 'profile'}?`}
+        description={`Its shortcut ${pendingDisable?.accelerator ?? ''} will be removed.`}
+        primaryLabel="Disable"
+        danger
+        busy={busy}
+        onPrimary={() => {
+          const pending = pendingDisable
+          if (pending === null) return
+          perform(async () => {
+            await value(
+              window.chromaShift.saveProfile({ ...pending.profile, enabled: false }, true)
+            )
+            setPendingDisable(null)
+          })
+        }}
+        onCancel={() => setPendingDisable(null)}
+      />
       <DeleteProfileDialog
         profile={profilePendingDeletion}
         busy={busy}

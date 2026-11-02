@@ -19,6 +19,34 @@ const profile: ColorProfile = {
 }
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
+it('promotes a clicked preview before applying edits without restoring or recapturing', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const controller = new PreviewSessionController(native, {
+    beginPreview: async () => undefined,
+    cancelPreview: async () => undefined,
+    confirmPreview: async () => undefined
+  }, () => undefined)
+  const sync = new PreviewSyncSession({
+    startPreview: async (draft, kind) => { await controller.start(draft, kind); return ok },
+    updatePreview: async (id, targets) => { await controller.update(id, targets); return ok },
+    cancelPreview: async () => { await controller.cancel(); return ok }
+  }, 'edit', () => undefined)
+  // Sidebar navigation settles the previous draft before starting the clicked
+  // profile outside the draft synchronizer.
+  await sync.rollback()
+  await controller.start(profile, 'preview')
+  const clicked = controller.state
+  const changed = structuredClone(profile)
+  changed.displays[0]!.color.brightness = 61
+  sync.schedule(changed, clicked)
+  await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+  expect(controller.state).toMatchObject({ kind: 'edit', targets: [{ color: { brightness: 61 } }] })
+  expect(native.captured).toEqual(['display:abc'])
+  expect(native.restored).toEqual([])
+  expect(native.applied.map((entry) => entry.settings.brightness)).toEqual([84, 61])
+})
+
 it.each(['pending', 'completed'] as const)(
   'restarts an override edited with a stale session after %s rollback',
   async (timing) => {
