@@ -189,8 +189,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = manualActivationMode(profileId)
       this.#state.intendedTarget = target
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#statusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -220,8 +219,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = automaticActivationMode
       this.#state.intendedTarget = null
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#statusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {

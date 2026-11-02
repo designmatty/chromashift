@@ -256,7 +256,65 @@ describe('ChromaShiftController resume and intent', () => {
     expect(controller.chromaShiftState.status).toBe('active')
   })
 
-  it('resumes Paused control for an explicit profile selection', async () => {
+  it.each(['manual', 'shortcut'] as const)(
+    'keeps display control Paused for an explicit %s profile selection',
+    async (source) => {
+      const { activation, controller, persisted, refreshTopology } = create(new FakeActivation(), {
+        status: 'paused',
+        pendingOperation: null,
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      })
+
+      const result = await controller.selectManualProfile('accurate', source)
+
+      expect(activation.calls).toEqual(['intent:accurate'])
+      expect(refreshTopology).not.toHaveBeenCalled()
+      expect(result).toMatchObject({
+        status: 'skipped',
+        source,
+        origin: 'statusControl',
+        resolution: { target: { kind: 'profile', profileId: 'accurate' } }
+      })
+      expect(controller.chromaShiftState).toMatchObject({
+        status: 'paused',
+        pendingOperation: null,
+        transitionInProgress: false
+      })
+      expect(persisted.at(-1)).toEqual({
+        status: 'paused',
+        pendingOperation: null,
+        intendedMode: manualActivationMode('accurate'),
+        intendedTarget: { kind: 'profile', profileId: 'accurate' }
+      })
+    }
+  )
+
+  it.each(['manual', 'shortcut'] as const)(
+    'keeps display control Paused for %s Automatic selection',
+    async (source) => {
+      const { activation, controller, persisted } = create(new FakeActivation(), {
+        status: 'paused',
+        pendingOperation: null,
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      })
+
+      const result = await controller.enableAutomatic(source)
+
+      expect(activation.calls).toEqual(['intent:automatic'])
+      expect(controller.chromaShiftState.status).toBe('paused')
+      expect(result).toMatchObject({ status: 'skipped', source, origin: 'statusControl' })
+      expect(persisted.at(-1)).toEqual({
+        status: 'paused',
+        pendingOperation: null,
+        intendedMode: { kind: 'automatic' },
+        intendedTarget: null
+      })
+    }
+  )
+
+  it('resumes the selection made while Paused', async () => {
     const { activation, controller } = create(new FakeActivation(), {
       status: 'paused',
       pendingOperation: null,
@@ -264,15 +322,18 @@ describe('ChromaShiftController resume and intent', () => {
       intendedTarget: { kind: 'profile', profileId: 'gaming' }
     })
 
-    await controller.selectManualProfile('accurate', 'shortcut')
+    await controller.selectManualProfile('accurate', 'manual')
+    await controller.resume('manual')
 
-    expect(activation.calls).toContain('intent:accurate')
-    expect(activation.calls).toContain('resume')
-    expect(controller.chromaShiftState.status).toBe('active')
+    expect(activation.calls).toEqual(['intent:accurate', 'intent:accurate', 'resume'])
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'active',
+      intendedTarget: { kind: 'profile', profileId: 'accurate' }
+    })
   })
 
   it('updates Intended target during Safety block without applying it', async () => {
-    const { activation, controller } = create(new FakeActivation(), {
+    const { activation, controller, persisted } = create(new FakeActivation(), {
       status: 'safetyBlocked',
       pendingOperation: 'pause',
       intendedMode: manualActivationMode('gaming'),
@@ -285,6 +346,38 @@ describe('ChromaShiftController resume and intent', () => {
     expect(controller.chromaShiftState).toMatchObject({
       status: 'safetyBlocked',
       intendedTarget: { kind: 'profile', profileId: 'accurate' }
+    })
+    expect(persisted.at(-1)).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'pause',
+      intendedMode: manualActivationMode('accurate'),
+      intendedTarget: { kind: 'profile', profileId: 'accurate' }
+    })
+  })
+
+  it('updates Automatic intent during Safety block without bypassing it', async () => {
+    const { activation, controller, refreshTopology, persisted } = create(new FakeActivation(), {
+      status: 'safetyBlocked',
+      pendingOperation: 'resume',
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+
+    await controller.enableAutomatic('shortcut')
+
+    expect(activation.calls).toEqual(['intent:automatic'])
+    expect(refreshTopology).not.toHaveBeenCalled()
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'resume',
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: null
+    })
+    expect(persisted.at(-1)).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'resume',
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: null
     })
   })
 
