@@ -61,14 +61,15 @@ targets remain persisted and resume when the same physical display returns.
 
 - The sidebar profile selector chooses Automatic mode or an enabled profile
   manually. Automatic shows its resolved profile name; available shortcuts are
-  shown alongside each option. Navigating to a profile does not activate it.
+  shown alongside each option. Sidebar profile clicks preview without changing
+  the activation mode.
 - Profile availability is Enabled or Disabled. Navigation marks the intended
   selection as Current while display control is Active, Will resume while
   Paused, or Pending while Safety blocked. Explicit selection resumes a user
   pause but never bypasses a safety block.
 - The Status action pauses, resumes, or retries display control independently
   of profile navigation and availability.
-- Every connected display appears as a tab in edit and read-only modes. The
+- Every connected display appears as a tab in the always-editable profile view. The
   selected physical display persists across profiles and restarts.
 - Selection falls back to the first display with saved settings, then the primary display,
   then the first connected display. Tabs scroll horizontally when needed.
@@ -77,12 +78,26 @@ targets remain persisted and resume when the same physical display returns.
 - Every selected tab shows its color values without a display-level override
   checkbox. A connected display without saved settings starts from the neutral
   values, and the first change creates its complete display target.
-- Read-only mode uses the same controls and layout with inputs disabled and edit
-  commands hidden.
+- Opening the app selects the Intended target's profile, or Default, and scrolls
+  it into view. Non-profile views remain remembered; profile requests from main win.
+- Clicking a profile previews its saved values unless it is already live. Empty
+  profiles open without a native preview; the first color change creates targets.
+  Disabled profiles remain openable, previewable, and editable.
+- While Paused or Safety blocked, profile clicks show values without applying
+  them. Inputs are disabled and a Resume action remains available.
+- The first change promotes Preview to Edit in place before applying the draft.
+  The header and sidebar mark unsaved changes with a bullet. `Update profile`
+  commits the complete draft while preserving mode; `Discard changes` rolls back.
+  A renderer dialog offers Update, Discard, or Cancel before leaving unsaved
+  changes through profile selection, activation selection, or navigation.
+- A subtle preview banner names the previewed profile and the automatic target.
+  `Use this profile` selects it manually; disabled profiles offer `Enable`.
+  `End preview`, selecting the live profile, closing, or minimizing ends preview
+  and returns the editor to the live profile. Focus loss leaves preview active.
 - The established brightness, contrast, gamma, saturation, and hue controls keep
   their existing row layout. Their icons replace the former per-control enabled
   checkboxes. Unsupported controls stay disabled and explain their unavailable
-  state, while a non-neutral value can still be reset in Edit. Color temperature
+  state, while a non-neutral value can still be reset while editing. Color temperature
   is not surfaced in the profile or mini-panel editor.
 - Brightness changes clamp gamma immediately. The gamma number input adopts the
   new bounds, and its slider shows disallowed lower or upper track portions.
@@ -95,10 +110,12 @@ targets remain persisted and resume when the same physical display returns.
 
 ## Preview and mini-panel behavior
 
-One preview session can touch several display targets. Cancel, session reset,
-navigation, or failure restores the exact previous automatic or manual target
-after pending writes finish. Save persists the complete draft. Preview has no
-countdown.
+One preview session can touch several display targets. Clicking an app-panel
+profile starts Preview; its first change promotes the unchanged session to Edit
+without restoring or recapturing. Draft changes then apply immediately and remain
+unsaved until `Update profile`. `Discard changes`, navigation, or failure waits
+for pending writes and restores the prior automatic or manual target. Preview
+holds automatic writes while remembering foreground changes and has no countdown.
 
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete

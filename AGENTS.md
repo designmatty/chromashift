@@ -105,10 +105,13 @@ manual override
 - Version persistence changes and provide explicit fixtures. Never reset or
   overwrite invalid user configuration silently.
 
-Preview is user-controlled and has no countdown. Cancel, reset, navigation away,
-or failure must wait for pending writes and restore the exact prior automatic or
-manual target. Save keeps the edited result. Entering Edit from an unchanged
-same-profile preview promotes the existing session without a restore or recapture.
+Preview is user-controlled and has no countdown. Clicking an app-panel profile
+starts Preview without changing activation mode; the first change promotes the
+unchanged session to Edit without restore or recapture. Update profile commits
+unsaved changes while preserving mode. Discard changes, navigation away, or
+failure waits for pending writes and restores the prior automatic or manual
+target. End preview, selecting the live profile, closing, or minimizing returns
+the editor to the live profile. Focus loss does not end Preview.
 
 See `docs/core-domain.md` and `docs/per-display-profile-settings.md` for the full
 current contract.
