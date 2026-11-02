@@ -247,10 +247,16 @@ function saveMiniPanelPosition(position: { x: number; y: number }): void {
     })
 }
 
+/** The theme preference resolved against Windows, shared with renderer loading screens. */
+function resolvedColorScheme(): 'dark' | 'light' {
+  const theme = settingsStores.preferences.current.theme
+  return theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
+    ? 'dark'
+    : 'light'
+}
+
 function titleBarOverlayOptions(): { color: string; symbolColor: string; height: number } {
-  const dark =
-    settingsStores.preferences.current.theme === 'dark' ||
-    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  const dark = resolvedColorScheme() === 'dark'
   return {
     color: dark ? '#111114' : '#f1f1f3',
     symbolColor: dark ? '#f1f1f3' : '#111114',
@@ -259,9 +265,7 @@ function titleBarOverlayOptions(): { color: string; symbolColor: string; height:
 }
 
 function appPanelBackgroundColor(): string {
-  const dark =
-    settingsStores.preferences.current.theme === 'dark' ||
-    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  const dark = resolvedColorScheme() === 'dark'
   return dark ? '#111114' : '#f1f1f3'
 }
 
@@ -390,9 +394,11 @@ function createWindow(): BrowserWindow {
   window.on('maximize', () => appWindowStateController.schedule(window))
   window.on('unmaximize', () => appWindowStateController.schedule(window))
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void window.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void window.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?theme=${resolvedColorScheme()}`)
   } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
+    void window.loadFile(join(__dirname, '../renderer/index.html'), {
+      query: { theme: resolvedColorScheme() }
+    })
   }
   return window
 }
@@ -460,9 +466,13 @@ function createMiniWindow(): BrowserWindow {
     if (!isSameDocumentNavigation(panel.webContents.getURL(), url)) event.preventDefault()
   })
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void panel.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?panel=mini`)
+    void panel.loadURL(
+      `${process.env['ELECTRON_RENDERER_URL']}?panel=mini&theme=${resolvedColorScheme()}`
+    )
   } else {
-    void panel.loadFile(join(__dirname, '../renderer/index.html'), { query: { panel: 'mini' } })
+    void panel.loadFile(join(__dirname, '../renderer/index.html'), {
+      query: { panel: 'mini', theme: resolvedColorScheme() }
+    })
   }
   return panel
 }
@@ -510,9 +520,7 @@ async function applicationIconDataUrl(executablePath: string): Promise<string | 
 }
 
 function miniPanelHeightAdjustment(): number {
-  const dark =
-    settingsStores.preferences.current.theme === 'dark' ||
-    (settingsStores.preferences.current.theme === 'system' && nativeTheme.shouldUseDarkColors)
+  const dark = resolvedColorScheme() === 'dark'
   return dark ? 0 : 6
 }
 
