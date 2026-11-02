@@ -58,7 +58,7 @@ export function CenterState({
       color="fg.muted"
       aria-busy={busy || undefined}
       role={role}
-      bg={'bg.panel'}
+      bg={'bg.subtle'}
     >
       {busy && <Spinner size="md" borderWidth="2px" color="fg" />}
       {title !== undefined && (
