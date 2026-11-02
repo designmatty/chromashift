@@ -72,8 +72,8 @@ targets remain persisted and resume when the same physical display returns.
   profile manually. Mode changes use the existing unsaved-changes
   dialog. The collapsed 40px rail shows the same toggle as A | M, with the active
   mode highlighted. Both sizes have full labels and tooltips; Automatic includes
-  its configured shortcut. Staying Paused when changing mode depends on #71's
-  controller change; this renderer calls the existing APIs.
+  its configured shortcut. Changing mode or selecting a profile while Paused updates persisted intent
+  and stays Paused. Selection never bypasses a safety block.
 - Profile availability is Enabled or Disabled. The live row subtitle is
   `Live · Automatic` or `Live · Manual` while Active, `Paused · <mode>` while
   Paused, and `Blocked · <mode>` while Safety blocked. Its ring uses the live
