@@ -314,10 +314,12 @@ export class PreviewSessionController {
 
   public async cancelNonOverride(): Promise<void> {
     return this.#enqueue(async () => {
-      if (this.#active !== null && this.#active.kind !== 'override') {
-        const rollback = await this.#teardown()
-        if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
-      }
+      if (this.#active === null || this.#active.kind === 'override') return
+      const rollback = await this.#restoreTouched()
+      // Closing must remain retryable. Keep the session and automatic-write
+      // suspension until restoration succeeds, just as while previewing.
+      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      await this.#endSession(rollback)
     })
   }
 
@@ -387,13 +389,17 @@ export class PreviewSessionController {
   async #teardown(): Promise<RestoreTouchedResult> {
     if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
     const rollback = await this.#restoreTouched()
+    await this.#endSession(rollback)
+    return rollback
+  }
+
+  async #endSession(rollback: RestoreTouchedResult): Promise<void> {
     this.#active = null
     try {
       await this.activation.cancelPreview(rollback.retainedDisplayIds)
     } finally {
       this.onStateChanged(this.state)
     }
-    return rollback
   }
 
   async #restoreTouched(): Promise<RestoreTouchedResult> {

@@ -37,7 +37,9 @@ The TypeScript and native test suites cover these contracts:
   changes, duplicate suppression after success, per-display failures, retry,
   disconnected targets, HDR deferral, and topology reapply
 - Preview start, update, promotion, save, rollback after pending writes, dirty
-  navigation, mini-panel overrides, per-control neutral reset, and target removal
+  navigation, mini-panel overrides, per-control neutral reset, target removal,
+  close-time restoration before renderer release, visible failure guidance and
+  retries, and disconnected/HDR baseline retention without a restore failure
 - Physical-display grouping, safe capability intersection, endpoint fanout,
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path

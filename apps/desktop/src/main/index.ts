@@ -22,6 +22,7 @@ import { NativeClient } from '@chromashift/native-client'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '@shared/layout.js'
 import { productIpcChannels, type AppPanelView } from '@shared/product-api.js'
 import { AppWindowStateController } from '@main/app-window-state-controller.js'
+import { AppPanelCloseController } from '@main/app-panel-close-controller.js'
 import { createSettingsStores } from '@main/app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
 import { ElectronNotificationPort } from '@main/electron-notification.js'
@@ -193,18 +194,7 @@ const runtime = createProductRuntime({
       })
       return result.response === 0 ? 'update' : result.response === 1 ? 'discard' : 'cancel'
     },
-    confirmShutdownRetry: async (title, message) => {
-      const result = await dialog.showMessageBox({
-        type: 'warning',
-        title,
-        message,
-        buttons: ['Try again', 'Keep ChromaShift running'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true
-      })
-      return result.response === 0 ? 'retry' : 'cancel'
-    },
+    confirmShutdownRetry: confirmRestoreRetry,
     warnShortcutsUnavailable: (message) => {
       void dialog.showMessageBox({
         type: 'warning',
@@ -269,6 +259,19 @@ function saveMiniPanelPosition(position: { x: number; y: number }): void {
         ...describeError(error)
       })
     })
+}
+
+async function confirmRestoreRetry(title: string, message: string): Promise<'retry' | 'cancel'> {
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    title,
+    message,
+    buttons: ['Try again', 'Keep ChromaShift running'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  })
+  return result.response === 0 ? 'retry' : 'cancel'
 }
 
 /** The theme preference resolved against Windows, shared with renderer loading screens. */
@@ -386,28 +389,27 @@ function createWindow(): BrowserWindow {
   window.webContents.on('will-navigate', (event, url) => {
     if (!isSameDocumentNavigation(window.webContents.getURL(), url)) event.preventDefault()
   })
-  window.on('close', (event) => {
-    appWindowStateController.flush(window)
-    const wasExiting = runtime.shutdownCoordinator?.exiting === true
-    if (!wasExiting && settingsStores.preferences.current.closeBehavior === 'shutdown') {
-      event.preventDefault()
+  const closeController = new AppPanelCloseController({
+    isExiting: () => runtime.shutdownCoordinator?.exiting === true,
+    closeBehavior: () => settingsStores.preferences.current.closeBehavior,
+    isDestroyed: () => window.isDestroyed(),
+    flushWindowState: () => appWindowStateController.flush(window),
+    requestShutdown: () => {
       void runtime.shutdownCoordinator?.request('application')
-      return
-    }
-    if (!wasExiting) {
-      window.webContents.send(productIpcChannels.appPanelClosed)
-      void runtime.previewController?.cancelNonOverride().catch((error: unknown) => {
-        logger.write({
-          level: 'warning',
-          eventName: 'PreviewCancelOnCloseFailed',
-          ...describeError(error)
-        })
-      })
-    }
-    windowController.handleClose(event, window)
-    if (!wasExiting) {
-      logger.write({ level: 'information', eventName: 'MainWindowReleasedToTray' })
-    }
+    },
+    cancelNonOverride: () => runtime.previewController?.cancelNonOverride() ?? Promise.resolve(),
+    notifyClosed: () => window.webContents.send(productIpcChannels.appPanelClosed),
+    releaseToTray: (event) => windowController.handleClose(event, window),
+    errors: {
+      show: () => panelController.openAppPanel(),
+      showError: confirmRestoreRetry
+    },
+    logger
+  })
+  window.on('close', (event) => {
+    void closeController.handleClose(event).catch((error: unknown) => {
+      logger.write({ level: 'error', eventName: 'AppPanelCloseFailed', ...describeError(error) })
+    })
   })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
