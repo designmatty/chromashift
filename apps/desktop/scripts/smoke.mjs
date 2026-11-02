@@ -606,6 +606,26 @@ async function selectProfileMenuItem(debuggerClient, profileName, itemText) {
   })
 }
 
+// Main passes the resolved theme in the window URL so loading screens are themed
+// before product state arrives; it must agree with the theme the app applies.
+async function expectLoadingThemeMatchesApp(debuggerClient, surface) {
+  const theme = await debuggerClient.send('Runtime.evaluate', {
+    expression: `({
+      requested: new URLSearchParams(location.search).get('theme'),
+      dark: document.documentElement.classList.contains('dark'),
+      light: document.documentElement.classList.contains('light')
+    })`,
+    returnByValue: true
+  })
+  const { requested, dark, light } = theme.result.value ?? {}
+  if ((requested !== 'dark' && requested !== 'light') || dark === light) {
+    throw new Error(`The ${surface} had no resolved loading theme: ${JSON.stringify(theme.result.value)}`)
+  }
+  if ((requested === 'dark') !== dark) {
+    throw new Error(`The ${surface} loading theme did not match the app theme: ${JSON.stringify(theme.result.value)}`)
+  }
+}
+
 // Fixed title-bar coordinates can land on the App view toggle at some window
 // widths, so park the synthetic pointer in the main panel's empty corner.
 async function movePointerToEmptyArea(debuggerClient) {
@@ -1026,6 +1046,7 @@ async function runSmoke() {
     `document.visibilityState === 'visible'`,
     'The mini panel was not visible after the app panel handed off to it.'
   )
+  await expectLoadingThemeMatchesApp(miniDebugger, 'mini panel')
   // The app renderer was released when the mini panel opened, so this request
   // reaches a renderer that starts from scratch and last showed Profiles.
   await miniDebugger.send('Runtime.evaluate', {
@@ -1050,6 +1071,7 @@ async function runSmoke() {
     `document.querySelector('[data-part="settings-nav"] [aria-label="General"][aria-current="page"]') !== null`,
     'Open settings from the mini panel did not open Settings in a recreated app renderer.'
   )
+  await expectLoadingThemeMatchesApp(recreatedAppDebugger, 'app panel')
   await recreatedAppDebugger.send('Runtime.evaluate', {
     expression: `window.chromaShift.openAppPanel('profiles')`,
     awaitPromise: true
