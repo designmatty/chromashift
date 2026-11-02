@@ -64,8 +64,9 @@ targets remain persisted and resume when the same physical display returns.
   shown alongside each option. Navigating to a profile does not activate it.
 - Profile availability is Enabled or Disabled. Navigation marks the intended
   selection as Current while display control is Active, Will resume while
-  Paused, or Pending while Safety blocked. Explicit selection resumes a user
-  pause but never bypasses a safety block.
+  Paused, or Pending while Safety blocked. Explicit selection while Paused
+  updates the intended selection but stays Paused, and it never bypasses a
+  safety block.
 - The Status action pauses, resumes, or retries display control independently
   of profile navigation and availability.
 - Every connected display appears as a tab in edit and read-only modes. The

@@ -220,7 +220,11 @@ must all succeed before the new bindings are persisted, otherwise the last valid
 set is restored. Profile bindings follow profile rename, disable, and deletion;
 disabling a bound profile requires explicit confirmation that names the binding.
 The fixed emergency-restore accelerator is reserved outside configurable
-bindings and appears as a read-only Safety action in Shortcut settings.
+bindings and appears as a read-only Safety action in Shortcut settings. It
+restores through automatic activation directly, with no renderer required. A
+confirmed emergency restore then enters Paused through the Restore original
+settings path, keeping the intent captured before the restore; a failed one is
+logged as critical, shows an error dialog, and leaves display control unchanged.
 Notification wording is derived from completed activation outcomes and
 distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
 and no-op results. Clicking a profile notification opens that profile in the app
@@ -231,10 +235,12 @@ Pause suspends new writes, waits for in-flight activation, restores every owned
 baseline, and enters Paused only after full restoration. An incomplete restore
 fails closed into Safety blocked. Resume re-resolves the latest foreground app
 and applies the preserved intended mode and target. Explicit profile or Automatic
-selection resumes a user pause; during a safety block it updates intent without
-bypassing the required retry. Safety blocked persists whether the interrupted
-operation was Pause or Resume so retry completes the correct operation. One-shot
-Restore original settings leaves display control Active and preserves intent.
+selection updates intent without resuming: a user pause stays Paused, and a
+safety block still requires its retry. Safety blocked persists whether the
+interrupted operation was Pause or Resume so retry completes the correct
+operation. Restore original settings runs the Pause path with its own
+notification wording, so it ends Paused after full restoration (or Safety
+blocked when incomplete) and preserves intent for Resume.
 
 The system tray reads the same activation and display-control state, supports
 manual profile overrides, returns to automatic mode, restores original settings,
