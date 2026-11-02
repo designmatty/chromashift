@@ -390,6 +390,15 @@ export class ProductRuntime {
     const emergencyRestoreController = new EmergencyRestoreController(
       previewController,
       automaticActivation,
+      {
+        prepareRestore: () => {
+          // Direct restoration replaces activation's live target with baseline;
+          // capture the resume intent before its state/outcome subscriptions run.
+          const { intendedMode, intendedTarget } = chromaShiftController.chromaShiftState
+          return () =>
+            chromaShiftController.restoreBaseline('shortcut', { intendedMode, intendedTarget })
+        }
+      },
       logger
     )
     if (
