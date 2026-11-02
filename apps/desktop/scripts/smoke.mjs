@@ -1111,6 +1111,18 @@ const neutralColorSettings = {
 }
 
 let standardOutput = ''
+
+function countLogMatches(pattern) {
+  return (standardOutput.match(pattern) ?? []).length
+}
+
+async function waitForLogCount(pattern, previousCount, failureMessage) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (countLogMatches(pattern) <= previousCount) {
+    if (Date.now() >= deadline) throw new Error(failureMessage)
+    await delay(100)
+  }
+}
 let standardError = ''
 const electron = spawn(
   electronPath,
@@ -2634,6 +2646,7 @@ async function runSmoke() {
   const priorEmergencyRestoreCount = (
     standardOutput.match(/"eventName":"EmergencyRestoreCompleted"/g) ?? []
   ).length
+  const priorRestoredNotificationCount = countLogMatches(/"title":"Original settings restored"/g)
   await pressEmergencyRestoreShortcut()
   const emergencyRestoreDeadline = Date.now() + timeoutMilliseconds
   while (
@@ -2652,22 +2665,38 @@ async function runSmoke() {
       guardedBaselines.get(display.id)
     )
   }
-  const priorNotificationCount = (
-    standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
-  ).length
+  // A confirmed emergency restore leaves display control Paused (contract C3).
+  await waitForLogCount(
+    /"title":"Original settings restored"/g,
+    priorRestoredNotificationCount,
+    'The emergency restore did not report that ChromaShift is paused.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+       const result = await window.chromaShift.getState()
+       return result.ok && result.value.chromaShift.status === 'paused' &&
+         !result.value.chromaShift.transitionInProgress
+    })()`,
+    'The emergency restore did not leave display control Paused.'
+  )
   await closeMainWindow(electron.pid)
   await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
+  // Renderer-free Toggle: resume from the emergency pause, then pause again.
+  const priorActiveNotificationCount = countLogMatches(/"title":"ChromaShift active"/g)
   await pressToggleShortcut()
-  const shortcutDeadline = Date.now() + timeoutMilliseconds
-  while (
-    (standardOutput.match(/"eventName":"ProfileNotificationRequested"/g) ?? []).length <=
-    priorNotificationCount
-  ) {
-    if (Date.now() >= shortcutDeadline) {
-      throw new Error('The renderer-free toggle shortcut did not request a native notification.')
-    }
-    await delay(100)
-  }
+  await waitForLogCount(
+    /"title":"ChromaShift active"/g,
+    priorActiveNotificationCount,
+    'The renderer-free toggle shortcut did not resume ChromaShift.'
+  )
+  const priorPausedNotificationCount = countLogMatches(/"title":"ChromaShift paused"/g)
+  await pressToggleShortcut()
+  await waitForLogCount(
+    /"title":"ChromaShift paused"/g,
+    priorPausedNotificationCount,
+    'The renderer-free toggle shortcut did not pause ChromaShift.'
+  )
   const priorEvents = debuggerClient.events
   const reopen = spawn(electronPath, [`--user-data-dir=${userDataDirectory}`, '.'], {
     cwd: desktopDirectory,
@@ -3152,14 +3181,41 @@ async function runSmoke() {
       [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Paused · Manual')`,
     'Paused display control was presented as a current applied profile.'
   )
-  // Stay-Paused mode selection is covered by prerequisite #71, not this renderer PR.
+  await selectActivationOption(debuggerClient, 'Automatic')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'paused' &&
+        !result.value.chromaShift.transitionInProgress &&
+        result.value.chromaShift.intendedMode.kind === 'automatic'
+    })()`,
+    'Selecting Automatic while Paused resumed display control or lost the selection.'
+  )
+  await selectActivationOption(debuggerClient, 'Default profile')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'paused' &&
+        !result.value.chromaShift.transitionInProgress &&
+        result.value.chromaShift.intendedMode.kind === 'manual' &&
+        result.value.chromaShift.intendedMode.profileId === 'default'
+    })()`,
+    'Selecting a manual profile while Paused resumed display control or lost the selection.'
+  )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="chromashift-control"][data-status="active"]') !== null`,
-    'Explicit Resume did not restore Active display control.'
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.chromaShift.status === 'active' &&
+        result.value.activation.mode.kind === 'manual' &&
+        result.value.activation.mode.profileId === 'default'
+    })()`,
+    'Resume did not apply the profile selected while Paused.'
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()`
