@@ -178,6 +178,11 @@ export class ChromaShiftController {
     )
   }
 
+  /**
+   * Selects a manual profile. While Paused or Safety blocked, only the Intended
+   * target and mode change; display control stays where it is until the user
+   * resumes it or a safety retry succeeds.
+   */
   public async selectManualProfile(
     profileId: string,
     source: ActivationSource = 'manual'
@@ -189,8 +194,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = manualActivationMode(profileId)
       this.#state.intendedTarget = target
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#statusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -211,6 +215,7 @@ export class ChromaShiftController {
     return outcome
   }
 
+  /** Selects Automatic mode. While Paused or Safety blocked, only the intent changes. */
   public async enableAutomatic(
     source: ActivationSource = 'manual'
   ): Promise<CompletedActivationOutcome> {
@@ -220,8 +225,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = automaticActivationMode
       this.#state.intendedTarget = null
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#statusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
