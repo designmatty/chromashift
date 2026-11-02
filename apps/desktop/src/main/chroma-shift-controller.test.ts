@@ -239,6 +239,115 @@ describe('ChromaShiftController pause safety', () => {
 })
 
 describe('ChromaShiftController resume and intent', () => {
+  it.each(['manual', 'automatic'] as const)(
+    'keeps a newer Active %s selection instead of the stale emergency snapshot',
+    async (selection) => {
+      const { controller, activation, persisted } = create()
+      const snapshot = controller.chromaShiftState
+      if (selection === 'manual') {
+        await controller.selectManualProfile('accurate')
+      } else {
+        activation.enableAutomatic = async () => {
+          activation.state = {
+            ...activation.state,
+            mode: { kind: 'automatic' },
+            currentTarget: { kind: 'profile', profileId: 'gaming' }
+          }
+          return outcome()
+        }
+        await controller.enableAutomatic()
+      }
+      const newer = controller.chromaShiftState
+      await controller.restoreBaseline('shortcut', snapshot)
+      expect(persisted.at(-1)).toMatchObject({
+        status: 'paused',
+        intendedMode: newer.intendedMode,
+        intendedTarget: newer.intendedTarget
+      })
+    }
+  )
+
+  it('keeps a newer Automatic target when the mode matches the emergency snapshot', async () => {
+    const { controller, activation, persisted } = create(new FakeActivation(), {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+    const snapshot = controller.chromaShiftState
+    activation.state = { ...activation.state, mode: { kind: 'automatic' } }
+    await controller.recordCompletedOutcome(outcome({ kind: 'profile', profileId: 'accurate' }))
+    await controller.restoreBaseline('shortcut', snapshot)
+    expect(persisted.at(-1)).toMatchObject({
+      status: 'paused',
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'accurate' }
+    })
+  })
+
+  it('coalesces Pause with a held resume while Restore waits, then finishes Paused', async () => {
+    const { controller, refreshTopology, activation } = create(new FakeActivation(), {
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    refreshTopology.mockImplementationOnce(async () => {
+      await waiting
+      return { baselines: [{ ownership: 'owned' }] }
+    })
+    const resuming = controller.resume('manual')
+    const restoring = controller.restoreBaseline()
+    const pausing = controller.pause('manual')
+    expect(pausing).toBe(resuming)
+    release()
+    await Promise.all([resuming, restoring, pausing])
+    expect(activation.calls.filter((call) => call === 'restore')).toHaveLength(1)
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'paused',
+      pendingOperation: null,
+      transitionInProgress: false
+    })
+  })
+
+  it.each(['paused', 'safetyBlocked'] as const)(
+    'publishes only shortcut selection feedback while Paused, starting %s',
+    async (status) => {
+      const { controller } = create(new FakeActivation(), {
+        status,
+        pendingOperation: status === 'paused' ? null : 'pause',
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      })
+      const published: CompletedActivationOutcome[] = []
+      controller.subscribeOperationalOutcomes((value) => published.push(value))
+      await controller.selectManualProfile('accurate', 'manual')
+      await controller.enableAutomatic('manual')
+      expect(published).toEqual([])
+      await controller.selectManualProfile('accurate', 'shortcut')
+      await controller.enableAutomatic('shortcut')
+      expect(published).toMatchObject(
+        status === 'paused'
+          ? [
+              {
+                origin: 'statusControl',
+                source: 'shortcut',
+                pausedSelection: manualActivationMode('accurate')
+              },
+              {
+                origin: 'statusControl',
+                source: 'shortcut',
+                pausedSelection: { kind: 'automatic' }
+              }
+            ]
+          : []
+      )
+    }
+  )
   it('pauses after Original settings restoration and preserves the Intended target', async () => {
     const { activation, controller, persisted, cancelPreview } = create()
     const operationalOutcomes: CompletedActivationOutcome[] = []

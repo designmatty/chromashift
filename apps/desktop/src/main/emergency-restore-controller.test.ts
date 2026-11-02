@@ -16,6 +16,62 @@ function restoreOutcome(overrides: Partial<ActivationOutcome> = {}): ActivationO
 }
 
 describe('EmergencyRestoreController', () => {
+  it('resolves after direct restoration and accepts a new press while the Paused follow-up waits', async () => {
+    let release!: (outcome: ActivationOutcome) => void
+    const followUp = new Promise<ActivationOutcome>((resolve) => {
+      release = resolve
+    })
+    const restoreBaseline = vi.fn(async () => restoreOutcome())
+    const events: StructuredLogEvent[] = []
+    const controller = new EmergencyRestoreController(
+      { dispose: async () => undefined },
+      { restoreBaseline },
+      { prepareRestore: () => () => followUp },
+      { write: (event) => events.push(event) }
+    )
+    try {
+      await expect(controller.request()).resolves.toBe(true)
+      await expect(controller.request()).resolves.toBe(true)
+      expect(restoreBaseline).toHaveBeenCalledTimes(2)
+      expect(
+        events.filter((event) => event.eventName === 'EmergencyRestorePauseCompleted')
+      ).toEqual([])
+    } finally {
+      release(restoreOutcome())
+    }
+    await vi.waitFor(() =>
+      expect(
+        events.filter((event) => event.eventName === 'EmergencyRestorePauseCompleted')
+      ).toHaveLength(2)
+    )
+  })
+
+  it.each([
+    restoreOutcome({ status: 'failed' }),
+    restoreOutcome({ status: 'partialFailure' }),
+    restoreOutcome({ deferredDisplayIds: ['display:one'] })
+  ])(
+    'logs an incomplete Paused follow-up without failing the confirmed emergency restore: %j',
+    async (outcome) => {
+      const events: StructuredLogEvent[] = []
+      const controller = new EmergencyRestoreController(
+        { dispose: async () => undefined },
+        { restoreBaseline: async () => restoreOutcome() },
+        { prepareRestore: () => async () => outcome },
+        { write: (event) => events.push(event) }
+      )
+      await expect(controller.request()).resolves.toBe(true)
+      await vi.waitFor(() =>
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            level: 'error',
+            eventName: 'EmergencyRestorePauseCompleted',
+            status: outcome.status
+          })
+        )
+      )
+    }
+  )
   it('tears down preview state before restoring and coalesces concurrent shortcuts', async () => {
     const calls: string[] = []
     let release!: () => void
@@ -40,6 +96,7 @@ describe('EmergencyRestoreController', () => {
           calls.push('prepare')
           return async () => {
             calls.push('pause')
+            return restoreOutcome()
           }
         }
       },
@@ -59,7 +116,7 @@ describe('EmergencyRestoreController', () => {
     ['a partial', restoreOutcome({ status: 'partialFailure' })],
     ['a deferred', restoreOutcome({ deferredDisplayIds: ['display:one'] })]
   ])('does not pause display control after %s restore', async (_label, outcome) => {
-    const pauseAfterRestore = vi.fn(() => Promise.resolve())
+    const pauseAfterRestore = vi.fn(() => Promise.resolve(restoreOutcome()))
     const events: StructuredLogEvent[] = []
     const controller = new EmergencyRestoreController(
       { dispose: () => Promise.resolve() },
@@ -77,7 +134,7 @@ describe('EmergencyRestoreController', () => {
   })
 
   it('does not pause display control when the emergency restore throws', async () => {
-    const pauseAfterRestore = vi.fn(() => Promise.resolve())
+    const pauseAfterRestore = vi.fn(() => Promise.resolve(restoreOutcome()))
     const events: StructuredLogEvent[] = []
     const controller = new EmergencyRestoreController(
       { dispose: () => Promise.resolve() },
@@ -107,7 +164,11 @@ describe('EmergencyRestoreController', () => {
 
     expect(events).toMatchObject([
       { eventName: 'EmergencyRestoreCompleted', restored: true },
-      { level: 'error', eventName: 'EmergencyRestorePauseFailed', message: 'Settings write failed.' }
+      {
+        level: 'error',
+        eventName: 'EmergencyRestorePauseFailed',
+        message: 'Settings write failed.'
+      }
     ])
   })
 
