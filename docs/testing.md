@@ -42,7 +42,7 @@ The TypeScript and native test suites cover these contracts:
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
   persistence, including atomic writes and concurrent update queues
-- Pause, Resume, Safety blocked, one-shot restore, emergency restore,
+- Pause, Resume, Safety blocked, restore-and-pause, emergency restore,
   notification policy, global-shortcut replacement, tray commands, and
   renderer-free operation
 - Main-process composition, startup buffering, helper handshake and heartbeat,
