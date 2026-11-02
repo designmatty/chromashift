@@ -3,6 +3,7 @@ import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core
 import type { ProductState } from '@shared/product-api'
 import {
   automaticProfileName,
+  emptyPreviewMessage,
   liveProfile,
   shouldPreviewProfile
 } from '@/features/profiles/app-preview-state'
@@ -53,12 +54,42 @@ describe('app preview selection', () => {
   it.each(['paused', 'safetyBlocked'] as const)('never previews while %s', (status) => {
     expect(shouldPreviewProfile(state(status), profiles[1]!)).toBe(false)
   })
-  it('names the intended rollback target rather than the currently focused app', () => {
+  it('resolves automatic B while manually using A and browsing preview C', () => {
     const product = state()
-    expect(automaticProfileName(product)).toBe('Default profile')
-    product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'GAME' }
+    product.chromaShift.intendedMode = { kind: 'manual', profileId: 'default' }
+    product.foregroundApplication = {
+      pid: 1,
+      executable: 'GAME.exe',
+      path: null,
+      title: 'Game',
+      monitorDeviceName: null
+    }
+    const preview = { ...profiles[1]!, id: 'c', name: 'Preview C', applications: [] }
+    product.configuration = { ...product.configuration, profiles: [...profiles, preview] }
+    expect(shouldPreviewProfile(product, preview)).toBe(true)
     expect(automaticProfileName(product)).toBe('Game')
-    product.chromaShift.intendedTarget = { kind: 'baseline' }
+    expect(liveProfile(product)?.id).toBe('default')
+  })
+  it('falls back to Default and then Original settings without a foreground match', () => {
+    const product = state()
+    product.chromaShift.intendedMode = { kind: 'manual', profileId: 'game' }
+    product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'game' }
+    expect(automaticProfileName(product)).toBe('Default profile')
+    product.configuration = { ...product.configuration, settings: { defaultProfileId: null } }
     expect(automaticProfileName(product)).toBe('Original settings')
+  })
+  it('explains empty-target browsing without starting a native preview', () => {
+    const product = state()
+    product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'game' }
+    expect(shouldPreviewProfile(product, profiles[0]!)).toBe(false)
+    expect(emptyPreviewMessage(product, profiles[0]!)).toBe(
+      'No display settings saved — your displays keep Game until you change a value.'
+    )
+    product.chromaShift.intendedTarget = { kind: 'baseline' }
+    expect(emptyPreviewMessage(product, { ...profiles[1]!, displays: [] })).toBe(
+      'No display settings saved — your displays keep their current settings until you change a value.'
+    )
+    expect(emptyPreviewMessage(product, profiles[0]!)).toBe(null)
+    expect(emptyPreviewMessage(state('paused'), { ...profiles[1]!, displays: [] })).toBe(null)
   })
 })

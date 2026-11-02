@@ -81,7 +81,11 @@ targets remain persisted and resume when the same physical display returns.
 - Opening the app selects the Intended target's profile, or Default, and scrolls
   it into view. Non-profile views remain remembered; profile requests from main win.
 - Clicking a profile previews its saved values unless it is already live. Empty
-  profiles open without a native preview; the first color change creates targets.
+  profiles show the preview banner and End preview without native restore/apply,
+  with the line "No display settings saved — your displays keep <live profile name
+  or 'their current settings'> until you change a value." The first color change
+  creates that display's complete target and starts Edit. This exception is pending
+  product-owner decision on baseline-only preview.
   Disabled profiles remain openable, previewable, and editable.
 - While Paused or Safety blocked, profile clicks show values without applying
   them. Inputs are disabled and a Resume action remains available.
