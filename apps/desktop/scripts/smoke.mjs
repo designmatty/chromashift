@@ -337,17 +337,42 @@ try {
 
 async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemText) {
   await debuggerClient.send('Page.bringToFront')
+  // Earlier pointer-driven checks can leave the synthetic pointer over a control
+  // whose hover tooltip stays open. Then return to keyboard modality, because
+  // tooltips open on focus only for keyboard focus. Modifier-only keys do not
+  // count, and Escape also closes any stale tooltip.
+  await movePointerToEmptyArea(debuggerClient)
+  for (const type of ['keyDown', 'keyUp']) {
+    await debuggerClient.send('Input.dispatchKeyEvent', {
+      type,
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27
+    })
+  }
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       window.focus()
       document.activeElement instanceof HTMLElement && document.activeElement.blur()
     })()`
   })
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[role="tooltip"]') === null`,
-    `The previous tooltip did not close before checking ${triggerLabel}.`
-  )
+  try {
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[role="tooltip"]') === null`,
+      `The previous tooltip did not close before checking ${triggerLabel}.`
+    )
+  } catch (error) {
+    const open = await debuggerClient.send('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('[role="tooltip"]')].map((tooltip) => ({
+        text: tooltip.textContent,
+        state: tooltip.getAttribute('data-state'),
+        active: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName
+      }))`,
+      returnByValue: true
+    })
+    throw new Error(`${error.message} Open tooltips: ${JSON.stringify(open.result.value)}`)
+  }
   const focused = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const trigger = document.querySelector(${JSON.stringify(`[aria-label="${triggerLabel}"]`)})
@@ -578,6 +603,28 @@ async function selectProfileMenuItem(debuggerClient, profileName, itemText) {
       return [...(content?.querySelectorAll('[role="menuitem"]') ?? [])]
         .find((candidate) => candidate.textContent?.trim() === ${JSON.stringify(itemText)})?.click()
     })()`
+  })
+}
+
+// Fixed title-bar coordinates can land on the App view toggle at some window
+// widths, so park the synthetic pointer in the main panel's empty corner.
+async function movePointerToEmptyArea(debuggerClient) {
+  const point = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const panel = document.querySelector('[data-part="main-panel"]')
+      if (!(panel instanceof HTMLElement)) return null
+      const bounds = panel.getBoundingClientRect()
+      return { x: bounds.right - 8, y: bounds.bottom - 8 }
+    })()`,
+    returnByValue: true
+  })
+  if (point.result.value === null) {
+    throw new Error('The main panel was unavailable for pointer parking.')
+  }
+  await debuggerClient.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: point.result.value.x,
+    y: point.result.value.y
   })
 }
 
@@ -979,8 +1026,10 @@ async function runSmoke() {
     `document.visibilityState === 'visible'`,
     'The mini panel was not visible after the app panel handed off to it.'
   )
+  // The app renderer was released when the mini panel opened, so this request
+  // reaches a renderer that starts from scratch and last showed Profiles.
   await miniDebugger.send('Runtime.evaluate', {
-    expression: `window.chromaShift.openAppPanel('profiles')`,
+    expression: `window.chromaShift.openAppPanel('settings')`,
     awaitPromise: true
   })
   await waitForExpression(
@@ -996,6 +1045,15 @@ async function runSmoke() {
   await recreatedAppDebugger.send('Runtime.enable')
   await recreatedAppDebugger.send('Page.enable')
   await recreatedAppDebugger.send('Log.enable')
+  await waitForExpression(
+    recreatedAppDebugger,
+    `document.querySelector('[data-part="settings-nav"] [aria-label="General"][aria-current="page"]') !== null`,
+    'Open settings from the mini panel did not open Settings in a recreated app renderer.'
+  )
+  await recreatedAppDebugger.send('Runtime.evaluate', {
+    expression: `window.chromaShift.openAppPanel('profiles')`,
+    awaitPromise: true
+  })
   await waitForUi(recreatedAppDebugger)
   await focusNativeApp(electron.pid)
   await waitForExpression(
@@ -1283,7 +1341,7 @@ async function runSmoke() {
   })
   await waitForText(
     debuggerClient,
-    'Shortcuts continue to work while ChromaShift runs in the background'
+    'Shortcuts work while ChromaShift runs in the background'
   )
   await waitForExpression(
     debuggerClient,
@@ -1384,11 +1442,7 @@ async function runSmoke() {
 
   await verifyTooltipMenuTrigger(debuggerClient, 'Profile actions', 'Edit')
 
-  await debuggerClient.send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved',
-    x: 500,
-    y: 10
-  })
+  await movePointerToEmptyArea(debuggerClient)
   await waitForExpression(
     debuggerClient,
     `getComputedStyle(document.querySelector('[data-part="profile-item"][data-selected] [data-part="profile-actions-trigger"] svg')).opacity === '0'`,
@@ -1400,11 +1454,7 @@ async function runSmoke() {
     `getComputedStyle(document.querySelector('[data-part="profile-item"][data-selected] [data-part="profile-actions-trigger"] svg')).opacity === '1'`,
     'Hovering a profile did not reveal its actions trigger.'
   )
-  await debuggerClient.send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved',
-    x: 500,
-    y: 10
-  })
+  await movePointerToEmptyArea(debuggerClient)
   await waitForExpression(
     debuggerClient,
     `getComputedStyle(document.querySelector('[data-part="profile-item"][data-selected] [data-part="profile-actions-trigger"] svg')).opacity === '0'`,
