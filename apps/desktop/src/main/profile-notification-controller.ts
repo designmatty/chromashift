@@ -103,7 +103,7 @@ export class ProfileNotificationController {
       }
       return {
         title: 'Original settings restored',
-        body: 'ChromaShift remains active.',
+        body: 'ChromaShift is paused.',
         severity: 'information',
         urgency: 'normal'
       }

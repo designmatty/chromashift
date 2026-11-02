@@ -9,7 +9,7 @@ import {
   type ServiceHealth,
   type SystemInfo
 } from '@chromashift/native-client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { UserPreferences } from '@shared/product-api.js'
 import {
   defaultChromaShiftIntent,
@@ -22,6 +22,7 @@ import {
   type ProductRuntimePorts
 } from '@main/product-runtime.js'
 import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
+import type { TrayCommands } from '@main/tray-controller.js'
 import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
 
 class RecordingLogger implements StructuredLogger {
@@ -117,6 +118,9 @@ async function createHarness(
   logger: RecordingLogger
   trayMenusCreated: () => number
   intent: () => ChromaShiftIntent
+  emergencyRestore: () => void
+  trayCommands: () => TrayCommands
+  errors: Array<{ title: string; message: string }>
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-runtime-'))
   directories.push(directory)
@@ -144,6 +148,9 @@ async function createHarness(
   let preferences: UserPreferences = { ...defaultUserPreferences }
   let intent: ChromaShiftIntent = { ...defaultChromaShiftIntent, ...intentOverrides }
   let trayMenus = 0
+  let emergencyHandler: (() => void) | undefined
+  let trayCommands: TrayCommands | undefined
+  const errors: Array<{ title: string; message: string }> = []
   const ports: ProductRuntimePorts = {
     logger,
     configuration: {
@@ -178,7 +185,9 @@ async function createHarness(
       createTrayMenu: () => {
         trayMenus += 1
         return Promise.resolve({
-          update: () => undefined,
+          update: (_model, commands) => {
+            trayCommands = commands
+          },
           showError: () => undefined,
           destroy: () => undefined
         })
@@ -186,7 +195,9 @@ async function createHarness(
       broadcastProductState: () => undefined
     },
     dialogs: {
-      showError: () => undefined,
+      showError: (title, message) => {
+        errors.push({ title, message })
+      },
       confirmShutdownRetry: () => Promise.resolve('cancel'),
       warnShortcutsUnavailable: () => undefined,
       pickApplicationFile: () => Promise.resolve(null)
@@ -196,7 +207,10 @@ async function createHarness(
       application: { exit: () => undefined },
       shortcutRegistrations: { register: () => true, unregister: () => undefined },
       powerMonitor: { on: () => undefined, off: () => undefined },
-      registerEmergencyRestoreShortcut: () => true,
+      registerEmergencyRestoreShortcut: (handler) => {
+        emergencyHandler = handler
+        return true
+      },
       onDisplayEvent: () => undefined
     },
     notifications: { isSupported: () => false, show: () => undefined }
@@ -206,7 +220,10 @@ async function createHarness(
     client,
     logger,
     trayMenusCreated: () => trayMenus,
-    intent: () => intent
+    intent: () => intent,
+    emergencyRestore: () => emergencyHandler!(),
+    trayCommands: () => trayCommands!,
+    errors
   }
 }
 
@@ -436,4 +453,114 @@ describe('profile reorder activation', () => {
       }
     }
   )
+})
+
+describe('product runtime display-control wiring', () => {
+  const restorableIntent: Partial<ChromaShiftIntent> = {
+    chromaShiftStatus: 'active',
+    intendedActivationMode: { kind: 'manual', profileId: 'default' },
+    intendedTarget: { kind: 'profile', profileId: 'default' }
+  }
+
+  it('pauses after a successful emergency restore without a renderer', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      expect(harness.client.captured).toEqual(['display:one'])
+      await harness.runtime.productController!.activateProfile('default')
+
+      harness.emergencyRestore()
+
+      await vi.waitFor(() => expect(harness.intent().chromaShiftStatus).toBe('paused'))
+      expect(harness.intent()).toMatchObject({
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'manual', profileId: 'default' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      expect(harness.client.calls.some((call) => call.operation === 'restoreAll')).toBe(true)
+      expect(harness.errors).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('keeps status and reports the existing failure when an emergency restore fails', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      harness.client.failRestoreAllDisplayIds.add('display:one')
+
+      harness.emergencyRestore()
+
+      await vi.waitFor(() => expect(harness.errors).toHaveLength(1))
+      expect(harness.errors[0]?.title).toBe('Emergency restore failed')
+      expect(harness.logger.has('EmergencyRestoreCompleted')).toBe(true)
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'active',
+        pendingControlOperation: null
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('pauses after the tray restores original settings', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      harness.trayCommands().resetBaseline()
+
+      await vi.waitFor(() => expect(harness.intent().chromaShiftStatus).toBe('paused'))
+      expect(harness.intent()).toMatchObject({
+        pendingControlOperation: null,
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('pauses after the Displays page restores original settings', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      await harness.runtime.productController!.restoreBaseline()
+
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('keeps display control Paused when a profile or Automatic is selected', async () => {
+    const harness = await createHarness({
+      ...restorableIntent,
+      chromaShiftStatus: 'paused'
+    })
+    await harness.runtime.start()
+    try {
+      const product = harness.runtime.productController!
+      await product.enableAutomatic()
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: null
+      })
+
+      await product.activateProfile('default')
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        intendedActivationMode: { kind: 'manual', profileId: 'default' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      expect(harness.client.applied).toEqual([])
+      expect(harness.client.captured).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
 })

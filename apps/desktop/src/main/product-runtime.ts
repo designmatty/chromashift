@@ -390,6 +390,13 @@ export class ProductRuntime {
     const emergencyRestoreController = new EmergencyRestoreController(
       previewController,
       automaticActivation,
+      {
+        prepareRestore: () => {
+          const { intendedMode, intendedTarget } = chromaShiftController.chromaShiftState
+          return () =>
+            chromaShiftController.restoreBaseline('shortcut', { intendedMode, intendedTarget })
+        }
+      },
       logger
     )
     if (
