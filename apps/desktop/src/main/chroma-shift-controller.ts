@@ -289,7 +289,13 @@ export class ChromaShiftController {
   ): Promise<CompletedActivationOutcome> {
     if (preservedIntent === undefined) {
       this.#rememberActiveIntent()
-    } else {
+    } else if (
+      sameMode(this.#state.intendedMode, preservedIntent.intendedMode) &&
+      (sameTarget(this.#state.intendedTarget, preservedIntent.intendedTarget) ||
+        this.#state.intendedTarget?.kind === 'baseline')
+    ) {
+      // Direct emergency restoration can replace the live target with baseline.
+      // Any other intent change belongs to a newer selection and must survive.
       this.#state.intendedMode = { ...preservedIntent.intendedMode }
       this.#state.intendedTarget = cloneTarget(preservedIntent.intendedTarget)
     }
@@ -458,6 +464,21 @@ function restorationComplete(outcome: CompletedActivationOutcome): boolean {
 
 function cloneTarget(target: ActivationTarget | null): ActivationTarget | null {
   return target === null ? null : { ...target }
+}
+
+function sameMode(left: ActivationMode, right: ActivationMode): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind !== 'manual' || (right.kind === 'manual' && left.profileId === right.profileId))
+  )
+}
+
+function sameTarget(left: ActivationTarget | null, right: ActivationTarget | null): boolean {
+  if (left === null || right === null) return left === right
+  return (
+    left.kind === right.kind &&
+    (left.kind !== 'profile' || (right.kind === 'profile' && left.profileId === right.profileId))
+  )
 }
 
 function clonePersisted(state: ChromaShiftInitialState): ChromaShiftPersistedState {
