@@ -10,7 +10,8 @@ export interface PreviewSyncPort {
   startPreview(profile: ColorProfile, kind: PreviewSyncKind): Promise<ProductResult<null>>
   updatePreview(
     profileId: string,
-    targets: ReturnType<typeof activeColorTargets>
+    targets: ReturnType<typeof activeColorTargets>,
+    draft?: ColorProfile
   ): Promise<ProductResult<null>>
   cancelPreview(): Promise<ProductResult<null>>
 }
@@ -56,7 +57,7 @@ export class PreviewSyncSession {
         if (
           this.kind === 'edit' &&
           session.state === 'active' &&
-          session.kind === 'preview' &&
+          session.kind !== 'edit' &&
           session.profileId === draft.id
         ) {
           if (this.#promotedProfileId !== draft.id) {
@@ -69,7 +70,7 @@ export class PreviewSyncSession {
           }
           this.#needsStart = false
           const updated = await run(
-            this.port.updatePreview(draft.id, activeColorTargets(draft)),
+            this.port.updatePreview(draft.id, activeColorTargets(draft), draft),
             this.onError
           )
           if (updated !== undefined) this.onError(null)
@@ -81,7 +82,7 @@ export class PreviewSyncSession {
           session.kind === this.kind &&
           session.profileId === draft.id
         const request = joinsCurrentSession
-          ? this.port.updatePreview(draft.id, activeColorTargets(draft))
+          ? this.port.updatePreview(draft.id, activeColorTargets(draft), draft)
           : this.port.startPreview(draft, this.kind)
         const result = await run(request, this.onError)
         if (result !== undefined && generation === this.#generation) {

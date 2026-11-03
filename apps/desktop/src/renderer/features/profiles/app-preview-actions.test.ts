@@ -20,6 +20,7 @@ function fixture() {
   let preview: PreviewState = {
     state: 'active',
     kind: 'override',
+    unsavedChanges: true,
     profileId: profile.id,
     targets: profile.displays
   }
@@ -28,7 +29,13 @@ function fixture() {
     getState: async () => ({ ok: true as const, value: { preview } as ProductState }),
     startPreview: async (draft: ColorProfile, kind: 'edit' | 'override') => {
       calls.push('start')
-      preview = { state: 'active', kind, profileId: draft.id, targets: draft.displays }
+      preview = {
+        state: 'active',
+        kind,
+        profileId: draft.id,
+        targets: draft.displays,
+        unsavedChanges: true
+      }
       return ok
     },
     updatePreview: async (_id: string, targets: ColorProfile['displays']) => {

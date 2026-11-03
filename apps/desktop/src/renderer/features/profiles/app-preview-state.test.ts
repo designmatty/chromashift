@@ -6,6 +6,7 @@ import {
   liveProfile,
   shouldPreviewProfile
 } from '@/features/profiles/app-preview-state'
+import { appSessionDraft, shouldEndPreviewOnMinimize } from '@/features/profiles/app-preview-state'
 
 const profiles: ColorProfile[] = [
   { id: 'default', name: 'Default profile', enabled: true, applications: [], displays: [] },
@@ -33,6 +34,31 @@ function state(
   }
 }
 describe('app preview selection', () => {
+  it('hydrates the editor with a mini-panel override and preserves it on minimize', () => {
+    const saved = profiles[1]!
+    const draft = structuredClone(saved)
+    draft.displays[0]!.color.saturation = 80
+    const preview: ProductState['preview'] = {
+      state: 'active',
+      kind: 'override',
+      profileId: saved.id,
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+    const product = { ...state(), preview } as ProductState
+    expect(appSessionDraft(product)).toEqual(draft)
+    expect(shouldEndPreviewOnMinimize(false, preview)).toBe(false)
+    expect(shouldEndPreviewOnMinimize(true, { ...preview, kind: 'edit' })).toBe(false)
+    expect(shouldEndPreviewOnMinimize(true, { state: 'inactive' })).toBe(false)
+    expect(
+      shouldEndPreviewOnMinimize(false, { ...preview, kind: 'preview', unsavedChanges: false })
+    ).toBe(true)
+    expect(
+      shouldEndPreviewOnMinimize(false, { ...preview, kind: 'edit', unsavedChanges: false })
+    ).toBe(true)
+  })
+
   it('opens the intended profile, with Default as the original-settings fallback', () => {
     const product = state()
     product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'GAME' }

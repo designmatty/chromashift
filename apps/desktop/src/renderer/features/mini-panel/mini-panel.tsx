@@ -42,6 +42,7 @@ import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
 import type { ProductError, ProductState } from '@shared/product-api.js'
+import { autoSwitchingOnHold } from '@shared/unsaved-changes.js'
 
 const DEFAULT_ID = 'default'
 const AUTOMATIC_ID = '__automatic__'
@@ -228,7 +229,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 void rollbackPreview()
               }}
             >
-              Reset changes
+              Discard changes
             </Button>
             <Button
               variant="subtle"
@@ -474,7 +475,13 @@ function MiniPanelTitleBar({
       css={{ WebkitAppRegion: 'drag' }}
     >
       <Brand compact />
-      <Tooltip content={chromaShiftActionLabel(product)}>
+      <Tooltip
+        content={
+          autoSwitchingOnHold(product)
+            ? 'Auto-switching on hold — unsaved changes'
+            : chromaShiftActionLabel(product)
+        }
+      >
         <IconButton
           data-part="chromashift-control"
           data-status={product.chromaShift.status}
@@ -483,12 +490,15 @@ function MiniPanelTitleBar({
           ml="1"
           colorPalette={
             product.chromaShift.status === 'active'
-              ? 'green'
+              ? autoSwitchingOnHold(product)
+                ? 'yellow'
+                : 'green'
               : product.chromaShift.status === 'safetyBlocked'
                 ? 'red'
                 : 'gray'
           }
           css={{ WebkitAppRegion: 'no-drag' }}
+          color="colorPalette.fg"
           disabled={product.chromaShift.transitionInProgress}
           loading={product.chromaShift.transitionInProgress}
           onClick={() =>

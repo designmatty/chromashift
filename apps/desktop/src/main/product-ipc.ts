@@ -291,7 +291,7 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async (request) => {
-      await controller().updatePreview(request.profileId, request.targets)
+      await controller().updatePreview(request.profileId, request.targets, request.draft)
       return null
     }
   )

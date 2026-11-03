@@ -3,11 +3,10 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
-import {
-  PreviewSyncSession,
-  PREVIEW_SYNC_DEBOUNCE_MS
-} from '@/features/profiles/preview-sync.js'
+import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
 import type { ProductError, ProductResult } from '@shared/product-api.js'
+import type { ProductState } from '@shared/product-api.js'
+import { commitAppPreview } from '@/features/profiles/app-preview-actions.js'
 
 const profile: ColorProfile = {
   id: 'gaming',
@@ -20,46 +19,118 @@ const profile: ColorProfile = {
 }
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
+it('commitAppPreview promotes the matching override without native calls before confirmation', async () => {
+  const native = new FakeNativeDisplayPort(0, [
+    testDisplay('display:abc'),
+    testDisplay('display:other')
+  ])
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => ['display:abc', 'display:other'],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const saved = structuredClone(profile)
+  saved.displays[0]!.color.brightness = 50
+  await controller.start(profile, 'override', saved)
+  const before = native.calls.length
+  await commitAppPreview(profile, async () => undefined, {
+    getState: async () => ({ ok: true, value: { preview: controller.state } as ProductState }),
+    startPreview: async (draft, kind) => {
+      await controller.start(draft, kind, saved)
+      return ok
+    },
+    updatePreview: async (id, targets, draft) => {
+      await controller.update(id, targets, draft)
+      return ok
+    },
+    confirmPreview: async (draft, activation) => {
+      expect(activation).toBe('preserve')
+      expect(controller.state).toMatchObject({ kind: 'edit', draft, unsavedChanges: true })
+      expect(native.calls).toHaveLength(before)
+      return { ok: true, value: draft }
+    }
+  })
+})
+
 it('app rollback reports PreviewRestoreError even when teardown has published inactive', async () => {
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
-  const controller = new PreviewSessionController(native, {
-    beginPreview: async () => [],
-    cancelPreview: async () => undefined,
-    confirmPreview: async () => undefined
-  }, () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
   await controller.start(profile, 'preview')
   native.failRestoreDisplayIds.add('display:abc')
   const errors: (ProductError | null)[] = []
-  const sync = new PreviewSyncSession({
-    startPreview: async () => ok,
-    updatePreview: async () => ok,
-    cancelPreview: async () => {
-      try {
-        await controller.cancel()
-        return ok
-      } catch (error) {
-        expect(error).toBeInstanceOf(PreviewRestoreError)
-        return { ok: false, error: { code: 'OPERATION_FAILED', message: (error as Error).message } }
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async () => ok,
+      updatePreview: async () => ok,
+      cancelPreview: async () => {
+        try {
+          await controller.cancel()
+          return ok
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewRestoreError)
+          return {
+            ok: false,
+            error: { code: 'OPERATION_FAILED', message: (error as Error).message }
+          }
+        }
       }
-    }
-  }, 'edit', (error) => errors.push(error))
-  await expect(sync.rollback(true)).rejects.toMatchObject({ message: expect.stringContaining('Some displays could not be restored.') })
+    },
+    'edit',
+    (error) => errors.push(error)
+  )
+  await expect(sync.rollback(true)).rejects.toMatchObject({
+    message: expect.stringContaining('Some displays could not be restored.')
+  })
   expect(controller.state).toEqual({ state: 'inactive' })
-  expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: expect.stringContaining('Some displays could not be restored.') }])
+  expect(errors).toEqual([
+    {
+      code: 'OPERATION_FAILED',
+      message: expect.stringContaining('Some displays could not be restored.')
+    }
+  ])
 })
 it('promotes a clicked preview before applying edits without restoring or recapturing', async () => {
   vi.useFakeTimers()
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
-  const controller = new PreviewSessionController(native, {
-    beginPreview: async () => [],
-    cancelPreview: async () => undefined,
-    confirmPreview: async () => undefined
-  }, () => undefined)
-  const sync = new PreviewSyncSession({
-    startPreview: async (draft, kind) => { await controller.start(draft, kind); return ok },
-    updatePreview: async (id, targets) => { await controller.update(id, targets); return ok },
-    cancelPreview: async () => { await controller.cancel(); return ok }
-  }, 'edit', () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await controller.start(draft, kind)
+        return ok
+      },
+      updatePreview: async (id, targets) => {
+        await controller.update(id, targets)
+        return ok
+      },
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
   // Sidebar navigation settles the previous draft before starting the clicked
   // profile outside the draft synchronizer.
   await sync.rollback()

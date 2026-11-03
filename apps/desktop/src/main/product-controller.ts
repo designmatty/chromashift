@@ -24,6 +24,7 @@ import type {
 } from '@main/automatic-activation-controller.js'
 import type { PreviewSessionController } from '@main/preview-session-controller.js'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants.js'
+import { nextProfileName } from '@main/profile-name.js'
 
 export interface ProductNativePort {
   getDisplays(): Promise<Display[]>
@@ -166,7 +167,10 @@ export class ProductController {
   public async createProfile(name: string): Promise<ColorProfile> {
     const profile = await this.repository.save({
       id: randomUUID(),
-      name,
+      name: nextProfileName(
+        name,
+        (await this.repository.list()).map((item) => item.name)
+      ),
       enabled: true,
       applications: [],
       displays: []
@@ -223,7 +227,10 @@ export class ProductController {
     if (source === null) throw new ProductNotFoundError(`Profile ${profileId} does not exist.`)
     const duplicate = await this.repository.duplicate(profileId, {
       id: randomUUID(),
-      name: `${source.name} Copy`
+      name: nextProfileName(
+        source.name,
+        (await this.repository.list()).map((item) => item.name)
+      )
     })
     await this.#configurationChanged()
     return duplicate
@@ -345,15 +352,21 @@ export class ProductController {
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before starting a display preview.')
     }
-    await this.preview.start(profile, kind)
+    const saved = await this.repository.findById(profile.id)
+    if (saved === null) throw new ProductNotFoundError(`Profile ${profile.id} does not exist.`)
+    await this.preview.start(profile, kind, saved)
     this.refresh.stateChanged()
   }
 
-  public async updatePreview(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
+  public async updatePreview(
+    profileId: string,
+    targets: DisplayColorTarget[],
+    draft?: ColorProfile
+  ): Promise<void> {
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before changing display colors.')
     }
-    await this.preview.update(profileId, targets)
+    await this.preview.update(profileId, targets, draft)
     this.refresh.stateChanged()
   }
 

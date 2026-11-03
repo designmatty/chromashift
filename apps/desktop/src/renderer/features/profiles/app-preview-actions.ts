@@ -1,5 +1,5 @@
 import { activeColorTargets, type ColorProfile } from '@chromashift/core'
-import type { ChromaShiftApi, ProductResult } from '@shared/product-api'
+import type { ChromaShiftApi, ProductResult } from '@shared/product-api.js'
 
 async function value<T>(request: Promise<ProductResult<T>>): Promise<T> {
   const result = await request
@@ -17,7 +17,7 @@ export async function commitAppPreview(
   const state = await value(api.getState())
   if (
     state.preview.state === 'active' &&
-    state.preview.kind === 'preview' &&
+    state.preview.kind !== 'edit' &&
     state.preview.profileId === draft.id
   ) {
     await value(api.startPreview({ ...draft, displays: state.preview.targets }, 'edit'))
@@ -28,7 +28,7 @@ export async function commitAppPreview(
   ) {
     await value(api.startPreview(draft, 'edit'))
   }
-  await value(api.updatePreview(draft.id, activeColorTargets(draft)))
+  await value(api.updatePreview(draft.id, activeColorTargets(draft), draft))
   return value(api.confirmPreview(draft, 'preserve'))
 }
 
