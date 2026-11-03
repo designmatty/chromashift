@@ -7,7 +7,9 @@ import {
   liveProfileSubtitle,
   modeToggleDecision,
   modeTooltip,
-  profileShortcut
+  profileShortcut,
+  useProfileKey,
+  previewMarkerProfileId
 } from '@/features/profiles/control-presentation'
 
 const profiles = [
@@ -148,5 +150,33 @@ describe('mode toggle decisions', () => {
     expect(profileShortcut(profiles[0]!, bindings)).toBe('Control+D')
     expect(profileShortcut(profiles[1]!, bindings)).toBe('Control+G')
     expect(profileShortcut(profiles[1]!, [])).toBeUndefined()
+  })
+})
+
+describe('row activation and preview markers', () => {
+  const key = { key: 'Enter', shiftKey: true, altKey: false, ctrlKey: false, metaKey: false }
+  it('separates Manual selection from browsing, busy state and reordering', () => {
+    expect(useProfileKey(key, true, false)).toBe(true)
+    expect(useProfileKey(key, false, false)).toBe(false)
+    expect(useProfileKey(key, true, true)).toBe(false)
+    expect(useProfileKey({ ...key, shiftKey: false }, true, false)).toBe(false)
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey'] as const)
+      expect(useProfileKey({ ...key, [modifier]: true }, true, false)).toBe(false)
+    expect(useProfileKey({ ...key, key: ' ' }, true, false)).toBe(false)
+  })
+  it('retains the preview eye after edits return to saved values', () => {
+    const product = state()
+    expect(previewMarkerProfileId(product.preview)).toBeNull()
+    for (const kind of ['preview', 'edit'] as const) {
+      product.preview = {
+        state: 'active',
+        kind,
+        profileId: 'game',
+        targets: [],
+        unsavedChanges: false
+      }
+      expect(previewMarkerProfileId(product.preview)).toBe('game')
+      expect(controlPill(product).label).toBe('Previewing: Game')
+    }
   })
 })

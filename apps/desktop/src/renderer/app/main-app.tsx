@@ -42,7 +42,11 @@ import {
   shouldEndPreviewOnMinimize
 } from '@/features/profiles/app-preview-state'
 
-import { controlPill, modeToggleDecision } from '@/features/profiles/control-presentation'
+import {
+  controlPill,
+  modeToggleDecision,
+  previewMarkerProfileId
+} from '@/features/profiles/control-presentation'
 
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
@@ -449,7 +453,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               variant="subtle"
               colorPalette={pill.palette}
               bg={pill.previewing ? 'profile.live/15' : undefined}
-              color={pill.previewing ? 'profile.live' : undefined}
+              color={pill.previewing ? 'profile.previewFg' : undefined}
               maxW="min(420px, calc(50vw - 210px))"
               minW="0"
               rounded="sm"
@@ -559,7 +563,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             selectedId={shownProfile?.id ?? null}
             currentId={currentProfileId}
             dirtyProfileId={dirty ? (shownProfile?.id ?? null) : null}
-            previewingProfileId={activeSession?.kind === 'preview' ? activeSession.profileId : null}
+            previewingProfileId={previewMarkerProfileId(product.preview)}
             mode={product.chromaShift.intendedMode}
             controlStatus={product.chromaShift.status}
             busy={busy || product.chromaShift.transitionInProgress}

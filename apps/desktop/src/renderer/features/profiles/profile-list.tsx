@@ -35,7 +35,8 @@ import {
   liveProfileSubtitle,
   liveProfileColor,
   modeTooltip,
-  profileShortcut
+  profileShortcut,
+  useProfileKey
 } from '@/features/profiles/control-presentation'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants'
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
@@ -393,6 +394,7 @@ function ProfileListRow(
     props.profile.name + (props.dirty ? ' • Unsaved changes' : ''),
     props.profile.enabled ? props.currentLabel : 'Disabled',
     props.previewing ? 'Previewing' : null,
+    props.profile.enabled ? 'Use this profile (Shift+Enter)' : null,
     props.shortcut === undefined ? null : formatShortcutAccelerator(props.shortcut),
     props.currentLabel?.startsWith('Paused') ? 'Applies when you resume ChromaShift' : null
   ]
@@ -481,7 +483,13 @@ function ProfileListRow(
           aria-label={props.collapsed ? props.profile.name + (props.dirty ? ' •' : '') : undefined}
           aria-current={props.selected ? 'page' : undefined}
           aria-describedby={props.reorderInstructionsId}
-          onKeyDown={isDefault ? undefined : (event) => props.onKeyDown(event)}
+          aria-keyshortcuts={props.profile.enabled ? 'Shift+Enter' : undefined}
+          onKeyDown={(event) => {
+            if (useProfileKey(event, props.profile.enabled, props.busy)) {
+              event.preventDefault()
+              props.onUseProfile()
+            } else if (!isDefault) props.onKeyDown(event)
+          }}
           onDragStart={(event) => event.preventDefault()}
           touchAction={isDefault ? undefined : 'none'}
           cursor={dragging ? 'grabbing' : undefined}

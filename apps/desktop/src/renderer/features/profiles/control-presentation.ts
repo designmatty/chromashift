@@ -5,6 +5,25 @@ import { autoSwitchingOnHold } from '@shared/unsaved-changes'
 import { liveProfile } from '@/features/profiles/app-preview-state'
 
 type ControlStatus = ProductState['chromaShift']['status']
+export function previewMarkerProfileId(session: ProductState['preview']): string | null {
+  return session.state === 'active' ? session.profileId : null
+}
+
+export function useProfileKey(
+  event: { key: string; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  enabled: boolean,
+  busy: boolean
+): boolean {
+  return (
+    enabled &&
+    !busy &&
+    event.key === 'Enter' &&
+    event.shiftKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  )
+}
 type PillState = Pick<
   ProductState,
   'configuration' | 'chromaShift' | 'preview' | 'foregroundApplication'
