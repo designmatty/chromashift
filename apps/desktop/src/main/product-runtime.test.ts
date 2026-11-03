@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   type DisplayTopologyRefreshResult,
   type ForegroundApplication,
+  type NativeEvent,
   type ServiceHealth,
   type SystemInfo
 } from '@chromashift/native-client'
@@ -50,8 +51,21 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
   public readonly potentialBaselineDisplayIds: string[] = []
   public readonly running = true
 
-  public on(): this {
+  private eventHandler: ((event: NativeEvent) => void) | undefined
+
+  public on(
+    name: string,
+    handler:
+      | ((event: NativeEvent) => void)
+      | ((message: string) => void)
+      | ((code: number | null, signal: NodeJS.Signals | null) => void)
+  ): this {
+    if (name === 'event') this.eventHandler = handler as (event: NativeEvent) => void
     return this
+  }
+
+  public emitForegroundApplication(application: ForegroundApplication): void {
+    this.eventHandler!({ event: 'foregroundApplicationChanged', data: { application } })
   }
 
   public async start(): Promise<SystemInfo> {
@@ -604,6 +618,77 @@ describe('profile reorder activation', () => {
 })
 
 describe('product runtime display-control wiring', () => {
+  const gameApplication: ForegroundApplication = {
+    pid: 42,
+    executable: 'game.exe',
+    path: 'C:\\Games\\game.exe',
+    title: 'Game',
+    monitorDeviceName: null
+  }
+
+  it('keeps a newer Automatic target reached before the direct emergency restore', async () => {
+    const harness = await createHarness({}, { profiles: [reorderProfile('first')] })
+    await harness.runtime.start()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const preview = harness.runtime.previewController!
+    const dispose = preview.dispose.bind(preview)
+    const disposing = vi.spyOn(preview, 'dispose').mockImplementationOnce(async () => {
+      await waiting
+      return dispose()
+    })
+    try {
+      expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'default' })
+      harness.emergencyRestore()
+      await vi.waitFor(() => expect(disposing).toHaveBeenCalledOnce())
+      harness.client.emitForegroundApplication(gameApplication)
+      await vi.waitFor(() =>
+        expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'first' })
+      )
+      release()
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'first' }
+      })
+    } finally {
+      release()
+      harness.runtime.dispose()
+    }
+  })
+
+  it('preserves the newer Automatic target resolved during real emergency preview teardown', async () => {
+    const harness = await createHarness({}, { profiles: [reorderProfile('first')] })
+    await harness.runtime.start()
+    try {
+      await harness.runtime.productController!.startPreview(reorderProfile('first'), 'preview')
+      const appliedBefore = harness.client.applied.length
+      harness.client.emitForegroundApplication(gameApplication)
+      expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'default' })
+      expect(harness.client.applied).toHaveLength(appliedBefore)
+
+      harness.emergencyRestore()
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'first' }
+      })
+      expect(harness.errors).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
   it.each([true, false])(
     'handles Paused shortcut selection with notificationsEnabled=%s',
     async (notificationsEnabled) => {
