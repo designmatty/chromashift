@@ -58,6 +58,7 @@ function setup() {
     isExiting: () => exiting,
     closeBehavior: () => behavior,
     isDestroyed: window.isDestroyed,
+    isVisible: window.isVisible,
     flushWindowState: vi.fn(),
     requestShutdown: vi.fn(),
     cancelNonOverride: vi.fn((onCancelled: () => void) => preview.cancelNonOverride(onCancelled)),
@@ -308,6 +309,56 @@ describe('AppPanelCloseController', () => {
       expect(ports.errors.showError).not.toHaveBeenCalled()
     }
   )
+
+  it('keeps a reopened app window after restoration during a mini-panel handoff', async () => {
+    const { controller, ports, event, window, start, native, preview, panels, isMiniVisible } = setup()
+    await start()
+    panels.openMiniPanel()
+    expect(window.isVisible()).toBe(false)
+    expect(isMiniVisible()).toBe(true)
+    let releaseRestore!: () => void
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    let restoreStarted!: () => void
+    const restoring = new Promise<void>((resolve) => { restoreStarted = resolve })
+    const restore = native.restoreDisplay.bind(native)
+    vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
+      restoreStarted()
+      await restoreGate
+      return restore(displayId)
+    })
+
+    // The hidden window's delayed close has fired, but rollback is not done.
+    const closing = controller.handleClose(event)
+    await restoring
+    panels.openAppPanel()
+    releaseRestore()
+    await closing
+
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(window.isVisible()).toBe(true)
+    expect(isMiniVisible()).toBe(false)
+    expect(window.destroy).not.toHaveBeenCalled()
+    expect(ports.notifyClosed).not.toHaveBeenCalled()
+    expect(ports.releaseToTray).not.toHaveBeenCalled()
+
+    await controller.handleClose(event)
+    expect(window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('can retry a hidden-window close after restore guidance reopens the app', async () => {
+    const { controller, event, window, start, native, panels, ports } = setup()
+    await start()
+    panels.openMiniPanel()
+    native.failRestoreDisplayIds.add('display:one')
+    ports.errors.showError.mockImplementationOnce(async () => {
+      native.failRestoreDisplayIds.clear()
+      return 'retry'
+    })
+
+    await controller.handleClose(event)
+
+    expect(window.destroy).toHaveBeenCalledOnce()
+  })
 
   it('coalesces repeated close attempts while guidance is open', async () => {
     const { controller, ports, event, window } = setup()

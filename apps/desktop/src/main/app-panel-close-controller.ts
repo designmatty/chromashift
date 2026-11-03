@@ -10,6 +10,7 @@ export interface AppPanelClosePorts {
   isExiting(): boolean
   closeBehavior(): 'tray' | 'shutdown'
   isDestroyed(): boolean
+  isVisible(): boolean
   flushWindowState(): void
   requestShutdown(): void
   cancelNonOverride(onCancelled: () => void): Promise<void>
@@ -42,10 +43,14 @@ export class AppPanelCloseController {
 
   async #closeToTray(event: CloseEventPort): Promise<void> {
     while (!this.ports.isDestroyed() && !this.ports.isExiting()) {
+      const closingHiddenWindow = !this.ports.isVisible()
       try {
         // Always enqueue cancellation, even when a preview start is still pending.
         await this.ports.cancelNonOverride(() => {
           if (this.ports.isDestroyed() || this.ports.isExiting()) return
+          // A mini-panel handoff closes a hidden app window. Reopening that
+          // window while restoration is pending cancels its deferred release.
+          if (closingHiddenWindow && this.ports.isVisible()) return
           // Release within the preview queue so a pending start cannot outlive
           // the renderer that requested it.
           this.ports.notifyClosed()
@@ -56,7 +61,8 @@ export class AppPanelCloseController {
         this.ports.logger.write({
           level: 'error',
           eventName: 'PreviewCancelOnCloseFailed',
-          reason: error instanceof PreviewRestoreError ? 'previewRestoreFailed' : 'previewCancelFailed',
+          reason:
+            error instanceof PreviewRestoreError ? 'previewRestoreFailed' : 'previewCancelFailed',
           ...(error instanceof PreviewRestoreError ? { failures: error.failures } : {}),
           ...describeError(error)
         })
@@ -64,7 +70,8 @@ export class AppPanelCloseController {
           !(error instanceof PreviewRestoreError) ||
           this.ports.isDestroyed() ||
           this.ports.isExiting()
-        ) return
+        )
+          return
         if ((await showRestoreFailureGuidance(this.ports.errors)) === 'retry') continue
         return
       }

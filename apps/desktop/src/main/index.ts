@@ -402,6 +402,7 @@ function createWindow(): BrowserWindow {
     isExiting: () => runtime.shutdownCoordinator?.exiting === true,
     closeBehavior: () => settingsStores.preferences.current.closeBehavior,
     isDestroyed: () => window.isDestroyed(),
+    isVisible: () => window.isVisible(),
     flushWindowState: () => appWindowStateController.flush(window),
     requestShutdown: () => {
       void runtime.shutdownCoordinator?.request('application')
