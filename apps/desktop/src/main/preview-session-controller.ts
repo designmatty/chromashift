@@ -318,7 +318,16 @@ export class PreviewSessionController {
       const rollback = await this.#restoreTouched()
       // Closing must remain retryable. Keep the session and automatic-write
       // suspension until restoration succeeds, just as while previewing.
-      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      if (rollback.failures.length > 0) {
+        const retainedKeys = new Set(rollback.retainedDisplayIds.map((id) => id.toLowerCase()))
+        for (const key of this.#active.touched.keys()) {
+          if (retainedKeys.has(key)) continue
+          this.#active.applied.delete(key)
+          this.#active.touched.delete(key)
+        }
+        this.onStateChanged(this.state)
+        throw new PreviewRestoreError(rollback.failures)
+      }
       await this.#endSession(rollback)
     })
   }

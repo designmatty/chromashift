@@ -473,7 +473,7 @@ describe('PreviewSessionController', () => {
       await expect(controller.cancelNonOverride()).rejects.toMatchObject({
         failures: [expect.stringContaining(display.id)]
       })
-      expect(native.restored).toEqual([secondDisplay.id, secondDisplay.id])
+      expect(native.restored).toEqual([secondDisplay.id])
       expect(controller.state).toMatchObject({ state: 'active', kind })
       expect(activation.calls).toEqual(['begin'])
 
@@ -484,6 +484,38 @@ describe('PreviewSessionController', () => {
       expect(activation.calls).toEqual(['begin', 'cancel'])
     }
   )
+
+  it('publishes a partial close restore and recaptures restored targets on unchanged edits', async () => {
+    const native = new FakeNative()
+    const activation = new FakeActivation()
+    const onStateChanged = vi.fn()
+    const controller = new PreviewSessionController(native, activation, onStateChanged)
+    const draft = profile([
+      { displayId: display.id, color: { saturation: 75 } },
+      { displayId: secondDisplay.id, color: { brightness: 30 } }
+    ])
+    await controller.start(draft, 'edit')
+    native.failRestoreDisplayIds.add(display.id)
+    onStateChanged.mockClear()
+
+    await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
+
+    expect(controller.state).toMatchObject({ state: 'active', targets: [draft.displays[0]] })
+    expect(onStateChanged).toHaveBeenCalledExactlyOnceWith(controller.state)
+    expect(activation.calls).toEqual(['begin'])
+    native.calls.length = 0
+
+    await controller.update(draft.id, draft.displays)
+
+    expect(native.calls).toEqual([
+      { operation: 'capture', displayId: secondDisplay.id },
+      { operation: 'apply', displayId: secondDisplay.id, settings: draft.displays[1]!.color }
+    ])
+    expect(controller.state).toMatchObject({ state: 'active', targets: draft.displays })
+    native.failRestoreDisplayIds.clear()
+    await controller.cancelNonOverride()
+    expect(native.restored).toEqual([secondDisplay.id, display.id, secondDisplay.id])
+  })
 
   it.each(['disconnected', 'hdr'] as const)(
     'releases a %s display to activation without a close-time restore failure',
