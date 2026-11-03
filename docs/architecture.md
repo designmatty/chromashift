@@ -183,7 +183,9 @@ Edit before synchronizing the draft, retaining baseline ownership without a
 restore or capture. A matching mini-panel Override also promotes to Edit in place,
 with no native write. Main retains the complete draft, including metadata, and
 reports whether it differs from the saved profile. The app opens that override in
-the normal editable profile view and unsaved action bar. `Update profile` commits while preserving mode; `Discard
+the normal editable profile view and unsaved action bar, even if Settings was the
+last remembered view. Dirtiness compares the draft with saved content, so reverting
+an edit clears it. `Update profile` commits while preserving mode; `Discard
 changes` rolls back. Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, and close return to
 the live profile. Minimize ends only a clean preview; unsaved edits and overrides
@@ -292,7 +294,10 @@ minute open the circuit instead of forming a reload loop. The global
 rollback plus automatic-activation baseline restoration without relying on a
 renderer.
 Tray Exit and other
-application quit requests share one shutdown coordinator. Before shutdown, a
+application quit requests share one shutdown coordinator. Before checking for
+unsaved changes, main requests a renderer draft flush with a 750 ms timeout, so
+recent edits need not wait for the preview debounce. Missing or unresponsive
+renderers fall back to main-owned state. Before shutdown, a
 main-process dialog warns when an Edit or Temporary override has unsaved changes,
 even without a renderer. Update profile saves the complete main-owned draft
 through the existing confirm path; Discard changes continues shutdown; Cancel

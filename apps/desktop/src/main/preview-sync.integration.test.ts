@@ -7,6 +7,9 @@ import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profile
 import type { ProductError, ProductResult } from '@shared/product-api.js'
 import type { ProductState } from '@shared/product-api.js'
 import { commitAppPreview } from '@/features/profiles/app-preview-actions.js'
+import { prepareUnsavedQuit } from '@main/unsaved-quit.js'
+import { profilesDiffer } from '@shared/unsaved-changes.js'
+import { shouldEndPreviewOnMinimize } from '@/features/profiles/app-preview-state.js'
 
 const profile: ColorProfile = {
   id: 'gaming',
@@ -19,6 +22,95 @@ const profile: ColorProfile = {
 }
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
+
+it('warns on quit for a rename still inside the renderer debounce, then saves that exact draft', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  await controller.start(profile, 'preview', profile)
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await controller.start(draft, kind, profile)
+        return ok
+      },
+      updatePreview: async (id, targets, draft) => {
+        await controller.update(id, targets, draft)
+        return ok
+      },
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+  const renamed = { ...profile, name: 'Recent rename' }
+  const before = controller.state
+  sync.schedule(renamed, before)
+  expect(controller.state).toMatchObject({ unsavedChanges: false })
+  const decide = vi.fn(async () => 'update' as const)
+  const confirm = vi.fn(async () => undefined)
+  expect(
+    await prepareUnsavedQuit({
+      flushRendererDrafts: () => sync.flush(renamed, before),
+      settle: () => controller.waitForIdle(),
+      state: () => controller.state,
+      decide,
+      confirm
+    })
+  ).toBe(true)
+  expect(decide).toHaveBeenCalledExactlyOnceWith(renamed.name)
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(renamed)
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('rolls back a reverted draft on minimize through the serialized session queue', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const cancel = vi.fn(async () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: cancel,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const changed = structuredClone(profile)
+  changed.displays[0]!.color.brightness = 61
+  await controller.start(changed, 'edit', profile)
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async () => ok,
+      updatePreview: async () => ok,
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+  const reverted = structuredClone(profile)
+  sync.schedule(reverted, controller.state)
+  if (shouldEndPreviewOnMinimize(profilesDiffer(reverted, profile)))
+    await sync.rollback(true)
+  expect(controller.state).toEqual({ state: 'inactive' })
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(native.restored).toContain('display:abc')
+  expect(vi.getTimerCount()).toBe(0)
+})
 it('commitAppPreview promotes the matching override without native calls before confirmation', async () => {
   const native = new FakeNativeDisplayPort(0, [
     testDisplay('display:abc'),

@@ -590,8 +590,18 @@ async function openProfileFromSidebar(debuggerClient, profileName) {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Profile name"]')?.value === ${JSON.stringify(profileName)} &&
-      document.querySelector('[aria-label="Profile name"]')?.disabled === false`,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok) return false
+      const state = result.value
+      const profile = state.configuration.profiles.find((item) => item.name === ${JSON.stringify(profileName)})
+      const ready = state.chromaShift.status !== 'active' ||
+        state.chromaShift.intendedTarget?.profileId === profile?.id ||
+        (state.preview.state === 'active' && state.preview.profileId === profile?.id)
+      return ready &&
+        document.querySelector('[aria-label="Profile name"]')?.value === ${JSON.stringify(profileName)} &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false
+    })()`,
     `The sidebar did not open ${profileName} for editing.`
   )
 }
@@ -3024,10 +3034,11 @@ async function runSmoke() {
   })
   await writeFile(miniScreenshotPath, globalThis.Buffer.from(miniScreenshot.data, 'base64'))
 
-  // Reopen the app on the mini-panel's applied override, using its normal header actions.
+  // An unsaved override must open Profiles even if Settings was remembered.
   await debuggerClient.send('Emulation.clearDeviceMetricsOverride')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `history.replaceState({}, '', location.pathname)`
+    expression: `localStorage.setItem('chromashift.app-panel.view', 'settings');
+      history.replaceState({}, '', location.pathname)`
   })
   const overrideAppLoaded = debuggerClient.waitForEvent('Page.loadEventFired')
   await debuggerClient.send('Page.reload', { ignoreCache: true })
@@ -3039,7 +3050,8 @@ async function runSmoke() {
     document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-valuenow') === '56' &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Update profile') &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Discard changes') &&
-    document.querySelector('[data-part="override-banner"]') === null`,
+    document.querySelector('[data-part="override-banner"]') === null &&
+    document.querySelector('[data-scope="dialog"]') === null`,
     'The app did not show the mini-panel override in its normal editable profile view.'
   )
   await captureNativeWindow(electron.pid, join(screenshotDirectory, 'app-override-hold-native.png'))
