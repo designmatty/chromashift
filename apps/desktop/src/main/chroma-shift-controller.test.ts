@@ -285,6 +285,35 @@ describe('ChromaShiftController resume and intent', () => {
     })
   })
 
+  it('coalesces Pause with a held resume while Restore waits, then finishes Paused', async () => {
+    const { controller, refreshTopology, activation } = create(new FakeActivation(), {
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: manualActivationMode('gaming'),
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    refreshTopology.mockImplementationOnce(async () => {
+      await waiting
+      return { baselines: [{ ownership: 'owned' }] }
+    })
+    const resuming = controller.resume('manual')
+    const restoring = controller.restoreBaseline()
+    const pausing = controller.pause('manual')
+    expect(pausing).toBe(resuming)
+    release()
+    await Promise.all([resuming, restoring, pausing])
+    expect(activation.calls.filter((call) => call === 'restore')).toHaveLength(1)
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'paused',
+      pendingOperation: null,
+      transitionInProgress: false
+    })
+  })
+
   it.each(['paused', 'safetyBlocked'] as const)(
     'publishes only shortcut selection feedback while Paused, starting %s',
     async (status) => {
