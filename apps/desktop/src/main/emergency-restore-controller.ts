@@ -15,7 +15,7 @@ export interface EmergencyActivationPort {
  * the restore and returns the follow-up, which runs only after success.
  */
 export interface EmergencyControlPort {
-  prepareRestore(): () => Promise<unknown>
+  prepareRestore(): () => Promise<ActivationOutcome>
 }
 
 export class EmergencyRestoreController {
@@ -66,12 +66,12 @@ export class EmergencyRestoreController {
       })
       return false
     }
-    if (restored && pauseAfterRestore !== null) await this.#pause(pauseAfterRestore)
+    if (restored && pauseAfterRestore !== null) void this.#pause(pauseAfterRestore)
     return restored
   }
 
   // Preparing the Paused follow-up must never block the restore itself.
-  #preparePause(): (() => Promise<unknown>) | null {
+  #preparePause(): (() => Promise<ActivationOutcome>) | null {
     try {
       return this.control.prepareRestore()
     } catch (error) {
@@ -83,9 +83,21 @@ export class EmergencyRestoreController {
   // The emergency restore itself is already confirmed here. A failure while
   // entering Paused is reported by the control path (Safety blocked plus its
   // own notification), so it is logged rather than reported as a restore failure.
-  async #pause(pauseAfterRestore: () => Promise<unknown>): Promise<void> {
+  async #pause(pauseAfterRestore: () => Promise<ActivationOutcome>): Promise<void> {
     try {
-      await pauseAfterRestore()
+      const outcome = await pauseAfterRestore()
+      this.logger.write({
+        level:
+          outcome.status === 'failed' ||
+          outcome.status === 'partialFailure' ||
+          outcome.deferredDisplayIds.length > 0
+            ? 'error'
+            : 'information',
+        eventName: 'EmergencyRestorePauseCompleted',
+        status: outcome.status,
+        failures: outcome.failures,
+        deferredDisplayIds: outcome.deferredDisplayIds
+      })
     } catch (error) {
       this.#logPauseFailure(error)
     }
