@@ -28,4 +28,12 @@ it('delete requests open only the delete confirmation without resolving unsaved 
   expect(request).not.toContain('rollback')
   expect(request).not.toContain('resetTo')
   expect(source).toContain('onCancel={() => setProfilePendingDeletion(null)}')
+  const confirm = source.slice(
+    source.indexOf('  function confirmProfileDeletion('),
+    source.indexOf('  function toggleProfileEnabled(')
+  )
+  expect(confirm.indexOf('await returnToLive()')).toBeGreaterThan(-1)
+  expect(confirm.indexOf('await returnToLive()')).toBeLessThan(
+    confirm.indexOf('setProfilePendingDeletion(null)')
+  )
 })

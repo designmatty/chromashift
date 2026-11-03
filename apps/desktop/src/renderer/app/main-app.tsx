@@ -235,8 +235,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (profile === null) return
     perform(async () => {
       await deleteAppProfile(profile.id, rollback, window.chromaShift)
-      setProfilePendingDeletion(null)
+      // Reselect before closing: the dialog restores focus to the selected
+      // profile row when it closes, and the deleted row is gone by then.
       if (selected?.id.toLowerCase() === profile.id.toLowerCase()) await returnToLive()
+      setProfilePendingDeletion(null)
     })
   }
   function toggleProfileEnabled(profile: ColorProfile): void {
