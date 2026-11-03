@@ -55,6 +55,22 @@ The TypeScript and native test suites cover these contracts:
   heartbeat deadlines, parent monitoring, display identity, baseline ownership,
   and explicit shutdown policy
 
+`fixtures/gamma-envelope.json` is shared by the core, native-client, website,
+and C# tests. It covers both sides of the brightness boundaries 6/7, 29/30,
+86/87, 89/90, 91/92, 96/97, and 99/100. At each brightness, both gamma limits
+are tested exactly, one 0.05 step inside, and one 0.05 step outside. This checks
+agreement between the four implementations, not whether hardware accepts a ramp.
+
+The native gamma-rejection regression fakes a `SetDeviceGammaRamp` failure inside
+the envelope and asserts baseline-first application, whole-display rollback
+including NVIDIA color, a value-specific error, and a `GammaSettingsRejected`
+diagnostic with display, adapter identity, brightness, contrast, gamma, and the
+underlying provider error. A TypeScript preview regression checks full-vector
+restoration, the Electron user-facing message, and forwarding that structured
+diagnostic to the existing logger. No protocol version or error-envelope change
+is needed. Hue conversion tests round-trip every integer stored value; renderer
+tests cover temperature visibility and disabled non-neutral values in both panels.
+
 Repository tests also enforce the public-source policy files, verify local
 Markdown links, and scan reachable Git history for credential-bearing filenames,
 private keys, and high-confidence service credentials.
@@ -141,6 +157,26 @@ reserved bindings, cancellation, keyboard focus, removal, hover, and the overflo
 menu. Native window captures of the idle, hover, recording, draft, menu, and
 rejected states, plus light-theme captures, are written under
 `apps/desktop/out/smoke`.
+
+Phase-4 desktop smoke changes:
+
+- Scope neutral-action selectors to their control and use `Reset to neutral`.
+- Check percentage, hue-degree, and two-decimal gamma labels, neutral ticks, and
+  the absence of numeric stepper controls. Check computed hue and saturation
+  gradients so theme backgrounds cannot silently clear them.
+- Exercise inline value Enter, blur, and Escape, value arrow keys, and wheel
+  adjustment on both the value and slider using mild brightness changes.
+- Capture both themes with hatched gamma limits and the sixth temperature row
+  while Paused. Restore the saved fixture before Resume and verify unchanged
+  native display state. These presentation values are never applied to hardware.
+- Capture the app's color controls in dark and light native windows.
+- Include preview and control state in timeout diagnostics.
+
+Outstanding human hardware matrix: apply each gamma/brightness corner on real
+displays and record the display model, GPU, driver version, accepted/rejected
+values, and exact restoration. Include driver-rejected ramps inside the envelope.
+AMD writes remain hardware-unverified. Neither fixtures nor desktop smoke replace
+this matrix.
 
 In-app download and installation run only in packaged Windows builds. Before a
 release, validate a signed installed build against a newer signed release using

@@ -153,22 +153,40 @@ targets remain persisted and resume when the same physical display returns.
   Switching from one previewed or edited profile to another profile that will
   preview keeps the strip mounted and names the destination. It hides only when
   the destination is the live profile or the switch fails.
-- The established brightness, contrast, gamma, saturation, and hue controls keep
-  their existing row layout. Their icons replace the former per-control enabled
-  checkboxes. Unsupported controls stay disabled and explain their unavailable
-  state, while a non-neutral value can still be reset while editing. Color temperature
-  is not surfaced in the profile or mini-panel editor.
-- Brightness changes clamp gamma immediately. The gamma number input adopts the
-  new bounds, and its slider shows disallowed lower or upper track portions.
-- Brightness, contrast, gamma, saturation, and hue each use a compact identifying
-  icon in the app and mini panel.
+- Color controls keep the app's label/value/slider row and the mini panel's
+  label/value above the slider. Values appear as plain text. Click a value to
+  edit it inline; Enter or blur saves and Escape cancels. There are no stepper
+  arrows. Arrow keys and the mouse wheel adjust values and sliders, within the
+  current bounds. The mini panel retains its pointer-oriented, non-activating
+  native window contract.
+- Brightness, contrast, saturation, and color temperature display percentages.
+  Gamma always displays two decimal places. Hue displays 0–359°, calculated as
+  `round(stored hue × 3.59)`; degree input rounds back to the nearest stored
+  value on the 0–100 scale. Storage and native requests remain unchanged.
+- Each slider has a neutral tick. Non-neutral controls show an aligned ↺ action
+  with the tooltip and accessible name `Reset to neutral`. It changes that
+  control to its neutral value, independently of the last saved profile.
+  Hue has a rainbow track; saturation has a grey-to-vivid track.
+- Unsupported controls stay disabled and explain their unavailable state, while
+  a non-neutral value can still be returned to neutral while editing. Color
+  temperature appears in both panels when its capability is supported. Otherwise
+  it appears only when non-neutral, disabled with its neutral action available.
+  The mini-panel height includes this row whenever it is visible.
+- Brightness changes clamp gamma immediately. The inline gamma input adopts the
+  new bounds. Disallowed slider sections use hatching in both themes. A tooltip
+  names the gamma bounds and current brightness and appears briefly when the
+  thumb reaches a constrained limit. The envelope cannot guarantee driver
+  acceptance: a rejected Windows ramp reports the requested gamma, brightness,
+  and display, and the existing whole-display restoration rule still applies.
 - Profile and settings sidebars share one persisted collapsed state. The collapsed
   rail is 40 pixels wide and uses icon buttons with tooltips; it does not expand
   on hover or change the native window minimum width.
 - Sidebar profile names stay on one line and truncate with an ellipsis. A
   truncated name shows its full text in the shared tooltip on hover; the
   collapsed rail's row tooltip always names the profile.
-- `Copy to` copies the selected display's complete vector to chosen destinations.
+- `Copy to` sits next to the display selector and copies the selected display's
+  complete vector. With two connected displays it names the destination directly,
+  for example `Copy to VG278`. With three or more it opens a destination menu.
 
 ## Preview and mini-panel behavior
 

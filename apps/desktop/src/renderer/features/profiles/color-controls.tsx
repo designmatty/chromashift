@@ -1,5 +1,5 @@
-import { Box, Flex, IconButton, NumberInput, Stack, Text } from '@chakra-ui/react'
-import { Palette } from 'lucide-react'
+import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
+import { Palette, Thermometer } from 'lucide-react'
 import {
   clampGammaForBrightness,
   createNeutralColorSettings,
@@ -12,7 +12,12 @@ import { Slider } from '@/components/ui/slider'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { ProductState } from '@shared/product-api.js'
 
-type VisibleColorKey = Exclude<keyof CompleteColorSettings, 'colorTemperature'>
+import { ControlValue } from '@/features/profiles/control-value'
+import {
+  formatValue,
+  showColorTemperature,
+  type ColorControlKey
+} from '@/features/profiles/control-values'
 
 function ControlIcon({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
@@ -33,7 +38,7 @@ function ControlIcon({ children }: { children: React.ReactNode }): React.JSX.Ele
 }
 
 const controls: Array<{
-  key: VisibleColorKey
+  key: ColorControlKey
   label: string
   min: number
   max: number
@@ -103,6 +108,15 @@ const controls: Array<{
     step: 1,
     neutral: 0,
     icon: <Palette size={18} />
+  },
+  {
+    key: 'colorTemperature',
+    label: 'Color temperature',
+    min: 0,
+    max: 100,
+    step: 1,
+    neutral: 50,
+    icon: <Thermometer size={18} />
   }
 ]
 
@@ -113,7 +127,7 @@ export interface ControlSupport {
 }
 
 export function controlSupport(
-  key: VisibleColorKey,
+  key: ColorControlKey,
   display: Display | undefined,
   report: DisplayCapabilityReport | undefined
 ): ControlSupport {
@@ -168,7 +182,7 @@ export function ColorControls({
   const report = product.capabilityReports[displayId]
   const completeColor: CompleteColorSettings = { ...createNeutralColorSettings(), ...color }
 
-  function change(key: VisibleColorKey, nextValue: number): void {
+  function change(key: ColorControlKey, nextValue: number): void {
     const next = { ...completeColor, [key]: nextValue }
     if (key === 'brightness') {
       next.gamma = clampGammaForBrightness(next.gamma, next.brightness)
@@ -178,114 +192,110 @@ export function ColorControls({
 
   return (
     <Stack gap={compact ? 4 : 3}>
-      {controls.map((control) => {
-        const support = controlSupport(control.key, display, report)
-        const value = completeColor[control.key]
-        const overridden = value !== control.neutral
-        const gammaRange = gammaRangeForBrightness(completeColor.brightness)
-        const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
-        const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
-        const row = (
-          <Box
-            data-part="color-control"
-            data-control={control.key}
-            display="flex"
-            alignItems="center"
-            gap={2}
-            flexDirection={compact ? 'column' : 'row'}
-            tabIndex={support.available ? undefined : 0}
-          >
-            <Flex h={compact ? '21px' : undefined} align="center" gap={3} width="100%">
-              <Box aria-hidden="true" color={support.available ? 'fg.muted' : 'fg/70'}>
-                {control.icon}
-              </Box>
-              <Text color={support.available ? 'inherit' : 'fg/70'}>{control.label}</Text>
-              {editable && overridden && (
-                <Tooltip content={`Reset ${control.label.toLowerCase()} to neutral`}>
-                  <IconButton
-                    size="2xs"
-                    variant="ghost"
-                    aria-label={`Reset ${control.label.toLowerCase()} to neutral`}
-                    onClick={() => change(control.key, control.neutral)}
-                  >
-                    <Text aria-hidden="true" fontSize="lg" lineHeight="1">
-                      ↺
-                    </Text>
-                  </IconButton>
-                </Tooltip>
-              )}
-              {!compact && support.available ? (
-                <NumberInput.Root
-                  ml="auto"
-                  flex="none"
+      {controls
+        .filter(
+          (control) =>
+            control.key !== 'colorTemperature' || showColorTemperature(completeColor, report)
+        )
+        .map((control) => {
+          const support = controlSupport(control.key, display, report)
+          const value = completeColor[control.key]
+          const overridden = value !== control.neutral
+          const gammaRange = gammaRangeForBrightness(completeColor.brightness)
+          const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
+          const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
+          const row = (
+            <Box
+              data-part="color-control"
+              data-control={control.key}
+              display="flex"
+              alignItems="center"
+              gap={2}
+              flexDirection={compact ? 'column' : 'row'}
+              tabIndex={support.available ? undefined : 0}
+            >
+              <Flex
+                h={compact ? '21px' : undefined}
+                align="center"
+                gap={2}
+                width={compact ? '100%' : '280px'}
+                flexShrink={0}
+              >
+                <Box aria-hidden="true" color={support.available ? 'fg.muted' : 'fg/70'}>
+                  {control.icon}
+                </Box>
+                <Text flex="1" whiteSpace="nowrap" color={support.available ? 'inherit' : 'fg/70'}>
+                  {control.label}
+                </Text>
+                <Box width="24px" flex="none">
+                  {editable && overridden && (
+                    <Tooltip content="Reset to neutral">
+                      <IconButton
+                        size="2xs"
+                        variant="ghost"
+                        aria-label="Reset to neutral"
+                        onClick={() => change(control.key, control.neutral)}
+                      >
+                        <Text aria-hidden="true" fontSize="lg" lineHeight="1">
+                          ↺
+                        </Text>
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Box>
+                <ControlValue
+                  control={control.key}
+                  value={value}
                   min={allowedMin}
                   max={allowedMax}
                   step={control.step}
-                  value={String(value)}
-                  allowOverflow={false}
-                  disabled={!editable}
-                  width="80px"
-                  size="xs"
-                  onValueChange={({ valueAsNumber }) => {
-                    if (!Number.isFinite(valueAsNumber)) return
-                    change(control.key, Math.min(allowedMax, Math.max(allowedMin, valueAsNumber)))
-                  }}
-                >
-                  <NumberInput.Control />
-                  <NumberInput.Input
-                    aria-label={`${control.label} value for ${display?.name ?? displayId}`}
-                    fontFamily="mono"
-                    fontVariantNumeric="tabular-nums"
-                    bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
-                  />
-                </NumberInput.Root>
-              ) : (
-                <Text
-                  ml="auto"
-                  flex="none"
-                  color={!support.available ? 'fg/70' : 'inherit'}
-                  fontFamily="mono"
-                  fontSize={support.available ? 'sm' : 'xs'}
-                  textAlign="right"
-                >
-                  {support.available ? formatValue(control.key, value) : support.status}
-                </Text>
-              )}
-            </Flex>
-            <Slider
-              value={[value]}
-              min={control.min}
-              max={control.max}
-              allowedMin={allowedMin}
-              allowedMax={allowedMax}
-              step={control.step}
-              disabled={!editable || !support.available}
-              aria-label={`${control.label} for ${display?.name ?? displayId}`}
-              onValueChange={(values) => {
-                const next = values[0]
-                if (next !== undefined) change(control.key, next)
-              }}
-            />
-          </Box>
-        )
-        return support.available ? (
-          <Box key={control.key}>{row}</Box>
-        ) : (
-          <Tooltip
-            key={control.key}
-            content={support.reason}
-            positioning={{ placement: 'top-start' }}
-          >
-            {row}
-          </Tooltip>
-        )
-      })}
+                  disabled={!editable || !support.available}
+                  label={`${control.label} value for ${display?.name ?? displayId}`}
+                  onChange={(next) => change(control.key, next)}
+                />
+              </Flex>
+              <Slider
+                value={[value]}
+                min={control.min}
+                max={control.max}
+                allowedMin={allowedMin}
+                allowedMax={allowedMax}
+                step={control.step}
+                neutral={control.neutral}
+                track={
+                  control.key === 'hue'
+                    ? 'hue'
+                    : control.key === 'saturation'
+                      ? 'saturation'
+                      : undefined
+                }
+                limitLabel={
+                  control.key === 'gamma'
+                    ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)} at brightness ${completeColor.brightness}%`
+                    : undefined
+                }
+                disabled={!editable || !support.available}
+                aria-label={`${control.label} for ${display?.name ?? displayId}`}
+                aria-valuetext={formatValue(control.key, value)}
+                onValueChange={(values) => {
+                  const next = values[0]
+                  if (next !== undefined) change(control.key, next)
+                }}
+              />
+            </Box>
+          )
+          return support.available ? (
+            <Box key={control.key}>{row}</Box>
+          ) : (
+            <Tooltip
+              key={control.key}
+              content={support.reason}
+              positioning={{ placement: 'top-start' }}
+            >
+              {row}
+            </Tooltip>
+          )
+        })}
     </Stack>
   )
-}
-
-function formatValue(key: VisibleColorKey, value: number): string {
-  return key === 'gamma'
-    ? value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
-    : `${Math.round(value)}%`
 }

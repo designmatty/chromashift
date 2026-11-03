@@ -56,34 +56,47 @@ export function DisplayControls({
         '--tabs-trigger-radius': 'radii.md'
       }}
     >
-      <Tabs.List
-        overflowX="auto"
-        overflowY="hidden"
-        flexWrap="nowrap"
-        padding={'1'}
-        backgroundColor={{ base: 'bg.muted', _dark: 'bg' }}
-        rounded="md"
-      >
-        {rows.map((row) => (
-          <Tabs.Trigger
-            key={row.displayId}
-            value={row.displayId}
-            flex="none"
-            gap="2"
-            data-part="display-tab"
-            data-display-id={row.displayId}
-            _selected={{
-              color: 'fg'
-            }}
-          >
-            <Text maxW="190px" truncate as="span" color={'inherit'}>
-              {row.display.name}
-            </Text>
-            {row.display.primary && <Badge colorPalette="gray">Primary</Badge>}
-          </Tabs.Trigger>
-        ))}
-        <Tabs.Indicator border={'1px solid {color.red.500}'} />
-      </Tabs.List>
+      <Flex align="center" gap="3">
+        <Tabs.List
+          flex="1"
+          minW="0"
+          overflowX="auto"
+          overflowY="hidden"
+          flexWrap="nowrap"
+          padding={'1'}
+          backgroundColor={{ base: 'bg.muted', _dark: 'bg' }}
+          rounded="md"
+        >
+          {rows.map((row) => (
+            <Tabs.Trigger
+              key={row.displayId}
+              value={row.displayId}
+              flex="none"
+              gap="2"
+              data-part="display-tab"
+              data-display-id={row.displayId}
+              _selected={{
+                color: 'fg'
+              }}
+            >
+              <Text maxW="190px" truncate as="span" color={'inherit'}>
+                {row.display.name}
+              </Text>
+              {row.display.primary && <Badge colorPalette="gray">Primary</Badge>}
+            </Tabs.Trigger>
+          ))}
+          <Tabs.Indicator border={'1px solid {color.red.500}'} />
+        </Tabs.List>
+        {editing && (
+          <CopyToMenu
+            profile={profile}
+            sourceDisplayId={selected.displayId}
+            color={selected.target?.color ?? createNeutralColorSettings()}
+            rows={rows}
+            onChange={onChange}
+          />
+        )}
+      </Flex>
       {rows.map((row) => {
         const color = row.target?.color ?? createNeutralColorSettings()
         return (
@@ -117,15 +130,6 @@ export function DisplayControls({
                 onChange(setDisplayTarget(profile, { displayId: row.displayId, color: nextColor }))
               }
             />
-            {editing && (
-              <CopyToMenu
-                profile={profile}
-                sourceDisplayId={row.displayId}
-                color={color}
-                rows={rows}
-                onChange={onChange}
-              />
-            )}
           </Tabs.Content>
         )
       })}
@@ -149,10 +153,27 @@ function CopyToMenu({
   const others = rows.filter((row) => row.displayId !== sourceDisplayId)
   if (others.length === 0) return null
 
+  if (others.length === 1) {
+    const destination = others[0]!
+    return (
+      <Button
+        size="2xs"
+        variant="outline"
+        onClick={() =>
+          onChange(
+            setDisplayTarget(profile, { displayId: destination.displayId, color: { ...color } })
+          )
+        }
+      >
+        Copy to {destination.display.name}
+      </Button>
+    )
+  }
+
   return (
     <Menu.Root>
       <Menu.Trigger asChild>
-        <Button size="2xs" bg="bg" color="fg" variant={{ base: 'outline', _dark: 'solid' }} mt="3">
+        <Button size="2xs" bg="bg" color="fg" variant={{ base: 'outline', _dark: 'solid' }}>
           Copy to
           <ChevronDown size={16} />
         </Button>

@@ -7,7 +7,12 @@ using Microsoft.Win32;
 
 namespace ChromaShift.DisplayService.Services;
 
-internal sealed class DisplayRegistry
+internal interface IDisplayRegistry
+{
+    IReadOnlyList<DisplayDescriptor> List();
+}
+
+internal sealed class DisplayRegistry : IDisplayRegistry
 {
     private const uint QueryOnlyActivePaths = 0x00000002;
     private const int ErrorSuccess = 0;
@@ -17,7 +22,7 @@ internal sealed class DisplayRegistry
     private const int GetAdvancedColorInfo = 9;
     private const int DisplayDevicePrimary = 0x00000004;
 
-    internal IReadOnlyList<DisplayDescriptor> List()
+    public IReadOnlyList<DisplayDescriptor> List()
     {
         var edidByInstance = ReadMonitorEdid();
         var paths = QueryActivePaths();

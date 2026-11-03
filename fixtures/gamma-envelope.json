@@ -1,0 +1,436 @@
+[
+  {
+    "brightness": 6,
+    "min": 0.5,
+    "max": 2.8,
+    "tests": [
+      {
+        "gamma": 0.5,
+        "accepted": true
+      },
+      {
+        "gamma": 0.55,
+        "accepted": true
+      },
+      {
+        "gamma": 0.45,
+        "accepted": false
+      },
+      {
+        "gamma": 2.8,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": true
+      },
+      {
+        "gamma": 2.85,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 7,
+    "min": 0.4,
+    "max": 2.8,
+    "tests": [
+      {
+        "gamma": 0.4,
+        "accepted": true
+      },
+      {
+        "gamma": 0.45,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": false
+      },
+      {
+        "gamma": 2.8,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": true
+      },
+      {
+        "gamma": 2.85,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 29,
+    "min": 0.4,
+    "max": 2.8,
+    "tests": [
+      {
+        "gamma": 0.4,
+        "accepted": true
+      },
+      {
+        "gamma": 0.45,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": false
+      },
+      {
+        "gamma": 2.8,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": true
+      },
+      {
+        "gamma": 2.85,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 30,
+    "min": 0.3,
+    "max": 2.8,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.8,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": true
+      },
+      {
+        "gamma": 2.85,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 86,
+    "min": 0.3,
+    "max": 2.8,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.8,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": true
+      },
+      {
+        "gamma": 2.85,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 87,
+    "min": 0.3,
+    "max": 2.7,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.7,
+        "accepted": true
+      },
+      {
+        "gamma": 2.65,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 89,
+    "min": 0.3,
+    "max": 2.7,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.7,
+        "accepted": true
+      },
+      {
+        "gamma": 2.65,
+        "accepted": true
+      },
+      {
+        "gamma": 2.75,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 90,
+    "min": 0.3,
+    "max": 2.6,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.6,
+        "accepted": true
+      },
+      {
+        "gamma": 2.55,
+        "accepted": true
+      },
+      {
+        "gamma": 2.65,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 91,
+    "min": 0.3,
+    "max": 2.6,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.6,
+        "accepted": true
+      },
+      {
+        "gamma": 2.55,
+        "accepted": true
+      },
+      {
+        "gamma": 2.65,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 92,
+    "min": 0.3,
+    "max": 2.5,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.5,
+        "accepted": true
+      },
+      {
+        "gamma": 2.45,
+        "accepted": true
+      },
+      {
+        "gamma": 2.55,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 96,
+    "min": 0.3,
+    "max": 2.5,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.5,
+        "accepted": true
+      },
+      {
+        "gamma": 2.45,
+        "accepted": true
+      },
+      {
+        "gamma": 2.55,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 97,
+    "min": 0.3,
+    "max": 2.4,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.4,
+        "accepted": true
+      },
+      {
+        "gamma": 2.35,
+        "accepted": true
+      },
+      {
+        "gamma": 2.45,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 99,
+    "min": 0.3,
+    "max": 2.4,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.4,
+        "accepted": true
+      },
+      {
+        "gamma": 2.35,
+        "accepted": true
+      },
+      {
+        "gamma": 2.45,
+        "accepted": false
+      }
+    ]
+  },
+  {
+    "brightness": 100,
+    "min": 0.3,
+    "max": 2.3,
+    "tests": [
+      {
+        "gamma": 0.3,
+        "accepted": true
+      },
+      {
+        "gamma": 0.35,
+        "accepted": true
+      },
+      {
+        "gamma": 0.25,
+        "accepted": false
+      },
+      {
+        "gamma": 2.3,
+        "accepted": true
+      },
+      {
+        "gamma": 2.25,
+        "accepted": true
+      },
+      {
+        "gamma": 2.35,
+        "accepted": false
+      }
+    ]
+  }
+]

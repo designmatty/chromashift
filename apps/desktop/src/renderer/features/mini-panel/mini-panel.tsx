@@ -37,6 +37,7 @@ import {
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ColorControls } from '@/features/profiles/color-controls'
+import { showColorTemperature as temperatureVisible } from '@/features/profiles/control-values'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { useProductTheme } from '@/hooks/use-product-theme'
@@ -91,7 +92,14 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     chooseInitialDisplay(product, appliedProfile)
   )
   const selectedDisplay = product.displays.find((display) => display.id === selectedDisplayId)
-  const showColorTemperature = selectedDisplay?.adapter.vendor === 'amd'
+  const selectedColor =
+    (selectedDisplayId === null || draft === null
+      ? undefined
+      : findDisplayTarget(draft, selectedDisplayId)?.color) ?? createNeutralColorSettings()
+  const showColorTemperature = temperatureVisible(
+    selectedColor,
+    selectedDisplayId === null ? undefined : product.capabilityReports[selectedDisplayId]
+  )
   const pickerItems = [
     { label: 'Automatic Switching', value: AUTOMATIC_ID },
     ...product.configuration.profiles
@@ -214,10 +222,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
         </>
       )
     }
-
-    const selectedTarget =
-      selectedDisplayId === null ? undefined : findDisplayTarget(draft, selectedDisplayId)
-    const selectedColor = selectedTarget?.color ?? createNeutralColorSettings()
 
     return (
       <>

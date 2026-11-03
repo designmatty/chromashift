@@ -1,3 +1,7 @@
+import { EventEmitter } from 'node:events'
+import { mapProductError } from '@main/product-ipc.js'
+import { attachNativeEventRouter } from '@main/native-event-router.js'
+import type { StructuredLogEvent } from '@main/structured-logger.js'
 import {
   createNeutralColorSettings,
   type ColorProfile,
@@ -637,4 +641,61 @@ it('refreshes saved content without native calls, and discards metadata in place
     draft
   })
   expect(native.calls).toHaveLength(before)
+})
+
+it('restores the full preview display and keeps gamma rejection values and adapter diagnostics', async () => {
+  const native = new FakeNative()
+  const original = completeColor({ brightness: 43, contrast: 57, saturation: 62, hue: 8 })
+  native.currentSettings.set(display.id, original)
+  const source = new EventEmitter()
+  const records: StructuredLogEvent[] = []
+  attachNativeEventRouter(source, {
+    activation: () => undefined,
+    displayTransitions: () => undefined,
+    recovery: () => undefined,
+    isExiting: () => false,
+    broadcastProductState: () => undefined,
+    logger: { write: (record) => records.push(record) }
+  })
+  const diagnostic = {
+    level: 'error',
+    eventName: 'GammaSettingsRejected',
+    displayId: display.id,
+    displayName: display.name,
+    provider: 'windows',
+    adapterId: display.adapter.id,
+    adapterName: display.adapter.name,
+    adapterVendor: display.adapter.vendor,
+    adapterDeviceId: display.adapter.deviceId,
+    brightness: 95,
+    contrast: 50,
+    gamma: 2.5,
+    code: 'GAMMA_WRITE_FAILED',
+    nativeMessage: 'SetDeviceGammaRamp failed for DISPLAY1.'
+  }
+  vi.spyOn(native, 'applyDisplaySettings').mockImplementation(async () => {
+    // Model a partly changed provider state. Rollback must restore every color field.
+    native.currentSettings.set(display.id, { brightness: 95, saturation: 80 })
+    source.emit('diagnostic', JSON.stringify(diagnostic))
+    throw new NativeServiceError(
+      'GAMMA_WRITE_FAILED',
+      'This display rejected gamma 2.50 at brightness 95% (Test display).',
+      'display.apply',
+      'gamma-rejection'
+    )
+  })
+  const activation = new FakeActivation()
+  const preview = new PreviewSessionController(native, activation, () => undefined)
+  const error = await preview
+    .start(profile([{ displayId: display.id, color: { brightness: 95, gamma: 2.5 } }]), 'edit')
+    .catch((error: unknown) => error)
+  expect(mapProductError(error)).toEqual({
+    code: 'OPERATION_FAILED',
+    message: 'This display rejected gamma 2.50 at brightness 95% (Test display).'
+  })
+  expect(native.currentSettings.get(display.id)).toEqual(original)
+  expect(native.restored).toEqual([display.id])
+  expect(activation.calls).toEqual(['begin', 'cancel'])
+  expect(preview.state).toEqual({ state: 'inactive' })
+  expect(records).toContainEqual(diagnostic)
 })

@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DisplayService\DisplayService.csproj" />
+    <None Include="..\..\fixtures\gamma-envelope.json" Link="gamma-envelope.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

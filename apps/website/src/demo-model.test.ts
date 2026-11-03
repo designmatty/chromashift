@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { gammaRange } from '@/demo-model'
 import { describe, expect, it } from 'vitest'
 import {
   clampPosition,
@@ -119,5 +121,25 @@ describe('mini panel position', () => {
     expect(
       clampPosition({ x: 100, y: 100 }, { width: 300, height: 400 }, { width: 400, height: 500 })
     ).toEqual({ x: 8, y: 8 })
+  })
+})
+
+const envelopeFixture = JSON.parse(
+  readFileSync(new URL('../../../fixtures/gamma-envelope.json', import.meta.url), 'utf8')
+) as Array<{
+  brightness: number
+  min: number
+  max: number
+  tests: Array<{ gamma: number; accepted: boolean }>
+}>
+
+describe('shared gamma envelope fixture', () => {
+  it.each(envelopeFixture)('agrees at brightness $brightness', (row) => {
+    expect(gammaRange(row.brightness)).toEqual({ min: row.min, max: row.max })
+    for (const sample of row.tests)
+      expect(
+        setControl({ ...neutralColor, brightness: row.brightness }, 'gamma', sample.gamma).gamma ===
+          sample.gamma
+      ).toBe(sample.accepted)
   })
 })

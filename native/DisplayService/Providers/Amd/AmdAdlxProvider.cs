@@ -3,7 +3,19 @@ using ChromaShift.DisplayService.Core;
 
 namespace ChromaShift.DisplayService.Providers.Amd;
 
-internal sealed class AmdAdlxProvider : IDisposable
+internal interface IAmdColorProvider
+{
+    AmdDisplayState GetState(DisplayDescriptor display);
+    int SetBrightness(DisplayDescriptor display, double value);
+    int SetContrast(DisplayDescriptor display, double value);
+    int SetSaturation(DisplayDescriptor display, double value);
+    int SetHue(DisplayDescriptor display, double value);
+    int SetColorTemperature(DisplayDescriptor display, double value);
+    string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value);
+    void Restore(DisplayDescriptor display, AmdDisplayState baseline);
+}
+
+internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
 {
     private const ulong AdlxSdkVersion = (1UL << 48) | (5UL << 32) | 124UL;
     private const string LibraryName = "amdadlx64.dll";
@@ -53,7 +65,7 @@ internal sealed class AmdAdlxProvider : IDisposable
         }
     }
 
-    internal AmdDisplayState GetState(DisplayDescriptor display)
+    public AmdDisplayState GetState(DisplayDescriptor display)
     {
         if (display.Adapter.Vendor != "amd")
         {
@@ -84,13 +96,13 @@ internal sealed class AmdAdlxProvider : IDisposable
         }
     }
 
-    internal int SetBrightness(DisplayDescriptor display, double value) => SetControl(display, value, 11, 12, 13, 14, "brightness");
-    internal int SetContrast(DisplayDescriptor display, double value) => SetControl(display, value, 15, 16, 17, 18, "contrast");
-    internal int SetSaturation(DisplayDescriptor display, double value) => SetControl(display, value, 7, 8, 9, 10, "saturation");
-    internal int SetHue(DisplayDescriptor display, double value) => SetControl(display, value, 3, 4, 5, 6, "hue");
-    internal int SetColorTemperature(DisplayDescriptor display, double value) => SetControl(display, value, 19, 20, 21, 22, "color temperature");
+    public int SetBrightness(DisplayDescriptor display, double value) => SetControl(display, value, 11, 12, 13, 14, "brightness");
+    public int SetContrast(DisplayDescriptor display, double value) => SetControl(display, value, 15, 16, 17, 18, "contrast");
+    public int SetSaturation(DisplayDescriptor display, double value) => SetControl(display, value, 7, 8, 9, 10, "saturation");
+    public int SetHue(DisplayDescriptor display, double value) => SetControl(display, value, 3, 4, 5, 6, "hue");
+    public int SetColorTemperature(DisplayDescriptor display, double value) => SetControl(display, value, 19, 20, 21, 22, "color temperature");
 
-    internal string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value)
+    public string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value)
     {
         var requested = GammaRampTransform.Apply(baseline, new GammaSettings(null, null, value));
         lock (_sync)
@@ -112,7 +124,7 @@ internal sealed class AmdAdlxProvider : IDisposable
         }
     }
 
-    internal void Restore(DisplayDescriptor display, AmdDisplayState baseline)
+    public void Restore(DisplayDescriptor display, AmdDisplayState baseline)
     {
         lock (_sync)
         {
