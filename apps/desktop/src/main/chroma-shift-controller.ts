@@ -191,7 +191,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = manualActivationMode(profileId)
       this.#state.intendedTarget = target
       await this.#persistState()
-      return this.#statusOutcome(source)
+      return this.#selectionStatusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -222,7 +222,7 @@ export class ChromaShiftController {
       this.#state.intendedMode = automaticActivationMode
       this.#state.intendedTarget = null
       await this.#persistState()
-      return this.#statusOutcome(source)
+      return this.#selectionStatusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -421,6 +421,15 @@ export class ChromaShiftController {
       source,
       origin: 'statusControl'
     }
+  }
+
+  #selectionStatusOutcome(source: ActivationSource): CompletedActivationOutcome {
+    const outcome = this.#statusOutcome(source)
+    if (source === 'shortcut' && this.#state.status === 'paused') {
+      outcome.pausedSelection = { ...this.#state.intendedMode }
+      this.#publishOperationalOutcome(outcome)
+    }
+    return outcome
   }
 
   #emit(): void {
