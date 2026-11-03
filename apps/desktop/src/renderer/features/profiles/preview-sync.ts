@@ -29,6 +29,7 @@ export class PreviewSyncSession {
   #generation = 0
   readonly #pending = new Set<Promise<unknown>>()
   #timer: ReturnType<typeof setTimeout> | undefined
+  #scheduledSend: (() => void) | undefined
   #rollback: Promise<boolean> | undefined
   #needsStart = false
   #promotedProfileId: string | null = null
@@ -43,8 +44,9 @@ export class PreviewSyncSession {
   public schedule(draft: ColorProfile, session: PreviewState): void {
     this.cancelScheduled()
     const generation = this.#generation
-    this.#timer = setTimeout(() => {
+    this.#scheduledSend = () => {
       this.#timer = undefined
+      this.#scheduledSend = undefined
       if (generation !== this.#generation) return
       const rollback = this.#rollback
       const previousSends = [...this.#pending]
@@ -92,13 +94,24 @@ export class PreviewSyncSession {
       })()
       this.#pending.add(pending)
       void pending.finally(() => this.#pending.delete(pending))
-    }, this.debounceMs)
+    }
+    this.#timer = setTimeout(this.#scheduledSend, this.debounceMs)
+  }
+
+  /** Send the current renderer draft now, then drain writes before main checks quit. */
+  public async flush(draft: ColorProfile, session: PreviewState): Promise<void> {
+    this.schedule(draft, session)
+    const send = this.#scheduledSend
+    this.cancelScheduled()
+    send?.()
+    await Promise.allSettled([...this.#pending])
   }
 
   public cancelScheduled(): void {
     if (this.#timer === undefined) return
     clearTimeout(this.#timer)
     this.#timer = undefined
+    this.#scheduledSend = undefined
   }
 
   public invalidate(): void {

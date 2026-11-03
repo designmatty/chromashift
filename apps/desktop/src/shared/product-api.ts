@@ -47,10 +47,14 @@ export const productIpcChannels = {
   setMiniPanelView: 'application:set-mini-panel-view',
   appPanelClosed: 'application:app-panel-closed',
   appPanelMinimized: 'application:app-panel-minimized',
+  flushPreviewDraft: 'application:flush-preview-draft',
+  previewDraftFlushed: 'application:preview-draft-flushed',
   navigateAppPanel: 'application:navigate-app-panel',
   selectAppPanelProfile: 'application:select-app-panel-profile',
   stateChanged: 'product:state-changed'
 } as const
+
+export const previewDraftFlushSchema = z.object({ requestId: z.uuid() }).strict()
 
 export const activationModeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('automatic') }),
@@ -382,6 +386,7 @@ export interface ChromaShiftApi {
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
   onAppPanelMinimized(listener: () => void): void
+  onFlushPreviewDraft(listener: () => Promise<void>): () => void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
   onAppPanelProfileSelection(listener: (profileId: string) => void): void
 }

@@ -91,6 +91,7 @@ export interface ProductRuntimePorts {
     openMiniPanel: () => void
     createTrayMenu: () => Promise<TrayMenuPort>
     broadcastProductState: () => void
+    flushRendererDrafts?: () => Promise<void>
   }
   dialogs: {
     showError: (title: string, message: string) => void
@@ -293,6 +294,7 @@ export class ProductRuntime {
       logger,
       () =>
         prepareUnsavedQuit({
+          flushRendererDrafts: shell.flushRendererDrafts,
           settle: () => this.#previewController?.waitForIdle() ?? Promise.resolve(),
           state: () => this.#previewController?.state ?? { state: 'inactive' },
           decide: (name) => dialogs.confirmUnsavedQuit(name),

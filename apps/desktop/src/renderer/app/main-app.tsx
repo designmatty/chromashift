@@ -36,14 +36,18 @@ import { run } from '@/lib/product-result'
 import type { AppPanelView, ProductError, ProductResult, ProductState } from '@shared/product-api'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants'
 import { autoSwitchingOnHold, hasUnsavedSession } from '@shared/unsaved-changes'
-import { appSessionDraft, shouldEndPreviewOnMinimize } from '@/features/profiles/app-preview-state'
+import {
+  appSessionDraft,
+  initialAppView,
+  shouldEndPreviewOnMinimize
+} from '@/features/profiles/app-preview-state'
 
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
 const SIDEBAR_COLLAPSED_KEY = 'chromashift.app-panel.sidebar-collapsed'
 
 export function MainApp({ product }: { product: ProductState }): React.JSX.Element {
-  const [view, setView] = useState<AppPanelView>(readLastView)
+  const [view, setView] = useState<AppPanelView>(() => initialAppView(product, readLastView()))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   )
@@ -62,15 +66,24 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   } | null>(null)
   const taskTail = useRef(Promise.resolve())
   const followingLive = useRef(true)
-  const { draft, dirty, updateDraft, resetTo, invalidateSync, settlePreview, rollbackPreview } =
-    usePreviewDraft({
-      kind: 'edit',
-      session: product.preview,
-      enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
-      onError: setError,
-      initialDraft: () => appSessionDraft(product),
-      initialDirty: () => hasUnsavedSession(product.preview)
-    })
+  const locallyEdited = useRef(false)
+  const {
+    draft,
+    dirty,
+    updateDraft: changeDraft,
+    resetTo: resetDraft,
+    invalidateSync,
+    settlePreview,
+    rollbackPreview
+  } = usePreviewDraft({
+    kind: 'edit',
+    session: product.preview,
+    enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
+    onError: setError,
+    initialDraft: () => appSessionDraft(product),
+    savedProfile:
+      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
+  })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
     liveProfile(product)
@@ -90,7 +103,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
   }, [selectedId])
   useEffect(() => {
-    if (!dirty && selected !== null) {
+    // Main can still publish an older dirty draft after the user has reverted it.
+    if (!dirty && !locallyEdited.current && selected !== null) {
       const unsaved = hasUnsavedSession(product.preview) && activeSession?.profileId === selected.id
       resetTo(unsaved ? appSessionDraft(product) : selected, { dirty: unsaved })
     }
@@ -102,6 +116,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (pendingPreviewId !== null && activeSession?.profileId === pendingPreviewId)
       setPendingPreviewId(null)
   }, [activeSession, pendingPreviewId])
+
+  function updateDraft(profile: ColorProfile): void {
+    locallyEdited.current = true
+    changeDraft(profile)
+  }
+  function resetTo(profile: ColorProfile | null, options?: { dirty?: boolean }): void {
+    locallyEdited.current = false
+    resetDraft(profile, options)
+  }
 
   async function value<T>(request: Promise<ProductResult<T>>): Promise<T> {
     const result = await request
@@ -290,17 +313,17 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   })
   useEffect(() => {
-    const endAppPreview = () => {
+    const endAppPreview = (includeOverride = false) => {
       invalidateSync()
       setPendingContinuation(null)
       perform(async () => {
-        if (temporaryOverride === null) await rollback()
+        if (includeOverride || temporaryOverride === null) await rollback()
         await returnToLive()
       })
     }
     window.chromaShift.onAppPanelClosed(endAppPreview)
     window.chromaShift.onAppPanelMinimized(() => {
-      if (shouldEndPreviewOnMinimize(dirty, product.preview)) endAppPreview()
+      if (shouldEndPreviewOnMinimize(dirty)) endAppPreview(true)
     })
   })
   function endPreview(): void {

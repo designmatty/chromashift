@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import {
   PreviewSyncSession,
@@ -6,6 +6,7 @@ import {
   type PreviewSyncPort
 } from '@/features/profiles/preview-sync.js'
 import type { PreviewState, ProductError } from '@shared/product-api.js'
+import { hasUnsavedSession, profilesDiffer } from '@shared/unsaved-changes.js'
 
 export interface UsePreviewDraftOptions {
   kind: PreviewSyncKind
@@ -19,6 +20,8 @@ export interface UsePreviewDraftOptions {
   onError: (error: ProductError | null) => void
   initialDraft?: () => ColorProfile | null
   initialDirty?: () => boolean
+  /** Saved content for the app editor, including metadata-only changes. */
+  savedProfile?: ColorProfile | null
 }
 
 export interface PreviewDraft {
@@ -43,7 +46,13 @@ export interface PreviewDraft {
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const { kind, session, enabled, onError } = options
   const [draft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
-  const [dirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
+  const [markedDirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
+  const dirty =
+    options.savedProfile === undefined
+      ? markedDirty
+      : draft !== null &&
+        options.savedProfile !== null &&
+        profilesDiffer(draft, options.savedProfile)
   const syncRef = useRef<PreviewSyncSession | null>(null)
   if (syncRef.current === null) {
     const port: PreviewSyncPort = {
@@ -59,12 +68,20 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const draftSignature = JSON.stringify(draft)
   const sessionKind = session.state === 'active' ? session.kind : null
   const sessionProfileId = session.state === 'active' ? session.profileId : null
+  const sessionUnsaved = hasUnsavedSession(session)
   useEffect(() => {
     if (!enabled || draft === null || (kind === 'override' && draft.displays.length === 0)) return
-    if (!dirty) return
+    if (!dirty && !sessionUnsaved) return
     sync.schedule(draft, session)
     return () => sync.cancelScheduled()
-  }, [enabled, dirty, draftSignature, sessionKind, sessionProfileId])
+  }, [enabled, dirty, draftSignature, sessionKind, sessionProfileId, sessionUnsaved])
+
+  useLayoutEffect(() => {
+    return window.chromaShift.onFlushPreviewDraft(async () => {
+      if (enabled && draft !== null && (dirty || hasUnsavedSession(session)))
+        await sync.flush(draft, session)
+    })
+  })
 
   return {
     draft,

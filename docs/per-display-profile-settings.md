@@ -183,7 +183,12 @@ activation mode. A later foreground change replaces the queued target; returning
 to the currently intended target clears it.
 
 Opening the app with a mini-panel override shows its applied values in editable
-sliders and the normal `Update profile` / `Discard changes` bar. Promotion from
+sliders and the normal `Update profile` / `Discard changes` bar. An existing unsaved
+session opens directly in Profiles with that profile selected, even if the last
+remembered view was Settings. Draft dirtiness compares current content with the
+saved profile. Reverting all edits makes the draft clean; minimizing then ends it
+through serialized rollback, including while main still has the older dirty state.
+Promotion from
 Override to Edit reuses matching targets without restoring, recapturing, or writing
 to displays. The separate inverted override banner is removed.
 
@@ -197,7 +202,10 @@ pointer-oriented, and non-resizable.
 Tray Exit and other application quit requests warn when an Edit or Temporary
 override session has unsaved changes. The main-process dialog names the profile
 and offers `Update profile`, `Discard changes`, or `Cancel`, including when no
-renderer exists. Update saves the main-owned complete draft through the existing
+renderer exists. Before checking the main-owned draft, quit requests a renderer
+draft flush and waits up to 750 ms for a validated acknowledgement. This includes
+edits still inside the preview-sync debounce. Without a renderer or a timely
+response, quit uses main-owned state. Update saves the main-owned complete draft through the existing
 confirmation path before shutdown. Discard proceeds with normal restore-safe
 shutdown. Cancel keeps the application and session running. Save or restoration
 failure keeps the application alive; connected-display restoration remains a
