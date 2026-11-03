@@ -65,6 +65,82 @@ function completed(
 }
 
 describe('ProfileNotificationController', () => {
+  it.each([
+    {
+      status: 'failed' as const,
+      failures: [{ operation: 'restoreAll' as const, message: 'Restore failed.' }]
+    },
+    {
+      status: 'partialFailure' as const,
+      failures: [{ operation: 'restore' as const, message: 'Partial restore.' }]
+    },
+    { status: 'skipped' as const, deferredDisplayIds: ['display:one'] }
+  ])('announces Safety blocked and Retry for incomplete C3 restoration: %j', async (incomplete) => {
+    const notifications = new RecordingNotifications()
+    const controller = new ProfileNotificationController(
+      new JsonProfileRepository(new MemoryStorage()),
+      () => ({ ...defaultAppSettings, notificationsEnabled: true }),
+      notifications,
+      () => undefined
+    )
+    await controller.handle(completed({ ...incomplete, origin: 'originalSettingsRestore' }))
+    expect(notifications.messages).toMatchObject([
+      {
+        title: 'ChromaShift safety blocked',
+        body: expect.stringContaining('Retry the safety check.'),
+        urgency: 'critical'
+      }
+    ])
+  })
+
+  it.each([true, false])(
+    'reports unapplied Paused shortcut intent with notificationsEnabled=%s',
+    async (notificationsEnabled) => {
+      const notifications = new RecordingNotifications()
+      const openProfile = vi.fn()
+      const controller = new ProfileNotificationController(
+        new JsonProfileRepository(new MemoryStorage()),
+        () => ({ ...defaultAppSettings, notificationsEnabled }),
+        notifications,
+        openProfile
+      )
+      await controller.handle(
+        completed({
+          status: 'skipped',
+          source: 'shortcut',
+          origin: 'statusControl',
+          resolution: { ...completed().resolution!, changed: false },
+          pausedSelection: { kind: 'manual', profileId: 'gaming' }
+        })
+      )
+      await controller.handle(
+        completed({
+          status: 'skipped',
+          source: 'shortcut',
+          origin: 'statusControl',
+          resolution: {
+            target: { kind: 'baseline' },
+            reason: 'baseline',
+            changed: false,
+            previousTarget: null
+          },
+          pausedSelection: { kind: 'automatic' }
+        })
+      )
+      expect(notifications.messages).toMatchObject(
+        notificationsEnabled
+          ? [
+              { title: 'ChromaShift paused', body: 'Gaming applies when you resume.' },
+              { title: 'ChromaShift paused', body: 'Automatic applies when you resume.' }
+            ]
+          : []
+      )
+      if (notificationsEnabled) {
+        notifications.messages[0]!.onClick()
+        expect(openProfile).toHaveBeenCalledWith('gaming')
+      }
+    }
+  )
   it('shows an opted-in completed transition and opens its profile when clicked', async () => {
     const notifications = new RecordingNotifications()
     const openProfile = vi.fn()

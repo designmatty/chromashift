@@ -285,6 +285,40 @@ describe('ChromaShiftController resume and intent', () => {
     })
   })
 
+  it.each(['paused', 'safetyBlocked'] as const)(
+    'publishes only shortcut selection feedback while Paused, starting %s',
+    async (status) => {
+      const { controller } = create(new FakeActivation(), {
+        status,
+        pendingOperation: status === 'paused' ? null : 'pause',
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      })
+      const published: CompletedActivationOutcome[] = []
+      controller.subscribeOperationalOutcomes((value) => published.push(value))
+      await controller.selectManualProfile('accurate', 'manual')
+      await controller.enableAutomatic('manual')
+      expect(published).toEqual([])
+      await controller.selectManualProfile('accurate', 'shortcut')
+      await controller.enableAutomatic('shortcut')
+      expect(published).toMatchObject(
+        status === 'paused'
+          ? [
+              {
+                origin: 'statusControl',
+                source: 'shortcut',
+                pausedSelection: manualActivationMode('accurate')
+              },
+              {
+                origin: 'statusControl',
+                source: 'shortcut',
+                pausedSelection: { kind: 'automatic' }
+              }
+            ]
+          : []
+      )
+    }
+  )
   it('pauses after Original settings restoration and preserves the Intended target', async () => {
     const { activation, controller, persisted, cancelPreview } = create()
     const operationalOutcomes: CompletedActivationOutcome[] = []
