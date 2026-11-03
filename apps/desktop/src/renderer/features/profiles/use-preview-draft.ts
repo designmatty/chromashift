@@ -50,7 +50,8 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const dirty =
     options.savedProfile === undefined
       ? markedDirty
-      : draft !== null &&
+      : markedDirty &&
+        draft !== null &&
         options.savedProfile !== null &&
         profilesDiffer(draft, options.savedProfile)
   const syncRef = useRef<PreviewSyncSession | null>(null)

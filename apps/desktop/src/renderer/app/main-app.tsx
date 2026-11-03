@@ -69,6 +69,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
     onError: setError,
     initialDraft: () => appSessionDraft(product),
+    initialDirty: () => hasUnsavedSession(product.preview),
     savedProfile:
       product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
   })
@@ -290,7 +291,12 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             accelerator: formatShortcutAccelerator(binding.accelerator)
           })
         )
-      else await value(window.chromaShift.saveProfile({ ...current, enabled: !current.enabled }))
+      else {
+        const saved = await value(
+          window.chromaShift.saveProfile({ ...current, enabled: !current.enabled })
+        )
+        if (saved.id === selectedId) resetTo(saved)
+      }
     })
   }
   function createProfile(copy?: ColorProfile): void {
