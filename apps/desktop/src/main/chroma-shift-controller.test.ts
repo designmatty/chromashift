@@ -243,7 +243,7 @@ describe('ChromaShiftController resume and intent', () => {
     'keeps a newer Active %s selection instead of the stale emergency snapshot',
     async (selection) => {
       const { controller, activation, persisted } = create()
-      const snapshot = controller.chromaShiftState
+      const snapshot = controller.captureIntentSnapshot()
       if (selection === 'manual') {
         await controller.selectManualProfile('accurate')
       } else {
@@ -274,7 +274,7 @@ describe('ChromaShiftController resume and intent', () => {
       intendedMode: { kind: 'automatic' },
       intendedTarget: { kind: 'profile', profileId: 'gaming' }
     })
-    const snapshot = controller.chromaShiftState
+    const snapshot = controller.captureIntentSnapshot()
     activation.state = { ...activation.state, mode: { kind: 'automatic' } }
     await controller.recordCompletedOutcome(outcome({ kind: 'profile', profileId: 'accurate' }))
     await controller.restoreBaseline('shortcut', snapshot)
@@ -283,6 +283,107 @@ describe('ChromaShiftController resume and intent', () => {
       intendedMode: { kind: 'automatic' },
       intendedTarget: { kind: 'profile', profileId: 'accurate' }
     })
+  })
+
+  it('keeps a newer Automatic target after the direct restore replaces it with baseline', async () => {
+    const { controller, activation, persisted } = create(new FakeActivation(), {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'default' }
+    })
+    const snapshot = controller.captureIntentSnapshot()
+    // Preview teardown resolves the foreground application's newer profile.
+    activation.state = {
+      ...activation.state,
+      mode: { kind: 'automatic' },
+      currentTarget: { kind: 'profile', profileId: 'gaming' }
+    }
+    await controller.recordCompletedOutcome(outcome({ kind: 'profile', profileId: 'gaming' }))
+    // The direct emergency restore then replaces the live target with baseline.
+    activation.state = { ...activation.state, currentTarget: { kind: 'baseline' } }
+    await controller.syncActiveIntent()
+    expect(controller.chromaShiftState.intendedTarget).toEqual({ kind: 'baseline' })
+
+    await controller.restoreBaseline('shortcut', snapshot)
+
+    expect(persisted.at(-1)).toEqual({
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+  })
+
+  it('preserves the snapshot through unchanged state and the direct restore baseline', async () => {
+    const { controller, activation, persisted } = create(new FakeActivation(), {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'default' }
+    })
+    activation.state = {
+      ...activation.state,
+      mode: { kind: 'automatic' },
+      currentTarget: { kind: 'profile', profileId: 'default' }
+    }
+    const snapshot = controller.captureIntentSnapshot()
+    await controller.syncActiveIntent()
+    activation.state = { ...activation.state, currentTarget: { kind: 'baseline' } }
+    await controller.syncActiveIntent()
+    expect(controller.captureIntentSnapshot()).toEqual(snapshot)
+
+    await controller.restoreBaseline('shortcut', snapshot)
+
+    expect(persisted.at(-1)).toEqual({
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'default' }
+    })
+  })
+
+  it('keeps a real Automatic resolution to baseline after the emergency snapshot', async () => {
+    const { controller, activation, persisted } = create(new FakeActivation(), {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'default' }
+    })
+    const snapshot = controller.captureIntentSnapshot()
+    activation.state = {
+      ...activation.state,
+      mode: { kind: 'automatic' },
+      currentTarget: { kind: 'baseline' }
+    }
+    await controller.syncActiveIntent()
+    await controller.recordCompletedOutcome(outcome({ kind: 'baseline' }, { origin: 'foreground' }))
+    await controller.syncActiveIntent()
+
+    await controller.restoreBaseline('shortcut', snapshot)
+
+    expect(persisted.at(-1)).toEqual({
+      status: 'paused',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'baseline' }
+    })
+  })
+
+  it('detects intent changing away and back before the direct restore', async () => {
+    const { controller, activation, persisted } = create()
+    const snapshot = controller.captureIntentSnapshot()
+    await controller.selectManualProfile('accurate')
+    await controller.selectManualProfile('gaming')
+    expect(controller.captureIntentSnapshot().intentGeneration).toBeGreaterThan(
+      snapshot.intentGeneration
+    )
+    activation.state = { ...activation.state, currentTarget: { kind: 'baseline' } }
+    await controller.syncActiveIntent()
+
+    await controller.restoreBaseline('shortcut', snapshot)
+
+    expect(persisted.at(-1)?.intendedTarget).toEqual({ kind: 'profile', profileId: 'gaming' })
   })
 
   it('coalesces Pause with a held resume while Restore waits, then finishes Paused', async () => {
@@ -379,17 +480,16 @@ describe('ChromaShiftController resume and intent', () => {
 
   it('pauses with the intent captured before an external emergency restore', async () => {
     const activation = new FakeActivation()
+    const { controller, persisted } = create(activation)
+    const snapshot = controller.captureIntentSnapshot()
     activation.state = {
       ...activation.state,
       mode: manualActivationMode('gaming'),
       currentTarget: { kind: 'baseline' }
     }
-    const { controller, persisted } = create(activation)
+    await controller.syncActiveIntent()
 
-    await controller.restoreBaseline('shortcut', {
-      intendedMode: manualActivationMode('gaming'),
-      intendedTarget: { kind: 'profile', profileId: 'gaming' }
-    })
+    await controller.restoreBaseline('shortcut', snapshot)
 
     expect(activation.calls).toEqual(['suspend', 'idle', 'restore'])
     expect(persisted.at(-1)).toEqual({
