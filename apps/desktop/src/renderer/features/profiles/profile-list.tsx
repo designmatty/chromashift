@@ -735,13 +735,7 @@ function ProfileImage({ profile }: { profile: ColorProfile }): React.JSX.Element
   )
 }
 
-function ProfileIconFrame({
-  children,
-  disabled = false
-}: {
-  children: React.ReactNode
-  disabled?: boolean
-}): React.JSX.Element {
+function ProfileIconFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <Flex
       position="relative"
@@ -751,9 +745,8 @@ function ProfileIconFrame({
       justify="center"
       overflow="visible"
       rounded="full"
-      bg={disabled ? 'fg.muted' : 'bg.muted'}
-      color={disabled ? 'bg' : 'fg'}
-      _light={disabled ? { bg: 'bg.panel', color: 'fg.muted' } : undefined}
+      bg="bg.muted"
+      color="fg"
     >
       {children}
     </Flex>

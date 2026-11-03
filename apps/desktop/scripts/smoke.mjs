@@ -3351,6 +3351,18 @@ async function runSmoke() {
       `document.documentElement.classList.contains(${JSON.stringify(theme)})`,
       'The native capture theme did not settle.'
     )
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
+        const nav = document.querySelector('[data-part="profile-nav"]').getBoundingClientRect()
+        const row = document.querySelector('[data-part="profile-item"][data-selected]')
+        const name = row?.querySelector('strong')
+        return row && row.getBoundingClientRect().right <= nav.right + 1 &&
+          name && name.scrollWidth > name.clientWidth && getComputedStyle(name).textOverflow === 'ellipsis' &&
+          row.querySelector('[data-part="profile-actions-trigger"]').getBoundingClientRect().right <= nav.right + 1
+      })()`,
+      'The long sidebar name overflowed its rail or hid its row actions.'
+    )
     await captureNativeWindow(
       electron.pid,
       join(screenshotDirectory, `phase3-${theme}-expanded-native.png`)
