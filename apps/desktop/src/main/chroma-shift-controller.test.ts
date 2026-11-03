@@ -239,6 +239,52 @@ describe('ChromaShiftController pause safety', () => {
 })
 
 describe('ChromaShiftController resume and intent', () => {
+  it.each(['manual', 'automatic'] as const)(
+    'keeps a newer Active %s selection instead of the stale emergency snapshot',
+    async (selection) => {
+      const { controller, activation, persisted } = create()
+      const snapshot = controller.chromaShiftState
+      if (selection === 'manual') {
+        await controller.selectManualProfile('accurate')
+      } else {
+        activation.enableAutomatic = async () => {
+          activation.state = {
+            ...activation.state,
+            mode: { kind: 'automatic' },
+            currentTarget: { kind: 'profile', profileId: 'gaming' }
+          }
+          return outcome()
+        }
+        await controller.enableAutomatic()
+      }
+      const newer = controller.chromaShiftState
+      await controller.restoreBaseline('shortcut', snapshot)
+      expect(persisted.at(-1)).toMatchObject({
+        status: 'paused',
+        intendedMode: newer.intendedMode,
+        intendedTarget: newer.intendedTarget
+      })
+    }
+  )
+
+  it('keeps a newer Automatic target when the mode matches the emergency snapshot', async () => {
+    const { controller, activation, persisted } = create(new FakeActivation(), {
+      status: 'active',
+      pendingOperation: null,
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'gaming' }
+    })
+    const snapshot = controller.chromaShiftState
+    activation.state = { ...activation.state, mode: { kind: 'automatic' } }
+    await controller.recordCompletedOutcome(outcome({ kind: 'profile', profileId: 'accurate' }))
+    await controller.restoreBaseline('shortcut', snapshot)
+    expect(persisted.at(-1)).toMatchObject({
+      status: 'paused',
+      intendedMode: { kind: 'automatic' },
+      intendedTarget: { kind: 'profile', profileId: 'accurate' }
+    })
+  })
+
   it('pauses after Original settings restoration and preserves the Intended target', async () => {
     const { activation, controller, persisted, cancelPreview } = create()
     const operationalOutcomes: CompletedActivationOutcome[] = []
