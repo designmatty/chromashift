@@ -94,6 +94,11 @@ targets remain persisted and resume when the same physical display returns.
   commits the complete draft while preserving mode; `Discard changes` rolls back.
   A renderer dialog offers Update, Discard, or Cancel before leaving unsaved
   changes through profile selection, activation selection, or navigation.
+- Click the header title to rename a profile in place. Enter or blur records the
+  name in the unsaved draft; Escape cancels the name input. New profiles open
+  with naming focused. New profiles use `New profile`, `New profile 2`, and the
+  first free number thereafter. Clones use the source name with the first free
+  numeric suffix, including when cloning an already numbered name.
 - Deleting a profile shows only the delete confirmation, even with unsaved changes.
   Cancel preserves the draft and session. Confirm ends only the deleted profile's
   session before deletion; deleting another profile preserves the open session.
@@ -102,8 +107,10 @@ targets remain persisted and resume when the same physical display returns.
   are on the right. The panel shrinks to make room and scrolls internally, keeping
   the content's top position stable. It names the previewed profile and the automatic target.
   `Use this profile` selects it manually; disabled profiles offer `Enable`.
-  `End preview`, selecting the live profile, closing, or minimizing ends preview
-  and returns the editor to the live profile. Focus loss leaves preview active.
+  `End preview`, selecting the live profile, or closing ends preview and returns
+  the editor to the live profile. Minimizing ends only a clean preview. A dirty
+  edit or temporary override stays applied with its draft intact and automatic
+  switching on hold. Focus loss leaves preview active.
 - The established brightness, contrast, gamma, saturation, and hue controls keep
   their existing row layout. Their icons replace the former per-control enabled
   checkboxes. Unsupported controls stay disabled and explain their unavailable
@@ -137,8 +144,37 @@ serialized activation rollback resets deduplication and reapplies the prior targ
 on every display, including displays held at Original settings. Restore failures
 surface as preview failures.
 
+While Edit or Temporary override has unsaved changes, the app status pill and
+mini-panel power icon show amber `Auto-switching on hold`. Their tooltips explain
+the unsaved changes. The tray tooltip and status menu label show the same hold;
+there is no separate tray icon asset. Active, Paused, and Safety blocked retain
+their existing meanings, with Paused and Safety blocked taking precedence over
+the hold indicator.
+
+Main exposes the latest blocked automatic target through validated ProductState.
+An app-view toast says `<Profile> not applied — unsaved changes on <edited profile>`
+and offers Update and Discard. Both finish the session through the existing path
+that resolves the latest queued foreground application. Update preserves the
+activation mode. A later foreground change replaces the queued target; returning
+to the currently intended target clears it.
+
+Opening the app with a mini-panel override shows its applied values in editable
+sliders and the normal `Update profile` / `Discard changes` bar. Promotion from
+Override to Edit reuses matching targets without restoring, recapturing, or writing
+to displays. The separate inverted override banner is removed.
+
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete
-temporary draft across touched displays; `Reset changes` remains the separate
-session rollback action. The panel remains non-activating, always on top,
+temporary draft across touched displays; `Discard changes` rolls the session back.
+Picking a profile discards the temporary changes without a blocking dialog.
+The panel remains non-activating, always on top,
 pointer-oriented, and non-resizable.
+
+Tray Exit and other application quit requests warn when an Edit or Temporary
+override session has unsaved changes. The main-process dialog names the profile
+and offers `Update profile`, `Discard changes`, or `Cancel`, including when no
+renderer exists. Update saves the main-owned complete draft through the existing
+confirmation path before shutdown. Discard proceeds with normal restore-safe
+shutdown. Cancel keeps the application and session running. Save or restoration
+failure keeps the application alive; connected-display restoration remains a
+requirement for exit.
