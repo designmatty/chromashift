@@ -2159,6 +2159,18 @@ async function runSmoke() {
 
   // Let the menu finish closing and restore its trigger before navigating.
   // Otherwise its delayed focus restoration can blur and close inline naming.
+  // The automation host can take foreground ownership before trusted Escape.
+  // Close any remaining menu through its trigger, as the row-menu helper does.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const trigger = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')
+      if (!(trigger instanceof HTMLElement)) return
+      trigger.focus()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      trigger.click()
+    })()`,
+    awaitPromise: true
+  })
   await waitForExpression(
     debuggerClient,
     `[...document.querySelectorAll('[role="menu"]')].every((menu) => menu.getClientRects().length === 0)`,
