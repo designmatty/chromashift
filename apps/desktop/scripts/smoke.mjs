@@ -529,6 +529,22 @@ async function selectActivationOption(debuggerClient, label) {
     `document.querySelector('[aria-label="Profile selection"]')?.getAttribute('aria-expanded') !== 'true'`,
     'The profile selector did not close.'
   )
+  // Closing the picker precedes serialized preview rollback and activation.
+  // Wait for both product state and the idle editor before a caller reloads it.
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.chromaShift.transitionInProgress ||
+        document.querySelector('[aria-label="Profile selection"]')?.disabled !== false) return false
+      const mode = result.value.chromaShift.intendedMode
+      if (${JSON.stringify(label)} === 'Automatic') return mode.kind === 'automatic'
+      const profile = result.value.configuration.profiles.find((item) => item.name === ${JSON.stringify(label)})
+      return mode.kind === 'manual' && mode.profileId === profile?.id
+    })()`,
+    `Profile selection did not finish activating ${label}.`
+  )
 }
 
 async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
@@ -593,6 +609,7 @@ async function answerUnsavedChanges(debuggerClient, label) {
     `document.querySelector('[role="alertdialog"]')?.textContent?.includes('has unsaved changes')`,
     'The unsaved-changes dialog did not open.'
   )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'unsaved-changes-dialog-native.png'))
   await clickAppButton(debuggerClient, label, '[role="alertdialog"]')
   await waitForExpression(
     debuggerClient,
@@ -2461,6 +2478,46 @@ async function runSmoke() {
   })()`,
     'Clicking a profile did not start Preview or show the banner.'
   )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-preview-native.png'))
+  const unrelatedProfile = await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.createProfile('Delete unselected focus check')`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (unrelatedProfile.result.value?.ok !== true) {
+    throw new Error('Could not create the unselected delete-focus fixture.')
+  }
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((item) => item.textContent?.trim() === 'Delete unselected focus check')`,
+    'The unselected delete-focus fixture did not render.'
+  )
+  for (const decision of ['Cancel', 'Delete profile']) {
+    await selectProfileMenuItem(debuggerClient, 'Delete unselected focus check', 'Delete')
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[role="alertdialog"]')?.textContent?.includes('Delete unselected focus check') === true`,
+      'Unselected profile deletion did not open the confirmation dialog.'
+    )
+    await clickAppButton(debuggerClient, decision, '[role="alertdialog"]')
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const result = await window.chromaShift.getState()
+        if (!result.ok || document.querySelector('[data-scope="dialog"]') !== null) return false
+        const state = result.value
+        const previewed = state.configuration.profiles.find((item) => item.name === 'Smoke profile')
+        const unrelatedExists = state.configuration.profiles.some((item) => item.name === 'Delete unselected focus check')
+        return unrelatedExists === ${decision === 'Cancel'} &&
+          state.preview.state === 'active' && state.preview.kind === 'preview' &&
+          state.preview.profileId === previewed?.id &&
+          document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+          document.activeElement?.matches('[data-part="profile-item"][data-selected] [data-part="profile-select"]') === true
+      })()`,
+      `${decision} on an unselected profile lost the open preview, selection, or keyboard focus.`
+    )
+  }
   await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
   await waitForExpression(
     debuggerClient,
@@ -2489,6 +2546,7 @@ async function runSmoke() {
   })()`,
     'The first change did not promote Preview to Edit or mark unsaved changes.'
   )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-dirty-header-native.png'))
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Settings"]')?.click()`
   })
@@ -2590,6 +2648,7 @@ async function runSmoke() {
   )
   await delay(300)
   await captureScreenshot(debuggerClient, deleteDialogScreenshotPath)
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'delete-profile-dialog-native.png'))
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[role="alertdialog"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Delete profile')?.click()`
