@@ -90,6 +90,7 @@ function setup() {
     window,
     preview,
     native,
+    activation,
     event,
     start,
     panels,
@@ -234,6 +235,30 @@ describe('AppPanelCloseController', () => {
     expect(native.restored).toEqual(['display:one'])
     expect(window.destroy).toHaveBeenCalledOnce()
     expect(ports.flushWindowState).toHaveBeenCalledTimes(3)
+  })
+
+  it('logs an activation error after the session ends without showing restore guidance', async () => {
+    const { controller, ports, activation, event, start, preview, native, window } = setup()
+    await start()
+    const error = new Error('Activation target is unavailable.')
+    activation.cancelPreview.mockRejectedValueOnce(error)
+
+    await controller.handleClose(event)
+
+    expect(native.restored).toEqual(['display:one'])
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(ports.errors.show).not.toHaveBeenCalled()
+    expect(ports.errors.showError).not.toHaveBeenCalled()
+    expect(ports.logger.write).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'error',
+      eventName: 'PreviewCancelOnCloseFailed',
+      reason: 'previewCancelFailed',
+      message: error.message
+    }))
+    expect(window.destroy).not.toHaveBeenCalled()
+
+    await controller.handleClose(event)
+    expect(window.destroy).toHaveBeenCalledOnce()
   })
 
   it('supports Try again from the shared guidance', async () => {

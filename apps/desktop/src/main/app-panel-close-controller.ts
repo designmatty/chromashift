@@ -56,11 +56,15 @@ export class AppPanelCloseController {
         this.ports.logger.write({
           level: 'error',
           eventName: 'PreviewCancelOnCloseFailed',
-          reason: 'previewRestoreFailed',
+          reason: error instanceof PreviewRestoreError ? 'previewRestoreFailed' : 'previewCancelFailed',
           ...(error instanceof PreviewRestoreError ? { failures: error.failures } : {}),
           ...describeError(error)
         })
-        if (this.ports.isDestroyed() || this.ports.isExiting()) return
+        if (
+          !(error instanceof PreviewRestoreError) ||
+          this.ports.isDestroyed() ||
+          this.ports.isExiting()
+        ) return
         if ((await showRestoreFailureGuidance(this.ports.errors)) === 'retry') continue
         return
       }
