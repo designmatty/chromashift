@@ -82,8 +82,8 @@ export const previewStateSchema = z.discriminatedUnion('state', [
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
     targets: z.array(previewTargetSchema),
-    draft: colorProfileSchema.optional(),
-    unsavedChanges: z.boolean().optional()
+    /** Main-computed: the session draft differs from the saved profile. */
+    unsavedChanges: z.boolean()
   })
 ])
 
@@ -256,14 +256,10 @@ export const previewUpdateRequestSchema = z
   })
   .strict()
   .superRefine((request, context) => {
-    if (
-      request.draft !== undefined &&
-      (request.draft.id !== request.profileId ||
-        JSON.stringify(request.draft.displays) !== JSON.stringify(request.targets))
-    ) {
+    if (request.draft !== undefined && request.draft.id !== request.profileId) {
       context.addIssue({
         code: 'custom',
-        message: 'Draft must match the preview profile and targets.',
+        message: 'Draft must match the preview profile.',
         path: ['draft']
       })
     }

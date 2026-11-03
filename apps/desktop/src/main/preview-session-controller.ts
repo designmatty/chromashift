@@ -62,6 +62,10 @@ interface ActivePreview {
   disconnected: Set<string>
 }
 
+function hasUnsavedChanges(active: ActivePreview): boolean {
+  return active.kind !== 'preview' && profilesDiffer(active.draft, active.saved)
+}
+
 interface RestoreTouchedResult {
   failures: string[]
   retainedDisplayIds: string[]
@@ -89,14 +93,18 @@ export class PreviewSessionController {
       state: 'active',
       profileId: this.#active.profileId,
       kind: this.#active.kind,
-      draft: structuredClone(this.#active.draft),
-      unsavedChanges:
-        this.#active.kind !== 'preview' && profilesDiffer(this.#active.draft, this.#active.saved),
+      unsavedChanges: hasUnsavedChanges(this.#active),
       targets: [...this.#active.applied.values()].map((target) => ({
         displayId: target.displayId,
         color: { ...target.color }
       }))
     }
+  }
+
+  /** The full unsaved draft, for main-process flows that outlive the renderer. */
+  public get unsavedDraft(): ColorProfile | null {
+    if (this.#active === null || !hasUnsavedChanges(this.#active)) return null
+    return structuredClone(this.#active.draft)
   }
 
   public async start(
@@ -190,7 +198,7 @@ export class PreviewSessionController {
     return this.#enqueue(async () => {
       await this.#update(profileId, targets)
       const active = this.#requireActive(profileId)
-      active.draft = structuredClone(draft ?? { ...active.draft, displays: targets })
+      active.draft = structuredClone({ ...(draft ?? active.draft), displays: targets })
       this.onStateChanged(this.state)
     })
   }
