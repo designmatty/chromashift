@@ -609,7 +609,10 @@ async function answerUnsavedChanges(debuggerClient, label) {
     `document.querySelector('[role="alertdialog"]')?.textContent?.includes('has unsaved changes')`,
     'The unsaved-changes dialog did not open.'
   )
-  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'unsaved-changes-dialog-native.png'))
+  await captureNativeWindow(
+    electron.pid,
+    join(screenshotDirectory, 'unsaved-changes-dialog-native.png')
+  )
   await clickAppButton(debuggerClient, label, '[role="alertdialog"]')
   await waitForExpression(
     debuggerClient,
@@ -1511,12 +1514,30 @@ async function runSmoke() {
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus()
       input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Desktop default' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Desktop default'`,
@@ -1871,6 +1892,11 @@ async function runSmoke() {
       document.querySelector('[data-part="profile-item"][data-selected] [aria-label="Profile actions"]') !== null`,
     'The new profile did not propagate into the selected sidebar row.'
   )
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name' && document.activeElement.value === 'New profile'`,
+    'A new profile did not open directly into focused naming.'
+  )
   const editModeMenu = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const triggers = [...document.querySelectorAll('[aria-label="Profile actions"]')]
@@ -2004,12 +2030,30 @@ async function runSmoke() {
   })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus()
       input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile'`,
@@ -2390,6 +2434,27 @@ async function runSmoke() {
   )
   await captureScreenshot(pausedMiniDebugger, pausedMiniScreenshotPath)
   await captureNativeWindow(electron.pid, nativeMiniScreenshotPath)
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      window.__smokeTheme = state.value.settings.theme
+      await window.chromaShift.updateSettings({ ...state.value.settings, theme: 'light' })
+    })()`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    pausedMiniDebugger,
+    `document.documentElement.classList.contains('light')`,
+    'The mini panel did not adopt the light theme.'
+  )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'mini-panel-light-native.png'))
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      await window.chromaShift.updateSettings({ ...state.value.settings, theme: window.__smokeTheme })
+    })()`,
+    awaitPromise: true
+  })
   await pausedMiniDebugger.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
   })
@@ -2831,8 +2896,10 @@ async function runSmoke() {
     awaitPromise: true,
     returnByValue: true
   })
-  if (emptyPreviewFixture.result.value?.ok !== true ||
-    emptyPreviewFixture.result.value.value.displays.length !== 0) {
+  if (
+    emptyPreviewFixture.result.value?.ok !== true ||
+    emptyPreviewFixture.result.value.value.displays.length !== 0
+  ) {
     throw new Error('Could not create an empty-target preview fixture.')
   }
   const emptyPreviewProfileId = emptyPreviewFixture.result.value.value.id
@@ -2856,10 +2923,15 @@ async function runSmoke() {
     const expected = guardedBaselines.get(display.id)
     const state = await waitForRestoredDisplayState(restorationGuard, display.id, expected)
     if (displayStateFingerprint(state) !== expected) {
-      throw new Error(`Empty-target Preview did not restore Original settings on ${display.connection}.`)
+      throw new Error(
+        `Empty-target Preview did not restore Original settings on ${display.connection}.`
+      )
     }
   }
-  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'empty-target-preview-native.png'))
+  await captureNativeWindow(
+    electron.pid,
+    join(screenshotDirectory, 'empty-target-preview-native.png')
+  )
   await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
   await waitForExpression(
     debuggerClient,
@@ -2879,7 +2951,9 @@ async function runSmoke() {
     const expected = liveProfileFingerprints.get(display.id)
     const state = await waitForRestoredDisplayState(restorationGuard, display.id, expected)
     if (displayStateFingerprint(state) !== expected) {
-      throw new Error(`End preview did not reapply the exact live profile state on ${display.connection}.`)
+      throw new Error(
+        `End preview did not reapply the exact live profile state on ${display.connection}.`
+      )
     }
   }
   const removedEmptyPreviewFixture = await debuggerClient.send('Runtime.evaluate', {
@@ -2890,7 +2964,9 @@ async function runSmoke() {
   if (removedEmptyPreviewFixture.result.value?.ok !== true) {
     throw new Error('Could not remove the empty-target preview fixture.')
   }
-  globalThis.console.log('Empty-target preview restored Original settings and returned to the exact live profile state.')
+  globalThis.console.log(
+    'Empty-target preview restored Original settings and returned to the exact live profile state.'
+  )
 
   // Two connected displays must hold visibly different settings in one profile.
   const perDisplayApply = await debuggerClient.send('Runtime.evaluate', {
@@ -2987,22 +3063,44 @@ async function runSmoke() {
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus(); input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile unsaved' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `(async () => {
     const result = await window.chromaShift.getState()
     return result.ok && result.value.preview.state === 'active' &&
       result.value.preview.kind === 'edit' &&
+      document.querySelector('[data-part="chromashift-control"]')?.textContent?.includes('Auto-switching on hold') &&
       document.querySelector('[data-part="profile-item"][data-selected] strong')?.textContent?.includes('•')
   })()`,
     'The first change did not promote Preview to Edit or mark unsaved changes.'
   )
-  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-dirty-header-native.png'))
+  await captureNativeWindow(
+    electron.pid,
+    join(screenshotDirectory, 'profile-dirty-header-native.png')
+  )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Settings"]')?.click()`
   })
@@ -3029,9 +3127,27 @@ async function runSmoke() {
   })
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => { const input = document.querySelector('[aria-label="Profile name"]'); input?.focus(); input?.select() })()`
+    expression: `(() => { document.querySelector('[data-part="profile-title"]')?.click()
+      const input = document.querySelector('[aria-label="Profile name"]'); input?.focus(); input?.select() })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile updated' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Settings"]')?.click()`
   })
@@ -3104,7 +3220,10 @@ async function runSmoke() {
   )
   await delay(300)
   await captureScreenshot(debuggerClient, deleteDialogScreenshotPath)
-  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'delete-profile-dialog-native.png'))
+  await captureNativeWindow(
+    electron.pid,
+    join(screenshotDirectory, 'delete-profile-dialog-native.png')
+  )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[role="alertdialog"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Delete profile')?.click()`
@@ -3133,8 +3252,17 @@ async function runSmoke() {
     `document.querySelector('[aria-label="Profile name"]') !== null`,
     'The remaining profile did not enter Edit mode after deletion.'
   )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-title"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.hidden === false`,
+    'Inline naming did not open after deletion.'
+  )
   const nameInputBounds = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       if (!(input instanceof HTMLElement)) return null
       const bounds = input.getBoundingClientRect()
@@ -3173,7 +3301,24 @@ async function runSmoke() {
     windowsVirtualKeyCode: 65,
     modifiers: 2
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Default after delete' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Default after delete'`,
@@ -3242,7 +3387,7 @@ async function runSmoke() {
         )
       return visibleChanged && otherRetained &&
         document.body.innerText.includes('Update profile') &&
-        document.body.innerText.includes('Reset changes')
+        document.body.innerText.includes('Discard changes')
     })()`,
     'Changing the visible mini-panel control did not preserve the other display target.'
   )
@@ -3259,9 +3404,29 @@ async function runSmoke() {
   })
   await writeFile(miniScreenshotPath, globalThis.Buffer.from(miniScreenshot.data, 'base64'))
 
+  // Reopen the app on the mini-panel's applied override, using its normal header actions.
+  await debuggerClient.send('Emulation.clearDeviceMetricsOverride')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `history.replaceState({}, '', location.pathname)`
+  })
+  const overrideAppLoaded = debuggerClient.waitForEvent('Page.loadEventFired')
+  await debuggerClient.send('Page.reload', { ignoreCache: true })
+  await overrideAppLoaded
+  await waitForExpression(
+    debuggerClient,
+    `
+    document.querySelector('[data-part="chromashift-control"]')?.textContent?.includes('Auto-switching on hold') &&
+    document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-valuenow') === '56' &&
+    document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Update profile') &&
+    document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Discard changes') &&
+    document.querySelector('[data-part="override-banner"]') === null`,
+    'The app did not show the mini-panel override in its normal editable profile view.'
+  )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'app-override-hold-native.png'))
+
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -3270,8 +3435,51 @@ async function runSmoke() {
       return result.ok && result.value.preview.state === 'inactive' &&
         result.value.activation.mode.kind === 'manual'
     })()`,
-    'Reset changes did not restore the saved manual profile after mini-panel coverage.'
+    'Discard changes did not restore the saved manual profile after mini-panel coverage.'
   )
+
+  // Repeat with Update and assert persistence, then restore the smoke fixture.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
+      window.__smokeOverrideSaved = profile
+      const draft = structuredClone(profile)
+      draft.displays.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)}).color.brightness = 56
+      const result = await window.chromaShift.startPreview(draft, 'override')
+      if (!result.ok) throw new Error(result.error.message)
+    })()`,
+    awaitPromise: true
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Update profile')`,
+    'The second override did not expose Update profile.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')].find((button) => button.textContent?.trim() === 'Update profile')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+    const state = await window.chromaShift.getState()
+    return state.ok && state.value.preview.state === 'inactive' &&
+      state.value.configuration.profiles.find((profile) => profile.id !== 'default')?.displays.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 56
+  })()`,
+    'Update profile did not persist the mini-panel override.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const result = await window.chromaShift.saveProfile(window.__smokeOverrideSaved)
+      if (!result.ok) throw new Error(result.error.message)
+      history.replaceState({}, '', location.pathname + '?panel=mini')
+    })()`,
+    awaitPromise: true
+  })
+  const overrideMiniLoaded = debuggerClient.waitForEvent('Page.loadEventFired')
+  await debuggerClient.send('Page.reload', { ignoreCache: true })
+  await overrideMiniLoaded
+  await waitForText(debuggerClient, 'Manually selected')
 
   const preparedDefaultRoundTrip = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
@@ -3332,7 +3540,7 @@ async function runSmoke() {
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -3340,9 +3548,9 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'inactive' &&
         !document.body.innerText.includes('Update profile') &&
-        !document.body.innerText.includes('Reset changes')
+        !document.body.innerText.includes('Discard changes')
     })()`,
-    'Reset changes did not discard the neutral Default-profile override session.'
+    'Discard changes did not discard the neutral Default-profile override session.'
   )
   await captureScreenshot(debuggerClient, miniDefaultScreenshotPath)
 
