@@ -83,8 +83,10 @@ starts a fresh helper and compares the restored gamma-ramp hash.
 checks the sandboxed preload bridge and drives the visible app and mini panel
 through Chromium debugging plus Windows interaction.
 
-The flow covers independent profile navigation and Automatic/manual selection,
-Enabled/Disabled availability, paused selection and resume, profile editing,
+The flow covers independent profile navigation, the Automatic | Manual toggle
+in expanded and collapsed A | M forms, keeping the live profile when entering
+Manual over a preview, row-menu activation, pill labels, shortcut tooltips,
+Enabled/Disabled availability, paused presentation and explicit resume, profile editing,
 per-display tabs, read-only parity, sidebar collapse, pointer and keyboard profile
 reordering, cancelled drops, saved order, disabled rows, pinned Default, and list
 edge scrolling, capability states,
@@ -93,6 +95,10 @@ temporary mini-panel overrides,
 Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini
 mutual exclusion, native caption behavior, mini-panel non-activation, tray
 reopening, and renderer release.
+
+Paused mode-selection behavior belongs to #71's controller coverage; the renderer
+smoke does not assert that dependency before it merges. Native dark/light app and
+collapsed-rail captures cover the toggle, live ring and preview/disabled badges.
 
 It records and fires configurable shortcuts with no renderer alive, fires the
 fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact display

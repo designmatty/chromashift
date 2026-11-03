@@ -64,16 +64,32 @@ targets remain persisted and resume when the same physical display returns.
 
 ## App-panel behavior
 
-- The sidebar profile selector chooses Automatic mode or an enabled profile
-  manually. Automatic shows its resolved profile name; available shortcuts are
-  shown alongside each option. Sidebar profile clicks preview without changing
-  the activation mode.
-- Profile availability is Enabled or Disabled. Navigation marks the intended
-  selection as Current while display control is Active, Will resume while
-  Paused, or Pending while Safety blocked. Explicit selection resumes a user
-  pause but never bypasses a safety block.
-- The Status action pauses, resumes, or retries display control independently
-  of profile navigation and availability.
+- The sidebar has an Automatic | Manual toggle. Automatic calls Return to
+  Automatic; Manual keeps the live profile, independently of the profile being
+  previewed. Sidebar profile clicks preview without changing mode. Choose
+  `Use this profile` in the preview strip or row menu, or double-click a row,
+  to use an enabled profile manually. Mode changes use the existing unsaved-changes
+  dialog. The collapsed 40px rail shows the same toggle as A | M, with the active
+  mode highlighted. Both sizes have full labels and tooltips; Automatic includes
+  its configured shortcut. Staying Paused when changing mode depends on #71's
+  controller change; this renderer calls the existing APIs.
+- Profile availability is Enabled or Disabled. The live row subtitle is
+  `Live · Automatic` or `Live · Manual` while Active, `Paused · <mode>` while
+  Paused, and `Blocked · <mode>` while Safety blocked. Its ring uses the live
+  orange/pink accent, grey, or red respectively. Non-live previews carry an eye
+  badge. Disabled profiles retain their image in greyscale with a small disabled
+  badge, dimmed text and a Disabled subtitle. Row tooltips include available
+  hotkeys. The collapsed rail preserves all badges, the live ring and unsaved dot.
+  The reorder handle remains available on hover and keyboard focus.
+- The clickable title-bar pill still pauses, resumes, or retries display control.
+  It says `Active · Automatic` or `Active · Manual: <profile>` in green,
+  `Previewing: <profile>` in the live accent for a non-live preview,
+  `Auto-switching on hold` in amber for unsaved changes, `Paused` in grey,
+  or `Safety blocked` in red. Paused and Safety blocked take precedence over
+  preview and hold. Long names truncate, with the full state in the tooltip.
+- Row menus offer Use this profile, Clone, Disable/Enable, then a divider and
+  red Delete action. Default retains its protected availability and deletion
+  behavior. Delete uses the existing confirmation dialog.
 - Every connected display appears as a tab in the always-editable profile view. The
   selected physical display persists across profiles and restarts.
 - Selection falls back to the first display with saved settings, then the primary display,

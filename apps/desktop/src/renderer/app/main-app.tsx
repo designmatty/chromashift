@@ -1,7 +1,7 @@
 import { Alert, Button, CloseButton, Flex, Icon, Stack, Text, VStack } from '@chakra-ui/react'
 import { Power } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ColorProfile } from '@chromashift/core'
+import type { ActivationMode, ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DisplaysView } from '@/features/settings/displays-view'
@@ -41,6 +41,8 @@ import {
   initialAppView,
   shouldEndPreviewOnMinimize
 } from '@/features/profiles/app-preview-state'
+
+import { controlPill, modeToggleDecision } from '@/features/profiles/control-presentation'
 
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
@@ -292,6 +294,24 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       await returnToLive()
     })
   }
+  function selectMode(requested: ActivationMode['kind']): void {
+    // Pin the live row the user saw, before rollback can release queued automation.
+    const decision = modeToggleDecision(
+      product.chromaShift.intendedMode,
+      requested,
+      currentProfileId
+    )
+    if (decision === null) return
+    continueAfterChanges(async () => {
+      await rollback()
+      await value(
+        decision.kind === 'automatic'
+          ? window.chromaShift.enableAutomatic()
+          : window.chromaShift.activateProfile(decision.profileId)
+      )
+      await returnToLive()
+    })
+  }
   function navigate(nextView: AppPanelView): void {
     if (nextView === view) return
     if (!dirty) setView(nextView)
@@ -396,6 +416,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const showPreviewBanner =
     view === 'profiles' && previewBannerVisible(product, shownProfile, pendingPreviewId)
   const onHold = autoSwitchingOnHold(product) || (dirty && product.chromaShift.status === 'active')
+  const pill = controlPill(product, dirty)
   const queued = product.activation.queuedTarget
   const queuedName =
     queued?.kind === 'profile'
@@ -418,7 +439,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             content={
               onHold
                 ? 'Auto-switching on hold — unsaved changes. Update profile or discard changes to continue.'
-                : chromaShiftActionLabel(product)
+                : `${pill.label}. ${chromaShiftActionLabel(product)}`
             }
           >
             <Button
@@ -426,17 +447,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               data-status={product.chromaShift.status}
               size="2xs"
               variant="subtle"
-              colorPalette={
-                product.chromaShift.status === 'active'
-                  ? onHold
-                    ? 'yellow'
-                    : 'green'
-                  : product.chromaShift.status === 'safetyBlocked'
-                    ? 'red'
-                    : 'gray'
-              }
+              colorPalette={pill.palette}
+              bg={pill.previewing ? 'profile.live/15' : undefined}
+              color={pill.previewing ? 'profile.live' : undefined}
+              maxW="min(420px, calc(50vw - 210px))"
+              minW="0"
               rounded="sm"
-              _hover={{ bg: 'colorPalette.muted' }}
+              _hover={{ bg: pill.previewing ? 'profile.live/25' : 'colorPalette.muted' }}
               disabled={product.chromaShift.transitionInProgress}
               loading={product.chromaShift.transitionInProgress}
               aria-label={chromaShiftActionLabel(product)}
@@ -451,14 +468,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               }}
             >
               <Power size={14} />
-              Status:{' '}
-              {product.chromaShift.status === 'active'
-                ? onHold
-                  ? 'Auto-switching on hold'
-                  : 'Active'
-                : product.chromaShift.status === 'safetyBlocked'
-                  ? 'Safety blocked'
-                  : 'Paused'}
+              <Text as="span" truncate>
+                {pill.label}
+              </Text>
             </Button>
           </Tooltip>
         }
@@ -555,7 +567,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             onCollapsedChange={setSidebarCollapsed}
             onSelect={(profile) => void selectProfile(profile)}
             onCreate={() => createProfile()}
-            onSelectionChange={selectActivation}
+            onModeChange={selectMode}
+            onUseProfile={(profile) => selectActivation(profile.id)}
             onOpenSettings={() => navigate('settings')}
             onDuplicate={createProfile}
             onToggleEnabled={toggleProfileEnabled}
