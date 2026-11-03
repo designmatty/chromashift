@@ -13,6 +13,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
   type IpcMainEvent,
+  type MessageBoxOptions,
   type NativeImage,
   type OpenDialogOptions
 } from 'electron'
@@ -261,16 +262,24 @@ function saveMiniPanelPosition(position: { x: number; y: number }): void {
     })
 }
 
-async function confirmRestoreRetry(title: string, message: string): Promise<'retry' | 'cancel'> {
-  const result = await dialog.showMessageBox({
+async function confirmRestoreRetry(
+  title: string,
+  message: string,
+  window?: BrowserWindow
+): Promise<'retry' | 'cancel'> {
+  const options: MessageBoxOptions = {
     type: 'warning',
     title,
     message,
-    buttons: ['Try again', 'Keep ChromaShift running'],
+    buttons: ['Try again', window === undefined ? 'Keep ChromaShift running' : 'Keep the window open'],
     defaultId: 0,
     cancelId: 1,
     noLink: true
-  })
+  }
+  const result =
+    window === undefined
+      ? await dialog.showMessageBox(options)
+      : await dialog.showMessageBox(window, options)
   return result.response === 0 ? 'retry' : 'cancel'
 }
 
@@ -403,7 +412,7 @@ function createWindow(): BrowserWindow {
     releaseToTray: (event) => windowController.handleClose(event, window),
     errors: {
       show: () => panelController.openAppPanel(),
-      showError: confirmRestoreRetry
+      showError: (title, message) => confirmRestoreRetry(title, message, window)
     },
     logger
   })
