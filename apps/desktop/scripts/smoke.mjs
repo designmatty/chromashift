@@ -2003,6 +2003,17 @@ async function runSmoke() {
     windowsVirtualKeyCode: 27
   })
 
+  // Let the menu finish closing and restore its trigger before navigating.
+  // Otherwise its delayed focus restoration can blur and close inline naming.
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[role="menu"]')].every((menu) => menu.getClientRects().length === 0)`,
+    'The profile menu did not finish closing before inline naming.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`,
+    awaitPromise: true
+  })
   await openProfileFromSidebar(debuggerClient, 'Default profile')
   await openProfileFromSidebar(debuggerClient, 'New profile')
   // New profiles start with neutral targets for every connected display, so
@@ -2039,8 +2050,16 @@ async function runSmoke() {
     })()`
   })
   await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-title"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.hidden === false &&
+      document.querySelector('[aria-label="Profile name"]')?.disabled === false`,
+    'Inline naming did not become available after profile navigation.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus()
       input?.select()
