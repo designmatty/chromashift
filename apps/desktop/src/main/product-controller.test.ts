@@ -162,6 +162,13 @@ function capabilityReport(supported: boolean): DisplayCapabilityReport {
 }
 
 describe('ProductController settings ownership', () => {
+  it('numbers new profiles and clones at the main boundary', async () => {
+    const { product } = controller()
+    const first = await product.createProfile('New profile')
+    expect((await product.createProfile('New profile')).name).toBe('New profile 2')
+    expect((await product.duplicateProfile(first.id)).name).toBe('New profile 3')
+  })
+
   it('saves and applies renderer preference updates', async () => {
     const saved: Parameters<ProductSettingsPort['save']>[0][] = []
     const applied: Parameters<ProductSettingsPort['apply']>[0][] = []

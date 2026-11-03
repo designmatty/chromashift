@@ -64,7 +64,8 @@ export const activationTargetSchema = z.discriminatedUnion('kind', [
 export const activationStateSchema = z.object({
   enabled: z.boolean(),
   mode: activationModeSchema,
-  currentTarget: activationTargetSchema.nullable()
+  currentTarget: activationTargetSchema.nullable(),
+  queuedTarget: activationTargetSchema.nullable().optional()
 })
 
 export const previewTargetSchema = z
@@ -80,7 +81,10 @@ export const previewStateSchema = z.discriminatedUnion('state', [
     state: z.literal('active'),
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
-    targets: z.array(previewTargetSchema)
+    targets: z.array(previewTargetSchema),
+    draft: colorProfileSchema.optional(),
+    /** Main-computed: the session draft differs from the saved profile. */
+    unsavedChanges: z.boolean()
   })
 ])
 
@@ -248,10 +252,36 @@ export const commitSessionRequestSchema = z
 export const previewUpdateRequestSchema = z
   .object({
     profileId: z.string().trim().min(1),
-    targets: z.array(previewTargetSchema)
+    targets: z.array(previewTargetSchema),
+    draft: colorProfileSchema.optional()
   })
   .strict()
   .superRefine((request, context) => {
+    if (request.draft !== undefined && request.draft.id !== request.profileId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Draft must match the preview profile.',
+        path: ['draft']
+      })
+    }
+    if (
+      request.draft !== undefined &&
+      (request.draft.displays.length !== request.targets.length ||
+        request.draft.displays.some(
+          (display) =>
+            !request.targets.some(
+              (target) =>
+                target.displayId.toLowerCase() === display.displayId.toLowerCase() &&
+                JSON.stringify(target.color) === JSON.stringify(display.color)
+            )
+        ))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Draft displays must match preview targets.',
+        path: ['draft', 'displays']
+      })
+    }
     const displayIds = new Set<string>()
     for (const [index, target] of request.targets.entries()) {
       const normalizedId = target.displayId.toLowerCase()
@@ -333,7 +363,11 @@ export interface ChromaShiftApi {
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override'
   ): Promise<ProductResult<null>>
-  updatePreview(profileId: string, targets: PreviewTarget[]): Promise<ProductResult<null>>
+  updatePreview(
+    profileId: string,
+    targets: PreviewTarget[],
+    draft?: ColorProfile
+  ): Promise<ProductResult<null>>
   confirmPreview(
     profile: ColorProfile,
     activation: 'manual' | 'preserve'

@@ -161,10 +161,11 @@ const api: ChromaShiftApi = {
       profile,
       kind
     }),
-  updatePreview: (profileId, targets) =>
+  updatePreview: (profileId, targets, draft) =>
     invoke(productIpcChannels.updatePreview, previewUpdateRequestSchema, voidResultSchema, {
       profileId,
-      targets
+      targets,
+      ...(draft === undefined ? {} : { draft })
     }),
   confirmPreview: (profile, activation) =>
     invoke(productIpcChannels.confirmPreview, commitSessionRequestSchema, profileResultSchema, {

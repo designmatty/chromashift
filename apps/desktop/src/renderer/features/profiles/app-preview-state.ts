@@ -1,5 +1,24 @@
 import type { ColorProfile } from '@chromashift/core'
 import type { AppPanelView, ProductState } from '@shared/product-api.js'
+import { hasUnsavedSession } from '@shared/unsaved-changes'
+import { applyOverrideTargets } from '@/features/profiles/override-targets'
+
+export function appSessionDraft(product: ProductState): ColorProfile | null {
+  const session = product.preview
+  if (session.state === 'active' && hasUnsavedSession(session)) {
+    const saved = product.configuration.profiles.find((profile) => profile.id === session.profileId)
+    if (session.draft !== undefined) return structuredClone(session.draft)
+    if (saved !== undefined) return applyOverrideTargets(saved, session.targets)
+  }
+  return liveProfile(product)
+}
+
+export function shouldEndPreviewOnMinimize(
+  dirty: boolean,
+  preview: ProductState['preview']
+): boolean {
+  return !dirty && !hasUnsavedSession(preview)
+}
 
 type AppPreviewState = Pick<ProductState, 'configuration' | 'chromaShift' | 'foregroundApplication'>
 

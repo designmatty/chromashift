@@ -48,7 +48,8 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   if (syncRef.current === null) {
     const port: PreviewSyncPort = {
       startPreview: (profile, sessionKind) => window.chromaShift.startPreview(profile, sessionKind),
-      updatePreview: (profileId, targets) => window.chromaShift.updatePreview(profileId, targets),
+      updatePreview: (profileId, targets, draft) =>
+        window.chromaShift.updatePreview(profileId, targets, draft),
       cancelPreview: () => window.chromaShift.cancelPreview()
     }
     syncRef.current = new PreviewSyncSession(port, kind, onError)

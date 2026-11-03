@@ -13,7 +13,7 @@ import {
   Text
 } from '@chakra-ui/react'
 import { Copy, Ellipsis, PowerOff, Trash2, Monitor, AppWindow, Power } from 'lucide-react'
-import { useId } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { ProductError, ProductState } from '@shared/product-api.js'
@@ -27,6 +27,8 @@ export interface ProfileDetailProps {
   product: ProductState
   busy: boolean
   dirty: boolean
+  startNaming?: boolean
+  onNamingEnded?(): void
   onChange(profile: ColorProfile): void
   onCancel(): void
   onSave(): void
@@ -40,6 +42,30 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const profile = props.profile
   const isDefault = profile.id.toLowerCase() === DEFAULT_ID
   const actionsTriggerId = useId()
+  const [naming, setNaming] = useState(props.startNaming ?? false)
+  const [name, setName] = useState(profile.name)
+  const nameInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!naming) setName(profile.name)
+  }, [profile.name, naming])
+  useEffect(() => {
+    if (props.startNaming) setNaming(true)
+  }, [props.startNaming])
+  useEffect(() => {
+    if (naming) {
+      nameInput.current?.focus()
+      nameInput.current?.select()
+    }
+  }, [naming])
+  function finishNaming(commit: boolean): void {
+    if (!naming) return
+    const next = name.trim()
+    if (commit && next.length > 0 && next !== profile.name)
+      props.onChange({ ...profile, name: next })
+    else setName(profile.name)
+    setNaming(false)
+    props.onNamingEnded?.()
+  }
 
   return (
     <Stack
@@ -48,11 +74,32 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       data-display-target-count={profile.displays.length}
     >
       <Flex as="header" align="center" gap={3}>
+        {!naming && (
+          <Button
+            data-part="profile-title"
+            variant="plain"
+            p="0"
+            fontSize="lg"
+            fontWeight="700"
+            minW="0"
+            maxW="300px"
+            disabled={props.busy || props.product.chromaShift.status !== 'active'}
+            aria-label={`Rename ${profile.name}`}
+            onClick={() => {
+              setName(profile.name)
+              setNaming(true)
+            }}
+          >
+            <Text truncate>{profile.name}</Text>
+          </Button>
+        )}
         <Input
+          ref={nameInput}
+          hidden={!naming}
           data-part="profile-name"
-          value={profile.name}
+          value={naming ? name : profile.name}
           variant="subtle"
-          maxLength={65}
+          maxLength={100}
           maxW="300px"
           aria-label="Profile name"
           bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
@@ -60,7 +107,14 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           size="sm"
           fontWeight="700"
           disabled={props.busy || props.product.chromaShift.status !== 'active'}
-          onChange={(event) => props.onChange({ ...profile, name: event.target.value })}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => finishNaming(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === 'Escape') {
+              event.preventDefault()
+              finishNaming(event.key === 'Enter')
+            }
+          }}
         />
         {isDefault && <ProfileBadge>Default</ProfileBadge>}
         {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
