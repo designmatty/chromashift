@@ -12,7 +12,7 @@ export interface AppPanelClosePorts {
   isDestroyed(): boolean
   flushWindowState(): void
   requestShutdown(): void
-  cancelNonOverride(): Promise<void>
+  cancelNonOverride(onCancelled: () => void): Promise<void>
   notifyClosed(): void
   releaseToTray(event: CloseEventPort): void
   errors: RestoreFailureGuidancePort
@@ -44,7 +44,14 @@ export class AppPanelCloseController {
     while (!this.ports.isDestroyed() && !this.ports.isExiting()) {
       try {
         // Always enqueue cancellation, even when a preview start is still pending.
-        await this.ports.cancelNonOverride()
+        await this.ports.cancelNonOverride(() => {
+          if (this.ports.isDestroyed() || this.ports.isExiting()) return
+          // Release within the preview queue so a pending start cannot outlive
+          // the renderer that requested it.
+          this.ports.notifyClosed()
+          this.ports.releaseToTray(event)
+          this.ports.logger.write({ level: 'information', eventName: 'MainWindowReleasedToTray' })
+        })
       } catch (error) {
         this.ports.logger.write({
           level: 'error',
@@ -57,11 +64,6 @@ export class AppPanelCloseController {
         if ((await showRestoreFailureGuidance(this.ports.errors)) === 'retry') continue
         return
       }
-      if (this.ports.isDestroyed() || this.ports.isExiting()) return
-      // Notify only after rollback, so renderer cleanup cannot race a failed close.
-      this.ports.notifyClosed()
-      this.ports.releaseToTray(event)
-      this.ports.logger.write({ level: 'information', eventName: 'MainWindowReleasedToTray' })
       return
     }
   }

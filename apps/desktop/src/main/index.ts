@@ -397,7 +397,8 @@ function createWindow(): BrowserWindow {
     requestShutdown: () => {
       void runtime.shutdownCoordinator?.request('application')
     },
-    cancelNonOverride: () => runtime.previewController?.cancelNonOverride() ?? Promise.resolve(),
+    cancelNonOverride: (onCancelled) =>
+      runtime.previewController?.cancelNonOverride(onCancelled) ?? Promise.resolve().then(onCancelled),
     notifyClosed: () => window.webContents.send(productIpcChannels.appPanelClosed),
     releaseToTray: (event) => windowController.handleClose(event, window),
     errors: {

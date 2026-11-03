@@ -60,7 +60,7 @@ function setup() {
     isDestroyed: window.isDestroyed,
     flushWindowState: vi.fn(),
     requestShutdown: vi.fn(),
-    cancelNonOverride: vi.fn(() => preview.cancelNonOverride()),
+    cancelNonOverride: vi.fn((onCancelled: () => void) => preview.cancelNonOverride(onCancelled)),
     notifyClosed: vi.fn(),
     releaseToTray: vi.fn((event) => windowController.handleClose(event, window)),
     errors: {
@@ -108,9 +108,12 @@ describe('AppPanelCloseController', () => {
     const { controller, ports, window, event } = setup()
     let finish!: () => void
     ports.cancelNonOverride.mockImplementationOnce(
-      () =>
+      (onCancelled) =>
         new Promise<void>((resolve) => {
-          finish = resolve
+          finish = () => {
+            onCancelled()
+            resolve()
+          }
         })
     )
 
@@ -129,6 +132,59 @@ describe('AppPanelCloseController', () => {
       level: 'information',
       eventName: 'MainWindowReleasedToTray'
     })
+  })
+
+  it('restores a preview queued during close before releasing the renderer', async () => {
+    const { controller, ports, native, event, start, preview, window } = setup()
+    await start()
+    let releaseRestore!: () => void
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    let restoreStarted!: () => void
+    const restoring = new Promise<void>((resolve) => { restoreStarted = resolve })
+    const restore = native.restoreDisplay.bind(native)
+    vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
+      restoreStarted()
+      await restoreGate
+      return restore(displayId)
+    })
+    let releaseApply!: () => void
+    const applyGate = new Promise<void>((resolve) => { releaseApply = resolve })
+    let applyStarted!: () => void
+    const applying = new Promise<void>((resolve) => { applyStarted = resolve })
+    const apply = native.applyDisplaySettings.bind(native)
+    vi.spyOn(native, 'applyDisplaySettings').mockImplementationOnce(async (displayId, color) => {
+      applyStarted()
+      await applyGate
+      return apply(displayId, color)
+    })
+
+    const closing = controller.handleClose(event)
+    await restoring
+    const starting = start('preview')
+    releaseRestore()
+    await applying
+    expect(window.destroy).not.toHaveBeenCalled()
+    expect(ports.notifyClosed).not.toHaveBeenCalled()
+    releaseApply()
+    await starting
+    await closing
+
+    expect(native.restored).toEqual(['display:one', 'display:one'])
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('drains a start queued immediately after close with no active session', async () => {
+    const { controller, event, start, preview, native, window } = setup()
+    const closing = controller.handleClose(event)
+    const starting = start()
+
+    await starting
+    await closing
+
+    expect(native.restored).toEqual(['display:one'])
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(window.destroy).toHaveBeenCalledOnce()
   })
 
   it('keeps the window visible, hides the mini panel, and logs restore-failure guidance', async () => {
