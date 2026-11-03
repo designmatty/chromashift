@@ -39,7 +39,8 @@ _Avoid_: Factory defaults, default profile
 **Restore original settings**:
 An action that restores Original settings and enters Paused display control
 after complete restoration. Paused persists until the user resumes; the Intended
-target is preserved.
+target is preserved. This action is a no-op while Paused or Safety blocked;
+the emergency shortcut still restores Original settings directly.
 _Avoid_: Reset displays
 
 **Color safety envelope**:
