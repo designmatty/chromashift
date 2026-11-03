@@ -33,7 +33,8 @@ export class ShutdownCoordinator {
     private readonly native: ShutdownNativePort,
     private readonly application: ShutdownApplicationPort,
     private readonly errors: ShutdownErrorPort,
-    private readonly logger: StructuredLogger
+    private readonly logger: StructuredLogger,
+    private readonly prepare: () => Promise<boolean> = async () => true
   ) {}
 
   public get state(): ShutdownState {
@@ -56,6 +57,25 @@ export class ShutdownCoordinator {
 
   async #shutdown(source: ShutdownSource): Promise<boolean> {
     this.#state = 'restoring'
+    try {
+      if (!(await this.prepare())) {
+        this.#state = 'idle'
+        return false
+      }
+    } catch (error) {
+      this.#state = 'failed'
+      this.logger.write({
+        level: 'error',
+        eventName: 'UnsavedChangesQuitFailed',
+        ...describeError(error)
+      })
+      this.errors.show()
+      await this.errors.showError(
+        'Profile could not be updated',
+        'Your changes could not be saved. ChromaShift will keep running. Open the app to review your changes and try again.'
+      )
+      return false
+    }
     this.logger.write({
       level: 'information',
       eventName: 'ApplicationExitRequested',

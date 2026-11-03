@@ -169,6 +169,18 @@ const runtime = createProductRuntime({
   },
   dialogs: {
     showError: (title, message) => dialog.showErrorBox(title, message),
+    confirmUnsavedQuit: async (profileName) => {
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Unsaved changes',
+        message: `${profileName} has unsaved changes`,
+        buttons: ['Update profile', 'Discard changes', 'Cancel'],
+        defaultId: 2,
+        cancelId: 2,
+        noLink: true
+      })
+      return result.response === 0 ? 'update' : result.response === 1 ? 'discard' : 'cancel'
+    },
     confirmShutdownRetry: async (title, message) => {
       const result = await dialog.showMessageBox({
         type: 'warning',
