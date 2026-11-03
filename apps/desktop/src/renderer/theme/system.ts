@@ -60,6 +60,9 @@ const config = defineConfig({
     },
     semanticTokens: {
       colors: {
+        'profile.live': {
+          value: { base: '{colors.orange.solid}', _dark: '{colors.pink.500}' }
+        },
         gray: {
           50: { value: '#F1F1F3' },
           100: { value: '#E3E3E8' },

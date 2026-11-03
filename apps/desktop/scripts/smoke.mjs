@@ -491,60 +491,31 @@ async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemTe
   )
 }
 
-async function selectActivationOption(debuggerClient, label) {
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('button[aria-label="Profile selection"]')?.disabled === false`,
-    'The profile selector did not become ready after the previous transition.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Profile selection"]')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `[...document.querySelectorAll('[role="option"]')].some((item) =>
-      item.getClientRects().length > 0 && item.querySelector('[data-part="item-text"]')?.textContent?.trim() === ${JSON.stringify(label)})`,
-    `Profile selection did not show ${label}.`
-  )
-  await waitForExpression(
-    debuggerClient,
-    `(() => {
-      const trigger = document.querySelector('[aria-label="Profile selection"]')?.getBoundingClientRect()
-      const content = document.querySelector('[data-part="profile-selection-content"]')?.getBoundingClientRect()
-      if (!trigger || !content || content.width <= trigger.width) return false
-      const collapsed = getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px'
-      return collapsed
-        ? content.left >= trigger.right && content.top >= 0 && content.bottom <= innerHeight
-        : Math.abs(content.left - trigger.left) < 1 &&
-          (content.bottom <= trigger.top || content.top >= trigger.bottom)
-    })()`,
-    'The profile selection menu was not anchored to its sidebar trigger.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('[role="option"]')]
-      .find((item) => item.getClientRects().length > 0 && item.querySelector('[data-part="item-text"]')?.textContent?.trim() === ${JSON.stringify(label)})?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[aria-label="Profile selection"]')?.getAttribute('aria-expanded') !== 'true'`,
-    'The profile selector did not close.'
-  )
-  // Closing the picker precedes serialized preview rollback and activation.
-  // Wait for both product state and the idle editor before a caller reloads it.
-  await waitForExpression(
-    debuggerClient,
+async function selectAppActivation(debuggerClient, label) {
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="mode-toggle"] button')?.disabled === false`,
+    'The mode toggle did not become ready.')
+  if (label === 'Automatic' || label === 'Manual') {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `document.querySelector('[data-part="mode-toggle"] [aria-label="${label}"]')?.click()`
+    })
+  } else {
+    await selectProfileMenuItem(debuggerClient, label, 'Use this profile')
+  }
+  // Menu closure precedes serialized rollback/activation. Wait before reloading.
+  await waitForExpression(debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       if (!result.ok || result.value.preview.state !== 'inactive' ||
         result.value.chromaShift.transitionInProgress ||
-        document.querySelector('[aria-label="Profile selection"]')?.disabled !== false) return false
+        document.querySelector('[data-part="mode-toggle"] button')?.disabled !== false) return false
       const mode = result.value.chromaShift.intendedMode
       if (${JSON.stringify(label)} === 'Automatic') return mode.kind === 'automatic'
+      if (${JSON.stringify(label)} === 'Manual') return mode.kind === 'manual'
       const profile = result.value.configuration.profiles.find((item) => item.name === ${JSON.stringify(label)})
       return mode.kind === 'manual' && mode.profileId === profile?.id
     })()`,
-    `Profile selection did not finish activating ${label}.`
-  )
+    `App activation did not finish selecting ${label}.`)
 }
 
 async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
@@ -2057,7 +2028,7 @@ async function runSmoke() {
        const result = await window.chromaShift.getState()
        return result.ok && result.value.chromaShift.status === 'paused' &&
          !result.value.chromaShift.transitionInProgress &&
-         document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Status: Paused'
+         document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Paused'
     })()`,
     'The renderer-free Toggle ChromaShift shortcut did not enter Paused.'
   )
@@ -2145,7 +2116,7 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.chromaShift.status === 'paused' &&
-        document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Status: Paused'
+        document.querySelector('[data-part="chromashift-control"][data-status="paused"]')?.textContent?.trim() === 'Paused'
     })()`,
     'The app-panel status control did not pause ChromaShift.'
   )
@@ -2187,14 +2158,43 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'automatic' &&
         result.value.activation.currentTarget?.profileId === 'default' &&
         document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-        document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Automatic: Default profile' &&
-        document.querySelector('[data-part="profile-nav"] [data-part="profile-selection"]') !== null &&
+        document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true' &&
+        document.querySelector('[data-part="profile-nav"] [data-part="mode-toggle"]') !== null &&
         document.querySelector('[aria-label="Profile active"]') === null &&
-        [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Current · Automatic')
+        [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Automatic')
     })()`,
     'Profile navigation did not remain independent of Automatic selection.'
   )
-  await selectActivationOption(debuggerClient, 'Smoke profile')
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Previewing: Smoke profile' &&
+      document.querySelector('[data-part="profile-preview-badge"]') !== null`,
+    'A non-live preview did not show its accent pill and eye badge.')
+  await selectAppActivation(debuggerClient, 'Manual')
+  await waitForExpression(debuggerClient,
+    `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.chromaShift.intendedMode.profileId === 'default' &&
+        document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Active · Manual: Default profile'
+    })()`,
+    'Manual did not keep the live Default profile while another profile was previewed.')
+  await selectAppActivation(debuggerClient, 'Automatic')
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Active · Automatic'`,
+    'Automatic did not update the status pill.')
+  const doubleClickRow = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const row = [...document.querySelectorAll('[data-part="profile-select"]')].find(item => item.querySelector('strong')?.textContent === 'Smoke profile')
+      const rect = row?.getBoundingClientRect()
+      return rect ? { x: rect.left + 20, y: rect.top + rect.height / 2 } : null
+    })()`, returnByValue: true
+  })
+  if (!doubleClickRow.result.value) throw new Error('Double-click row was unavailable.')
+  for (const clickCount of [1, 2]) {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await debuggerClient.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount, ...doubleClickRow.result.value })
+    }
+  }
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2203,53 +2203,40 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'manual' &&
         result.value.activation.mode.profileId === profile?.id &&
         result.value.activation.currentTarget?.profileId === profile?.id &&
-        document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Manual: Smoke profile' &&
-        [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Current · Manual')
+        document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('aria-pressed') === 'true' &&
+        [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Manual')
     })()`,
-    'The sidebar selector did not establish a manual selection.'
+    'Use this profile did not establish Manual mode.'
   )
   const selectorShortcut = 'CommandOrControl+Alt+Shift+F7'
   const assignedSelectorShortcut = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const result = await window.chromaShift.getState()
       if (!result.ok) return false
-      const updated = await window.chromaShift.updateSettings({
-        ...result.value.settings,
+      const updated = await window.chromaShift.updateSettings({ ...result.value.settings,
         shortcutBindings: [
-          ...result.value.settings.shortcutBindings.filter((binding) => binding.action.kind !== 'defaultProfile'),
-          { action: { kind: 'defaultProfile' }, accelerator: ${JSON.stringify(selectorShortcut)} }
+          ...result.value.settings.shortcutBindings.filter(binding => !['defaultProfile', 'automatic'].includes(binding.action.kind)),
+          { action: { kind: 'defaultProfile' }, accelerator: 'CommandOrControl+Alt+Shift+F6' },
+          { action: { kind: 'automatic' }, accelerator: ${JSON.stringify(selectorShortcut)} }
         ]
       })
       return updated.ok
-    })()`,
-    awaitPromise: true,
-    returnByValue: true
+    })()`, awaitPromise: true, returnByValue: true
   })
-  if (assignedSelectorShortcut.result.value !== true) {
-    throw new Error('Could not assign Default shortcut for selector smoke coverage.')
-  }
+  if (assignedSelectorShortcut.result.value !== true) throw new Error('Could not assign tooltip shortcuts.')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Profile selection"]')?.click()`
+    expression: `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.focus()`
   })
-  await waitForExpression(
-    debuggerClient,
-    `[...document.querySelectorAll('[role="option"]')].some((item) =>
-      item.querySelector('[data-part="item-text"]')?.textContent === 'Default profile' &&
-      item.querySelector('[data-part="shortcut-display"]')?.getAttribute('data-accelerator') === ${JSON.stringify(selectorShortcut)})`,
-    'The Default shortcut did not appear in the profile selector.'
-  )
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
-    key: 'Escape',
-    code: 'Escape',
-    windowsVirtualKeyCode: 27
+  await waitForExpression(debuggerClient,
+    `[...document.querySelectorAll('[role="tooltip"]')].some(item => item.textContent === 'Automatic (Ctrl+Alt+Shift+F7)')`,
+    'The expanded Automatic tooltip omitted its configured shortcut.')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-reorder-id="default"] [data-part="profile-select"]')?.focus()`
   })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'Escape',
-    code: 'Escape',
-    windowsVirtualKeyCode: 27
-  })
+  await waitForExpression(debuggerClient,
+    `[...document.querySelectorAll('[role="tooltip"]')].some(item => item.textContent.includes('Ctrl+Alt+Shift+F6'))`,
+    'The row tooltip omitted its Default shortcut.')
+  await debuggerClient.send('Runtime.evaluate', { expression: 'document.activeElement?.blur()' })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const state = await window.chromaShift.getState()
@@ -2294,30 +2281,12 @@ async function runSmoke() {
     })()`,
     'Disabling the current profile did not return to Automatic.'
   )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Profile selection"]')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[data-part="profile-selection-content"] [role="listbox"]') !== null &&
-      ![...document.querySelectorAll('[data-part="profile-selection-content"] [role="option"]')]
-        .some((item) => item.querySelector('[data-part="item-text"]')?.textContent === 'Smoke profile')`,
-    'The disabled profile remained available in the manual-selection listbox.'
-  )
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
-    key: 'Escape',
-    code: 'Escape',
-    windowsVirtualKeyCode: 27
-  })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'Escape',
-    code: 'Escape',
-    windowsVirtualKeyCode: 27
-  })
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="profile-item"][data-disabled] [data-part="profile-disabled-badge"]') !== null &&
+      document.querySelector('[data-part="profile-item"][data-disabled] .lucide-palette') !== null`,
+    'The disabled profile lost its own image or disabled badge.')
   await selectMenuItem(debuggerClient, 'More profile actions', 'Enable profile')
-  await selectActivationOption(debuggerClient, 'Smoke profile')
+  await selectAppActivation(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
       .find((item) => item.querySelector('strong')?.textContent === 'Default profile')?.click()`
@@ -2325,18 +2294,18 @@ async function runSmoke() {
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-      document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Manual: Smoke profile'`,
+      document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('aria-pressed') === 'true'`,
     'Browsing Default changed the manual selection.'
   )
-  await selectActivationOption(debuggerClient, 'Automatic')
-  await selectActivationOption(debuggerClient, 'Default profile')
+  await selectAppActivation(debuggerClient, 'Automatic')
+  await selectAppActivation(debuggerClient, 'Default profile')
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.activation.mode.kind === 'manual' &&
         result.value.activation.mode.profileId === 'default' &&
-        document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Manual: Default profile'
+        document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Active · Manual: Default profile'
     })()`,
     'Default could not be selected manually.'
   )
@@ -2345,29 +2314,46 @@ async function runSmoke() {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Status: Paused' &&
-      [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Will resume · Manual')`,
+    `document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Paused' &&
+      [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Paused · Manual')`,
     'Paused display control was presented as a current applied profile.'
   )
-  await selectActivationOption(debuggerClient, 'Default profile')
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.chromaShift.status === 'active' && result.value.activation.mode.kind === 'manual'
-    })()`,
-    'Reselecting the same manual profile did not resume a user pause.'
-  )
+  // Stay-Paused mode selection is covered by prerequisite #71, not this renderer PR.
+  await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()` })
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="chromashift-control"][data-status="active"]') !== null`,
+    'Explicit Resume did not restore Active display control.')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()`
   })
-  await selectActivationOption(debuggerClient, 'Automatic')
+  await waitForExpression(debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px' &&
+      document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.textContent === 'A' &&
+      document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.textContent === 'M' &&
+      (() => {
+        const toggle = document.querySelector('[data-part="mode-toggle"]').getBoundingClientRect()
+        return [...document.querySelectorAll('[data-part="mode-toggle"] button')].every(button => {
+          const rect = button.getBoundingClientRect()
+          return rect.left >= toggle.left && rect.right <= toggle.right && rect.width > 0
+        })
+      })()`,
+    'The collapsed A | M toggle did not fit the 40px rail.')
+  await selectAppActivation(debuggerClient, 'Automatic')
+  await selectAppActivation(debuggerClient, 'Manual')
+  await selectAppActivation(debuggerClient, 'Automatic')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.focus()`
+  })
+  await waitForExpression(debuggerClient,
+    `[...document.querySelectorAll('[role="tooltip"]')].some(item => item.textContent === 'Automatic (Ctrl+Alt+Shift+F7)')`,
+    'The collapsed Automatic tooltip omitted its configured shortcut.')
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'mode-toggle-collapsed-native.png'))
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Expand sidebar"]')?.click()`
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Automatic: Default profile'`,
+    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true'`,
     'Automatic selection was unavailable in the collapsed sidebar.'
   )
   await debuggerClient.send('Runtime.evaluate', {
@@ -2392,7 +2378,7 @@ async function runSmoke() {
     })()`,
     'Manual selection did not safely leave Preview.'
   )
-  await selectActivationOption(debuggerClient, 'Automatic')
+  await selectAppActivation(debuggerClient, 'Automatic')
 
   const screenshot = await debuggerClient.send('Page.captureScreenshot', {
     format: 'png',
@@ -2647,7 +2633,7 @@ async function runSmoke() {
     }
   }
 
-  await selectActivationOption(debuggerClient, 'Automatic')
+  await selectAppActivation(debuggerClient, 'Automatic')
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
     debuggerClient,
@@ -2659,7 +2645,62 @@ async function runSmoke() {
   })()`,
     'Clicking a profile did not start Preview or show the banner.'
   )
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="chromashift-control"]')?.textContent?.trim() === 'Previewing: Smoke profile' &&
+      document.querySelector('[data-part="profile-item"][data-selected] [data-part="profile-preview-badge"]') !== null`,
+    'The preview pill or eye badge did not name the non-live profile.')
   await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-preview-native.png'))
+  const visualFixture = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) throw new Error('Could not read theme')
+      const created = await window.chromaShift.createProfile('Disabled profile with a deliberately long name to check title bar truncation')
+      if (!created.ok) throw new Error(created.error.message)
+      const disabled = await window.chromaShift.saveProfile({ ...created.value, enabled: false })
+      if (!disabled.ok) throw new Error(disabled.error.message)
+      return { id: created.value.id, theme: state.value.settings.theme }
+    })()`, awaitPromise: true, returnByValue: true
+  })
+  if (!visualFixture.result.value?.id) throw new Error('Could not create native visual fixture.')
+  await openProfileFromSidebar(debuggerClient, 'Disabled profile with a deliberately long name to check title bar truncation')
+  await waitForExpression(debuggerClient,
+    `(() => {
+      const pill = document.querySelector('[data-part="chromashift-control"]')
+      const label = pill?.querySelector('span')
+      const panelToggle = document.querySelector('[data-part="panel-toggle"]')
+      return pill?.textContent?.startsWith('Previewing: Disabled profile') &&
+        label && label.scrollWidth > label.clientWidth && getComputedStyle(label).textOverflow === 'ellipsis' &&
+        pill.getBoundingClientRect().right < panelToggle.getBoundingClientRect().left
+    })()`,
+    'The long preview label did not truncate before the panel toggle.')
+  for (const theme of ['dark', 'light']) {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(async () => {
+        const state = await window.chromaShift.getState()
+        const updated = await window.chromaShift.updateSettings({ ...state.value.settings, theme: ${JSON.stringify(theme)} })
+        if (!updated.ok) throw new Error(updated.error.message)
+      })()`, awaitPromise: true
+    })
+    await waitForExpression(debuggerClient, `document.documentElement.classList.contains(${JSON.stringify(theme)})`, 'The native capture theme did not settle.')
+    await captureNativeWindow(electron.pid, join(screenshotDirectory, `phase3-${theme}-expanded-native.png`))
+    await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()` })
+    await waitForExpression(debuggerClient,
+      `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px' &&
+        document.querySelector('[data-part="profile-live-ring"]') !== null &&
+        document.querySelector('[data-part="profile-preview-badge"]') !== null &&
+        document.querySelector('[data-part="profile-disabled-badge"]') !== null`,
+      'Collapsed rail lost its live, preview or disabled markers.')
+    await captureNativeWindow(electron.pid, join(screenshotDirectory, `phase3-${theme}-collapsed-native.png`))
+    await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[aria-label="Expand sidebar"]')?.click()` })
+  }
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      await window.chromaShift.deleteProfile(${JSON.stringify(visualFixture.result.value.id)})
+      const state = await window.chromaShift.getState()
+      await window.chromaShift.updateSettings({ ...state.value.settings, theme: ${JSON.stringify(visualFixture.result.value.theme)} })
+    })()`, awaitPromise: true
+  })
   const unrelatedProfile = await debuggerClient.send('Runtime.evaluate', {
     expression: `window.chromaShift.createProfile('Delete unselected focus check')`,
     awaitPromise: true,
@@ -2750,6 +2791,18 @@ async function runSmoke() {
     electron.pid,
     join(screenshotDirectory, 'profile-dirty-header-native.png')
   )
+  await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()` })
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="profile-item"][data-selected] [aria-label="Unsaved changes"]') !== null`,
+    'The collapsed dirty profile lost its unsaved dot.')
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'phase3-dirty-collapsed-native.png'))
+  await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[aria-label="Expand sidebar"]')?.click()` })
+  await debuggerClient.send('Runtime.evaluate', { expression: `document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.click()` })
+  await answerUnsavedChanges(debuggerClient, 'Cancel')
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true' &&
+      document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile unsaved'`,
+    'Cancelling a mode change did not preserve Automatic and its draft.')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Settings"]')?.click()`
   })
@@ -2983,7 +3036,7 @@ async function runSmoke() {
     'Delete-focus coverage did not discard unsaved changes.'
   )
 
-  await selectActivationOption(debuggerClient, 'Smoke profile')
+  await selectAppActivation(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `history.replaceState({}, '', location.pathname + '?panel=mini')`
   })

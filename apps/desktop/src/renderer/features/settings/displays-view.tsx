@@ -61,7 +61,7 @@ export function DisplaysView({
               </Text>
             </Box>
             {display.primary && (
-              <Badge size={'lg'} colorPalette={'blue'}>
+              <Badge size={'lg'} colorPalette="gray">
                 Primary
               </Badge>
             )}
