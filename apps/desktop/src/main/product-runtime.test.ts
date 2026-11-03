@@ -187,6 +187,7 @@ async function createHarness(
     },
     dialogs: {
       showError: () => undefined,
+      confirmUnsavedQuit: () => Promise.resolve('cancel'),
       confirmShutdownRetry: () => Promise.resolve('cancel'),
       warnShortcutsUnavailable: () => undefined,
       pickApplicationFile: () => Promise.resolve(null)

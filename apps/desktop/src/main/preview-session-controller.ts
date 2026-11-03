@@ -13,6 +13,7 @@ import type {
   DisplayRestoreResult
 } from '@chromashift/native-client'
 import type { PreviewState } from '@shared/product-api.js'
+import { profilesDiffer } from '@shared/unsaved-changes.js'
 import { describeError } from '@main/structured-logger.js'
 
 export interface PreviewNativePort {
@@ -47,6 +48,8 @@ export class PreviewRestoreError extends Error {
 }
 
 interface ActivePreview {
+  draft: ColorProfile
+  saved: ColorProfile
   profileId: string
   kind: 'preview' | 'edit' | 'override'
   /** Currently applied settings, keyed by lowercased display ID. */
@@ -86,6 +89,9 @@ export class PreviewSessionController {
       state: 'active',
       profileId: this.#active.profileId,
       kind: this.#active.kind,
+      draft: structuredClone(this.#active.draft),
+      unsavedChanges:
+        this.#active.kind !== 'preview' && profilesDiffer(this.#active.draft, this.#active.saved),
       targets: [...this.#active.applied.values()].map((target) => ({
         displayId: target.displayId,
         color: { ...target.color }
@@ -93,17 +99,27 @@ export class PreviewSessionController {
     }
   }
 
-  public async start(profile: ColorProfile, kind: 'preview' | 'edit' | 'override'): Promise<void> {
-    return this.#enqueue(() => this.#start(profile, kind))
+  public async start(
+    profile: ColorProfile,
+    kind: 'preview' | 'edit' | 'override',
+    saved = profile
+  ): Promise<void> {
+    return this.#enqueue(() => this.#start(profile, kind, saved))
   }
 
-  async #start(profile: ColorProfile, kind: 'preview' | 'edit' | 'override'): Promise<void> {
+  async #start(
+    profile: ColorProfile,
+    kind: 'preview' | 'edit' | 'override',
+    saved: ColorProfile
+  ): Promise<void> {
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
-      if (this.#active.kind === 'preview' && kind === 'edit') {
+      const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
+      this.#active.draft = structuredClone(profile)
+      if (this.#active.kind !== 'edit' && kind === 'edit') {
         this.#active.kind = 'edit'
-        this.onStateChanged(this.state)
       }
+      if (changed) this.onStateChanged(this.state)
       return
     }
     if (this.#active !== null) await this.#teardown()
@@ -153,12 +169,30 @@ export class PreviewSessionController {
       throw error
     }
 
-    this.#active = { profileId: profile.id, kind, applied, touched, validated, disconnected }
+    this.#active = {
+      profileId: profile.id,
+      kind,
+      draft: structuredClone(profile),
+      saved: structuredClone(saved),
+      applied,
+      touched,
+      validated,
+      disconnected
+    }
     this.onStateChanged(this.state)
   }
 
-  public async update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
-    return this.#enqueue(() => this.#update(profileId, targets))
+  public async update(
+    profileId: string,
+    targets: DisplayColorTarget[],
+    draft?: ColorProfile
+  ): Promise<void> {
+    return this.#enqueue(async () => {
+      await this.#update(profileId, targets)
+      const active = this.#requireActive(profileId)
+      active.draft = structuredClone(draft ?? { ...active.draft, displays: targets })
+      this.onStateChanged(this.state)
+    })
   }
 
   async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
@@ -216,8 +250,6 @@ export class PreviewSessionController {
       }
       active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
     }
-
-    this.onStateChanged(this.state)
   }
 
   public async confirm(profileId: string): Promise<void> {
@@ -259,6 +291,10 @@ export class PreviewSessionController {
 
   public async dispose(): Promise<void> {
     await this.#enqueue(() => this.#teardown())
+  }
+
+  public waitForIdle(): Promise<void> {
+    return this.#operationTail
   }
 
   public reapplyAfterDisplayTransition(): Promise<boolean> {
@@ -467,7 +503,7 @@ export class PreviewSessionController {
   ): boolean {
     if (this.#active === null) return false
     if (this.#active.profileId.toLowerCase() !== profileId.toLowerCase()) return false
-    if (this.#active.kind !== kind && !(this.#active.kind === 'preview' && kind === 'edit')) {
+    if (this.#active.kind !== kind && !(kind === 'edit' && this.#active.kind !== 'edit')) {
       return false
     }
     if (this.#active.applied.size !== targets.length) return false

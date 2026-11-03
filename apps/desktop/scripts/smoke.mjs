@@ -1188,12 +1188,30 @@ async function runSmoke() {
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus()
       input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Desktop default' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Desktop default'`,
@@ -1648,12 +1666,30 @@ async function runSmoke() {
   await openProfileFromSidebar(debuggerClient, 'New profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus()
       input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile'`,
@@ -2474,11 +2510,29 @@ async function runSmoke() {
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       input?.focus(); input?.select()
     })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile unsaved' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2515,9 +2569,27 @@ async function runSmoke() {
   })
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => { const input = document.querySelector('[aria-label="Profile name"]'); input?.focus(); input?.select() })()`
+    expression: `(() => { document.querySelector('[data-part="profile-title"]')?.click()
+      const input = document.querySelector('[aria-label="Profile name"]'); input?.focus(); input?.select() })()`
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Smoke profile updated' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Settings"]')?.click()`
   })
@@ -2618,8 +2690,17 @@ async function runSmoke() {
     `document.querySelector('[aria-label="Profile name"]') !== null`,
     'The remaining profile did not enter Edit mode after deletion.'
   )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-title"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.hidden === false`,
+    'Inline naming did not open after deletion.'
+  )
   const nameInputBounds = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
+      document.querySelector('[data-part="profile-title"]')?.click()
       const input = document.querySelector('[aria-label="Profile name"]')
       if (!(input instanceof HTMLElement)) return null
       const bounds = input.getBoundingClientRect()
@@ -2658,7 +2739,24 @@ async function runSmoke() {
     windowsVirtualKeyCode: 65,
     modifiers: 2
   })
+  await waitForExpression(
+    debuggerClient,
+    `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+    'The inline profile name input did not receive focus.'
+  )
   await debuggerClient.send('Input.insertText', { text: 'Default after delete' })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
+  await debuggerClient.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13
+  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]')?.value === 'Default after delete'`,
@@ -2727,7 +2825,7 @@ async function runSmoke() {
         )
       return visibleChanged && otherRetained &&
         document.body.innerText.includes('Update profile') &&
-        document.body.innerText.includes('Reset changes')
+        document.body.innerText.includes('Discard changes')
     })()`,
     'Changing the visible mini-panel control did not preserve the other display target.'
   )
@@ -2746,7 +2844,7 @@ async function runSmoke() {
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -2755,7 +2853,7 @@ async function runSmoke() {
       return result.ok && result.value.preview.state === 'inactive' &&
         result.value.activation.mode.kind === 'manual'
     })()`,
-    'Reset changes did not restore the saved manual profile after mini-panel coverage.'
+    'Discard changes did not restore the saved manual profile after mini-panel coverage.'
   )
 
   const preparedDefaultRoundTrip = await debuggerClient.send('Runtime.evaluate', {
@@ -2817,7 +2915,7 @@ async function runSmoke() {
   )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Reset changes')?.click()`
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -2825,9 +2923,9 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'inactive' &&
         !document.body.innerText.includes('Update profile') &&
-        !document.body.innerText.includes('Reset changes')
+        !document.body.innerText.includes('Discard changes')
     })()`,
-    'Reset changes did not discard the neutral Default-profile override session.'
+    'Discard changes did not discard the neutral Default-profile override session.'
   )
   await captureScreenshot(debuggerClient, miniDefaultScreenshotPath)
 

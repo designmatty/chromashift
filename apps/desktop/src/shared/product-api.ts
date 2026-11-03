@@ -64,7 +64,8 @@ export const activationTargetSchema = z.discriminatedUnion('kind', [
 export const activationStateSchema = z.object({
   enabled: z.boolean(),
   mode: activationModeSchema,
-  currentTarget: activationTargetSchema.nullable()
+  currentTarget: activationTargetSchema.nullable(),
+  queuedTarget: activationTargetSchema.nullable().optional()
 })
 
 export const previewTargetSchema = z
@@ -80,7 +81,9 @@ export const previewStateSchema = z.discriminatedUnion('state', [
     state: z.literal('active'),
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
-    targets: z.array(previewTargetSchema)
+    targets: z.array(previewTargetSchema),
+    draft: colorProfileSchema.optional(),
+    unsavedChanges: z.boolean().optional()
   })
 ])
 
@@ -248,10 +251,22 @@ export const commitSessionRequestSchema = z
 export const previewUpdateRequestSchema = z
   .object({
     profileId: z.string().trim().min(1),
-    targets: z.array(previewTargetSchema)
+    targets: z.array(previewTargetSchema),
+    draft: colorProfileSchema.optional()
   })
   .strict()
   .superRefine((request, context) => {
+    if (
+      request.draft !== undefined &&
+      (request.draft.id !== request.profileId ||
+        JSON.stringify(request.draft.displays) !== JSON.stringify(request.targets))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Draft must match the preview profile and targets.',
+        path: ['draft']
+      })
+    }
     const displayIds = new Set<string>()
     for (const [index, target] of request.targets.entries()) {
       const normalizedId = target.displayId.toLowerCase()
@@ -333,7 +348,11 @@ export interface ChromaShiftApi {
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override'
   ): Promise<ProductResult<null>>
-  updatePreview(profileId: string, targets: PreviewTarget[]): Promise<ProductResult<null>>
+  updatePreview(
+    profileId: string,
+    targets: PreviewTarget[],
+    draft?: ColorProfile
+  ): Promise<ProductResult<null>>
   confirmPreview(
     profile: ColorProfile,
     activation: 'manual' | 'preserve'

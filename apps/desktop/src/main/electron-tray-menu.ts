@@ -34,6 +34,7 @@ export class ElectronTrayMenu implements TrayMenuPort {
   }
 
   public update(model: TrayReadModel, commands: TrayCommands): void {
+    this.#tray.setToolTip(`ChromaShift: ${model.chromaShiftStatusLabel}`)
     const profileItems: MenuItemConstructorOptions[] =
       model.profiles.length === 0
         ? [{ label: 'No profiles configured', enabled: false }]

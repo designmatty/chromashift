@@ -1,6 +1,7 @@
 import {
   automaticActivationMode,
   manualActivationMode,
+  selectActivation,
   type ActivationMode,
   type ActivationTarget,
   type ForegroundApplication,
@@ -24,6 +25,7 @@ export class AutomaticActivationController {
   #mode: ActivationMode = automaticActivationMode
   #currentTarget: ActivationTarget | null = null
   #previewing = false
+  #queuedTarget: ActivationTarget | null = null
   #systemTransitioning = false
   #writesSuspended = false
 
@@ -44,7 +46,8 @@ export class AutomaticActivationController {
     return {
       enabled: this.#enabled,
       mode: { ...this.#mode },
-      currentTarget: this.#currentTarget === null ? null : { ...this.#currentTarget }
+      currentTarget: this.#currentTarget === null ? null : { ...this.#currentTarget },
+      queuedTarget: this.#queuedTarget === null ? null : { ...this.#queuedTarget }
     }
   }
 
@@ -182,6 +185,20 @@ export class AutomaticActivationController {
     }
 
     this.#currentApplication = parsed.data.application
+    if (this.#previewing && this.#mode.kind === 'automatic') {
+      const application = this.#currentApplication
+      return this.repository.getConfiguration().then((configuration) => {
+        if (!this.#previewing || this.#currentApplication !== application) return
+        const target = selectActivation({
+          configuration,
+          foregroundApplication: application,
+          mode: this.#mode
+        }).target
+        this.#queuedTarget =
+          JSON.stringify(target) === JSON.stringify(this.#currentTarget) ? null : target
+        this.#emitState()
+      })
+    }
     if (this.#previewing || this.#systemTransitioning || this.#writesSuspended) {
       return Promise.resolve()
     }
@@ -199,6 +216,7 @@ export class AutomaticActivationController {
   public async cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     if (!this.#previewing) return
     this.#previewing = false
+    this.#queuedTarget = null
     await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
     if (this.#writesSuspended) return
     await this.#activateCurrentApplication({ source: 'manual', origin: 'previewRollback' })
@@ -211,6 +229,7 @@ export class AutomaticActivationController {
     if (!this.#previewing) throw new Error('No display preview is active.')
     this.#mode = manualActivationMode(profileId)
     this.#previewing = false
+    this.#queuedTarget = null
     await this.coordinator.resetAfterExternalRestore(retainedDisplayIds)
     const outcome = await this.#activateCurrentApplication({
       source: 'manual',
@@ -316,6 +335,7 @@ export class AutomaticActivationController {
   public async handleNativeServiceExit(): Promise<void> {
     this.#enabled = false
     this.#previewing = false
+    this.#queuedTarget = null
     this.#pendingApplications.length = 0
     this.#currentTarget = null
     this.#writesSuspended = false
@@ -386,6 +406,7 @@ export interface ActivationControllerState {
   enabled: boolean
   mode: ActivationMode
   currentTarget: ActivationTarget | null
+  queuedTarget?: ActivationTarget | null
 }
 
 export type ConfigurationChange = 'profileContent' | 'profileOrder'

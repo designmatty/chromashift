@@ -125,6 +125,21 @@ function completeColor(overrides: Partial<ColorSettings> = {}): ColorSettings {
 afterEach(() => vi.useRealTimers())
 
 describe('PreviewSessionController', () => {
+  it('tracks metadata-only dirtiness through promotion and full-draft updates', async () => {
+    const native = new FakeNative()
+    const saved = profile()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(saved, 'preview', saved)
+    expect(controller.state).toMatchObject({ unsavedChanges: false })
+    const renamed = { ...saved, name: 'Unsaved name' }
+    const before = native.calls.length
+    await controller.start(renamed, 'edit', saved)
+    expect(controller.state).toMatchObject({ unsavedChanges: true, draft: renamed })
+    await controller.update(saved.id, saved.displays, saved)
+    expect(controller.state).toMatchObject({ unsavedChanges: false, draft: saved })
+    expect(native.calls).toHaveLength(before)
+  })
+
   it('captures, applies, updates, and confirms a safe preview', async () => {
     const native = new FakeNative()
     const activation = new FakeActivation()

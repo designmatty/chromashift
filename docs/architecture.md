@@ -176,10 +176,19 @@ flows (click-to-preview selection and collapse-on-equal) stay in
 are always editable while Active. A sidebar click previews saved values without
 changing activation mode; the first change promotes unchanged preview targets to
 Edit before synchronizing the draft, retaining baseline ownership without a
-restore or capture. `Update profile` commits while preserving mode; `Discard
+restore or capture. A matching mini-panel Override also promotes to Edit in place,
+with no native write. Main retains the complete draft, including metadata, and
+reports whether it differs from the saved profile. The app opens that override in
+the normal editable profile view and unsaved action bar. `Update profile` commits while preserving mode; `Discard
 changes` rolls back. Renderer dialogs guard navigation and activation changes
-with unsaved changes. End preview, live-profile selection, close, and minimize
-return to the live profile. Focus loss does not end preview. Cancellation,
+with unsaved changes. End preview, live-profile selection, and close return to
+the live profile. Minimize ends only a clean preview; unsaved edits and overrides
+stay applied with their draft intact. While unsaved changes hold automatic writes,
+the app pill and mini-panel power icon are amber, and the tray tooltip and menu
+status say `Auto-switching on hold`. Main publishes the latest queued automatic
+target through the validated product state. The app toast offers Update or
+Discard, after which the existing rollback/completion path applies the latest
+foreground target. Focus loss does not end preview. Cancellation,
 navigation, and failure wait for pending writes before restoring the previous
 manual/foreground/default/baseline target. Preview has no countdown. Native apply
 restores baseline before each complete settings request so removing an override
@@ -194,7 +203,8 @@ does not make ChromaShift the foreground application. The panel has an explicit
 close button, closes when the full app opens, and can be dragged by its header. A user
 position is persisted and clamped to a connected display; without one, the panel
 opens next to the tray. Quick color changes remain temporary while the panel is
-hidden and expose `Update profile` and `Reset changes`; profile selection establishes
+hidden and expose `Update profile` and `Discard changes`; profile selection discards
+temporary changes without a dialog and establishes
 a manual override until the user returns to Auto switch. Mini-panel footer actions
 open the corresponding Profiles, Displays, or Settings view in the
 native-caption-controlled app panel.
@@ -278,7 +288,11 @@ minute open the circuit instead of forming a reload loop. The global
 rollback plus automatic-activation baseline restoration without relying on a
 renderer.
 Tray Exit and other
-application quit requests share one shutdown coordinator, which waits for queued
+application quit requests share one shutdown coordinator. Before shutdown, a
+main-process dialog warns when an Edit or Temporary override has unsaved changes,
+even without a renderer. Update profile saves the complete main-owned draft
+through the existing confirm path; Discard changes continues shutdown; Cancel
+keeps the app running. Save failure also leaves the app alive. The coordinator waits for queued
 activation work and requires `service.shutdown` to restore every connected display
 before allowing Electron to exit. Explicit shutdown discards restoration records for
 displays that are no longer connected, so ordinary monitor removal neither blocks Exit

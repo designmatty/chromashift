@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings } from '@chromashift/core'
 import {
   controlChromaShiftRequestSchema,
+  activationStateSchema,
   diagnosticLogEntriesResultSchema,
   openAppPanelRequestSchema,
   previewUpdateRequestSchema,
@@ -13,6 +14,38 @@ import {
 } from '@shared/product-api.js'
 
 describe('product API contracts', () => {
+  it('validates queued switches and binds the full draft to its preview targets', () => {
+    const activation = { enabled: true, mode: { kind: 'automatic' }, currentTarget: null }
+    expect(
+      activationStateSchema.safeParse({
+        ...activation,
+        queuedTarget: { kind: 'profile', profileId: 'game' }
+      }).success
+    ).toBe(true)
+    expect(
+      activationStateSchema.safeParse({ ...activation, queuedTarget: { kind: 'profile' } }).success
+    ).toBe(false)
+    expect(
+      activationStateSchema.safeParse({
+        ...activation,
+        queuedTarget: { kind: 'shell', command: 'anything' }
+      }).success
+    ).toBe(false)
+    const draft = { id: 'game', name: 'Draft name', enabled: true, applications: [], displays: [] }
+    expect(
+      previewUpdateRequestSchema.safeParse({ profileId: 'game', targets: [], draft }).success
+    ).toBe(true)
+    expect(
+      previewUpdateRequestSchema.safeParse({ profileId: 'other', targets: [], draft }).success
+    ).toBe(false)
+    expect(
+      previewUpdateRequestSchema.safeParse({
+        profileId: 'game',
+        targets: [{ displayId: 'display:one', color: createNeutralColorSettings() }],
+        draft
+      }).success
+    ).toBe(false)
+  })
   it('rejects malformed renderer profile writes and preview display IDs', () => {
     expect(saveProfileRequestSchema.safeParse({ profile: { id: 'bad' } }).success).toBe(false)
     expect(
