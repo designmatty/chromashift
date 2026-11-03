@@ -62,10 +62,27 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           disabled={props.busy || props.product.chromaShift.status !== 'active'}
           onChange={(event) => props.onChange({ ...profile, name: event.target.value })}
         />
-        {props.dirty && <Text aria-label="Unsaved changes">•</Text>}
         {isDefault && <ProfileBadge>Default</ProfileBadge>}
         {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
         <Flex ml="auto" align="center" gap="5">
+          {props.dirty && (
+            <Flex data-part="unsaved-changes-actions" gap="2" align="center">
+              <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
+                Discard changes
+              </Button>
+              <Button
+                size="xs"
+                disabled={
+                  props.busy ||
+                  profile.name.trim().length === 0 ||
+                  props.product.chromaShift.status !== 'active'
+                }
+                onClick={props.onSave}
+              >
+                Update profile
+              </Button>
+            </Flex>
+          )}
           <Menu.Root ids={{ trigger: actionsTriggerId }}>
             <Tooltip ids={{ trigger: actionsTriggerId }} content="More profile actions">
               <Menu.Trigger asChild>
@@ -124,27 +141,6 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
             }
           >
             Resume
-          </Button>
-        </Flex>
-      )}
-      {props.dirty && (
-        <Flex data-part="unsaved-changes-actions" gap="2" align="center">
-          <Text color="fg.muted" mr="auto">
-            Unsaved changes
-          </Text>
-          <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
-            Discard changes
-          </Button>
-          <Button
-            size="xs"
-            disabled={
-              props.busy ||
-              profile.name.trim().length === 0 ||
-              props.product.chromaShift.status !== 'active'
-            }
-            onClick={props.onSave}
-          >
-            Update profile
           </Button>
         </Flex>
       )}

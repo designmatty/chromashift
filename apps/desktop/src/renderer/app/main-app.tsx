@@ -228,9 +228,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   }
   function requestProfileDeletion(profile: ColorProfile): void {
-    continueAfterChanges(async () => {
-      requestAnimationFrame(() => setProfilePendingDeletion(profile))
-    })
+    requestAnimationFrame(() => setProfilePendingDeletion(profile))
   }
   function confirmProfileDeletion(): void {
     const profile = profilePendingDeletion
@@ -417,54 +415,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         }
       />
       <OverrideBanner />
-      {showPreviewBanner && shownProfile !== null && (
-        <Flex
-          data-part="preview-banner"
-          mx="2.5"
-          p="3"
-          gap="3"
-          align="center"
-          rounded="lg"
-          bg="colorPalette.subtle"
-          color="fg"
-          colorPalette="blue"
-        >
-          <Stack flex="1" minW="0" gap="0">
-            <Text fontWeight="medium" truncate>
-              ◉ Previewing {shownProfile.name}
-            </Text>
-            <Text color="fg.muted" fontSize="sm">
-              Automatic would use: {automaticProfileName(product)}
-            </Text>
-            {emptyPreviewMessage(product, shownProfile) !== null && (
-              <Text color="fg.muted" fontSize="sm">
-                {emptyPreviewMessage(product, shownProfile)}
-              </Text>
-            )}
-          </Stack>
-          <Button
-            size="xs"
-            disabled={busy}
-            onClick={() => {
-              if (!shownProfile.enabled) {
-                toggleProfileEnabled(shownProfile)
-                return
-              }
-              perform(async () => {
-                if (dirty) await updateProfile()
-                else await rollback()
-                await value(window.chromaShift.activateProfile(shownProfile.id))
-                await returnToLive()
-              })
-            }}
-          >
-            {shownProfile.enabled ? 'Use this profile' : 'Enable'}
-          </Button>
-          <Button size="xs" variant="outline" disabled={busy} onClick={endPreview}>
-            End preview
-          </Button>
-        </Flex>
-      )}
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
           <Alert.Indicator />
@@ -478,7 +428,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           />
         </Alert.Root>
       )}
-      <Flex data-part="app-body" overflow={'auto'} gap="4" flex={1} paddingX={4} paddingBottom={4}>
+      <Flex
+        data-part="app-body"
+        overflow="hidden"
+        minH={0}
+        gap="4"
+        flex={1}
+        paddingX={4}
+        paddingBottom={4}
+      >
         {inSettings ? (
           <SettingsNav
             page={view}
@@ -513,55 +471,104 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             }}
           />
         )}
-        <Flex
-          as="main"
-          data-part="main-panel"
-          flex={1}
-          gap={2}
-          flexDir={'column'}
-          h="full"
-          minH="full"
-          p="20px"
-          overflow="auto"
-          rounded="xl"
-          bg={{ base: 'bg', _dark: 'bg.muted' }}
-        >
-          {view === 'profiles' && (
-            <>
-              {shownProfile === null ? (
-                <Empty title="No profile selected" />
-              ) : (
-                <ProfileDetail
-                  profile={shownProfile}
-                  product={product}
-                  busy={busy}
-                  dirty={dirty}
-                  onChange={updateDraft}
-                  onCancel={() =>
-                    perform(async () => {
-                      await rollback()
-                      await returnToLive()
-                    })
+        <Flex flex={1} minW={0} minH={0} flexDir="column" gap={3}>
+          <Flex
+            as="main"
+            data-part="main-panel"
+            flex={1}
+            gap={2}
+            flexDir={'column'}
+            minH={0}
+            p="20px"
+            overflow="auto"
+            rounded="xl"
+            bg={{ base: 'bg', _dark: 'bg.muted' }}
+          >
+            {view === 'profiles' && (
+              <>
+                {shownProfile === null ? (
+                  <Empty title="No profile selected" />
+                ) : (
+                  <ProfileDetail
+                    profile={shownProfile}
+                    product={product}
+                    busy={busy}
+                    dirty={dirty}
+                    onChange={updateDraft}
+                    onCancel={() =>
+                      perform(async () => {
+                        await rollback()
+                        await returnToLive()
+                      })
+                    }
+                    onSave={() =>
+                      perform(async () => {
+                        await updateProfile()
+                        await returnToLive()
+                      })
+                    }
+                    onCopy={() => createProfile(shownProfile)}
+                    onDelete={() => requestProfileDeletion(shownProfile)}
+                    onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
+                    onError={setError}
+                  />
+                )}
+              </>
+            )}
+            {view === 'displays' && <DisplaysView product={product} onError={setError} />}
+            {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
+            {view === 'shortcuts' && <ShortcutsPanel product={product} onError={setError} />}
+            {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
+            {view === 'about' && <AboutPanel version={product.version} />}
+          </Flex>
+          {showPreviewBanner && shownProfile !== null && (
+            <Flex
+              data-part="preview-banner"
+              flexShrink={0}
+              p="3"
+              gap="3"
+              align="center"
+              rounded="lg"
+              bg="colorPalette.subtle"
+              color="fg"
+              colorPalette="blue"
+            >
+              <Stack flex="1" minW="0" gap="0">
+                <Text fontWeight="medium" truncate>
+                  ◉ Previewing {shownProfile.name}
+                </Text>
+                <Text color="fg.muted" fontSize="sm">
+                  Automatic would use: {automaticProfileName(product)}
+                </Text>
+                {emptyPreviewMessage(product, shownProfile) !== null && (
+                  <Text color="fg.muted" fontSize="sm">
+                    {emptyPreviewMessage(product, shownProfile)}
+                  </Text>
+                )}
+              </Stack>
+              <Button
+                size="xs"
+                disabled={busy}
+                onClick={() => {
+                  if (!shownProfile.enabled) {
+                    toggleProfileEnabled(shownProfile)
+                    return
                   }
-                  onSave={() =>
-                    perform(async () => {
-                      await updateProfile()
-                      await returnToLive()
-                    })
-                  }
-                  onCopy={() => createProfile(shownProfile)}
-                  onDelete={() => requestProfileDeletion(shownProfile)}
-                  onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
-                  onError={setError}
-                />
-              )}
-            </>
+                  perform(async () => {
+                    if (dirty) await updateProfile()
+                    else await rollback()
+                    await value(window.chromaShift.activateProfile(shownProfile.id))
+                    await returnToLive()
+                  })
+                }}
+              >
+                {shownProfile.enabled ? 'Use this profile' : 'Enable'}
+              </Button>
+              <Button size="xs" variant="outline" disabled={busy} onClick={endPreview}>
+                End preview
+              </Button>
+            </Flex>
           )}
-          {view === 'displays' && <DisplaysView product={product} onError={setError} />}
-          {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
-          {view === 'shortcuts' && <ShortcutsPanel product={product} onError={setError} />}
-          {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
-          {view === 'about' && <AboutPanel version={product.version} />}
         </Flex>
       </Flex>
       <ProfileActionDialog

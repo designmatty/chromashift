@@ -1200,7 +1200,7 @@ async function runSmoke() {
     'The Default profile name input did not accept keyboard text.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
@@ -1772,7 +1772,7 @@ async function runSmoke() {
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Update profile')?.click()`
   })
   await waitForExpression(
@@ -1826,7 +1826,7 @@ async function runSmoke() {
     'The applied-change Discard check could not preview brightness.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
@@ -1859,7 +1859,7 @@ async function runSmoke() {
       if (reset === null) return false
       reset.click()
       await new Promise((resolve) => setTimeout(resolve, 20))
-      const cancel = [...document.querySelectorAll('button')]
+      const cancel = [...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
         .find((candidate) => candidate.textContent?.trim() === 'Discard changes')
       cancel?.click()
       return cancel !== undefined
@@ -2457,7 +2457,7 @@ async function runSmoke() {
     const result = await window.chromaShift.getState()
     return result.ok && result.value.preview.state === 'active' &&
       result.value.preview.kind === 'preview' &&
-      document.querySelector('[data-part="preview-banner"]')?.textContent?.includes('Previewing Smoke profile')
+      document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')?.textContent?.includes('Previewing Smoke profile')
   })()`,
     'Clicking a profile did not start Preview or show the banner.'
   )
@@ -2665,7 +2665,7 @@ async function runSmoke() {
     'The profile name input did not accept keyboard text after another profile was deleted.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(

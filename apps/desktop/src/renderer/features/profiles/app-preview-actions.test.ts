@@ -148,3 +148,36 @@ it('a failed rollback prevents deletion', async () => {
   ).rejects.toThrow('restore failed')
   expect(f.calls).toEqual([])
 })
+
+it.each(['debouncing', 'in flight'] as const)(
+  'confirmed deletion discards an %s edit before deleting its profile',
+  async (timing) => {
+    vi.useFakeTimers()
+    const f = fixture()
+    let release!: () => void
+    if (timing === 'in flight') {
+      const start = f.api.startPreview
+      f.api.startPreview = async (...args) => {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return start(...args)
+      }
+    }
+    f.sync.schedule(changed, f.state())
+    if (timing === 'in flight') await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    const deleted = deleteAppProfile(
+      'a',
+      async () => {
+        await f.sync.rollback(true)
+      },
+      f.api
+    )
+    await Promise.resolve()
+    if (timing === 'in flight') release()
+    await deleted
+    await vi.runAllTimersAsync()
+    expect(f.calls.slice(-2)).toEqual(['cancel', 'delete:a'])
+    expect(f.state()).toEqual({ state: 'inactive' })
+  }
+)

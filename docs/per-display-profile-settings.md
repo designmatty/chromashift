@@ -90,11 +90,19 @@ targets remain persisted and resume when the same physical display returns.
 - While Paused or Safety blocked, profile clicks show values without applying
   them. Inputs are disabled and a Resume action remains available.
 - The first change promotes Preview to Edit in place before applying the draft.
-  The header and sidebar mark unsaved changes with a bullet. `Update profile`
+  Only sidebar rows, including the collapsed rail, mark unsaved changes with a bullet.
+  When dirty, the header shows `Discard changes` then primary `Update profile`
+  immediately left of the overflow menu, without an unsaved-changes label. `Update profile`
   commits the complete draft while preserving mode; `Discard changes` rolls back.
   A renderer dialog offers Update, Discard, or Cancel before leaving unsaved
   changes through profile selection, activation selection, or navigation.
-- A subtle preview banner names the previewed profile and the automatic target.
+- Deleting a profile shows only the delete confirmation, even with unsaved changes.
+  Cancel preserves the draft and session. Confirm ends only the deleted profile's
+  session before deletion; deleting another profile preserves the open session.
+- A subtle preview strip sits directly below the rounded main panel, aligned to
+  its width without spanning the sidebar. Its text is left-aligned and actions
+  are on the right. The panel shrinks to make room and scrolls internally, keeping
+  the content's top position stable. It names the previewed profile and the automatic target.
   `Use this profile` selects it manually; disabled profiles offer `Enable`.
   `End preview`, selecting the live profile, closing, or minimizing ends preview
   and returns the editor to the live profile. Focus loss leaves preview active.
