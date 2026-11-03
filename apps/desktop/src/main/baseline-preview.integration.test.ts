@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { DisplayTransitionController } from '@main/display-transition-controller.js'
 import { EmergencyRestoreController } from '@main/emergency-restore-controller.js'
 import { PreviewRestoreError, PreviewSessionController } from '@main/preview-session-controller.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
@@ -79,9 +80,10 @@ async function fixture(mode: 'manual' | 'automatic' = 'manual') {
   const activation = new AutomaticActivationController(repository, coordinator, logger)
   await activation.start(mode === 'automatic' ? { executable: 'game.exe', path: null } : null)
   if (mode === 'manual') await activation.selectManualProfile('live')
-  const preview = new PreviewSessionController(native, activation, () => undefined)
+  const stateChanged = vi.fn()
+  const preview = new PreviewSessionController(native, activation, stateChanged)
   native.calls.length = 0
-  return { native, activation, preview, coordinator, repository }
+  return { native, activation, preview, coordinator, repository, stateChanged }
 }
 
 function expectLive(native: FakeNativeDisplayPort) {
@@ -331,6 +333,95 @@ describe('true baseline preview with activation rollback', () => {
     expectLive(native)
     expectOriginalCaptures(native)
   })
+
+  it.each([
+    { mode: 'manual' as const, failure: 'throws' },
+    { mode: 'automatic' as const, failure: 'throws' },
+    { mode: 'manual' as const, failure: 'unsuccessful result' },
+    { mode: 'automatic' as const, failure: 'unsuccessful result' },
+    { mode: 'manual' as const, failure: 'also fails during teardown' }
+  ])(
+    'rolls back the whole preview and reports a reconnect restore failure in $mode mode when restore $failure',
+    async ({ mode, failure }) => {
+      const { native, preview, activation, coordinator, stateChanged } = await fixture(mode)
+      const previousMode = activation.state.mode
+      native.disconnectedDisplayIds.add(two)
+      await preview.start(empty, 'preview')
+      expect(native.currentSettings.get(one)).toEqual(originals.get(one))
+      expect(native.currentSettings.get(two)).toEqual(live.displays[1]!.color)
+      native.disconnectedDisplayIds.delete(two)
+      native.calls.length = 0
+      const restore = native.restoreDisplay.bind(native)
+      if (failure === 'also fails during teardown') native.failRestoreDisplayIds.add(two)
+      else {
+        vi.spyOn(native, 'restoreDisplay').mockImplementation(async (id) => {
+          if (id !== two) return restore(id)
+          vi.mocked(native.restoreDisplay).mockImplementation(restore)
+          if (failure === 'throws') throw new Error('reconnect restore failed')
+          return {
+            displayId: id,
+            restored: false,
+            code: 'BASELINE_RESTORE_FAILED',
+            error: 'read-back failed'
+          }
+        })
+      }
+      const write = vi.fn()
+      const onPreviewFailed = vi.fn(() => {
+        expect(preview.state).toEqual({ state: 'inactive' })
+        expectLive(native)
+      })
+      const complete = vi.spyOn(activation, 'completeSystemTransition')
+      const transitions = new DisplayTransitionController(
+        {
+          refreshDisplayTopology: async () => ({
+            generation: 2,
+            displays: await native.getDisplays(),
+            capabilityReports: [],
+            baselines: coordinator.capturedDisplayIds.map((displayId) => ({
+              displayId,
+              state: 'connected',
+              ownership: 'validated'
+            }))
+          })
+        },
+        activation,
+        preview,
+        { write },
+        60_000,
+        () => undefined,
+        onPreviewFailed
+      )
+
+      try {
+        transitions.handleDisplayEvent('displayAdded')
+        await transitions.flush()
+
+        expect(onPreviewFailed).toHaveBeenCalledExactlyOnceWith(expect.any(PreviewRestoreError))
+        expect(stateChanged).toHaveBeenLastCalledWith({ state: 'inactive' })
+        expect(preview.state).toEqual({ state: 'inactive' })
+        expect(activation.state.mode).toEqual(previousMode)
+        expect(complete).toHaveBeenCalledExactlyOnceWith(false, true)
+        expect(write).toHaveBeenCalledWith(
+          expect.objectContaining({ eventName: 'DisplayTransitionFailed' })
+        )
+        expectLive(native)
+        expectOriginalCaptures(native)
+        expect(native.maxConcurrentCalls).toBe(1)
+
+        // Rollback must release the preview hold so future activation can proceed.
+        native.failRestoreDisplayIds.clear()
+        await activation.enableAutomatic()
+        expect(activation.state.currentTarget).toEqual(
+          mode === 'manual'
+            ? { kind: 'profile', profileId: empty.id }
+            : { kind: 'profile', profileId: live.id }
+        )
+      } finally {
+        transitions.dispose()
+      }
+    }
+  )
 
   it.each(['cancel', 'cancelNonOverride', 'dispose'] as const)(
     'surfaces held-baseline restore failures during %s',

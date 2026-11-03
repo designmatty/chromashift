@@ -462,6 +462,12 @@ export class ProductRuntime {
         if (chromaShiftController.chromaShiftState.status === 'safetyBlocked') {
           void chromaShiftController.retrySafetyCheck('automatic')
         }
+      },
+      () => {
+        dialogs.showError(
+          'Display preview failed',
+          'ChromaShift ended the preview after a display change. Check Diagnostics for details.'
+        )
       }
     )
     this.#powerEventAdapter = new PowerEventAdapter(system.powerMonitor)

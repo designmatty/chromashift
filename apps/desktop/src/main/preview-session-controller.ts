@@ -275,43 +275,53 @@ export class PreviewSessionController {
 
   public reapplyAfterDisplayTransition(): Promise<boolean> {
     return this.#enqueue(async () => {
-      const active = this.#active
-      if (active === null) return false
-
-      const displays = await this.native.getDisplays()
-      const connectedDisplayIds = new Set(
-        displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
-      )
-      active.disconnected.clear()
-      for (const target of active.applied.values()) {
-        if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
-          active.disconnected.add(target.displayId.toLowerCase())
-        }
+      try {
+        return await this.#reapplyAfterDisplayTransition()
+      } catch (error) {
+        const rollback = await this.#teardown()
+        if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+        throw error
       }
-      const targets = [...active.applied.values()].filter((target) =>
-        connectedDisplayIds.has(target.displayId.toLowerCase())
-      )
-      active.validated.clear()
-      await this.#validateTargets(targets, active.validated, displays, true)
-      if (active.kind !== 'override') {
-        await this.#holdOriginal(active.touched, [...active.applied.values()])
-      }
-      for (const target of targets) {
-        if (!this.#isTargetValidated(target, active.validated)) continue
-        try {
-          await this.native.captureBaseline(target.displayId)
-          active.touched.set(target.displayId.toLowerCase(), target.displayId)
-          await this.native.applyDisplaySettings(target.displayId, target.color)
-        } catch (error) {
-          if (!this.#isDisplayDeferred(error)) throw error
-          const key = target.displayId.toLowerCase()
-          active.validated.delete(key)
-          active.disconnected.add(key)
-        }
-      }
-      this.onStateChanged(this.state)
-      return true
     })
+  }
+
+  async #reapplyAfterDisplayTransition(): Promise<boolean> {
+    const active = this.#active
+    if (active === null) return false
+
+    const displays = await this.native.getDisplays()
+    const connectedDisplayIds = new Set(
+      displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
+    )
+    active.disconnected.clear()
+    for (const target of active.applied.values()) {
+      if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
+        active.disconnected.add(target.displayId.toLowerCase())
+      }
+    }
+    const targets = [...active.applied.values()].filter((target) =>
+      connectedDisplayIds.has(target.displayId.toLowerCase())
+    )
+    active.validated.clear()
+    await this.#validateTargets(targets, active.validated, displays, true)
+    if (active.kind !== 'override') {
+      await this.#holdOriginal(active.touched, [...active.applied.values()])
+    }
+    for (const target of targets) {
+      if (!this.#isTargetValidated(target, active.validated)) continue
+      try {
+        await this.native.captureBaseline(target.displayId)
+        active.touched.set(target.displayId.toLowerCase(), target.displayId)
+        await this.native.applyDisplaySettings(target.displayId, target.color)
+      } catch (error) {
+        if (!this.#isDisplayDeferred(error)) throw error
+        const key = target.displayId.toLowerCase()
+        active.validated.delete(key)
+        active.disconnected.add(key)
+      }
+    }
+    this.onStateChanged(this.state)
+    return true
   }
 
   /**
