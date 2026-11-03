@@ -10,6 +10,8 @@ import type { NativeEvent } from '@chromashift/native-client'
 import { describe, expect, it } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { PreviewSessionController } from '@main/preview-session-controller.js'
+import { activationStateSchema } from '@shared/product-api.js'
 import { FakeNativeDisplayPort as FakeNativeActivationPort } from '@main/testing/fake-native-display.js'
 import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
@@ -658,6 +660,48 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it.each(['update', 'discard'] as const)(
+    'publishes the latest held switch and applies it after %s',
+    async (decision) => {
+      const native = new FakeNativeActivationPort()
+      const repo = repository(
+        configuration([defaultProfile, gameAProfile, gameBProfile], 'default')
+      )
+      const logger = new RecordingLogger()
+      const automatic = new AutomaticActivationController(
+        repo,
+        new ActivationCoordinator(repo, native, logger),
+        logger
+      )
+      const preview = new PreviewSessionController(native, automatic, () => undefined)
+      await automatic.start(application('Browser.exe'))
+      const draft = structuredClone(defaultProfile)
+      draft.name = 'Draft name'
+      await preview.start(draft, 'edit', defaultProfile)
+      const callsBeforeSwitch = native.calls.length
+      await automatic.handleNativeEvent(foregroundEvent('GameA.exe'))
+      expect(activationStateSchema.parse(automatic.state).queuedTarget).toEqual({
+        kind: 'profile',
+        profileId: 'game-a'
+      })
+      await automatic.handleNativeEvent(foregroundEvent('Browser.exe'))
+      expect(automatic.state.queuedTarget).toBeNull()
+      await automatic.handleNativeEvent(foregroundEvent('GameB.exe'))
+      expect(native.calls).toHaveLength(callsBeforeSwitch)
+      expect(automatic.state.queuedTarget).toEqual({ kind: 'profile', profileId: 'game-b' })
+      if (decision === 'update') {
+        await repo.save(draft)
+        await preview.completePreservingMode(draft.id)
+      } else await preview.cancel()
+      expect(automatic.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-b' })
+      expect(automatic.state.queuedTarget).toBeNull()
+      expect(native.calls.filter((call) => call.operation === 'apply').at(-1)).toMatchObject({
+        displayId: 'display:two',
+        settings: { gamma: 1.2 }
+      })
+    }
+  )
+
   it('hydrates a persisted Paused intent without display reads or writes until resume', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))

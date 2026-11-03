@@ -17,7 +17,7 @@ export interface TrayProfileItem {
 }
 
 export interface TrayReadModel {
-  chromaShiftStatusLabel: 'Active' | 'Paused' | 'Safety blocked'
+  chromaShiftStatusLabel: 'Active' | 'Paused' | 'Safety blocked' | 'Auto-switching on hold'
   currentProfileLabel: string
   automaticEnabled: boolean
   automaticChecked: boolean
@@ -80,7 +80,8 @@ function isManualProfile(mode: ActivationMode, profileId: string): boolean {
 export function createTrayReadModel(
   profiles: readonly ColorProfile[],
   state: ActivationControllerState,
-  chromaShift: ChromaShiftState
+  chromaShift: ChromaShiftState,
+  unsavedChanges = false
 ): TrayReadModel {
   const controlsEnabled = !chromaShift.transitionInProgress
   return {
@@ -89,7 +90,9 @@ export function createTrayReadModel(
         ? 'Safety blocked'
         : chromaShift.status === 'paused'
           ? 'Paused'
-          : 'Active',
+          : unsavedChanges
+            ? 'Auto-switching on hold'
+            : 'Active',
     currentProfileLabel: targetLabel(chromaShift.intendedTarget, profiles),
     automaticEnabled: state.enabled && controlsEnabled,
     automaticChecked: chromaShift.intendedMode.kind === 'automatic',
@@ -121,7 +124,8 @@ export class TrayController {
     private readonly panels: PanelPort,
     private readonly shutdown: ShutdownRequestPort,
     private readonly menu: TrayMenuPort,
-    private readonly logger: StructuredLogger
+    private readonly logger: StructuredLogger,
+    private readonly unsavedChanges: () => boolean = () => false
   ) {}
 
   public async start(): Promise<void> {
@@ -138,7 +142,12 @@ export class TrayController {
       const profiles = await this.repository.list()
       if (this.#disposed || generation !== this.#refreshGeneration) return
       this.menu.update(
-        createTrayReadModel(profiles, this.activation.state, this.activation.chromaShiftState),
+        createTrayReadModel(
+          profiles,
+          this.activation.state,
+          this.activation.chromaShiftState,
+          this.unsavedChanges()
+        ),
         this.#commands()
       )
     } catch (error) {
