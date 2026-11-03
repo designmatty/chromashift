@@ -50,8 +50,15 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
   public readonly potentialBaselineDisplayIds: string[] = []
   public readonly running = true
 
-  public on(): this {
+  public eventHandler: ((event: unknown) => void) | undefined
+
+  public on(name?: string, handler?: (event: unknown) => void): this {
+    if (name === 'event') this.eventHandler = handler
     return this
+  }
+
+  public emitForegroundApplication(application: ForegroundApplication): void {
+    this.eventHandler!({ event: 'foregroundApplicationChanged', data: { application } })
   }
 
   public async start(): Promise<SystemInfo> {

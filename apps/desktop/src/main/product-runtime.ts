@@ -394,9 +394,8 @@ export class ProductRuntime {
         prepareRestore: () => {
           // Direct restoration replaces activation's live target with baseline;
           // capture the resume intent before its state/outcome subscriptions run.
-          const { intendedMode, intendedTarget } = chromaShiftController.chromaShiftState
-          return () =>
-            chromaShiftController.restoreBaseline('shortcut', { intendedMode, intendedTarget })
+          const intent = chromaShiftController.captureIntentSnapshot()
+          return () => chromaShiftController.restoreBaseline('shortcut', intent)
         }
       },
       logger
