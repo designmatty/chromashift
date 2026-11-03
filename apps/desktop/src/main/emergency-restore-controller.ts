@@ -1,5 +1,5 @@
 import type { ActivationOutcome } from '@main/activation-coordinator.js'
-import type { StructuredLogger } from '@main/structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface EmergencyPreviewPort {
   dispose(): Promise<void>
@@ -29,6 +29,14 @@ export class EmergencyRestoreController {
   async #restore(): Promise<boolean> {
     try {
       await this.preview.dispose()
+    } catch (error) {
+      this.logger.write({
+        level: 'critical',
+        eventName: 'EmergencyPreviewTeardownFailed',
+        ...describeError(error)
+      })
+    }
+    try {
       const outcome = await this.activation.restoreBaseline()
       const restored = outcome.status === 'activated' && outcome.deferredDisplayIds.length === 0
       this.logger.write({
