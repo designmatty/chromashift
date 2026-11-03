@@ -3416,6 +3416,14 @@ async function runSmoke() {
       `document.querySelector('[role="alertdialog"]')?.textContent?.includes('Delete unselected focus check') === true`,
       'Unselected profile deletion did not open the confirmation dialog.'
     )
+    // A visible dialog can precede its focus scope initialization. Wait for
+    // the documented initial Cancel focus before taking either human action.
+    await waitForExpression(
+      debuggerClient,
+      `document.activeElement?.closest('[role="alertdialog"]') !== null &&
+        document.activeElement?.textContent?.trim() === 'Cancel'`,
+      'The unselected-profile dialog did not focus its Cancel action.'
+    )
     await clickAppButton(debuggerClient, decision, '[role="alertdialog"]')
     await waitForExpression(
       debuggerClient,
