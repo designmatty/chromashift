@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { EmergencyRestoreController } from '@main/emergency-restore-controller.js'
 import { PreviewRestoreError, PreviewSessionController } from '@main/preview-session-controller.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
 
@@ -105,6 +106,47 @@ function expectOriginalCaptures(native: FakeNativeDisplayPort) {
 }
 
 describe('true baseline preview with activation rollback', () => {
+  it.each(['manual', 'automatic'] as const)(
+    'emergency restore reaches Original settings after a transient preview teardown failure in %s mode',
+    async (mode) => {
+      const { native, activation, preview } = await fixture(mode)
+      await preview.start(partial, 'preview')
+      native.calls.length = 0
+      vi.spyOn(native, 'restoreDisplay').mockRejectedValueOnce(
+        new Error('transient restore failure')
+      )
+      const write = vi.fn()
+      const emergency = new EmergencyRestoreController(preview, activation, { write })
+
+      await expect(emergency.request()).resolves.toBe(true)
+
+      expect(preview.state).toEqual({ state: 'inactive' })
+      expect(native.calls.filter((call) => call.operation === 'apply')).toEqual(
+        live.displays.map((target) => ({
+          operation: 'apply',
+          displayId: target.displayId,
+          settings: target.color
+        }))
+      )
+      expect(native.calls.at(-1)).toEqual({ operation: 'restoreAll' })
+      for (const [id, original] of originals)
+        expect(native.currentSettings.get(id)).toEqual(original)
+      expect(write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'critical',
+          eventName: 'EmergencyPreviewTeardownFailed'
+        })
+      )
+      expect(write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventName: 'EmergencyRestoreCompleted',
+          restored: true
+        })
+      )
+      expectOriginalCaptures(native)
+    }
+  )
+
   it.each(['manual', 'automatic'] as const)(
     'previews empty Default over a %s profile without capture, then reapplies every prior target',
     async (mode) => {
