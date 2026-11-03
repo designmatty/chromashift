@@ -9,7 +9,7 @@ import {
   type ServiceHealth,
   type SystemInfo
 } from '@chromashift/native-client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { UserPreferences } from '@shared/product-api.js'
 import {
   defaultChromaShiftIntent,
@@ -103,6 +103,7 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
 const directories: string[] = []
 
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))
   )
@@ -117,6 +118,8 @@ async function createHarness(
   logger: RecordingLogger
   trayMenusCreated: () => number
   intent: () => ChromaShiftIntent
+  errors: Array<{ title: string; message: string }>
+  displayEvent: (event: 'displayAdded' | 'displayRemoved' | 'displayMetricsChanged') => void
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-runtime-'))
   directories.push(directory)
@@ -144,6 +147,9 @@ async function createHarness(
   let preferences: UserPreferences = { ...defaultUserPreferences }
   let intent: ChromaShiftIntent = { ...defaultChromaShiftIntent, ...intentOverrides }
   let trayMenus = 0
+  const errors: Array<{ title: string; message: string }> = []
+  let displayEventListener: Parameters<ProductRuntimePorts['system']['onDisplayEvent']>[0] = () =>
+    undefined
   const ports: ProductRuntimePorts = {
     logger,
     configuration: {
@@ -186,7 +192,9 @@ async function createHarness(
       broadcastProductState: () => undefined
     },
     dialogs: {
-      showError: () => undefined,
+      showError: (title, message) => {
+        errors.push({ title, message })
+      },
       confirmShutdownRetry: () => Promise.resolve('cancel'),
       warnShortcutsUnavailable: () => undefined,
       pickApplicationFile: () => Promise.resolve(null)
@@ -197,7 +205,9 @@ async function createHarness(
       shortcutRegistrations: { register: () => true, unregister: () => undefined },
       powerMonitor: { on: () => undefined, off: () => undefined },
       registerEmergencyRestoreShortcut: () => true,
-      onDisplayEvent: () => undefined
+      onDisplayEvent: (listener) => {
+        displayEventListener = listener
+      }
     },
     notifications: { isSupported: () => false, show: () => undefined }
   }
@@ -206,11 +216,56 @@ async function createHarness(
     client,
     logger,
     trayMenusCreated: () => trayMenus,
-    intent: () => intent
+    intent: () => intent,
+    errors,
+    displayEvent: (event) => displayEventListener(event)
   }
 }
 
 describe('product runtime startup wiring', () => {
+  it('ends a failed reconnect preview and surfaces it through the product error dialog', async () => {
+    const empty: ColorProfile = {
+      id: 'empty',
+      name: 'Empty',
+      enabled: true,
+      applications: [],
+      displays: []
+    }
+    const harness = await createHarness({}, { profiles: [empty] })
+    await harness.runtime.start()
+    harness.client.disconnectedDisplayIds.add('display:one')
+    await harness.runtime.previewController!.start(empty, 'preview')
+    harness.client.disconnectedDisplayIds.delete('display:one')
+    harness.client.failRestoreDisplayIds.add('display:one')
+    vi.useFakeTimers()
+
+    try {
+      harness.displayEvent('displayAdded')
+      await vi.advanceTimersByTimeAsync(750)
+      await vi.waitFor(() =>
+        expect(harness.errors).toEqual([
+          {
+            title: 'Display preview failed',
+            message:
+              'ChromaShift ended the preview after a display change. Check Diagnostics for details.'
+          }
+        ])
+      )
+
+      expect((await harness.runtime.productController!.getState()).preview).toEqual({
+        state: 'inactive'
+      })
+      expect(harness.client.currentSettings.get('display:one')).toEqual({
+        brightness: 60,
+        saturation: 50
+      })
+      expect(harness.logger.has('DisplayTransitionFailed')).toBe(true)
+      expect(harness.intent().chromaShiftStatus).toBe('active')
+    } finally {
+      await harness.runtime.dispose()
+    }
+  })
+
   it('starts activation in active mode and applies the default profile', async () => {
     const harness = await createHarness({
       chromaShiftStatus: 'active',
