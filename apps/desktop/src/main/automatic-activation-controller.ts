@@ -188,12 +188,13 @@ export class AutomaticActivationController {
     return this.#activateCurrentApplication({ source: 'automatic', origin: 'foreground' })
   }
 
-  public async beginPreview(): Promise<void> {
+  public async beginPreview(): Promise<readonly string[]> {
     if (!this.#enabled) throw new Error('Display preview is not available.')
     if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     if (this.#previewing) throw new Error('A display preview is already active.')
     this.#previewing = true
     await this.coordinator.waitForIdle()
+    return this.coordinator.capturedDisplayIds
   }
 
   public async cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {

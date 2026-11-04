@@ -31,9 +31,9 @@ class FakeActivation implements PreviewActivationPort {
     operation: 'cancel' | 'confirm'
     displayIds: string[]
   }> = []
-  public beginPreview(): Promise<void> {
+  public beginPreview(): Promise<readonly string[]> {
     this.calls.push('begin')
-    return Promise.resolve()
+    return Promise.resolve([])
   }
   public cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     this.calls.push('cancel')
@@ -321,16 +321,14 @@ describe('PreviewSessionController', () => {
     expect(native.applied).toEqual([])
   })
 
-  it('requires a display before an explicit preview', async () => {
+  it('allows an explicit preview with no saved targets', async () => {
     const controller = new PreviewSessionController(
       new FakeNative(),
       new FakeActivation(),
       () => undefined
     )
 
-    await expect(controller.start(profile([]), 'preview')).rejects.toThrow(
-      /Select at least one display/
-    )
+    await expect(controller.start(profile([]), 'preview')).resolves.toBeUndefined()
     await expect(
       controller.start(profile([{ displayId: display.id, color: {} }]), 'preview')
     ).resolves.toBeUndefined()

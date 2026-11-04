@@ -86,13 +86,10 @@ targets remain persisted and resume when the same physical display returns.
 - Opening the app selects the Intended target's profile, or Default, and scrolls
   it into view. Non-profile views remain remembered; profile requests from main win.
 - Clicking a profile previews its saved values unless it is already live, so a
-  new profile opens as a native Preview at neutral values. Empty profiles, such
-  as older profiles saved without targets, show the preview banner and End
-  preview without native restore/apply, with the line "No display settings
-  saved — your displays keep <live profile name or 'their current settings'>
-  until you change a value." The first color change creates that display's
-  complete target and starts Edit. This exception is pending
-  product-owner decision on baseline-only preview.
+  new profile opens as a native Preview at neutral values. Connected displays
+  without a target are held at Original settings, including profiles with no
+  targets. The first color change creates that display's complete target and
+  promotes Preview to Edit.
   Disabled profiles remain openable, previewable, and editable. Clicking the
   profile the Profiles view already shows does nothing, whether it is live or
   previewed.
@@ -107,8 +104,8 @@ targets remain persisted and resume when the same physical display returns.
   another profile the session keeps previewing the saved values without a
   display change. `Discard changes` returns a non-live profile to its saved
   values, still previewed as if it had just been clicked. It reverts the session
-  in place, or restarts the preview when the draft added a display target the
-  saved profile lacks. On the live profile it rolls back. A renderer dialog
+  in place, restoring Original settings for targets the saved profile lacks.
+  On the live profile it rolls back. A renderer dialog
   offers Update, Discard, or Cancel before leaving unsaved changes through
   profile selection, activation selection, or navigation; either choice then
   continues to that destination.
@@ -153,6 +150,16 @@ and restores the prior automatic or manual target. `Discard changes` also waits
 for pending writes; on a non-live profile it returns the session to the saved
 values instead. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
+
+During app-panel Preview or Edit, connected SDR displays without a draft target
+are held at Original settings. The session restores any existing immutable native
+baseline without capturing modified output. A display without a captured baseline
+needs no write. Adding a target uses normal capture-before-apply; removing it
+restores Original settings. HDR and disconnected baselines remain retained and
+deferred. Teardown restores all session and activation-owned baselines before
+serialized activation rollback resets deduplication and reapplies the prior target
+on every display, including displays held at Original settings. Restore failures
+surface as preview failures.
 
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete

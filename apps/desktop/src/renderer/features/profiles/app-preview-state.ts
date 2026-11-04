@@ -18,29 +18,8 @@ export function liveProfile(product: AppPreviewState): ColorProfile | null {
 export function shouldPreviewProfile(product: AppPreviewState, profile: ColorProfile): boolean {
   return (
     product.chromaShift.status === 'active' &&
-    profile.displays.length > 0 &&
     liveProfile(product)?.id.toLowerCase() !== profile.id.toLowerCase()
   )
-}
-
-export function emptyPreviewMessage(
-  product: AppPreviewState,
-  profile: ColorProfile
-): string | null {
-  if (
-    product.chromaShift.status !== 'active' ||
-    profile.displays.length > 0 ||
-    liveProfile(product)?.id.toLowerCase() === profile.id.toLowerCase()
-  )
-    return null
-  const target = product.chromaShift.intendedTarget
-  const name =
-    target?.kind === 'profile'
-      ? product.configuration.profiles.find(
-          (item) => item.id.toLowerCase() === target.profileId.toLowerCase()
-        )?.name
-      : undefined
-  return `No display settings saved — your displays keep ${name ?? 'their current settings'} until you change a value.`
 }
 
 function sameId(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -88,11 +67,7 @@ export function previewBannerVisible(
   if (product.chromaShift.status !== 'active' || shownProfile === null) return false
   if (product.preview.state === 'active' && product.preview.kind === 'override') return false
   if (sameId(liveProfile(product)?.id, shownProfile.id)) return false
-  return (
-    product.preview.state === 'active' ||
-    sameId(pendingPreviewId, shownProfile.id) ||
-    emptyPreviewMessage(product, shownProfile) !== null
-  )
+  return product.preview.state === 'active' || sameId(pendingPreviewId, shownProfile.id)
 }
 
 type SessionState = AppPreviewState & Pick<ProductState, 'preview'>
@@ -107,10 +82,8 @@ export function updatePlan(product: SessionState, profileId: string): 'commit' |
 
 /**
  * Discard changes stays on a non-live profile, showing its saved values as if
- * it had just been clicked. The existing session reverts in place when the
- * saved targets cover every display the session wrote. Otherwise a removed
- * draft-only target would restore to original settings rather than the live
- * state a fresh click leaves it in, so the preview restarts.
+ * it had just been clicked. Missing targets restore Original settings in place,
+ * including targets added only in the draft.
  */
 export function discardPlan(
   product: SessionState,
@@ -122,11 +95,7 @@ export function discardPlan(
     product.chromaShift.status === 'active' &&
     session.state === 'active' &&
     session.kind !== 'override' &&
-    sameId(session.profileId, saved.id) &&
-    saved.displays.length > 0 &&
-    session.targets.every((target) =>
-      saved.displays.some((item) => sameId(item.displayId, target.displayId))
-    )
+    sameId(session.profileId, saved.id)
   )
     return 'revertSession'
   return 'restartPreview'

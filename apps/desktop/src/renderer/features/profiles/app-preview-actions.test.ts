@@ -191,9 +191,15 @@ it.each(['debouncing', 'in flight'] as const)(
   }
 )
 
-it.each(['debouncing', 'in flight'] as const)(
-  'header Update on a non-live profile saves the latest %s draft and keeps its session',
-  async (timing) => {
+it.each([
+  ['debouncing', false],
+  ['in flight', false],
+  ['debouncing', true],
+  ['in flight', true]
+] as const)(
+  'header Update on a non-live profile saves the latest %s draft, empty=%s, and keeps its session',
+  async (timing, emptyTargets) => {
+    const draft = emptyTargets ? { ...changed, displays: [] } : changed
     vi.useFakeTimers()
     const f = fixture('preview')
     let release!: () => void
@@ -207,13 +213,13 @@ it.each(['debouncing', 'in flight'] as const)(
         return update(...args)
       }
     }
-    f.sync.schedule(changed, f.state())
+    f.sync.schedule(draft, f.state())
     if (timing === 'in flight') await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
-    const saved = saveAppPreview(changed, () => f.sync.settle(), f.api)
+    const saved = saveAppPreview(draft, () => f.sync.settle(), f.api)
     if (timing === 'in flight') release()
-    expect(await saved).toEqual(changed)
+    expect(await saved).toEqual(draft)
     await vi.runAllTimersAsync()
-    expect(f.api.saveProfile).toHaveBeenCalledExactlyOnceWith(changed)
+    expect(f.api.saveProfile).toHaveBeenCalledExactlyOnceWith(draft)
     expect(f.api.confirmPreview).not.toHaveBeenCalled()
     expect(f.calls).not.toContain('cancel')
     expect(f.calls.at(-1)).toBe('save')
@@ -221,14 +227,20 @@ it.each(['debouncing', 'in flight'] as const)(
       state: 'active',
       kind: 'edit',
       profileId: profile.id,
-      targets: changed.displays
+      targets: draft.displays
     })
   }
 )
 
-it.each(['debouncing', 'in flight'] as const)(
-  'header Discard on a non-live profile reverts a %s edit in its session without cancelling',
-  async (timing) => {
+it.each([
+  ['debouncing', false],
+  ['in flight', false],
+  ['debouncing', true],
+  ['in flight', true]
+] as const)(
+  'header Discard on a non-live profile reverts a %s edit, empty=%s, without cancelling',
+  async (timing, emptyTargets) => {
+    const saved = emptyTargets ? { ...profile, displays: [] } : profile
     vi.useFakeTimers()
     const f = fixture('edit')
     let release!: () => void
@@ -244,7 +256,7 @@ it.each(['debouncing', 'in flight'] as const)(
     }
     f.sync.schedule(changed, f.state())
     if (timing === 'in flight') await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
-    const reverted = revertAppPreview(profile, () => f.sync.settle(), f.api)
+    const reverted = revertAppPreview(saved, () => f.sync.settle(), f.api)
     if (timing === 'in flight') release()
     await reverted
     await vi.runAllTimersAsync()
@@ -254,7 +266,7 @@ it.each(['debouncing', 'in flight'] as const)(
       state: 'active',
       kind: 'edit',
       profileId: profile.id,
-      targets: profile.displays
+      targets: saved.displays
     })
   }
 )

@@ -3,7 +3,6 @@ import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core
 import type { ProductState } from '@shared/product-api'
 import {
   discardPlan,
-  emptyPreviewMessage,
   isProfileClickNoop,
   keepsPreviewBannerWhileSwitching,
   liveProfile,
@@ -53,7 +52,7 @@ describe('app preview selection', () => {
     expect(shouldPreviewProfile(product, { ...profiles[1]!, enabled: false })).toBe(true)
     expect(product).toEqual(before)
     expect(shouldPreviewProfile(product, profiles[0]!)).toBe(false)
-    expect(shouldPreviewProfile(product, { ...profiles[1]!, displays: [] })).toBe(false)
+    expect(shouldPreviewProfile(product, { ...profiles[1]!, displays: [] })).toBe(true)
   })
   it.each(['paused', 'safetyBlocked'] as const)('never previews while %s', (status) => {
     expect(shouldPreviewProfile(state(status), profiles[1]!)).toBe(false)
@@ -73,19 +72,14 @@ describe('app preview selection', () => {
     expect(shouldPreviewProfile(product, preview)).toBe(true)
     expect(liveProfile(product)?.id).toBe('default')
   })
-  it('explains empty-target browsing without starting a native preview', () => {
+  it('starts a normal preview for an empty Default over a live profile', () => {
     const product = state()
     product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'game' }
-    expect(shouldPreviewProfile(product, profiles[0]!)).toBe(false)
-    expect(emptyPreviewMessage(product, profiles[0]!)).toBe(
-      'No display settings saved — your displays keep Game until you change a value.'
-    )
+    expect(shouldPreviewProfile(product, profiles[0]!)).toBe(true)
     product.chromaShift.intendedTarget = { kind: 'baseline' }
-    expect(emptyPreviewMessage(product, { ...profiles[1]!, displays: [] })).toBe(
-      'No display settings saved — your displays keep their current settings until you change a value.'
-    )
-    expect(emptyPreviewMessage(product, profiles[0]!)).toBe(null)
-    expect(emptyPreviewMessage(state('paused'), { ...profiles[1]!, displays: [] })).toBe(null)
+    expect(shouldPreviewProfile(product, { ...profiles[1]!, displays: [] })).toBe(true)
+    expect(shouldPreviewProfile(product, profiles[0]!)).toBe(false)
+    expect(shouldPreviewProfile(state('paused'), { ...profiles[1]!, displays: [] })).toBe(false)
   })
   it.each([
     ['live, without a session', 'default', 'default'],
@@ -126,10 +120,10 @@ describe('preview banner while switching profiles', () => {
     expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('preview')), third)).toBe(true)
     expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('edit')), third)).toBe(true)
   })
-  it('does not keep the banner for the live, an empty, or the same destination', () => {
+  it('keeps the banner for an empty destination, but not the live or same profile', () => {
     const before = withPreview(previewing('preview'))
     expect(keepsPreviewBannerWhileSwitching(before, profiles[0]!)).toBe(false)
-    expect(keepsPreviewBannerWhileSwitching(before, { ...third, displays: [] })).toBe(false)
+    expect(keepsPreviewBannerWhileSwitching(before, { ...third, displays: [] })).toBe(true)
     expect(keepsPreviewBannerWhileSwitching(before, profiles[1]!)).toBe(false)
   })
   it('does not keep the banner without a preview, for an override, or when not Active', () => {
@@ -145,6 +139,15 @@ describe('preview banner while switching profiles', () => {
     expect(previewBannerVisible(withPreview(previewing('preview')), third, 'third')).toBe(true)
     // The next session has started; the pending destination is no longer needed.
     expect(previewBannerVisible(withPreview(previewing('preview', 'third')), third, null)).toBe(
+      true
+    )
+  })
+  it('shows empty profiles only while their session or pending destination exists', () => {
+    const empty = { ...third, displays: [] }
+    const rolledBack = withPreview({ state: 'inactive' })
+    expect(previewBannerVisible(rolledBack, empty, null)).toBe(false)
+    expect(previewBannerVisible(rolledBack, empty, 'third')).toBe(true)
+    expect(previewBannerVisible(withPreview(previewing('preview', 'third')), empty, null)).toBe(
       true
     )
   })
@@ -200,15 +203,15 @@ describe('header Update and Discard', () => {
       })
     ).toBe('revertSession')
   })
-  it('restarts the preview when reverting in place would not match a fresh click', () => {
+  it('reverts draft-only targets and empty saved profiles in place', () => {
     // The draft added a display target the saved profile lacks.
     expect(discardPlan(session(editing([...profiles[1]!.displays, second])), profiles[1])).toBe(
-      'restartPreview'
+      'revertSession'
     )
-    // An empty saved profile previews without a native session.
-    expect(discardPlan(session(editing()), { ...profiles[1]!, displays: [] })).toBe(
-      'restartPreview'
-    )
+    // Empty profiles keep a real baseline preview session.
+    expect(discardPlan(session(editing()), { ...profiles[1]!, displays: [] })).toBe('revertSession')
+  })
+  it('restarts only when no matching Preview or Edit session can be reused', () => {
     expect(discardPlan(session({ state: 'inactive' }), profiles[1])).toBe('restartPreview')
     expect(discardPlan(session(editing(undefined, { kind: 'override' })), profiles[1])).toBe(
       'restartPreview'

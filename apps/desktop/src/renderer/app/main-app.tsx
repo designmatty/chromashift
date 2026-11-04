@@ -22,7 +22,6 @@ import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import {
   liveProfile,
   shouldPreviewProfile,
-  emptyPreviewMessage,
   isProfileClickNoop,
   keepsPreviewBannerWhileSwitching,
   previewBannerVisible,
@@ -172,8 +171,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     followingLive.current = false
     setSelectedId(saved.id)
     resetTo(saved)
-    // A saved profile without targets has nothing to preview.
-    if (saved.displays.length === 0) await rollback()
   }
   // Header Discard stays on the shown profile, previewing its saved values as
   // if it had just been clicked.
@@ -634,11 +631,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               </Icon>
               <Stack flex="1" minW="0" gap="0">
                 <Text truncate>Previewing: {shownProfile.name}</Text>
-                {emptyPreviewMessage(product, shownProfile) !== null && (
-                  <Text color="fg.muted" fontSize="sm">
-                    {emptyPreviewMessage(product, shownProfile)}
-                  </Text>
-                )}
               </Stack>
               <Button
                 size="2xs"

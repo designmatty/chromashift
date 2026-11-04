@@ -85,7 +85,7 @@ function controller(
       restoreDisplay: () => Promise.reject(new Error('Not used.'))
     },
     {
-      beginPreview: () => Promise.resolve(),
+      beginPreview: () => Promise.resolve([]),
       cancelPreview: () => Promise.resolve(),
       confirmPreview: () => Promise.resolve()
     },

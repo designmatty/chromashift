@@ -2812,6 +2812,86 @@ async function runSmoke() {
     'The renderer did not receive removal of the disconnected-display smoke fixture.'
   )
 
+  // Empty-target Preview must hold Original settings, then restore the live
+  // manual profile exactly. Read real state through the independent guard.
+  const liveProfileFingerprints = new Map()
+  for (const display of guardedDisplays) {
+    const fingerprint = displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
+    if (fingerprint === guardedBaselines.get(display.id)) {
+      throw new Error('The empty-target preview fixture did not start over a colored live profile.')
+    }
+    liveProfileFingerprints.set(display.id, fingerprint)
+  }
+  const emptyPreviewFixture = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const created = await window.chromaShift.createProfile('Original settings preview check')
+      if (!created.ok) return created
+      return window.chromaShift.saveProfile({ ...created.value, displays: [] })
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (emptyPreviewFixture.result.value?.ok !== true ||
+    emptyPreviewFixture.result.value.value.displays.length !== 0) {
+    throw new Error('Could not create an empty-target preview fixture.')
+  }
+  const emptyPreviewProfileId = emptyPreviewFixture.result.value.value.id
+  await openProfileFromSidebar(debuggerClient, 'Original settings preview check')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok) return false
+      const state = result.value
+      const live = state.configuration.profiles.find((profile) => profile.name === 'Smoke profile')
+      return state.preview.state === 'active' && state.preview.kind === 'preview' &&
+        state.preview.profileId === ${JSON.stringify(emptyPreviewProfileId)} &&
+        state.preview.targets.length === 0 && state.activation.mode.kind === 'manual' &&
+        state.activation.mode.profileId === live?.id &&
+        document.querySelector('[data-part="preview-banner"]')?.textContent?.includes('Original settings preview check')
+    })()`,
+    'An empty-target profile did not start a real Preview while preserving the live manual target.'
+  )
+  for (const display of guardedDisplays) {
+    const expected = guardedBaselines.get(display.id)
+    const state = await waitForRestoredDisplayState(restorationGuard, display.id, expected)
+    if (displayStateFingerprint(state) !== expected) {
+      throw new Error(`Empty-target Preview did not restore Original settings on ${display.connection}.`)
+    }
+  }
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'empty-target-preview-native.png'))
+  await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok) return false
+      const live = result.value.configuration.profiles.find((profile) => profile.name === 'Smoke profile')
+      return result.value.preview.state === 'inactive' &&
+        result.value.activation.mode.kind === 'manual' &&
+        result.value.activation.mode.profileId === live?.id &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false
+    })()`,
+    'End preview of an empty-target profile did not return to the live manual profile.'
+  )
+  for (const display of guardedDisplays) {
+    const expected = liveProfileFingerprints.get(display.id)
+    const state = await waitForRestoredDisplayState(restorationGuard, display.id, expected)
+    if (displayStateFingerprint(state) !== expected) {
+      throw new Error(`End preview did not reapply the exact live profile state on ${display.connection}.`)
+    }
+  }
+  const removedEmptyPreviewFixture = await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.deleteProfile(${JSON.stringify(emptyPreviewProfileId)})`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (removedEmptyPreviewFixture.result.value?.ok !== true) {
+    throw new Error('Could not remove the empty-target preview fixture.')
+  }
+  globalThis.console.log('Empty-target preview restored Original settings and returned to the exact live profile state.')
+
   // Two connected displays must hold visibly different settings in one profile.
   const perDisplayApply = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
