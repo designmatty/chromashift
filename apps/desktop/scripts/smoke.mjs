@@ -335,6 +335,107 @@ try {
   })
 }
 
+async function verifyNativeQuitPrompt(debuggerClient) {
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
+      const draft = { ...profile, name: profile.name + ' quit check' }
+      const result = await window.chromaShift.startPreview(draft, 'edit')
+      if (!result.ok) throw new Error(result.error.message)
+      history.replaceState({}, '', location.pathname)
+    })()`,
+    awaitPromise: true
+  })
+  const appLoaded = debuggerClient.waitForEvent('Page.loadEventFired')
+  await debuggerClient.send('Page.reload', { ignoreCache: true })
+  await appLoaded
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value.endsWith(' quit check') &&
+      document.querySelector('[data-part="unsaved-changes-actions"]') !== null`,
+    'The quit-check draft did not hydrate into the app editor.'
+  )
+  // A native modal can defer the debugger response until it closes. Start its
+  // capture/Cancel automation while the request is still pending.
+  const exitRequested = debuggerClient.send('Runtime.evaluate', {
+    expression: 'void window.chromaShift.requestExit()'
+  }).then(() => null, (error) => error)
+  const path = join(screenshotDirectory, 'unsaved-quit-prompt-native.png')
+  const command = `
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftQuitCapture {
+  [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
+$condition = [System.Windows.Automation.AndCondition]::new(
+  [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]${electron.pid}),
+  [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Unsaved changes')
+)
+$deadline = [DateTime]::UtcNow.AddSeconds(20)
+$prompt = $null
+while ($null -eq $prompt -and [DateTime]::UtcNow -lt $deadline) {
+  $prompt = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
+  if ($null -eq $prompt) { Start-Sleep -Milliseconds 100 }
+}
+if ($null -eq $prompt) { throw 'The smoke-owned native unsaved quit prompt did not open.' }
+$cancel = $prompt.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+  [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Cancel'))
+if ($null -eq $cancel) { throw 'The native quit prompt did not offer Cancel.' }
+$promptHandle = [IntPtr]$prompt.Current.NativeWindowHandle
+if ($promptHandle -eq [IntPtr]::Zero) { throw 'The native quit prompt has no window handle.' }
+try {
+  foreach ($label in @('Update profile', 'Discard changes')) {
+    if ($null -eq $prompt.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $label))) {
+      throw "The native quit prompt did not offer $label."
+    }
+  }
+  $rect = $prompt.Current.BoundingRectangle
+  $bitmap = [System.Drawing.Bitmap]::new([int]$rect.Width, [int]$rect.Height)
+  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  try {
+    [void][ChromaShiftQuitCapture]::DwmFlush()
+    $graphics.CopyFromScreen([int]$rect.Left, [int]$rect.Top, 0, 0, $bitmap.Size)
+    $bitmap.Save('${path.replaceAll("'", "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
+  } finally { $graphics.Dispose(); $bitmap.Dispose() }
+} finally {
+  # Closing the smoke-owned dialog selects Electron's cancelId, the Cancel choice.
+  if (-not [ChromaShiftQuitCapture]::PostMessage($promptHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
+    throw 'The native quit prompt could not be cancelled.'
+  }
+}
+`
+  await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true
+  })
+  const exitError = await exitRequested
+  if (exitError !== null) throw exitError
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' && state.value.preview.unsavedChanges
+    })()`,
+    'Cancel on the native quit prompt did not preserve the unsaved session.'
+  )
+  await clickAppButton(debuggerClient, 'Discard changes', '[data-part="unsaved-changes-actions"]')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'inactive' &&
+        document.querySelector('[data-part="unsaved-changes-actions"]') === null
+    })()`,
+    'The quit-check draft did not roll back after Cancel.'
+  )
+  globalThis.console.log('Native unsaved quit prompt captured; native close/Cancel preserved the draft.')
+}
+
 async function verifyTooltipMenuTrigger(debuggerClient, triggerLabel, menuItemText) {
   await debuggerClient.send('Page.bringToFront')
   // Earlier pointer-driven checks can leave the synthetic pointer over a control
@@ -3625,6 +3726,8 @@ async function runSmoke() {
   if (productionDebuggerButton.result.value !== true) {
     throw new Error('The production mini panel exposed its development debugger button.')
   }
+
+  await verifyNativeQuitPrompt(debuggerClient)
 
   const failures = debuggerClient.events.filter(
     (event) =>
