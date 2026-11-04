@@ -1,5 +1,5 @@
 import type { ColorProfile } from '@chromashift/core'
-import type { ProductState } from '@shared/product-api'
+import type { ProductState } from '@shared/product-api.js'
 
 type AppPreviewState = Pick<ProductState, 'configuration' | 'chromaShift' | 'foregroundApplication'>
 

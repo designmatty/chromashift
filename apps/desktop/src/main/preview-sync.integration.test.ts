@@ -1,13 +1,16 @@
-import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
+import { createNeutralColorSettings, JsonProfileRepository, type ColorProfile } from '@chromashift/core'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
+import { ProductController } from '@main/product-controller.js'
+import { defaultUserPreferences } from '@main/app-settings.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
 import {
   PreviewSyncSession,
   PREVIEW_SYNC_DEBOUNCE_MS
 } from '@/features/profiles/preview-sync.js'
-import type { ProductError, ProductResult } from '@shared/product-api.js'
+import { emptyPreviewMessage, shouldPreviewProfile } from '@/features/profiles/app-preview-state.js'
+import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
 
 const profile: ColorProfile = {
   id: 'gaming',
@@ -138,3 +141,105 @@ it.each(['pending', 'completed'] as const)(
     })
   }
 )
+
+it('previews a new profile at neutral values and promotes its first edit in place', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [
+    testDisplay('display:one'),
+    testDisplay('display:two')
+  ])
+  const previewController = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => undefined,
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const outcome = { status: 'activated' as const, resolution: null, failures: [], deferredDisplayIds: [] }
+  let stored: string | null = null
+  const product = new ProductController(
+    new JsonProfileRepository({
+      read: async () => stored,
+      write: async (contents) => {
+        stored = contents
+      }
+    }),
+    {
+      getDisplays: () => native.getDisplays(),
+      getDisplayCapabilityReport: (id) => native.getDisplayCapabilityReport(id),
+      getForegroundApplication: async () => null,
+      getVisibleApplications: async () => []
+    },
+    {
+      state: { enabled: true, mode: { kind: 'automatic' }, currentTarget: null },
+      chromaShiftState: {
+        status: 'active',
+        pendingOperation: null,
+        intendedMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'default' },
+        transitionInProgress: false
+      },
+      selectManualProfile: async () => outcome,
+      enableAutomatic: async () => outcome,
+      restoreBaseline: async () => outcome,
+      pause: async () => outcome,
+      resume: async () => outcome,
+      retrySafetyCheck: async () => outcome,
+      reconcileAutomaticIntent: async () => undefined,
+      refreshAfterConfigurationChange: async () => undefined
+    },
+    previewController,
+    { pick: async () => null, describe: async () => null },
+    { get: async () => defaultUserPreferences, save: async (value) => value, apply: () => undefined },
+    { refreshTray: async () => undefined, stateChanged: () => undefined }
+  )
+  const sessions: PreviewState[] = []
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await previewController.start(draft, kind)
+        sessions.push(previewController.state)
+        return ok
+      },
+      updatePreview: async (id, targets) => {
+        await previewController.update(id, targets)
+        sessions.push(previewController.state)
+        return ok
+      },
+      cancelPreview: async () => {
+        await previewController.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+
+  const created = await product.createProfile('New profile')
+  expect(created.displays.map((target) => target.color)).toEqual([
+    createNeutralColorSettings(),
+    createNeutralColorSettings()
+  ])
+  const state = await product.getState()
+  expect(shouldPreviewProfile(state, created)).toBe(true)
+  expect(emptyPreviewMessage(state, created)).toBeNull()
+
+  await previewController.start(created, 'preview')
+  const clicked = previewController.state
+  const changed = structuredClone(created)
+  changed.displays[0]!.color.brightness = 61
+  sync.schedule(changed, clicked)
+  await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+
+  expect(sessions.every((session) => session.state === 'active')).toBe(true)
+  expect(previewController.state).toMatchObject({
+    state: 'active',
+    profileId: created.id,
+    kind: 'edit',
+    targets: [{ displayId: 'display:one', color: { brightness: 61 } }, { displayId: 'display:two' }]
+  })
+  expect(native.captured).toEqual(['display:one', 'display:two'])
+  expect(native.restored).toEqual([])
+})

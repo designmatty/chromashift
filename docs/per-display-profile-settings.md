@@ -29,6 +29,11 @@ hue, and 50 color temperature. Each changed control has an independent reset
 action that returns only that value to neutral. There is no per-control enabled
 state and no `lastColorValues`.
 
+New profiles start with a neutral target for every currently connected display,
+keyed by stable physical display ID. With no connected displays, a new profile
+starts without targets. Duplicates copy their source. Missing targets still mean
+original settings for Default, older empty profiles, and displays connected later.
+
 Unsupported settings stay persisted and visible so profiles survive adapter and
 topology changes. Electron intersects capabilities across a physical display's
 native endpoints and sends only supported fields to the helper.
@@ -80,11 +85,13 @@ targets remain persisted and resume when the same physical display returns.
   values, and the first change creates its complete display target.
 - Opening the app selects the Intended target's profile, or Default, and scrolls
   it into view. Non-profile views remain remembered; profile requests from main win.
-- Clicking a profile previews its saved values unless it is already live. Empty
-  profiles show the preview banner and End preview without native restore/apply,
-  with the line "No display settings saved — your displays keep <live profile name
-  or 'their current settings'> until you change a value." The first color change
-  creates that display's complete target and starts Edit. This exception is pending
+- Clicking a profile previews its saved values unless it is already live, so a
+  new profile opens as a native Preview at neutral values. Empty profiles, such
+  as older profiles saved without targets, show the preview banner and End
+  preview without native restore/apply, with the line "No display settings
+  saved — your displays keep <live profile name or 'their current settings'>
+  until you change a value." The first color change creates that display's
+  complete target and starts Edit. This exception is pending
   product-owner decision on baseline-only preview.
   Disabled profiles remain openable, previewable, and editable.
 - While Paused or Safety blocked, profile clicks show values without applying

@@ -1663,6 +1663,39 @@ async function runSmoke() {
 
   await openProfileFromSidebar(debuggerClient, 'Default profile')
   await openProfileFromSidebar(debuggerClient, 'New profile')
+  // New profiles start with neutral targets for every connected display, so
+  // opening one starts a real native Preview instead of the empty-target notice.
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'active' ||
+        result.value.preview.kind !== 'preview') return false
+      const neutral = ${JSON.stringify(neutralColorSettings)}
+      const banner = document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+      return result.value.preview.targets.length === result.value.displays.length &&
+        result.value.displays.every((display) => result.value.preview.targets.some(
+          (target) => target.displayId === display.id &&
+            Object.entries(neutral).every(([key, value]) => target.color[key] === value)
+        )) &&
+        banner?.textContent?.includes('Previewing: New profile') === true &&
+        banner?.textContent?.includes('No display settings saved') === false
+    })()`,
+    'A new profile did not start a neutral native Preview with the banner.'
+  )
+  // Record any frame in which the banner disappears while the first change
+  // promotes Preview to Edit.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      window.__smokeBannerGap = false
+      const check = () => {
+        if (document.querySelector('[data-part="preview-banner"]') === null)
+          window.__smokeBannerGap = true
+      }
+      window.__smokeBannerObserver = new MutationObserver(check)
+      window.__smokeBannerObserver.observe(document.body, { childList: true, subtree: true })
+    })()`
+  })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const input = document.querySelector('[aria-label="Profile name"]')
@@ -1707,13 +1740,13 @@ async function runSmoke() {
   }
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true'`,
+    `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true'`,
     'Edit mode did not expose enabled color controls without a display override step.'
   )
 
   const sliderFocus = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      const slider = document.querySelector('[data-part="color-control"] [role="slider"]')
+      const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')
       slider?.focus()
       return slider === null ? null : {
         active: document.activeElement === slider,
@@ -1745,10 +1778,32 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The edit-mode brightness slider did not retain its changed value.'
   )
+  const promotedInPlace = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      window.__smokeBannerObserver?.disconnect()
+      const result = await window.chromaShift.getState()
+      return {
+        kind: result.ok && result.value.preview.state === 'active' ? result.value.preview.kind : null,
+        bannerGap: window.__smokeBannerGap === true,
+        banner: document.querySelector('[data-part="preview-banner"]') !== null
+      }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (
+    promotedInPlace.result.value?.kind !== 'edit' ||
+    promotedInPlace.result.value?.bannerGap !== false ||
+    promotedInPlace.result.value?.banner !== true
+  ) {
+    throw new Error(
+      `The first new-profile change did not promote Preview to Edit in place: ${JSON.stringify(promotedInPlace.result.value)}`
+    )
+  }
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
@@ -1758,14 +1813,14 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 50 &&
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 50 &&
         document.querySelector('[aria-label="Reset brightness to neutral"]') === null
     })()`,
     'The brightness reset action did not restore only the neutral brightness value.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+    expression: `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
   })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -1783,7 +1838,7 @@ async function runSmoke() {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.targets[0]?.color.brightness === 51
+      return result.ok && result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'Brightness could not be changed again after an individual reset.'
   )
@@ -1799,7 +1854,7 @@ async function runSmoke() {
       if (!result.ok || result.value.preview.state !== 'inactive' ||
         result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
       return profile?.name === 'Smoke profile' && target !== undefined &&
         target.color.brightness === 51 && Object.keys(target.color).length === 6 &&
         !('lastColorValues' in target)
@@ -1814,12 +1869,12 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'preview' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The saved profile could not re-enter live Edit mode for Discard coverage.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+    expression: `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
   })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -1838,7 +1893,7 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 52
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 52
     })()`,
     'The applied-change Discard check could not preview brightness.'
   )
@@ -1853,7 +1908,7 @@ async function runSmoke() {
       if (!result.ok || result.value.preview.state !== 'inactive' ||
         result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
       return target?.color.brightness === 51 &&
         document.querySelector('[aria-label="Profile name"]')?.disabled === false
     })()`,
@@ -1866,7 +1921,7 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'preview' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The profile could not re-enter Edit mode for scheduled-change Discard coverage.'
   )
@@ -1897,7 +1952,7 @@ async function runSmoke() {
       if (!result.ok || result.value.preview.state !== 'inactive' ||
         result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
       return target?.color.brightness === 51 &&
         document.querySelector('[aria-label="Profile name"]')?.disabled === false
     })()`,

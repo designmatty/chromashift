@@ -316,6 +316,78 @@ describe('ProductController Default profile', () => {
   })
 })
 
+describe('ProductController profile creation', () => {
+  function nativeWith(displays: Display[]): ProductNativePort {
+    return {
+      getDisplays: () => Promise.resolve(displays),
+      getDisplayCapabilityReport: () => Promise.resolve(capabilityReport(true)),
+      getForegroundApplication: () => Promise.resolve(null),
+      getVisibleApplications: () => Promise.resolve([])
+    }
+  }
+
+  const neutral = {
+    brightness: 50,
+    contrast: 50,
+    gamma: 1,
+    saturation: 50,
+    hue: 0,
+    colorTemperature: 50
+  }
+
+  it('keeps an empty target list when no displays are connected', async () => {
+    const { product, repository } = controller(undefined, undefined, nativeWith([]))
+
+    const created = await product.createProfile('New profile')
+
+    expect(created.displays).toEqual([])
+    expect((await repository.findById(created.id))?.displays).toEqual([])
+  })
+
+  it('creates a neutral target for the one connected display', async () => {
+    const { product, repository } = controller(undefined, undefined, nativeWith([display(false)]))
+
+    const created = await product.createProfile('New profile')
+
+    expect(created.displays).toEqual([{ displayId: 'display:one', color: neutral }])
+    expect((await repository.findById(created.id))?.displays).toEqual(created.displays)
+  })
+
+  it('creates a neutral target for every connected physical display', async () => {
+    const second: Display = {
+      ...display(false),
+      id: 'display:two',
+      physicalId: 'display:two',
+      primary: false
+    }
+    const { product } = controller(undefined, undefined, nativeWith([display(false), second]))
+
+    const created = await product.createProfile('New profile')
+
+    expect(created.displays).toEqual([
+      { displayId: 'display:one', color: neutral },
+      { displayId: 'display:two', color: neutral }
+    ])
+    expect(created.displays[0]?.color).not.toBe(created.displays[1]?.color)
+  })
+
+  it('leaves Default and duplicates untouched by connected displays', async () => {
+    const { product, repository } = controller(undefined, undefined, nativeWith([display(false)]))
+    await repository.save({
+      id: 'empty',
+      name: 'Empty',
+      enabled: true,
+      applications: [],
+      displays: []
+    })
+
+    const duplicate = await product.duplicateProfile('empty')
+
+    expect(duplicate.displays).toEqual([])
+    expect((await repository.findById('default'))?.displays).toEqual([])
+  })
+})
+
 describe('ProductController application icons', () => {
   it('hydrates legacy application rules from their executable paths and caches the result', async () => {
     let iconReads = 0

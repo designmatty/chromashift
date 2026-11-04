@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  createNeutralColorSettings,
   DEFAULT_PROFILE_ID,
   type ColorProfile,
   type DisplayColorTarget,
@@ -163,13 +164,22 @@ export class ProductController {
     return pending
   }
 
+  /**
+   * New profiles start with a complete neutral target for every connected
+   * physical display, so opening one previews real values. Missing targets
+   * elsewhere still mean captured original settings.
+   */
   public async createProfile(name: string): Promise<ColorProfile> {
+    const displays = await this.native.getDisplays()
     const profile = await this.repository.save({
       id: randomUUID(),
       name,
       enabled: true,
       applications: [],
-      displays: []
+      displays: displays.map((display) => ({
+        displayId: display.id,
+        color: createNeutralColorSettings()
+      }))
     })
     await this.#configurationChanged()
     return profile
