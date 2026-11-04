@@ -62,3 +62,35 @@ export function isProfileClickNoop(
 ): boolean {
   return view === 'profiles' && sameId(clickedProfileId, shownProfileId)
 }
+
+/**
+ * Switching from a Preview or Edit session to another profile that will start
+ * its own native Preview rolls the first session back before starting the
+ * next. The banner stays mounted for the destination during that gap.
+ */
+export function keepsPreviewBannerWhileSwitching(
+  before: AppPreviewState & Pick<ProductState, 'preview'>,
+  destination: ColorProfile
+): boolean {
+  return (
+    before.preview.state === 'active' &&
+    before.preview.kind !== 'override' &&
+    !sameId(before.preview.profileId, destination.id) &&
+    shouldPreviewProfile(before, destination)
+  )
+}
+
+export function previewBannerVisible(
+  product: AppPreviewState & Pick<ProductState, 'preview'>,
+  shownProfile: ColorProfile | null,
+  pendingPreviewId: string | null
+): boolean {
+  if (product.chromaShift.status !== 'active' || shownProfile === null) return false
+  if (product.preview.state === 'active' && product.preview.kind === 'override') return false
+  if (sameId(liveProfile(product)?.id, shownProfile.id)) return false
+  return (
+    product.preview.state === 'active' ||
+    sameId(pendingPreviewId, shownProfile.id) ||
+    emptyPreviewMessage(product, shownProfile) !== null
+  )
+}

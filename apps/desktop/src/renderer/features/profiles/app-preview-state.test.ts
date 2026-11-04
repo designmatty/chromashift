@@ -4,7 +4,9 @@ import type { ProductState } from '@shared/product-api'
 import {
   emptyPreviewMessage,
   isProfileClickNoop,
+  keepsPreviewBannerWhileSwitching,
   liveProfile,
+  previewBannerVisible,
   shouldPreviewProfile
 } from '@/features/profiles/app-preview-state'
 
@@ -97,5 +99,61 @@ describe('app preview selection', () => {
     expect(isProfileClickNoop('settings', 'default', 'default')).toBe(false)
     expect(isProfileClickNoop('shortcuts', 'game', 'game')).toBe(false)
     expect(isProfileClickNoop('profiles', 'game', null)).toBe(false)
+  })
+})
+
+describe('preview banner while switching profiles', () => {
+  const third: ColorProfile = { ...profiles[1]!, id: 'third', name: 'Third', applications: [] }
+  function withPreview(
+    preview: ProductState['preview'],
+    status: ProductState['chromaShift']['status'] = 'active'
+  ): Parameters<typeof previewBannerVisible>[0] {
+    const product = state(status)
+    return {
+      ...product,
+      configuration: { ...product.configuration, profiles: [...profiles, third] },
+      preview
+    }
+  }
+  const previewing = (
+    kind: 'preview' | 'edit' | 'override',
+    profileId = 'game'
+  ): ProductState['preview'] => ({ state: 'active', profileId, kind, targets: [] })
+
+  it('keeps the banner from one previewed or edited profile to another', () => {
+    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('preview')), third)).toBe(true)
+    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('edit')), third)).toBe(true)
+  })
+  it('does not keep the banner for the live, an empty, or the same destination', () => {
+    const before = withPreview(previewing('preview'))
+    expect(keepsPreviewBannerWhileSwitching(before, profiles[0]!)).toBe(false)
+    expect(keepsPreviewBannerWhileSwitching(before, { ...third, displays: [] })).toBe(false)
+    expect(keepsPreviewBannerWhileSwitching(before, profiles[1]!)).toBe(false)
+  })
+  it('does not keep the banner without a preview, for an override, or when not Active', () => {
+    expect(keepsPreviewBannerWhileSwitching(withPreview({ state: 'inactive' }), third)).toBe(false)
+    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('override')), third)).toBe(false)
+    expect(
+      keepsPreviewBannerWhileSwitching(withPreview(previewing('preview'), 'paused'), third)
+    ).toBe(false)
+  })
+  it('shows the destination while the previous session rolls back', () => {
+    const rolledBack = withPreview({ state: 'inactive' })
+    expect(previewBannerVisible(rolledBack, third, 'third')).toBe(true)
+    expect(previewBannerVisible(withPreview(previewing('preview')), third, 'third')).toBe(true)
+    // The next session has started; the pending destination is no longer needed.
+    expect(previewBannerVisible(withPreview(previewing('preview', 'third')), third, null)).toBe(
+      true
+    )
+  })
+  it('hides the banner when the switch fails or the destination is live', () => {
+    const rolledBack = withPreview({ state: 'inactive' })
+    // A failed switch clears the pending destination.
+    expect(previewBannerVisible(rolledBack, third, null)).toBe(false)
+    expect(previewBannerVisible(rolledBack, profiles[0]!, 'default')).toBe(false)
+    expect(previewBannerVisible(withPreview(previewing('override')), third, 'third')).toBe(false)
+    expect(previewBannerVisible(withPreview({ state: 'inactive' }, 'paused'), third, 'third')).toBe(
+      false
+    )
   })
 })

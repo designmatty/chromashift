@@ -23,7 +23,9 @@ import {
   liveProfile,
   shouldPreviewProfile,
   emptyPreviewMessage,
-  isProfileClickNoop
+  isProfileClickNoop,
+  keepsPreviewBannerWhileSwitching,
+  previewBannerVisible
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -51,6 +53,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
   const [profilePendingDeletion, setProfilePendingDeletion] = useState<ColorProfile | null>(null)
+  // Destination of a preview-to-preview switch, keeping the banner mounted
+  // while the previous session rolls back and the next one starts.
+  const [pendingPreviewId, setPendingPreviewId] = useState<string | null>(null)
   const [pendingContinuation, setPendingContinuation] = useState<(() => Promise<void>) | null>(null)
   const [pendingDisable, setPendingDisable] = useState<{
     profile: ColorProfile
@@ -90,6 +95,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   useEffect(() => {
     if (followingLive.current && !dirty && activeSession === null) setSelectedId(currentProfileId)
   }, [currentProfileId, activeSession, dirty])
+  useEffect(() => {
+    if (pendingPreviewId !== null && activeSession?.profileId === pendingPreviewId)
+      setPendingPreviewId(null)
+  }, [activeSession, pendingPreviewId])
 
   async function value<T>(request: Promise<ProductResult<T>>): Promise<T> {
     const result = await request
@@ -127,6 +136,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   async function returnToLive(): Promise<void> {
     const profile = liveProfile(await value(window.chromaShift.getState()))
+    setPendingPreviewId(null)
     followingLive.current = true
     setSelectedId(profile?.id ?? null)
     resetTo(profile)
@@ -160,21 +170,32 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   async function openProfile(profile: ColorProfile): Promise<void> {
     const before = await value(window.chromaShift.getState())
-    const keepingOverride =
-      before.preview.state === 'active' &&
-      before.preview.kind === 'override' &&
-      before.preview.profileId === profile.id
-    if (before.chromaShift.status !== 'active') await settlePreview()
-    else if (!keepingOverride) await rollback()
-    const state = await value(window.chromaShift.getState())
-    const current = state.configuration.profiles.find((item) => item.id === profile.id)
-    if (current === undefined) return
-    followingLive.current = liveProfile(state)?.id === current.id
-    setSelectedId(current.id)
-    resetTo(current)
-    setView('profiles')
-    if (shouldPreviewProfile(state, current))
-      await value(window.chromaShift.startPreview(current, 'preview'))
+    if (keepsPreviewBannerWhileSwitching(before, profile)) setPendingPreviewId(profile.id)
+    try {
+      const keepingOverride =
+        before.preview.state === 'active' &&
+        before.preview.kind === 'override' &&
+        before.preview.profileId === profile.id
+      if (before.chromaShift.status !== 'active') await settlePreview()
+      else if (!keepingOverride) await rollback()
+      const state = await value(window.chromaShift.getState())
+      const current = state.configuration.profiles.find((item) => item.id === profile.id)
+      if (current === undefined) {
+        setPendingPreviewId(null)
+        return
+      }
+      followingLive.current = liveProfile(state)?.id === current.id
+      setSelectedId(current.id)
+      resetTo(current)
+      setView('profiles')
+      // The pending destination clears once its session reaches the renderer.
+      if (shouldPreviewProfile(state, current))
+        await value(window.chromaShift.startPreview(current, 'preview'))
+      else setPendingPreviewId(null)
+    } catch (cause) {
+      setPendingPreviewId(null)
+      throw cause
+    }
   }
   function selectProfile(profile: ColorProfile): void {
     if (isProfileClickNoop(view, profile.id, selected?.id ?? null)) return
@@ -291,12 +312,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       ? applyOverrideTargets(savedProfile, temporaryOverride.targets)
       : savedProfile
   const showPreviewBanner =
-    view === 'profiles' &&
-    product.chromaShift.status === 'active' &&
-    temporaryOverride === null &&
-    shownProfile !== null &&
-    shownProfile.id !== currentProfileId &&
-    (activeSession !== null || emptyPreviewMessage(product, shownProfile) !== null)
+    view === 'profiles' && previewBannerVisible(product, shownProfile, pendingPreviewId)
   const OverrideBanner = () => {
     return temporaryOverride !== null ? (
       <Flex

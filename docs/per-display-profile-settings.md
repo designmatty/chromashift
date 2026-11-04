@@ -116,6 +116,9 @@ targets remain persisted and resume when the same physical display returns.
   `Use this profile` selects it manually; disabled profiles offer `Enable`.
   `End preview`, selecting the live profile, closing, or minimizing ends preview
   and returns the editor to the live profile. Focus loss leaves preview active.
+  Switching from one previewed or edited profile to another profile that will
+  preview keeps the strip mounted and names the destination. It hides only when
+  the destination is the live profile or the switch fails.
 - The established brightness, contrast, gamma, saturation, and hue controls keep
   their existing row layout. Their icons replace the former per-control enabled
   checkboxes. Unsupported controls stay disabled and explain their unavailable
