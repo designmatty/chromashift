@@ -1,14 +1,15 @@
-import { createNeutralColorSettings, JsonProfileRepository, type ColorProfile } from '@chromashift/core'
+import {
+  createNeutralColorSettings,
+  JsonProfileRepository,
+  type ColorProfile
+} from '@chromashift/core'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { ProductController } from '@main/product-controller.js'
 import { defaultUserPreferences } from '@main/app-settings.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
-import {
-  PreviewSyncSession,
-  PREVIEW_SYNC_DEBOUNCE_MS
-} from '@/features/profiles/preview-sync.js'
+import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
 import { shouldPreviewProfile } from '@/features/profiles/app-preview-state.js'
 import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
 import type { ProductState } from '@shared/product-api.js'
@@ -110,8 +111,7 @@ it('rolls back a reverted draft on minimize through the serialized session queue
   )
   const reverted = structuredClone(profile)
   sync.schedule(reverted, controller.state)
-  if (shouldEndPreviewOnMinimize(profilesDiffer(reverted, profile)))
-    await sync.rollback(true)
+  if (shouldEndPreviewOnMinimize(profilesDiffer(reverted, profile))) await sync.rollback(true)
   expect(controller.state).toEqual({ state: 'inactive' })
   expect(cancel).toHaveBeenCalledOnce()
   expect(native.restored).toContain('display:abc')
@@ -323,7 +323,12 @@ it('previews a new profile at neutral values and promotes its first edit in plac
     },
     () => undefined
   )
-  const outcome = { status: 'activated' as const, resolution: null, failures: [], deferredDisplayIds: [] }
+  const outcome = {
+    status: 'activated' as const,
+    resolution: null,
+    failures: [],
+    deferredDisplayIds: []
+  }
   let stored: string | null = null
   const product = new ProductController(
     new JsonProfileRepository({
@@ -358,7 +363,11 @@ it('previews a new profile at neutral values and promotes its first edit in plac
     },
     previewController,
     { pick: async () => null, describe: async () => null },
-    { get: async () => defaultUserPreferences, save: async (value) => value, apply: () => undefined },
+    {
+      get: async () => defaultUserPreferences,
+      save: async (value) => value,
+      apply: () => undefined
+    },
     { refreshTray: async () => undefined, stateChanged: () => undefined }
   )
   const sessions: PreviewState[] = []

@@ -109,6 +109,19 @@ export class PreviewSessionController {
     return structuredClone(this.#active.draft)
   }
 
+  /** Refresh saved content without changing the applied draft or display ownership. */
+  public async profileSaved(profile: ColorProfile): Promise<void> {
+    return this.#enqueue(async () => {
+      const active = this.#active
+      if (active === null || active.profileId.toLowerCase() !== profile.id.toLowerCase()) return
+      if (!profilesDiffer(active.draft, active.saved)) {
+        active.draft = structuredClone({ ...profile, displays: active.draft.displays })
+      }
+      active.saved = structuredClone(profile)
+      this.onStateChanged(this.state)
+    })
+  }
+
   public async start(
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override',

@@ -614,3 +614,27 @@ describe('PreviewSessionController', () => {
     expect(controller.state).toEqual({ state: 'inactive' })
   })
 })
+
+it('refreshes saved content without native calls, and discards metadata in place', async () => {
+  const native = new FakeNative()
+  const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+  const saved = profile()
+  const draft = { ...saved, name: 'Renamed draft' }
+  await controller.start(draft, 'edit', saved)
+  const before = native.calls.length
+  await controller.profileSaved({ ...draft, id: 'other' })
+  expect(controller.unsavedDraft).toEqual(draft)
+  await controller.profileSaved(draft)
+  expect(controller.unsavedDraft).toBeNull()
+  const edited = { ...draft, name: 'Next rename' }
+  await controller.update(edited.id, edited.displays, edited)
+  expect(controller.unsavedDraft).toEqual(edited)
+  await controller.update(draft.id, draft.displays, draft)
+  expect(controller.state).toMatchObject({
+    state: 'active',
+    kind: 'edit',
+    unsavedChanges: false,
+    draft
+  })
+  expect(native.calls).toHaveLength(before)
+})

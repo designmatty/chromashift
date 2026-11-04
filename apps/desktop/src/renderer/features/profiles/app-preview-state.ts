@@ -1,4 +1,4 @@
-import { type ColorProfile } from '@chromashift/core'
+import type { ColorProfile } from '@chromashift/core'
 import type { AppPanelView, ProductState } from '@shared/product-api.js'
 import { hasUnsavedSession } from '@shared/unsaved-changes.js'
 import { applyOverrideTargets } from '@/features/profiles/override-targets.js'

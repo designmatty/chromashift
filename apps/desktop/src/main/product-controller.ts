@@ -221,6 +221,7 @@ export class ProductController {
       await settingsTransaction?.rollback()
       throw error
     }
+    await this.preview.profileSaved(saved)
     if (
       !saved.enabled &&
       this.activation.state.mode.kind === 'manual' &&

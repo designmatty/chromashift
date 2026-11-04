@@ -171,7 +171,13 @@ describe('preview banner while switching profiles', () => {
   const previewing = (
     kind: 'preview' | 'edit' | 'override',
     profileId = 'game'
-  ): ProductState['preview'] => ({ state: 'active', profileId, kind, targets: [] })
+  ): ProductState['preview'] => ({
+    state: 'active',
+    profileId,
+    kind,
+    targets: [],
+    unsavedChanges: kind !== 'preview'
+  })
 
   it('keeps the banner from one previewed or edited profile to another', () => {
     expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('preview')), third)).toBe(true)
@@ -234,6 +240,7 @@ describe('header Update and Discard', () => {
   ): ProductState['preview'] => ({
     state: 'active',
     kind: overrides.kind ?? 'edit',
+    unsavedChanges: true,
     profileId: overrides.profileId ?? 'game',
     targets
   })

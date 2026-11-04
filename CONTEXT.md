@@ -83,7 +83,7 @@ the saved profile).
 _Avoid_: Live mode, draft mode
 
 **Draft**:
-The renderer's unsaved copy of a profile whose changes a Preview session
-applies. A dirty draft differs from the saved profile in applied display
-values, not merely in remembered control metadata.
+The unsaved copy of a profile whose changes a Preview session applies. A dirty
+draft differs from saved profile content, including its name, applications,
+availability, or display values; reverting all edits makes it clean.
 _Avoid_: Working copy, pending profile
