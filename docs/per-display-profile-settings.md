@@ -102,7 +102,8 @@ targets remain persisted and resume when the same physical display returns.
 - A subtle preview strip sits directly below the rounded main panel, aligned to
   its width without spanning the sidebar. Its text is left-aligned and actions
   are on the right. The panel shrinks to make room and scrolls internally, keeping
-  the content's top position stable. It names the previewed profile and the automatic target.
+  the content's top position stable. A decorative icon sits left of
+  "Previewing: <name>".
   `Use this profile` selects it manually; disabled profiles offer `Enable`.
   `End preview`, selecting the live profile, closing, or minimizing ends preview
   and returns the editor to the live profile. Focus loss leaves preview active.

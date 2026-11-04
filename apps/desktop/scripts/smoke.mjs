@@ -2474,7 +2474,7 @@ async function runSmoke() {
     const result = await window.chromaShift.getState()
     return result.ok && result.value.preview.state === 'active' &&
       result.value.preview.kind === 'preview' &&
-      document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')?.textContent?.includes('Previewing Smoke profile')
+      document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')?.textContent?.includes('Previewing: Smoke profile')
   })()`,
     'Clicking a profile did not start Preview or show the banner.'
   )

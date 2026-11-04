@@ -9,7 +9,7 @@ import {
   Text,
   VStack
 } from '@chakra-ui/react'
-import { CircleAlert, Power, View } from 'lucide-react'
+import { CircleAlert, Power } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
@@ -22,8 +22,7 @@ import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import {
   liveProfile,
   shouldPreviewProfile,
-  emptyPreviewMessage,
-  automaticProfileName
+  emptyPreviewMessage
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -545,17 +544,19 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               color="fg"
               colorPalette="blue"
             >
-              <Icon asChild size={'md'}>
+              <Icon asChild size="md">
                 <svg
+                  aria-hidden="true"
+                  focusable="false"
                   xmlns="http://www.w3.org/2000/svg"
                   width="24"
                   height="24"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
                   <path d="M10 3H8" />
                   <path d="M12 17v4" />
@@ -570,9 +571,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 </svg>
               </Icon>
               <Stack flex="1" minW="0" gap="0">
-                <Text truncate>
-                  Previewing: {shownProfile.name}
-                </Text>
+                <Text truncate>Previewing: {shownProfile.name}</Text>
                 {emptyPreviewMessage(product, shownProfile) !== null && (
                   <Text color="fg.muted" fontSize="sm">
                     {emptyPreviewMessage(product, shownProfile)}

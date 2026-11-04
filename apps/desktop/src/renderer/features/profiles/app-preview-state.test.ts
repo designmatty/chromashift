@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import {
-  automaticProfileName,
   emptyPreviewMessage,
   liveProfile,
   shouldPreviewProfile
@@ -54,7 +53,7 @@ describe('app preview selection', () => {
   it.each(['paused', 'safetyBlocked'] as const)('never previews while %s', (status) => {
     expect(shouldPreviewProfile(state(status), profiles[1]!)).toBe(false)
   })
-  it('resolves automatic B while manually using A and browsing preview C', () => {
+  it('previews C while manually using A without changing the live profile', () => {
     const product = state()
     product.chromaShift.intendedMode = { kind: 'manual', profileId: 'default' }
     product.foregroundApplication = {
@@ -67,16 +66,7 @@ describe('app preview selection', () => {
     const preview = { ...profiles[1]!, id: 'c', name: 'Preview C', applications: [] }
     product.configuration = { ...product.configuration, profiles: [...profiles, preview] }
     expect(shouldPreviewProfile(product, preview)).toBe(true)
-    expect(automaticProfileName(product)).toBe('Game')
     expect(liveProfile(product)?.id).toBe('default')
-  })
-  it('falls back to Default and then Original settings without a foreground match', () => {
-    const product = state()
-    product.chromaShift.intendedMode = { kind: 'manual', profileId: 'game' }
-    product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'game' }
-    expect(automaticProfileName(product)).toBe('Default profile')
-    product.configuration = { ...product.configuration, settings: { defaultProfileId: null } }
-    expect(automaticProfileName(product)).toBe('Original settings')
   })
   it('explains empty-target browsing without starting a native preview', () => {
     const product = state()
