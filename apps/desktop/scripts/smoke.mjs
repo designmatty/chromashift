@@ -1950,15 +1950,22 @@ async function runSmoke() {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return profile?.name === 'Smoke profile' && target !== undefined &&
         target.color.brightness === 51 && Object.keys(target.color).length === 6 &&
-        !('lastColorValues' in target)
+        !('lastColorValues' in target) &&
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+        document.querySelector('[data-part="unsaved-changes-actions"]') === null &&
+        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+          ?.textContent?.includes('Previewing: Smoke profile') === true
     })()`,
-    'Saving did not persist the complete color vector and restore automatic activation.'
+    'Update did not save the complete color vector and stay previewing the profile in automatic mode.'
   )
 
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
@@ -1967,7 +1974,7 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'preview' &&
+        result.value.preview.kind !== 'override' &&
         result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The saved profile could not re-enter live Edit mode for Discard coverage.'
@@ -2004,14 +2011,18 @@ async function runSmoke() {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return target?.color.brightness === 51 &&
-        document.querySelector('[aria-label="Profile name"]')?.disabled === false
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]') !== null
     })()`,
-    'Discard did not roll back an applied live-edit change.'
+    'Discard did not revert an applied change while staying on the previewed profile.'
   )
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
@@ -2019,7 +2030,7 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'preview' &&
+        result.value.preview.kind !== 'override' &&
         result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The profile could not re-enter Edit mode for scheduled-change Discard coverage.'
@@ -2048,11 +2059,14 @@ async function runSmoke() {
   const cancelledState = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
       const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return target?.color.brightness === 51 &&
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
         document.querySelector('[aria-label="Profile name"]')?.disabled === false
     })()`,
     awaitPromise: true,
@@ -2060,7 +2074,7 @@ async function runSmoke() {
   })
   if (cancelledState.result.value !== true) {
     throw new Error(
-      'Discard did not discard a scheduled live-edit change and restore automatic activation.'
+      'Discard did not discard a scheduled change while staying on the previewed profile.'
     )
   }
 

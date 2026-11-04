@@ -94,3 +94,40 @@ export function previewBannerVisible(
     emptyPreviewMessage(product, shownProfile) !== null
   )
 }
+
+type SessionState = AppPreviewState & Pick<ProductState, 'preview'>
+
+/**
+ * Update profile on the live profile commits and ends the session as before.
+ * On any other profile it saves while the session keeps previewing it.
+ */
+export function updatePlan(product: SessionState, profileId: string): 'commit' | 'saveInSession' {
+  return sameId(liveProfile(product)?.id, profileId) ? 'commit' : 'saveInSession'
+}
+
+/**
+ * Discard changes stays on a non-live profile, showing its saved values as if
+ * it had just been clicked. The existing session reverts in place when the
+ * saved targets cover every display the session wrote. Otherwise a removed
+ * draft-only target would restore to original settings rather than the live
+ * state a fresh click leaves it in, so the preview restarts.
+ */
+export function discardPlan(
+  product: SessionState,
+  saved: ColorProfile | undefined
+): 'returnToLive' | 'revertSession' | 'restartPreview' {
+  if (saved === undefined || sameId(liveProfile(product)?.id, saved.id)) return 'returnToLive'
+  const session = product.preview
+  if (
+    product.chromaShift.status === 'active' &&
+    session.state === 'active' &&
+    session.kind !== 'override' &&
+    sameId(session.profileId, saved.id) &&
+    saved.displays.length > 0 &&
+    session.targets.every((target) =>
+      saved.displays.some((item) => sameId(item.displayId, target.displayId))
+    )
+  )
+    return 'revertSession'
+  return 'restartPreview'
+}

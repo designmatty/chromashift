@@ -25,11 +25,18 @@ import {
   emptyPreviewMessage,
   isProfileClickNoop,
   keepsPreviewBannerWhileSwitching,
-  previewBannerVisible
+  previewBannerVisible,
+  discardPlan,
+  updatePlan
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
-import { commitAppPreview, deleteAppProfile } from '@/features/profiles/app-preview-actions'
+import {
+  commitAppPreview,
+  deleteAppProfile,
+  revertAppPreview,
+  saveAppPreview
+} from '@/features/profiles/app-preview-actions'
 import { usePreviewDraft } from '@/features/profiles/use-preview-draft'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { SettingsNav } from '@/features/settings/settings-nav'
@@ -150,6 +157,55 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   async function updateProfile(profile = draft): Promise<void> {
     if (profile === null) return
     resetTo(await commitAppPreview(profile, settlePreview, window.chromaShift))
+  }
+  // Header Update stays on the shown profile. Only the live profile commits and
+  // ends its session; any other profile saves while its preview keeps running.
+  async function updateShownProfile(): Promise<void> {
+    if (draft === null) return
+    const state = await value(window.chromaShift.getState())
+    if (updatePlan(state, draft.id) === 'commit') {
+      await updateProfile()
+      await returnToLive()
+      return
+    }
+    const saved = await saveAppPreview(draft, settlePreview, window.chromaShift)
+    followingLive.current = false
+    setSelectedId(saved.id)
+    resetTo(saved)
+    // A saved profile without targets has nothing to preview.
+    if (saved.displays.length === 0) await rollback()
+  }
+  // Header Discard stays on the shown profile, previewing its saved values as
+  // if it had just been clicked.
+  async function discardShownChanges(): Promise<void> {
+    const profileId = draft?.id ?? selected?.id
+    if (profileId === undefined) return
+    await settlePreview()
+    const state = await value(window.chromaShift.getState())
+    const saved = state.configuration.profiles.find((item) => item.id === profileId)
+    const plan = discardPlan(state, saved)
+    if (plan === 'returnToLive' || saved === undefined) {
+      await rollback()
+      await returnToLive()
+      return
+    }
+    followingLive.current = false
+    setSelectedId(saved.id)
+    if (plan === 'revertSession') {
+      await revertAppPreview(saved, settlePreview, window.chromaShift)
+      resetTo(saved)
+      return
+    }
+    const previews = shouldPreviewProfile(state, saved)
+    if (previews) setPendingPreviewId(saved.id)
+    try {
+      await rollback()
+      resetTo(saved)
+      if (previews) await value(window.chromaShift.startPreview(saved, 'preview'))
+    } catch (cause) {
+      setPendingPreviewId(null)
+      throw cause
+    }
   }
   function continueAfterChanges(work: () => Promise<void>): void {
     if (dirty) requestAnimationFrame(() => setPendingContinuation(() => work))
@@ -522,18 +578,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                     busy={busy}
                     dirty={dirty}
                     onChange={updateDraft}
-                    onCancel={() =>
-                      perform(async () => {
-                        await rollback()
-                        await returnToLive()
-                      })
-                    }
-                    onSave={() =>
-                      perform(async () => {
-                        await updateProfile()
-                        await returnToLive()
-                      })
-                    }
+                    onCancel={() => perform(discardShownChanges)}
+                    onSave={() => perform(updateShownProfile)}
                     onCopy={() => createProfile(shownProfile)}
                     onDelete={() => requestProfileDeletion(shownProfile)}
                     onToggleEnabled={() => toggleProfileEnabled(shownProfile)}

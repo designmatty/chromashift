@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import {
+  discardPlan,
   emptyPreviewMessage,
   isProfileClickNoop,
   keepsPreviewBannerWhileSwitching,
   liveProfile,
   previewBannerVisible,
-  shouldPreviewProfile
+  shouldPreviewProfile,
+  updatePlan
 } from '@/features/profiles/app-preview-state'
 
 const profiles: ColorProfile[] = [
@@ -154,6 +156,65 @@ describe('preview banner while switching profiles', () => {
     expect(previewBannerVisible(withPreview(previewing('override')), third, 'third')).toBe(false)
     expect(previewBannerVisible(withPreview({ state: 'inactive' }, 'paused'), third, 'third')).toBe(
       false
+    )
+  })
+})
+
+describe('header Update and Discard', () => {
+  const second = { displayId: 'display:two', color: createNeutralColorSettings() }
+  function session(
+    preview: ProductState['preview'],
+    status: ProductState['chromaShift']['status'] = 'active'
+  ): Parameters<typeof discardPlan>[0] {
+    return { ...state(status), preview }
+  }
+  const editing = (
+    targets = profiles[1]!.displays,
+    overrides: { kind?: 'preview' | 'edit' | 'override'; profileId?: string } = {}
+  ): ProductState['preview'] => ({
+    state: 'active',
+    kind: overrides.kind ?? 'edit',
+    profileId: overrides.profileId ?? 'game',
+    targets
+  })
+
+  it('commits the live profile and saves any other profile in its session', () => {
+    expect(updatePlan(session({ state: 'inactive' }), 'default')).toBe('commit')
+    expect(updatePlan(session({ state: 'inactive' }), 'DEFAULT')).toBe('commit')
+    expect(updatePlan(session(editing()), 'game')).toBe('saveInSession')
+  })
+  it('returns to live only when discarding the live profile or a missing one', () => {
+    expect(discardPlan(session(editing()), profiles[0])).toBe('returnToLive')
+    expect(discardPlan(session(editing()), undefined)).toBe('returnToLive')
+  })
+  it('reverts a non-live session in place when saved targets cover it', () => {
+    expect(discardPlan(session(editing()), profiles[1])).toBe('revertSession')
+    expect(discardPlan(session(editing(undefined, { kind: 'preview' })), profiles[1])).toBe(
+      'revertSession'
+    )
+    // A saved target the session lacks is simply applied.
+    expect(
+      discardPlan(session(editing([])), {
+        ...profiles[1]!,
+        displays: [...profiles[1]!.displays, second]
+      })
+    ).toBe('revertSession')
+  })
+  it('restarts the preview when reverting in place would not match a fresh click', () => {
+    // The draft added a display target the saved profile lacks.
+    expect(discardPlan(session(editing([...profiles[1]!.displays, second])), profiles[1])).toBe(
+      'restartPreview'
+    )
+    // An empty saved profile previews without a native session.
+    expect(discardPlan(session(editing()), { ...profiles[1]!, displays: [] })).toBe(
+      'restartPreview'
+    )
+    expect(discardPlan(session({ state: 'inactive' }), profiles[1])).toBe('restartPreview')
+    expect(discardPlan(session(editing(undefined, { kind: 'override' })), profiles[1])).toBe(
+      'restartPreview'
+    )
+    expect(discardPlan(session(editing(undefined, { profileId: 'other' })), profiles[1])).toBe(
+      'restartPreview'
     )
   })
 })

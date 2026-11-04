@@ -101,10 +101,17 @@ targets remain persisted and resume when the same physical display returns.
 - The first change promotes Preview to Edit in place before applying the draft.
   Only sidebar rows, including the collapsed rail, mark unsaved changes with a bullet.
   When dirty, the header shows `Discard changes` then primary `Update profile`
-  immediately left of the overflow menu, without an unsaved-changes label. `Update profile`
-  commits the complete draft while preserving mode; `Discard changes` rolls back.
-  A renderer dialog offers Update, Discard, or Cancel before leaving unsaved
-  changes through profile selection, activation selection, or navigation.
+  immediately left of the overflow menu, without an unsaved-changes label. Both
+  keep the editor on the shown profile. `Update profile` saves the complete
+  draft while preserving mode. On the live profile it ends the session; on
+  another profile the session keeps previewing the saved values without a
+  display change. `Discard changes` returns a non-live profile to its saved
+  values, still previewed as if it had just been clicked. It reverts the session
+  in place, or restarts the preview when the draft added a display target the
+  saved profile lacks. On the live profile it rolls back. A renderer dialog
+  offers Update, Discard, or Cancel before leaving unsaved changes through
+  profile selection, activation selection, or navigation; either choice then
+  continues to that destination.
 - Deleting a profile shows only the delete confirmation, even with unsaved changes.
   Cancel preserves the draft and session. Confirm ends only the deleted profile's
   session before deletion; deleting another profile preserves the open session.
@@ -138,8 +145,10 @@ targets remain persisted and resume when the same physical display returns.
 One preview session can touch several display targets. Clicking an app-panel
 profile starts Preview; its first change promotes the unchanged session to Edit
 without restoring or recapturing. Draft changes then apply immediately and remain
-unsaved until `Update profile`. `Discard changes`, navigation, or failure waits
-for pending writes and restores the prior automatic or manual target. Preview
+unsaved until `Update profile`. Navigation or failure waits for pending writes
+and restores the prior automatic or manual target. `Discard changes` also waits
+for pending writes; on a non-live profile it returns the session to the saved
+values instead. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
 
 The mini panel edits one explicitly selected display at a time and shows the same

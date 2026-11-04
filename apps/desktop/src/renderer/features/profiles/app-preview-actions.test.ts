@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
-import { commitAppPreview, deleteAppProfile } from '@/features/profiles/app-preview-actions'
+import {
+  commitAppPreview,
+  deleteAppProfile,
+  revertAppPreview,
+  saveAppPreview
+} from '@/features/profiles/app-preview-actions'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync'
 import type { ProductState, PreviewState, ProductResult } from '@shared/product-api'
 
@@ -16,10 +21,10 @@ changed.displays[0]!.color.brightness = 60
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
 
-function fixture() {
+function fixture(kind: 'preview' | 'edit' | 'override' = 'override') {
   let preview: PreviewState = {
     state: 'active',
-    kind: 'override',
+    kind,
     profileId: profile.id,
     targets: profile.displays
   }
@@ -44,6 +49,10 @@ function fixture() {
     confirmPreview: vi.fn(async (draft: ColorProfile, activation: 'manual' | 'preserve') => {
       calls.push(`confirm:${activation}`)
       preview = { state: 'inactive' }
+      return { ok: true as const, value: draft }
+    }),
+    saveProfile: vi.fn(async (draft: ColorProfile) => {
+      calls.push('save')
       return { ok: true as const, value: draft }
     }),
     deleteProfile: async (id: string) => {
@@ -179,5 +188,73 @@ it.each(['debouncing', 'in flight'] as const)(
     await vi.runAllTimersAsync()
     expect(f.calls.slice(-2)).toEqual(['cancel', 'delete:a'])
     expect(f.state()).toEqual({ state: 'inactive' })
+  }
+)
+
+it.each(['debouncing', 'in flight'] as const)(
+  'header Update on a non-live profile saves the latest %s draft and keeps its session',
+  async (timing) => {
+    vi.useFakeTimers()
+    const f = fixture('preview')
+    let release!: () => void
+    if (timing === 'in flight') {
+      const update = f.api.updatePreview
+      f.api.updatePreview = async (...args) => {
+        f.api.updatePreview = update
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return update(...args)
+      }
+    }
+    f.sync.schedule(changed, f.state())
+    if (timing === 'in flight') await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    const saved = saveAppPreview(changed, () => f.sync.settle(), f.api)
+    if (timing === 'in flight') release()
+    expect(await saved).toEqual(changed)
+    await vi.runAllTimersAsync()
+    expect(f.api.saveProfile).toHaveBeenCalledExactlyOnceWith(changed)
+    expect(f.api.confirmPreview).not.toHaveBeenCalled()
+    expect(f.calls).not.toContain('cancel')
+    expect(f.calls.at(-1)).toBe('save')
+    expect(f.state()).toEqual({
+      state: 'active',
+      kind: 'edit',
+      profileId: profile.id,
+      targets: changed.displays
+    })
+  }
+)
+
+it.each(['debouncing', 'in flight'] as const)(
+  'header Discard on a non-live profile reverts a %s edit in its session without cancelling',
+  async (timing) => {
+    vi.useFakeTimers()
+    const f = fixture('edit')
+    let release!: () => void
+    if (timing === 'in flight') {
+      const update = f.api.updatePreview
+      f.api.updatePreview = async (...args) => {
+        f.api.updatePreview = update
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return update(...args)
+      }
+    }
+    f.sync.schedule(changed, f.state())
+    if (timing === 'in flight') await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    const reverted = revertAppPreview(profile, () => f.sync.settle(), f.api)
+    if (timing === 'in flight') release()
+    await reverted
+    await vi.runAllTimersAsync()
+    expect(f.calls).not.toContain('cancel')
+    expect(f.calls.at(-1)).toBe('update')
+    expect(f.state()).toEqual({
+      state: 'active',
+      kind: 'edit',
+      profileId: profile.id,
+      targets: profile.displays
+    })
   }
 )
