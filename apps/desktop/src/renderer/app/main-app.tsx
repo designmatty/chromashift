@@ -1,5 +1,15 @@
-import { Alert, Button, CloseButton, Flex, Heading, Stack, Text, VStack } from '@chakra-ui/react'
-import { CircleAlert, Power } from 'lucide-react'
+import {
+  Alert,
+  Button,
+  CloseButton,
+  Flex,
+  Heading,
+  Icon,
+  Stack,
+  Text,
+  VStack
+} from '@chakra-ui/react'
+import { CircleAlert, Power, View } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
@@ -535,12 +545,33 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               color="fg"
               colorPalette="blue"
             >
+              <Icon asChild size={'md'}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M10 3H8" />
+                  <path d="M12 17v4" />
+                  <path d="M14 17H4a2 2 0 01-2-2v-2.536" />
+                  <path d="M14 3h6a2 2 0 012 2v6.536" />
+                  <path d="M20 15v4" />
+                  <path d="M22 17h-4" />
+                  <path d="M4 5v4" />
+                  <path d="M6 7H2" />
+                  <path d="M8 21h8" />
+                  <path d="M9 2v2" />
+                </svg>
+              </Icon>
               <Stack flex="1" minW="0" gap="0">
-                <Text fontWeight="medium" truncate>
-                  ◉ Previewing {shownProfile.name}
-                </Text>
-                <Text color="fg.muted" fontSize="sm">
-                  Automatic would use: {automaticProfileName(product)}
+                <Text truncate>
+                  Previewing: {shownProfile.name}
                 </Text>
                 {emptyPreviewMessage(product, shownProfile) !== null && (
                   <Text color="fg.muted" fontSize="sm">
@@ -549,7 +580,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 )}
               </Stack>
               <Button
-                size="xs"
+                size="2xs"
                 disabled={busy}
                 onClick={() => {
                   if (!shownProfile.enabled) {
@@ -566,7 +597,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               >
                 {shownProfile.enabled ? 'Use this profile' : 'Enable'}
               </Button>
-              <Button size="xs" variant="outline" disabled={busy} onClick={endPreview}>
+              <Button size="2xs" variant="outline" disabled={busy} onClick={endPreview}>
                 End preview
               </Button>
             </Flex>
