@@ -138,6 +138,9 @@ targets remain persisted and resume when the same physical display returns.
 - Profile and settings sidebars share one persisted collapsed state. The collapsed
   rail is 40 pixels wide and uses icon buttons with tooltips; it does not expand
   on hover or change the native window minimum width.
+- Sidebar profile names stay on one line and truncate with an ellipsis. A
+  truncated name shows its full text in the shared tooltip on hover; the
+  collapsed rail's row tooltip always names the profile.
 - `Copy to` copies the selected display's complete vector to chosen destinations.
 
 ## Preview and mini-panel behavior

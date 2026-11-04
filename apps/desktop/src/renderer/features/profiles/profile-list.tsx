@@ -35,6 +35,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
 import type { ProductState, ShortcutBinding } from '@shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useTextTruncated } from '@/hooks/use-text-truncated'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
 import { profileSelectionItems, profileSelectionLabel } from '@/features/profiles/profile-selection'
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
@@ -350,7 +351,9 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
               '&[data-reordering]': { maskImage: 'none' }
             }}
           >
-            <ScrollArea.Content>
+            {/* Zag sets an inline min-width: fit-content, which widens rows to
+                the longest name instead of letting names truncate. */}
+            <ScrollArea.Content style={{ minWidth: 0 }}>
               <Stack data-part="profile-rows" alignContent="start" gap={3}>
                 {reorder.ids.map((id, index) => {
                   const profile = props.profiles.find((profile) => profile.id === id)
@@ -596,20 +599,13 @@ function ProfileListRow(
           />
         )}
         {!props.collapsed && (
-          <Flex direction="column" gap={0} minW="0">
-            <Text
-              as="strong"
-              flex="1"
-              overflow="hidden"
-              color={props.profile.enabled ? 'inherit' : 'fg.muted'}
-              fontSize="16px"
-              fontWeight="500"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {props.profile.name}
-              {props.dirty ? ' •' : ''}
-            </Text>
+          <Flex direction="column" gap={0} flex="1" minW="0" overflow="hidden">
+            <ProfileName
+              name={props.profile.name}
+              dirty={props.dirty}
+              enabled={props.profile.enabled}
+              overlay={props.overlay ?? false}
+            />
             {(props.currentLabel !== null || !props.profile.enabled) && (
               <Text
                 data-part="profile-status"
@@ -628,7 +624,7 @@ function ProfileListRow(
           ref={props.handleRef}
           srOnly={props.collapsed}
           data-part="profile-reorder-handle"
-          aria-label={`Reorder ${props.profile.name}{props.dirty ? ' •' : ''}`}
+          aria-label={`Reorder ${props.profile.name}${props.dirty ? ' •' : ''}`}
           aria-describedby={props.reorderInstructionsId}
           aria-pressed={dragging}
           title="Drag to reorder"
@@ -685,13 +681,53 @@ function ProfileListRow(
   )
   return props.collapsed && !props.overlay ? (
     <Tooltip
-      content={`${props.profile.name}{props.dirty ? ' •' : ''}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
+      content={`${props.profile.name}${props.dirty ? ' •' : ''}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
       positioning={{ placement: 'right' }}
     >
       {item}
     </Tooltip>
   ) : (
     item
+  )
+}
+
+/**
+ * A single-line, ellipsis-truncated profile name. The full name appears in the
+ * shared Tooltip on hover only while the name is truncated. The tooltip wraps
+ * this text rather than the row button, so row focus, click, double-click, and
+ * the separate reorder handle are unaffected.
+ */
+function ProfileName(props: {
+  name: string
+  dirty: boolean
+  enabled: boolean
+  overlay: boolean
+}): React.JSX.Element {
+  const label = props.name + (props.dirty ? ' •' : '')
+  const [nameRef, truncated] = useTextTruncated<HTMLElement>(label)
+  return (
+    <Tooltip
+      content={props.name}
+      disabled={!truncated || props.overlay}
+      positioning={{ placement: 'top-start' }}
+    >
+      <Text
+        ref={nameRef}
+        as="strong"
+        data-part="profile-name-text"
+        data-truncated={truncated ? '' : undefined}
+        display="block"
+        maxW="full"
+        overflow="hidden"
+        color={props.enabled ? 'inherit' : 'fg.muted'}
+        fontSize="16px"
+        fontWeight="500"
+        textOverflow="ellipsis"
+        whiteSpace="nowrap"
+      >
+        {label}
+      </Text>
+    </Tooltip>
   )
 }
 

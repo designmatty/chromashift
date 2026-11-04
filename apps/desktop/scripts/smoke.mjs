@@ -949,11 +949,217 @@ async function runShortcuts() {
   })
 }
 
+async function setTheme(debuggerClient, theme) {
+  const result = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) return null
+      const updated = await window.chromaShift.updateSettings({ ...state.value.settings, theme: ${JSON.stringify(theme)} })
+      return updated.ok ? state.value.settings.theme : null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (typeof result.result.value !== 'string') throw new Error(`Could not switch to the ${theme} theme.`)
+  if (theme !== 'system') {
+    await waitForExpression(
+      debuggerClient,
+      `document.documentElement.classList.contains(${JSON.stringify(theme)})`,
+      `The ${theme} theme did not reach the renderer.`
+    )
+  }
+  return result.result.value
+}
+
+async function closeTooltips(debuggerClient, context) {
+  await movePointerToEmptyArea(debuggerClient)
+  for (const type of ['keyDown', 'keyUp']) {
+    await debuggerClient.send('Input.dispatchKeyEvent', {
+      type,
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27
+    })
+  }
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="tooltip"]') === null`,
+    `The ${context} tooltip did not close.`
+  )
+}
+
+// A long name truncates to one line in the sidebar, rail, header, and preview
+// banner without horizontal overflow. The shared Tooltip shows the full name.
+async function verifyLongProfileName(debuggerClient, name) {
+  const row = `[...document.querySelectorAll('[data-part="profile-item"]')].find((item) =>
+    item.querySelector('[data-part="profile-select"] strong')?.textContent?.trim() === ${JSON.stringify(name)})`
+  const noOverflow = (selector) =>
+    `[...document.querySelectorAll(${JSON.stringify(selector)})].every((element) => element.scrollWidth <= element.clientWidth + 1)`
+  const layout = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const row = ${row}
+      const text = row?.querySelector('[data-part="profile-name-text"]')
+      if (!(row instanceof HTMLElement) || !(text instanceof HTMLElement)) return null
+      const style = getComputedStyle(text)
+      return {
+        rowFits: row.scrollWidth <= row.clientWidth + 1,
+        rowHeight: row.getBoundingClientRect().height,
+        truncated: text.hasAttribute('data-truncated') && text.scrollWidth > text.clientWidth,
+        textWidths: [text.scrollWidth, text.clientWidth, row.clientWidth],
+        ellipsis: style.textOverflow === 'ellipsis' && style.whiteSpace === 'nowrap',
+        navFits: ${noOverflow('[data-part="profile-nav"]')},
+        headerFits: ${noOverflow('[data-part="profile-detail"] header')},
+        bannerFits: ${noOverflow('[data-part="preview-banner"]')},
+        bannerTruncates: (() => {
+          const banner = document.querySelector('[data-part="preview-banner"] p')
+          return banner instanceof HTMLElement && getComputedStyle(banner).textOverflow === 'ellipsis'
+        })()
+      }
+    })()`,
+    returnByValue: true
+  })
+  const measured = layout.result.value
+  if (
+    measured?.rowFits !== true ||
+    measured.rowHeight > 41 ||
+    measured.truncated !== true ||
+    measured.ellipsis !== true ||
+    measured.navFits !== true ||
+    measured.headerFits !== true ||
+    measured.bannerFits !== true ||
+    measured.bannerTruncates !== true
+  ) {
+    throw new Error(`A long profile name overflowed or did not truncate: ${JSON.stringify(measured)}`)
+  }
+
+  // The live row carries a subtitle below its name and must truncate the same way.
+  const liveRename = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      const live = state.ok && state.value.configuration.profiles.find((item) => item.id === 'default')
+      if (!live) return null
+      const saved = await window.chromaShift.saveProfile({ ...live, name: ${JSON.stringify(`Live ${name}`.slice(0, 65))} })
+      return saved.ok ? live.name : null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  const liveName = liveRename.result.value
+  if (typeof liveName !== 'string') throw new Error('Could not give the live profile a long name.')
+  try {
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-part="profile-item"]')]
+          .find((item) => item.querySelector('[data-part="profile-status"]') !== null &&
+            item.querySelector('[data-part="profile-name-text"][data-truncated]') !== null)
+        return row instanceof HTMLElement && row.scrollWidth <= row.clientWidth + 1 &&
+          row.getBoundingClientRect().height <= 41
+      })()`,
+      'The live profile row with its subtitle did not truncate a long name.'
+    )
+  } finally {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(async () => {
+        const state = await window.chromaShift.getState()
+        const live = state.ok && state.value.configuration.profiles.find((item) => item.id === 'default')
+        if (live) await window.chromaShift.saveProfile({ ...live, name: ${JSON.stringify(liveName)} })
+      })()`,
+      awaitPromise: true
+    })
+  }
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((item) => item.textContent?.trim() === ${JSON.stringify(liveName)})`,
+    'The live profile name was not restored after the long-name check.'
+  )
+
+  const originalTheme = await setTheme(debuggerClient, 'dark')
+  try {
+    for (const theme of ['dark', 'light']) {
+      if (theme === 'light') await setTheme(debuggerClient, 'light')
+      await hoverElement(debuggerClient, '[data-part="profile-item"] [data-part="profile-name-text"][data-truncated]')
+      await waitForExpression(
+        debuggerClient,
+        `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})`,
+        `The truncated profile name did not show its full name in a tooltip (${theme}).`
+      )
+      await delay(200)
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-profile-name-${theme}-native.png`))
+      await closeTooltips(debuggerClient, `long profile name (${theme})`)
+    }
+  } finally {
+    await setTheme(debuggerClient, originalTheme)
+  }
+
+  // A short name never opens the name tooltip.
+  await hoverElement(debuggerClient, '[data-part="profile-item"] [data-part="profile-name-text"]:not([data-truncated])')
+  await delay(800)
+  const shortTooltip = await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[role="tooltip"]') === null`,
+    returnByValue: true
+  })
+  if (shortTooltip.result.value !== true) {
+    throw new Error('An untruncated profile name opened a tooltip.')
+  }
+  await closeTooltips(debuggerClient, 'short profile name')
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-nav"] [aria-label="Collapse sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px'`,
+    'The sidebar did not collapse for the long-name rail check.'
+  )
+  const rail = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const nav = document.querySelector('[data-part="profile-nav"]')
+      const overflowing = [...nav.querySelectorAll('*')]
+        .filter((element) => element.scrollWidth > element.clientWidth + 1 && element.clientWidth > 0)
+        .map((element) => ({
+          part: element.getAttribute('data-part'),
+          tag: element.tagName,
+          label: element.getAttribute('aria-label'),
+          widths: [element.scrollWidth, element.clientWidth]
+        }))
+      return {
+        rowsFit: ${noOverflow('[data-part="profile-rows"]')} && ${noOverflow('[data-part="profile-item"]')},
+        overflowing
+      }
+    })()`,
+    returnByValue: true
+  })
+  if (rail.result.value?.rowsFit !== true) {
+    throw new Error(`The collapsed rail overflowed with a long profile name: ${JSON.stringify(rail.result.value)}`)
+  }
+  if (rail.result.value.overflowing.length > 0) {
+    globalThis.console.log(`Collapsed rail overflow outside profile rows: ${JSON.stringify(rail.result.value.overflowing)}`)
+  }
+  await hoverElement(debuggerClient, `[data-part="profile-item"] [aria-label="${name}"]`)
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})`,
+    'The collapsed rail did not show the full long profile name.'
+  )
+  await closeTooltips(debuggerClient, 'collapsed rail')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-nav"] [aria-label="Expand sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width !== '40px'`,
+    'The sidebar did not expand after the long-name rail check.'
+  )
+}
+
 // Switching from one previewed profile to another keeps the banner mounted for
 // the destination. The guarded display is sampled during the switch to report,
 // without failing, whether it visibly returns to the live target in between.
 async function verifyPreviewToPreviewBanner(debuggerClient) {
-  const fixtureName = 'Preview switch check'
+  // The 65-character editor maximum also covers long-name truncation.
+  const fixtureName = 'Preview switch check with a long profile name that keeps on going'
   const created = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const created = await window.chromaShift.createProfile(${JSON.stringify(fixtureName)})
@@ -1032,6 +1238,7 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
       liveStateObservedBetweenPreviews: samples.some((sample) => sample === baseline)
     })}`
   )
+  await verifyLongProfileName(debuggerClient, fixtureName)
   await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
     debuggerClient,
