@@ -142,6 +142,15 @@ describe('preview banner while switching profiles', () => {
       true
     )
   })
+  it('shows empty profiles only while their session or pending destination exists', () => {
+    const empty = { ...third, displays: [] }
+    const rolledBack = withPreview({ state: 'inactive' })
+    expect(previewBannerVisible(rolledBack, empty, null)).toBe(false)
+    expect(previewBannerVisible(rolledBack, empty, 'third')).toBe(true)
+    expect(previewBannerVisible(withPreview(previewing('preview', 'third')), empty, null)).toBe(
+      true
+    )
+  })
   it('hides the banner when the switch fails or the destination is live', () => {
     const rolledBack = withPreview({ state: 'inactive' })
     // A failed switch clears the pending destination.
@@ -200,9 +209,7 @@ describe('header Update and Discard', () => {
       'revertSession'
     )
     // Empty profiles keep a real baseline preview session.
-    expect(discardPlan(session(editing()), { ...profiles[1]!, displays: [] })).toBe(
-      'revertSession'
-    )
+    expect(discardPlan(session(editing()), { ...profiles[1]!, displays: [] })).toBe('revertSession')
   })
   it('restarts only when no matching Preview or Edit session can be reused', () => {
     expect(discardPlan(session({ state: 'inactive' }), profiles[1])).toBe('restartPreview')

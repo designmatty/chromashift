@@ -67,10 +67,7 @@ export function previewBannerVisible(
   if (product.chromaShift.status !== 'active' || shownProfile === null) return false
   if (product.preview.state === 'active' && product.preview.kind === 'override') return false
   if (sameId(liveProfile(product)?.id, shownProfile.id)) return false
-  return (
-    product.preview.state === 'active' ||
-    sameId(pendingPreviewId, shownProfile.id)
-  )
+  return product.preview.state === 'active' || sameId(pendingPreviewId, shownProfile.id)
 }
 
 type SessionState = AppPreviewState & Pick<ProductState, 'preview'>

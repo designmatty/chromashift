@@ -183,8 +183,8 @@ Edit before synchronizing the draft, retaining baseline ownership without a
 restore or capture. On the live profile, `Update profile` commits while
 preserving mode and `Discard changes` rolls back. On another profile, both stay
 on it: Update saves while its session keeps previewing the saved values, and
-Discard reverts the session to them in place, or restarts the preview when a
-draft-only target must return to its pre-preview state. Renderer dialogs guard navigation and activation changes
+Discard reverts the session to them in place, restoring Original settings for
+targets the saved profile lacks. Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, close, and minimize
 return to the live profile. Focus loss does not end preview. Cancellation,
 navigation, and failure wait for pending writes before restoring the previous

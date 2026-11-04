@@ -2823,7 +2823,11 @@ async function runSmoke() {
     liveProfileFingerprints.set(display.id, fingerprint)
   }
   const emptyPreviewFixture = await debuggerClient.send('Runtime.evaluate', {
-    expression: `window.chromaShift.createProfile('Original settings preview check')`,
+    expression: `(async () => {
+      const created = await window.chromaShift.createProfile('Original settings preview check')
+      if (!created.ok) return created
+      return window.chromaShift.saveProfile({ ...created.value, displays: [] })
+    })()`,
     awaitPromise: true,
     returnByValue: true
   })

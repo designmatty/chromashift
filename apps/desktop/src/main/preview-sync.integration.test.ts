@@ -9,7 +9,7 @@ import {
   PreviewSyncSession,
   PREVIEW_SYNC_DEBOUNCE_MS
 } from '@/features/profiles/preview-sync.js'
-import { emptyPreviewMessage, shouldPreviewProfile } from '@/features/profiles/app-preview-state.js'
+import { shouldPreviewProfile } from '@/features/profiles/app-preview-state.js'
 import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
 
 const profile: ColorProfile = {
@@ -151,7 +151,7 @@ it('previews a new profile at neutral values and promotes its first edit in plac
   const previewController = new PreviewSessionController(
     native,
     {
-      beginPreview: async () => undefined,
+      beginPreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -224,7 +224,6 @@ it('previews a new profile at neutral values and promotes its first edit in plac
   ])
   const state = await product.getState()
   expect(shouldPreviewProfile(state, created)).toBe(true)
-  expect(emptyPreviewMessage(state, created)).toBeNull()
 
   await previewController.start(created, 'preview')
   const clicked = previewController.state
