@@ -93,7 +93,9 @@ targets remain persisted and resume when the same physical display returns.
   until you change a value." The first color change creates that display's
   complete target and starts Edit. This exception is pending
   product-owner decision on baseline-only preview.
-  Disabled profiles remain openable, previewable, and editable.
+  Disabled profiles remain openable, previewable, and editable. Clicking the
+  profile the Profiles view already shows does nothing, whether it is live or
+  previewed.
 - While Paused or Safety blocked, profile clicks show values without applying
   them. Inputs are disabled and a Resume action remains available.
 - The first change promotes Preview to Edit in place before applying the draft.

@@ -22,7 +22,8 @@ import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import {
   liveProfile,
   shouldPreviewProfile,
-  emptyPreviewMessage
+  emptyPreviewMessage,
+  isProfileClickNoop
 } from '@/features/profiles/app-preview-state'
 import { DeleteProfileDialog } from '@/features/profiles/delete-profile-dialog'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -176,8 +177,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       await value(window.chromaShift.startPreview(current, 'preview'))
   }
   function selectProfile(profile: ColorProfile): void {
-    if (view === 'profiles' && profile.id === selected?.id && profile.id !== currentProfileId)
-      return
+    if (isProfileClickNoop(view, profile.id, selected?.id ?? null)) return
     if (!dirty) {
       followingLive.current = profile.id === currentProfileId
       setSelectedId(profile.id)

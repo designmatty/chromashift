@@ -3,6 +3,7 @@ import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core
 import type { ProductState } from '@shared/product-api'
 import {
   emptyPreviewMessage,
+  isProfileClickNoop,
   liveProfile,
   shouldPreviewProfile
 } from '@/features/profiles/app-preview-state'
@@ -81,5 +82,20 @@ describe('app preview selection', () => {
     )
     expect(emptyPreviewMessage(product, profiles[0]!)).toBe(null)
     expect(emptyPreviewMessage(state('paused'), { ...profiles[1]!, displays: [] })).toBe(null)
+  })
+  it.each([
+    ['live, without a session', 'default', 'default'],
+    ['previewed', 'game', 'game'],
+    ['case-insensitively', 'GAME', 'game']
+  ])('ignores a click on the profile already shown (%s)', (_label, clicked, shown) => {
+    expect(isProfileClickNoop('profiles', clicked, shown)).toBe(true)
+  })
+  it('still handles clicks on another profile or from a Settings page', () => {
+    // Clicking the live profile while previewing another returns to live.
+    expect(isProfileClickNoop('profiles', 'default', 'game')).toBe(false)
+    // A profile click from Settings navigates back to Profiles.
+    expect(isProfileClickNoop('settings', 'default', 'default')).toBe(false)
+    expect(isProfileClickNoop('shortcuts', 'game', 'game')).toBe(false)
+    expect(isProfileClickNoop('profiles', 'game', null)).toBe(false)
   })
 })

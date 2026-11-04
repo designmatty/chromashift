@@ -1,5 +1,5 @@
 import type { ColorProfile } from '@chromashift/core'
-import type { ProductState } from '@shared/product-api.js'
+import type { AppPanelView, ProductState } from '@shared/product-api.js'
 
 type AppPreviewState = Pick<ProductState, 'configuration' | 'chromaShift' | 'foregroundApplication'>
 
@@ -41,4 +41,24 @@ export function emptyPreviewMessage(
         )?.name
       : undefined
   return `No display settings saved — your displays keep ${name ?? 'their current settings'} until you change a value.`
+}
+
+function sameId(left: string | null | undefined, right: string | null | undefined): boolean {
+  return (
+    typeof left === 'string' &&
+    typeof right === 'string' &&
+    left.toLowerCase() === right.toLowerCase()
+  )
+}
+
+/**
+ * A click on the profile the Profiles view already shows changes nothing,
+ * whether that profile is live or previewed and with or without a session.
+ */
+export function isProfileClickNoop(
+  view: AppPanelView,
+  clickedProfileId: string,
+  shownProfileId: string | null
+): boolean {
+  return view === 'profiles' && sameId(clickedProfileId, shownProfileId)
 }
