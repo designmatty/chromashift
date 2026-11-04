@@ -160,7 +160,7 @@ targets, foreground-application assignment, and an Electron `.exe` picker. Its
 controls derive support and provider explanations from each selected display's
 capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
 display view retains the hardware diagnostics needed for provider support.
-Profile deletion uses Chakra's renderer-modal `Dialog` so closing an overflow
+Profile deletion, unsaved changes, and shortcut removal use Chakra's renderer-modal `Dialog` so closing an overflow
 menu and removing its trigger cannot strand Windows keyboard focus outside the
 app.
 
@@ -171,17 +171,22 @@ drive their sessions through one shared seam: `use-preview-draft.ts` owns the
 draft and dirty state, and the framework-free `preview-sync.ts` session owns
 debounced draft synchronization, the start-versus-update decision, and
 race-safe rollback that waits for in-flight writes before cancelling. Surface
-flows (preview promotion, collapse-on-equal, explicit Preview toggling) stay in
-`main-app.tsx` and `mini-panel.tsx` and call into that seam. Edit mode previews changes
-as they are made; the separate Preview action is a user-controlled toggle. Cancel,
-reset, navigation away from a dirty edit, or failure resets the activation resolver
-and reapplies the exact previous manual/foreground/default/baseline target. There
-is deliberately no countdown timer. Native apply restores baseline before each
-complete settings request so removing an override cannot inherit a stale value.
-Entering Edit from an unchanged explicit preview of the same profile promotes the
-existing session in place: it retains the captured baseline and applied values and
-performs no restore, capture, or display write. A changed draft or different profile
-continues through the full restore-safe transition.
+flows (click-to-preview selection and collapse-on-equal) stay in
+`main-app.tsx` and `mini-panel.tsx` and call into that seam. App-panel profiles
+are always editable while Active. A sidebar click previews saved values without
+changing activation mode; the first change promotes unchanged preview targets to
+Edit before synchronizing the draft, retaining baseline ownership without a
+restore or capture. On the live profile, `Update profile` commits while
+preserving mode and `Discard changes` rolls back. On another profile, both stay
+on it: Update saves while its session keeps previewing the saved values, and
+Discard reverts the session to them in place, or restarts the preview when a
+draft-only target must return to its pre-preview state. Renderer dialogs guard navigation and activation changes
+with unsaved changes. End preview, live-profile selection, close, and minimize
+return to the live profile. Focus loss does not end preview. Cancellation,
+navigation, and failure wait for pending writes before restoring the previous
+manual/foreground/default/baseline target. Preview has no countdown. Native apply
+restores baseline before each complete settings request so removing an override
+cannot inherit stale values. The mini-panel override flow remains separate.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
 full app is focused or the non-activating mini panel is raised to the popup-menu

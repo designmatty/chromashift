@@ -46,6 +46,7 @@ export const productIpcChannels = {
   openMiniPanelDevTools: 'application:open-mini-panel-dev-tools',
   setMiniPanelView: 'application:set-mini-panel-view',
   appPanelClosed: 'application:app-panel-closed',
+  appPanelMinimized: 'application:app-panel-minimized',
   navigateAppPanel: 'application:navigate-app-panel',
   selectAppPanelProfile: 'application:select-app-panel-profile',
   stateChanged: 'product:state-changed'
@@ -346,6 +347,7 @@ export interface ChromaShiftApi {
   setMiniPanelView(view: MiniPanelView, showColorTemperature: boolean): Promise<ProductResult<null>>
   onStateChanged(listener: (state: ProductState) => void): void
   onAppPanelClosed(listener: () => void): void
+  onAppPanelMinimized(listener: () => void): void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
   onAppPanelProfileSelection(listener: (profileId: string) => void): void
 }

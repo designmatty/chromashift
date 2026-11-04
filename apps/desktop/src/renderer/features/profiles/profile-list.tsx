@@ -27,9 +27,6 @@ import {
   PowerOff,
   GripVertical,
   Settings as SettingsIcon,
-  Edit as EditIcon,
-  EyeOff,
-  ScanEye,
   Trash2,
   ListVideo,
   Power
@@ -38,6 +35,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
 import type { ProductState, ShortcutBinding } from '@shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useTextTruncated } from '@/hooks/use-text-truncated'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
 import { profileSelectionItems, profileSelectionLabel } from '@/features/profiles/profile-selection'
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
@@ -56,7 +54,7 @@ export interface ProfileListProps {
   shortcutBindings: readonly ShortcutBinding[]
   selectedId: string | null
   currentId: string | null
-  editingProfileId: string | null
+  dirtyProfileId: string | null
   previewingProfileId: string | null
   mode: ActivationMode
   controlStatus: ProductState['chromaShift']['status']
@@ -67,8 +65,6 @@ export interface ProfileListProps {
   onCreate(): void
   onSelectionChange(profileId: string | null): void
   onOpenSettings(): void
-  onEdit(profile: ColorProfile): void
-  onPreview(profile: ColorProfile): void
   onDuplicate(profile: ColorProfile): void
   onToggleEnabled(profile: ColorProfile): void
   onDelete(profile: ColorProfile): void
@@ -127,7 +123,7 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
       selected: profile.id === props.selectedId,
       currentLabel:
         profile.id.toLowerCase() === props.currentId?.toLowerCase() ? currentLabel : null,
-      editing: profile.id === props.editingProfileId,
+      dirty: profile.id === props.dirtyProfileId,
       previewing: profile.id === props.previewingProfileId,
       reorderDisabled: props.busy || reorder.saving || props.profiles.length < 3,
       reorderInstructionsId:
@@ -136,8 +132,6 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
       onKeyDown: (event) => reorder.onKeyDown(profile.id, event),
       suppressClick: reorder.suppressClick,
       onSelect: () => props.onSelect(profile),
-      onEdit: () => props.onEdit(profile),
-      onPreview: () => props.onPreview(profile),
       onDuplicate: () => props.onDuplicate(profile),
       onToggleEnabled: () => props.onToggleEnabled(profile),
       onDelete: () => props.onDelete(profile)
@@ -357,7 +351,9 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
               '&[data-reordering]': { maskImage: 'none' }
             }}
           >
-            <ScrollArea.Content>
+            {/* Zag sets an inline min-width: fit-content, which widens rows to
+                the longest name instead of letting names truncate. */}
+            <ScrollArea.Content style={{ minWidth: 0 }}>
               <Stack data-part="profile-rows" alignContent="start" gap={3}>
                 {reorder.ids.map((id, index) => {
                   const profile = props.profiles.find((profile) => profile.id === id)
@@ -431,7 +427,7 @@ interface ProfileListItemProps {
   index: number
   selected: boolean
   currentLabel: string | null
-  editing: boolean
+  dirty: boolean
   previewing: boolean
   reorderDisabled: boolean
   reorderInstructionsId: string | undefined
@@ -439,8 +435,6 @@ interface ProfileListItemProps {
   onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>): void
   suppressClick(profileId: string): boolean
   onSelect(): void
-  onEdit(): void
-  onPreview(): void
   onDuplicate(): void
   onToggleEnabled(): void
   onDelete(): void
@@ -490,6 +484,10 @@ function ProfileListRow(
   }
 ): React.JSX.Element {
   const actionsTriggerId = useId()
+  const rowRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (props.selected && !props.overlay) rowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [props.selected, props.collapsed, props.overlay])
   const isDefault = props.profile.id.toLowerCase() === DEFAULT_ID
   const { sortable } = props
   const dragging = sortable?.isDragSource ?? false
@@ -556,6 +554,7 @@ function ProfileListRow(
       }}
     >
       <Button
+        ref={rowRef}
         data-part="profile-select"
         variant="plain"
         minH="30px"
@@ -566,7 +565,7 @@ function ProfileListRow(
         gap={3}
         color="inherit"
         textAlign="left"
-        aria-label={props.collapsed ? props.profile.name : undefined}
+        aria-label={props.collapsed ? props.profile.name + (props.dirty ? ' •' : '') : undefined}
         aria-current={props.selected ? 'page' : undefined}
         aria-describedby={props.reorderInstructionsId}
         onKeyDown={isDefault ? undefined : (event) => props.onKeyDown(event)}
@@ -582,6 +581,11 @@ function ProfileListRow(
         }}
       >
         <ProfileIcon profile={props.profile} />
+        {props.collapsed && props.dirty && (
+          <Text position="absolute" right="0" top="0" aria-label="Unsaved changes">
+            •
+          </Text>
+        )}
         {props.currentLabel !== null && (
           <Box
             boxSize={'34px'}
@@ -595,19 +599,13 @@ function ProfileListRow(
           />
         )}
         {!props.collapsed && (
-          <Flex direction="column" gap={0} minW="0">
-            <Text
-              as="strong"
-              flex="1"
-              overflow="hidden"
-              color={props.profile.enabled ? 'inherit' : 'fg.muted'}
-              fontSize="16px"
-              fontWeight="500"
-              textOverflow="ellipsis"
-              whiteSpace="nowrap"
-            >
-              {props.profile.name}
-            </Text>
+          <Flex direction="column" gap={0} flex="1" minW="0" overflow="hidden">
+            <ProfileName
+              name={props.profile.name}
+              dirty={props.dirty}
+              enabled={props.profile.enabled}
+              overlay={props.overlay ?? false}
+            />
             {(props.currentLabel !== null || !props.profile.enabled) && (
               <Text
                 data-part="profile-status"
@@ -626,7 +624,7 @@ function ProfileListRow(
           ref={props.handleRef}
           srOnly={props.collapsed}
           data-part="profile-reorder-handle"
-          aria-label={`Reorder ${props.profile.name}`}
+          aria-label={`Reorder ${props.profile.name}${props.dirty ? ' •' : ''}`}
           aria-describedby={props.reorderInstructionsId}
           aria-pressed={dragging}
           title="Drag to reorder"
@@ -660,17 +658,6 @@ function ProfileListRow(
           <Portal>
             <Menu.Positioner>
               <Menu.Content>
-                {!props.editing && (
-                  <>
-                    <Menu.Item value="edit" onClick={props.onEdit}>
-                      <EditIcon /> Edit
-                    </Menu.Item>
-                    <Menu.Item value="preview" onClick={props.onPreview}>
-                      {props.previewing ? <EyeOff /> : <ScanEye />}
-                      {props.previewing ? 'Stop preview' : 'Preview'}
-                    </Menu.Item>
-                  </>
-                )}
                 <Menu.Item value="clone" onClick={props.onDuplicate}>
                   <Copy /> Clone
                 </Menu.Item>
@@ -694,13 +681,53 @@ function ProfileListRow(
   )
   return props.collapsed && !props.overlay ? (
     <Tooltip
-      content={`${props.profile.name}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
+      content={`${props.profile.name}${props.dirty ? ' •' : ''}${!props.profile.enabled ? ' · Disabled' : props.currentLabel !== null ? ` · ${props.currentLabel}` : ''}`}
       positioning={{ placement: 'right' }}
     >
       {item}
     </Tooltip>
   ) : (
     item
+  )
+}
+
+/**
+ * A single-line, ellipsis-truncated profile name. The full name appears in the
+ * shared Tooltip on hover only while the name is truncated. The tooltip wraps
+ * this text rather than the row button, so row focus, click, double-click, and
+ * the separate reorder handle are unaffected.
+ */
+function ProfileName(props: {
+  name: string
+  dirty: boolean
+  enabled: boolean
+  overlay: boolean
+}): React.JSX.Element {
+  const label = props.name + (props.dirty ? ' •' : '')
+  const [nameRef, truncated] = useTextTruncated<HTMLElement>(label)
+  return (
+    <Tooltip
+      content={props.name}
+      disabled={!truncated || props.overlay}
+      positioning={{ placement: 'top-start' }}
+    >
+      <Text
+        ref={nameRef}
+        as="strong"
+        data-part="profile-name-text"
+        data-truncated={truncated ? '' : undefined}
+        display="block"
+        maxW="full"
+        overflow="hidden"
+        color={props.enabled ? 'inherit' : 'fg.muted'}
+        fontSize="16px"
+        fontWeight="500"
+        textOverflow="ellipsis"
+        whiteSpace="nowrap"
+      >
+        {label}
+      </Text>
+    </Tooltip>
   )
 }
 

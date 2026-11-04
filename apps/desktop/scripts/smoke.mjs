@@ -529,6 +529,22 @@ async function selectActivationOption(debuggerClient, label) {
     `document.querySelector('[aria-label="Profile selection"]')?.getAttribute('aria-expanded') !== 'true'`,
     'The profile selector did not close.'
   )
+  // Closing the picker precedes serialized preview rollback and activation.
+  // Wait for both product state and the idle editor before a caller reloads it.
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'inactive' ||
+        result.value.chromaShift.transitionInProgress ||
+        document.querySelector('[aria-label="Profile selection"]')?.disabled !== false) return false
+      const mode = result.value.chromaShift.intendedMode
+      if (${JSON.stringify(label)} === 'Automatic') return mode.kind === 'automatic'
+      const profile = result.value.configuration.profiles.find((item) => item.name === ${JSON.stringify(label)})
+      return mode.kind === 'manual' && mode.profileId === profile?.id
+    })()`,
+    `Profile selection did not finish activating ${label}.`
+  )
 }
 
 async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
@@ -554,6 +570,52 @@ async function selectMenuItem(debuggerClient, triggerLabel, itemText) {
       .find((candidate) => candidate.getClientRects().length > 0 &&
         candidate.textContent?.trim() === ${JSON.stringify(itemText)})?.click()`
   })
+}
+
+async function openProfileFromSidebar(debuggerClient, profileName) {
+  // IPC completion precedes the React paint after saveProfile/openAppPanel.
+  // Wait for the renamed row and the serialized navigation to settle before
+  // clicking; otherwise the optional lookup silently misses the stale label.
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+      [...document.querySelectorAll('[data-part="profile-select"]')]
+        .some((item) => item.getClientRects().length > 0 &&
+          item.querySelector('strong')?.textContent?.trim().replace(/ •$/, '') === ${JSON.stringify(profileName)})`,
+    `The sidebar row ${profileName} was not ready for editing.`
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
+      .find((item) => item.querySelector('strong')?.textContent?.trim().replace(/ •$/, '') === ${JSON.stringify(profileName)})?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === ${JSON.stringify(profileName)} &&
+      document.querySelector('[aria-label="Profile name"]')?.disabled === false`,
+    `The sidebar did not open ${profileName} for editing.`
+  )
+}
+
+async function clickAppButton(debuggerClient, label, scope = '') {
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll(${JSON.stringify(`${scope} button`.trim())})]
+      .find((item) => item.textContent?.trim() === ${JSON.stringify(label)})?.click()`
+  })
+}
+
+async function answerUnsavedChanges(debuggerClient, label) {
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]')?.textContent?.includes('has unsaved changes')`,
+    'The unsaved-changes dialog did not open.'
+  )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'unsaved-changes-dialog-native.png'))
+  await clickAppButton(debuggerClient, label, '[role="alertdialog"]')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]') === null`,
+    'The unsaved-changes dialog did not close.'
+  )
 }
 
 async function selectProfileMenuItem(debuggerClient, profileName, itemText) {
@@ -619,10 +681,14 @@ async function expectLoadingThemeMatchesApp(debuggerClient, surface) {
   })
   const { requested, dark, light } = theme.result.value ?? {}
   if ((requested !== 'dark' && requested !== 'light') || dark === light) {
-    throw new Error(`The ${surface} had no resolved loading theme: ${JSON.stringify(theme.result.value)}`)
+    throw new Error(
+      `The ${surface} had no resolved loading theme: ${JSON.stringify(theme.result.value)}`
+    )
   }
   if ((requested === 'dark') !== dark) {
-    throw new Error(`The ${surface} loading theme did not match the app theme: ${JSON.stringify(theme.result.value)}`)
+    throw new Error(
+      `The ${surface} loading theme did not match the app theme: ${JSON.stringify(theme.result.value)}`
+    )
   }
 }
 
@@ -883,6 +949,312 @@ async function runShortcuts() {
   })
 }
 
+async function setTheme(debuggerClient, theme) {
+  const result = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) return null
+      const updated = await window.chromaShift.updateSettings({ ...state.value.settings, theme: ${JSON.stringify(theme)} })
+      return updated.ok ? state.value.settings.theme : null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (typeof result.result.value !== 'string') throw new Error(`Could not switch to the ${theme} theme.`)
+  if (theme !== 'system') {
+    await waitForExpression(
+      debuggerClient,
+      `document.documentElement.classList.contains(${JSON.stringify(theme)})`,
+      `The ${theme} theme did not reach the renderer.`
+    )
+  }
+  return result.result.value
+}
+
+async function closeTooltips(debuggerClient, context) {
+  await movePointerToEmptyArea(debuggerClient)
+  for (const type of ['keyDown', 'keyUp']) {
+    await debuggerClient.send('Input.dispatchKeyEvent', {
+      type,
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27
+    })
+  }
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="tooltip"]') === null`,
+    `The ${context} tooltip did not close.`
+  )
+}
+
+// A long name truncates to one line in the sidebar, rail, header, and preview
+// banner without horizontal overflow. The shared Tooltip shows the full name.
+async function verifyLongProfileName(debuggerClient, name) {
+  const row = `[...document.querySelectorAll('[data-part="profile-item"]')].find((item) =>
+    item.querySelector('[data-part="profile-select"] strong')?.textContent?.trim() === ${JSON.stringify(name)})`
+  const noOverflow = (selector) =>
+    `[...document.querySelectorAll(${JSON.stringify(selector)})].every((element) => element.scrollWidth <= element.clientWidth + 1)`
+  const layout = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const row = ${row}
+      const text = row?.querySelector('[data-part="profile-name-text"]')
+      if (!(row instanceof HTMLElement) || !(text instanceof HTMLElement)) return null
+      const style = getComputedStyle(text)
+      return {
+        rowFits: row.scrollWidth <= row.clientWidth + 1,
+        rowHeight: row.getBoundingClientRect().height,
+        truncated: text.hasAttribute('data-truncated') && text.scrollWidth > text.clientWidth,
+        textWidths: [text.scrollWidth, text.clientWidth, row.clientWidth],
+        ellipsis: style.textOverflow === 'ellipsis' && style.whiteSpace === 'nowrap',
+        navFits: ${noOverflow('[data-part="profile-nav"]')},
+        headerFits: ${noOverflow('[data-part="profile-detail"] header')},
+        bannerFits: ${noOverflow('[data-part="preview-banner"]')},
+        bannerTruncates: (() => {
+          const banner = document.querySelector('[data-part="preview-banner"] p')
+          return banner instanceof HTMLElement && getComputedStyle(banner).textOverflow === 'ellipsis'
+        })()
+      }
+    })()`,
+    returnByValue: true
+  })
+  const measured = layout.result.value
+  if (
+    measured?.rowFits !== true ||
+    measured.rowHeight > 41 ||
+    measured.truncated !== true ||
+    measured.ellipsis !== true ||
+    measured.navFits !== true ||
+    measured.headerFits !== true ||
+    measured.bannerFits !== true ||
+    measured.bannerTruncates !== true
+  ) {
+    throw new Error(`A long profile name overflowed or did not truncate: ${JSON.stringify(measured)}`)
+  }
+
+  // The live row carries a subtitle below its name and must truncate the same way.
+  const liveRename = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      const live = state.ok && state.value.configuration.profiles.find((item) => item.id === 'default')
+      if (!live) return null
+      const saved = await window.chromaShift.saveProfile({ ...live, name: ${JSON.stringify(`Live ${name}`.slice(0, 65))} })
+      return saved.ok ? live.name : null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  const liveName = liveRename.result.value
+  if (typeof liveName !== 'string') throw new Error('Could not give the live profile a long name.')
+  try {
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-part="profile-item"]')]
+          .find((item) => item.querySelector('[data-part="profile-status"]') !== null &&
+            item.querySelector('[data-part="profile-name-text"][data-truncated]') !== null)
+        return row instanceof HTMLElement && row.scrollWidth <= row.clientWidth + 1 &&
+          row.getBoundingClientRect().height <= 41
+      })()`,
+      'The live profile row with its subtitle did not truncate a long name.'
+    )
+  } finally {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(async () => {
+        const state = await window.chromaShift.getState()
+        const live = state.ok && state.value.configuration.profiles.find((item) => item.id === 'default')
+        if (live) await window.chromaShift.saveProfile({ ...live, name: ${JSON.stringify(liveName)} })
+      })()`,
+      awaitPromise: true
+    })
+  }
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((item) => item.textContent?.trim() === ${JSON.stringify(liveName)})`,
+    'The live profile name was not restored after the long-name check.'
+  )
+
+  const originalTheme = await setTheme(debuggerClient, 'dark')
+  try {
+    for (const theme of ['dark', 'light']) {
+      if (theme === 'light') await setTheme(debuggerClient, 'light')
+      await hoverElement(debuggerClient, '[data-part="profile-item"] [data-part="profile-name-text"][data-truncated]')
+      await waitForExpression(
+        debuggerClient,
+        `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})`,
+        `The truncated profile name did not show its full name in a tooltip (${theme}).`
+      )
+      await delay(200)
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-profile-name-${theme}-native.png`))
+      await closeTooltips(debuggerClient, `long profile name (${theme})`)
+    }
+  } finally {
+    await setTheme(debuggerClient, originalTheme)
+  }
+
+  // A short name never opens the name tooltip.
+  await hoverElement(debuggerClient, '[data-part="profile-item"] [data-part="profile-name-text"]:not([data-truncated])')
+  await delay(800)
+  const shortTooltip = await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[role="tooltip"]') === null`,
+    returnByValue: true
+  })
+  if (shortTooltip.result.value !== true) {
+    throw new Error('An untruncated profile name opened a tooltip.')
+  }
+  await closeTooltips(debuggerClient, 'short profile name')
+
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-nav"] [aria-label="Collapse sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px'`,
+    'The sidebar did not collapse for the long-name rail check.'
+  )
+  const rail = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const nav = document.querySelector('[data-part="profile-nav"]')
+      const overflowing = [...nav.querySelectorAll('*')]
+        .filter((element) => element.scrollWidth > element.clientWidth + 1 && element.clientWidth > 0)
+        .map((element) => ({
+          part: element.getAttribute('data-part'),
+          tag: element.tagName,
+          label: element.getAttribute('aria-label'),
+          widths: [element.scrollWidth, element.clientWidth]
+        }))
+      return {
+        rowsFit: ${noOverflow('[data-part="profile-rows"]')} && ${noOverflow('[data-part="profile-item"]')},
+        overflowing
+      }
+    })()`,
+    returnByValue: true
+  })
+  if (rail.result.value?.rowsFit !== true) {
+    throw new Error(`The collapsed rail overflowed with a long profile name: ${JSON.stringify(rail.result.value)}`)
+  }
+  if (rail.result.value.overflowing.length > 0) {
+    globalThis.console.log(`Collapsed rail overflow outside profile rows: ${JSON.stringify(rail.result.value.overflowing)}`)
+  }
+  await hoverElement(debuggerClient, `[data-part="profile-item"] [aria-label="${name}"]`)
+  await waitForExpression(
+    debuggerClient,
+    `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})`,
+    'The collapsed rail did not show the full long profile name.'
+  )
+  await closeTooltips(debuggerClient, 'collapsed rail')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-part="profile-nav"] [aria-label="Expand sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width !== '40px'`,
+    'The sidebar did not expand after the long-name rail check.'
+  )
+}
+
+// Switching from one previewed profile to another keeps the banner mounted for
+// the destination. The guarded display is sampled during the switch to report,
+// without failing, whether it visibly returns to the live target in between.
+async function verifyPreviewToPreviewBanner(debuggerClient) {
+  // The 65-character editor maximum also covers long-name truncation.
+  const fixtureName = 'Preview switch check with a long profile name that keeps on going'
+  const created = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const created = await window.chromaShift.createProfile(${JSON.stringify(fixtureName)})
+      if (!created.ok) return null
+      const saved = await window.chromaShift.saveProfile({
+        ...created.value,
+        displays: created.value.displays.map((target) =>
+          target.displayId === ${JSON.stringify(guardedProductDisplayId)}
+            ? { ...target, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 60 } }
+            : target
+        )
+      })
+      return saved.ok ? saved.value.id : null
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  const fixtureId = created.result.value
+  if (typeof fixtureId !== 'string') throw new Error('Could not create the preview-switch fixture.')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      window.__smokeSwitchBannerGap = false
+      window.__smokeSwitchObserver = new MutationObserver(() => {
+        if (document.querySelector('[data-part="preview-banner"]') === null)
+          window.__smokeSwitchBannerGap = true
+      })
+      window.__smokeSwitchObserver.observe(document.body, { childList: true, subtree: true })
+    })()`
+  })
+  const baseline = guardedBaselines.get(guardedDisplay.id)
+  const before = displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
+  let sampling = true
+  const samples = []
+  const sampler = (async () => {
+    while (sampling) {
+      samples.push(
+        displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
+      )
+      await delay(10)
+    }
+  })()
+  try {
+    await openProfileFromSidebar(debuggerClient, fixtureName)
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const result = await window.chromaShift.getState()
+        return result.ok && result.value.preview.state === 'active' &&
+          result.value.preview.kind === 'preview' &&
+          result.value.preview.profileId === ${JSON.stringify(fixtureId)} &&
+          document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+            ?.textContent?.includes(${JSON.stringify(`Previewing: ${fixtureName}`)}) === true
+      })()`,
+      'Switching previews did not start the destination Preview with its banner.'
+    )
+  } finally {
+    sampling = false
+    await sampler
+  }
+  const after = samples.at(-1)
+  const gap = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      window.__smokeSwitchObserver?.disconnect()
+      return window.__smokeSwitchBannerGap === true
+    })()`,
+    returnByValue: true
+  })
+  if (gap.result.value !== false) {
+    throw new Error('The preview banner disappeared while switching between previewed profiles.')
+  }
+  globalThis.console.log(
+    `Preview switch observation: ${JSON.stringify({
+      samples: samples.length,
+      sourceDiffersFromLive: before !== baseline,
+      destinationDiffersFromLive: after !== baseline,
+      liveStateObservedBetweenPreviews: samples.some((sample) => sample === baseline)
+    })}`
+  )
+  await verifyLongProfileName(debuggerClient, fixtureName)
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.preview.state !== 'active' ||
+        result.value.preview.kind !== 'preview') return false
+      const previewed = result.value.configuration.profiles.find((item) => item.name === 'Smoke profile')
+      if (result.value.preview.profileId !== previewed?.id) return false
+      const deleted = await window.chromaShift.deleteProfile(${JSON.stringify(fixtureId)})
+      return deleted.ok
+    })()`,
+    'Could not return to the Smoke profile preview and remove the preview-switch fixture.'
+  )
+}
+
 async function runSmoke() {
   const target = await waitForDebuggerTarget(
     debuggingPort,
@@ -1088,7 +1460,7 @@ async function runSmoke() {
   miniDebugger.close()
   debuggerClient = recreatedAppDebugger
 
-  const readOnlyProfile = await debuggerClient.send('Runtime.evaluate', {
+  const editableProfile = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const displayRows = [...document.querySelectorAll('[data-part="display-control"]')]
       const colorInputs = [...document.querySelectorAll('[data-part="profile-detail"] [role="slider"]')]
@@ -1105,20 +1477,20 @@ async function runSmoke() {
     returnByValue: true
   })
   if (
-    !readOnlyProfile.result.value?.hasEdit ||
-    readOnlyProfile.result.value?.hasNameInput ||
-    !readOnlyProfile.result.value?.hasColorInput ||
-    !readOnlyProfile.result.value?.allColorInputsDisabled ||
-    readOnlyProfile.result.value?.hasOverrideCheckbox ||
-    (readOnlyProfile.result.value?.displayRows ?? 0) === 0 ||
-    readOnlyProfile.result.value?.displayTabs !== readOnlyProfile.result.value?.displayRows
+    editableProfile.result.value?.hasEdit ||
+    !editableProfile.result.value?.hasNameInput ||
+    !editableProfile.result.value?.hasColorInput ||
+    editableProfile.result.value?.allColorInputsDisabled ||
+    editableProfile.result.value?.hasOverrideCheckbox ||
+    (editableProfile.result.value?.displayRows ?? 0) === 0 ||
+    editableProfile.result.value?.displayTabs !== editableProfile.result.value?.displayRows
   ) {
     throw new Error(
-      `Profile navigation did not begin with disabled edit-parity controls: ${JSON.stringify(readOnlyProfile.result.value)}`
+      `Profile navigation did not begin with editable controls: ${JSON.stringify(editableProfile.result.value)}`
     )
   }
 
-  if ((readOnlyProfile.result.value?.displayRows ?? 0) > 1) {
+  if ((editableProfile.result.value?.displayRows ?? 0) > 1) {
     for (let index = 0; index < 2; index += 1) {
       await debuggerClient.send('Runtime.evaluate', {
         expression: `document.querySelectorAll('[data-part="display-tab"]')[${index}]?.click()`,
@@ -1132,9 +1504,6 @@ async function runSmoke() {
     }
   }
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
-  })
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]') !== null`,
@@ -1154,14 +1523,14 @@ async function runSmoke() {
     'The Default profile name input did not accept keyboard text.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Profile name"]') === null &&
-      document.querySelector('[data-part="profile-name"]')?.textContent === 'Default profile'`,
-    'Cancel did not restore the Default profile name.'
+    `document.querySelector('[aria-label="Profile name"]') !== null &&
+      document.querySelector('[data-part="profile-name"]')?.value === 'Default profile'`,
+    'Discard did not restore the Default profile name.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
@@ -1361,10 +1730,7 @@ async function runSmoke() {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Shortcuts')?.click()`
   })
-  await waitForText(
-    debuggerClient,
-    'Shortcuts work while ChromaShift runs in the background'
-  )
+  await waitForText(debuggerClient, 'Shortcuts work while ChromaShift runs in the background')
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Super+R"]')
@@ -1462,7 +1828,7 @@ async function runSmoke() {
     )
   }
 
-  await verifyTooltipMenuTrigger(debuggerClient, 'Profile actions', 'Edit')
+  await verifyTooltipMenuTrigger(debuggerClient, 'Profile actions', 'Clone')
 
   await movePointerToEmptyArea(debuggerClient)
   await waitForExpression(
@@ -1584,9 +1950,9 @@ async function runSmoke() {
     `(() => {
       const items = [...document.querySelectorAll('[role="menuitem"]')]
         .map((candidate) => candidate.textContent?.trim())
-      return items.includes('Edit') && items.includes('Preview')
+      return items.includes('Clone') && !items.includes('Edit') && !items.includes('Preview')
     })()`,
-    'The non-edited profile did not retain Edit and Preview actions.'
+    'The profile menu did not keep Clone while removing Edit and Preview.'
   )
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -1601,29 +1967,41 @@ async function runSmoke() {
     windowsVirtualKeyCode: 27
   })
 
-  await selectProfileMenuItem(debuggerClient, 'Default profile', 'Preview')
+  await openProfileFromSidebar(debuggerClient, 'Default profile')
+  await openProfileFromSidebar(debuggerClient, 'New profile')
+  // New profiles start with neutral targets for every connected display, so
+  // opening one starts a real native Preview instead of the empty-target notice.
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector('[data-part="profile-name"]')?.textContent === 'Default profile' &&
-        document.querySelector('[aria-label="Profile name"]') === null &&
-        document.querySelector('[aria-label="Dismiss error"]')?.parentElement?.textContent?.includes('before previewing.')
+      if (!result.ok || result.value.preview.state !== 'active' ||
+        result.value.preview.kind !== 'preview') return false
+      const neutral = ${JSON.stringify(neutralColorSettings)}
+      const banner = document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+      return result.value.preview.targets.length === result.value.displays.length &&
+        result.value.displays.every((display) => result.value.preview.targets.some(
+          (target) => target.displayId === display.id &&
+            Object.entries(neutral).every(([key, value]) => target.color[key] === value)
+        )) &&
+        banner?.textContent?.includes('Previewing: New profile') === true &&
+        banner?.textContent?.includes('No display settings saved') === false
     })()`,
-    'Previewing another profile did not leave Edit mode, navigate, and run target validation.'
+    'A new profile did not start a neutral native Preview with the banner.'
   )
-
-  await selectProfileMenuItem(debuggerClient, 'New profile', 'Edit')
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector('[aria-label="Profile name"]')?.value === 'New profile'
-    })()`,
-    'Editing another profile did not stop Preview and navigate into its Edit mode.'
-  )
+  // Record any frame in which the banner disappears while the first change
+  // promotes Preview to Edit.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      window.__smokeBannerGap = false
+      const check = () => {
+        if (document.querySelector('[data-part="preview-banner"]') === null)
+          window.__smokeBannerGap = true
+      }
+      window.__smokeBannerObserver = new MutationObserver(check)
+      window.__smokeBannerObserver.observe(document.body, { childList: true, subtree: true })
+    })()`
+  })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const input = document.querySelector('[aria-label="Profile name"]')
@@ -1668,13 +2046,13 @@ async function runSmoke() {
   }
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true'`,
+    `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true'`,
     'Edit mode did not expose enabled color controls without a display override step.'
   )
 
   const sliderFocus = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
-      const slider = document.querySelector('[data-part="color-control"] [role="slider"]')
+      const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')
       slider?.focus()
       return slider === null ? null : {
         active: document.activeElement === slider,
@@ -1706,10 +2084,32 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'The edit-mode brightness slider did not retain its changed value.'
   )
+  const promotedInPlace = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      window.__smokeBannerObserver?.disconnect()
+      const result = await window.chromaShift.getState()
+      return {
+        kind: result.ok && result.value.preview.state === 'active' ? result.value.preview.kind : null,
+        bannerGap: window.__smokeBannerGap === true,
+        banner: document.querySelector('[data-part="preview-banner"]') !== null
+      }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (
+    promotedInPlace.result.value?.kind !== 'edit' ||
+    promotedInPlace.result.value?.bannerGap !== false ||
+    promotedInPlace.result.value?.banner !== true
+  ) {
+    throw new Error(
+      `The first new-profile change did not promote Preview to Edit in place: ${JSON.stringify(promotedInPlace.result.value)}`
+    )
+  }
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
@@ -1719,14 +2119,14 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 50 &&
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 50 &&
         document.querySelector('[aria-label="Reset brightness to neutral"]') === null
     })()`,
     'The brightness reset action did not restore only the neutral brightness value.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+    expression: `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
   })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -1744,45 +2144,50 @@ async function runSmoke() {
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.targets[0]?.color.brightness === 51
+      return result.ok && result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
     'Brightness could not be changed again after an individual reset.'
   )
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Save')?.click()`
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Update profile')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return profile?.name === 'Smoke profile' && target !== undefined &&
         target.color.brightness === 51 && Object.keys(target.color).length === 6 &&
-        !('lastColorValues' in target)
+        !('lastColorValues' in target) &&
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+        document.querySelector('[data-part="unsaved-changes-actions"]') === null &&
+        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+          ?.textContent?.includes('Previewing: Smoke profile') === true
     })()`,
-    'Saving did not persist the complete color vector and restore automatic activation.'
+    'Update did not save the complete color vector and stay previewing the profile in automatic mode.'
   )
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
-  })
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'edit' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.kind !== 'override' &&
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
-    'The saved profile could not re-enter live Edit mode for Cancel coverage.'
+    'The saved profile could not re-enter live Edit mode for Discard coverage.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
+    expression: `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
   })
   await debuggerClient.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
@@ -1801,39 +2206,41 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 52
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 52
     })()`,
-    'The applied-change Cancel check could not preview brightness.'
+    'The applied-change Discard check could not preview brightness.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return target?.color.brightness === 51 &&
-        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
+        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]') !== null
     })()`,
-    'Cancel did not roll back an applied live-edit change.'
+    'Discard did not revert an applied change while staying on the previewed profile.'
   )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
-  })
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'edit' &&
-        result.value.preview.targets[0]?.color.brightness === 51
+        result.value.preview.kind !== 'override' &&
+        result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51
     })()`,
-    'The profile could not re-enter Edit mode for scheduled-change Cancel coverage.'
+    'The profile could not re-enter Edit mode for scheduled-change Discard coverage.'
   )
   const cancelScheduledChange = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
@@ -1841,8 +2248,8 @@ async function runSmoke() {
       if (reset === null) return false
       reset.click()
       await new Promise((resolve) => setTimeout(resolve, 20))
-      const cancel = [...document.querySelectorAll('button')]
-        .find((candidate) => candidate.textContent?.trim() === 'Cancel')
+      const cancel = [...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
+        .find((candidate) => candidate.textContent?.trim() === 'Discard changes')
       cancel?.click()
       return cancel !== undefined
     })()`,
@@ -1850,7 +2257,7 @@ async function runSmoke() {
     returnByValue: true
   })
   if (cancelScheduledChange.result.value !== true) {
-    throw new Error('The Cancel control was unavailable during live Edit mode.')
+    throw new Error('The Discard changes control was unavailable during live Edit mode.')
   }
   await debuggerClient.send('Runtime.evaluate', {
     expression: 'new Promise((resolve) => setTimeout(resolve, 300))',
@@ -1859,25 +2266,26 @@ async function runSmoke() {
   const cancelledState = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'automatic') return false
+      if (!result.ok || result.value.activation.mode.kind !== 'automatic') return false
       const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      const target = profile?.displays[0]
+      const target = profile?.displays.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})
+      const preview = result.value.preview
       return target?.color.brightness === 51 &&
-        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
+        preview.state === 'active' && preview.profileId === profile.id &&
+        preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false
     })()`,
     awaitPromise: true,
     returnByValue: true
   })
   if (cancelledState.result.value !== true) {
     throw new Error(
-      'Cancel did not discard a scheduled live-edit change and restore automatic activation.'
+      'Discard did not discard a scheduled change while staying on the previewed profile.'
     )
   }
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
-  })
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]') !== null`,
@@ -2038,8 +2446,8 @@ async function runSmoke() {
     `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector('[aria-label="Profile name"]') === null &&
-        document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
+        document.querySelector('[aria-label="Profile name"]') !== null &&
+        document.querySelector('[aria-label="Profile name"]')?.disabled === false
     })()`,
     'Closing and reopening the app panel did not leave Edit mode and cancel its preview.'
   )
@@ -2059,7 +2467,7 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.activation.mode.kind === 'automatic' &&
         result.value.activation.currentTarget?.profileId === 'default' &&
-        document.querySelector('[data-part="profile-name"]')?.textContent === 'Smoke profile' &&
+        document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
         document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Automatic: Default profile' &&
         document.querySelector('[data-part="profile-nav"] [data-part="profile-selection"]') !== null &&
         document.querySelector('[aria-label="Profile active"]') === null &&
@@ -2123,13 +2531,45 @@ async function runSmoke() {
     code: 'Escape',
     windowsVirtualKeyCode: 27
   })
-  await selectMenuItem(debuggerClient, 'More profile actions', 'Disable profile')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) throw new Error('Could not read shortcut settings')
+      const profile = state.value.configuration.profiles.find((item) => item.name === 'Smoke profile')
+      const result = await window.chromaShift.updateSettings({ ...state.value.settings, shortcutBindings: [
+        ...state.value.settings.shortcutBindings,
+        { action: { kind: 'profile', profileId: profile.id }, accelerator: 'CommandOrControl+Alt+Shift+F8' }
+      ] })
+      if (!result.ok) throw new Error(result.error.message)
+    })()`,
+    awaitPromise: true
+  })
+  await selectProfileMenuItem(debuggerClient, 'Smoke profile', 'Disable profile')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]')?.textContent?.includes('Its shortcut')`,
+    'Disabling a bound profile did not open the shortcut-removal dialog.'
+  )
+  await clickAppButton(debuggerClient, 'Cancel', '[role="alertdialog"]')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]') === null`,
+    'The disable dialog did not cancel.'
+  )
+  await selectProfileMenuItem(debuggerClient, 'Smoke profile', 'Disable profile')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]') !== null`,
+    'The disable dialog did not reopen.'
+  )
+  await clickAppButton(debuggerClient, 'Disable', '[role="alertdialog"]')
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
       const profile = result.ok ? result.value.configuration.profiles.find((item) => item.id !== 'default') : undefined
       return result.ok && profile?.enabled === false && result.value.activation.mode.kind === 'automatic' &&
+        !result.value.settings.shortcutBindings.some((binding) => binding.action.kind === 'profile' && binding.action.profileId === profile.id) &&
         result.value.activation.currentTarget?.profileId === 'default' &&
         [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Disabled')
     })()`,
@@ -2165,7 +2605,7 @@ async function runSmoke() {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="profile-name"]')?.textContent === 'Default profile' &&
+    `document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
       document.querySelector('[aria-label="Profile selection"]')?.textContent?.trim() === 'Manual: Smoke profile'`,
     'Browsing Default changed the manual selection.'
   )
@@ -2215,9 +2655,7 @@ async function runSmoke() {
     expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
       .find((item) => item.querySelector('strong')?.textContent === 'Smoke profile')?.click()`
   })
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Preview"]')?.click()`
-  })
+
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2226,7 +2664,7 @@ async function runSmoke() {
     })()`,
     'The profile could not be previewed before changing selection.'
   )
-  await selectActivationOption(debuggerClient, 'Smoke profile')
+  await clickAppButton(debuggerClient, 'Use this profile', '[data-part="preview-banner"]')
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -2403,96 +2841,157 @@ async function runSmoke() {
     }
   }
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Preview"]')?.click()`
+  await selectActivationOption(debuggerClient, 'Automatic')
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+    const result = await window.chromaShift.getState()
+    return result.ok && result.value.preview.state === 'active' &&
+      result.value.preview.kind === 'preview' &&
+      document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')?.textContent?.includes('Previewing: Smoke profile')
+  })()`,
+    'Clicking a profile did not start Preview or show the banner.'
+  )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-preview-native.png'))
+  await verifyPreviewToPreviewBanner(debuggerClient)
+  const unrelatedProfile = await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.createProfile('Delete unselected focus check')`,
+    awaitPromise: true,
+    returnByValue: true
   })
+  if (unrelatedProfile.result.value?.ok !== true) {
+    throw new Error('Could not create the unselected delete-focus fixture.')
+  }
   await waitForExpression(
     debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'preview'
-    })()`,
-    'The explicit profile preview did not activate.'
+    `[...document.querySelectorAll('[data-part="profile-select"] strong')]
+      .some((item) => item.textContent?.trim() === 'Delete unselected focus check')`,
+    'The unselected delete-focus fixture did not render.'
   )
-  await selectProfileMenuItem(debuggerClient, 'Smoke profile', 'Stop preview')
+  for (const decision of ['Cancel', 'Delete profile']) {
+    await selectProfileMenuItem(debuggerClient, 'Delete unselected focus check', 'Delete')
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[role="alertdialog"]')?.textContent?.includes('Delete unselected focus check') === true`,
+      'Unselected profile deletion did not open the confirmation dialog.'
+    )
+    await clickAppButton(debuggerClient, decision, '[role="alertdialog"]')
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const result = await window.chromaShift.getState()
+        if (!result.ok || document.querySelector('[data-scope="dialog"]') !== null) return false
+        const state = result.value
+        const previewed = state.configuration.profiles.find((item) => item.name === 'Smoke profile')
+        const unrelatedExists = state.configuration.profiles.some((item) => item.name === 'Delete unselected focus check')
+        return unrelatedExists === ${decision === 'Cancel'} &&
+          state.preview.state === 'active' && state.preview.kind === 'preview' &&
+          state.preview.profileId === previewed?.id &&
+          document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
+          document.activeElement?.matches('[data-part="profile-item"][data-selected] [data-part="profile-select"]') === true
+      })()`,
+      `${decision} on an unselected profile lost the open preview, selection, or keyboard focus.`
+    )
+  }
+  await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
   await waitForExpression(
     debuggerClient,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector('[data-part="profile-name"]')?.textContent === 'Smoke profile'
-    })()`,
-    'The profile-list Stop preview action did not cancel the explicit preview.'
+    const result = await window.chromaShift.getState()
+    return result.ok && result.value.preview.state === 'inactive' &&
+      document.querySelector('[aria-label="Profile name"]')?.value === 'Default profile'
+  })()`,
+    'End preview did not cancel and select the live profile.'
   )
-  await selectProfileMenuItem(debuggerClient, 'Smoke profile', 'Preview')
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const input = document.querySelector('[aria-label="Profile name"]')
+      input?.focus(); input?.select()
+    })()`
+  })
+  await debuggerClient.send('Input.insertText', { text: 'Smoke profile unsaved' })
   await waitForExpression(
     debuggerClient,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'preview'
-    })()`,
-    'The profile-list action did not switch back to Preview after cancellation.'
+    const result = await window.chromaShift.getState()
+    return result.ok && result.value.preview.state === 'active' &&
+      result.value.preview.kind === 'edit' &&
+      document.querySelector('[data-part="profile-item"][data-selected] strong')?.textContent?.includes('•')
+  })()`,
+    'The first change did not promote Preview to Edit or mark unsaved changes.'
+  )
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'profile-dirty-header-native.png'))
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Settings"]')?.click()`
+  })
+  await answerUnsavedChanges(debuggerClient, 'Cancel')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile unsaved'`,
+    'Cancel did not retain the draft and profile view.'
+  )
+  // Main-requested navigation uses the same guard as Settings clicks.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.chromaShift.openAppPanel('settings')`,
+    awaitPromise: true
+  })
+  await answerUnsavedChanges(debuggerClient, 'Discard changes')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="settings-nav"]') !== null`,
+    'Discard did not continue main-requested Settings navigation.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
+    expression: `window.chromaShift.openAppPanel('profiles')`,
+    awaitPromise: true
   })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      if (!result.ok) return false
-      const profile = result.value.configuration.profiles.find(
-        (item) => item.name === 'Smoke profile'
-      )
-      return result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'edit' &&
-        document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
-        result.value.preview.targets.length === profile?.displays.length
-    })()`,
-    'The same-profile explicit preview did not promote into Edit with complete targets.'
-  )
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+    expression: `(() => { const input = document.querySelector('[aria-label="Profile name"]'); input?.focus(); input?.select() })()`
   })
+  await debuggerClient.send('Input.insertText', { text: 'Smoke profile updated' })
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Settings"]')?.click()`
+  })
+  await answerUnsavedChanges(debuggerClient, 'Update profile')
   await waitForExpression(
     debuggerClient,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'inactive' &&
-        document.querySelector('[aria-label="Profile name"]') === null
-    })()`,
-    'Cancel did not restore the prior state after preview-to-edit promotion.'
+    const state = await window.chromaShift.getState()
+    return state.ok && state.value.preview.state === 'inactive' &&
+      state.value.configuration.profiles.some((item) => item.name === 'Smoke profile updated') &&
+      document.querySelector('[data-part="settings-nav"]') !== null
+  })()`,
+    'Update profile did not save and continue navigation.'
   )
-  await selectProfileMenuItem(debuggerClient, 'Smoke profile', 'Preview')
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.kind === 'preview'
+  // Restore the fixture name for the remaining mini-panel checks.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      const profile = state.ok && state.value.configuration.profiles.find((item) => item.name === 'Smoke profile updated')
+      const saved = profile && await window.chromaShift.saveProfile({ ...profile, name: 'Smoke profile' })
+      if (!saved?.ok) throw new Error('Could not restore the profile name fixture')
+      await window.chromaShift.openAppPanel('profiles')
     })()`,
-    'The profile could not restart Preview after promoted Edit was canceled.'
-  )
+    awaitPromise: true
+  })
+  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="profile-select"]')]
-      .find((candidate) => candidate.querySelector('strong')?.textContent === 'Default profile')?.click()`
+      .find((item) => item.querySelector('strong')?.textContent?.trim() === 'Default profile')?.click()`
   })
   await waitForExpression(
     debuggerClient,
     `(async () => {
-      const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'inactive' ||
-        result.value.activation.mode.kind !== 'manual') return false
-      const profile = result.value.configuration.profiles.find((item) => item.id !== 'default')
-      return profile !== undefined && result.value.activation.mode.profileId === profile.id &&
-        document.querySelector('[data-part="profile-name"]')?.textContent === 'Default profile'
-    })()`,
-    'Navigating to another profile did not stop preview and restore manual activation.'
+    const result = await window.chromaShift.getState()
+    return result.ok && result.value.preview.state === 'inactive' &&
+      result.value.activation.mode.kind === 'automatic' &&
+      document.querySelector('[aria-label="Profile name"]')?.value === 'Default profile'
+  })()`,
+    'Clicking the live profile did not end Preview and preserve activation mode.'
   )
-
   const disposableProfile = await debuggerClient.send('Runtime.evaluate', {
     expression: `window.chromaShift.createProfile('Delete focus check')`,
     awaitPromise: true,
@@ -2514,7 +3013,7 @@ async function runSmoke() {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="profile-name"]')?.textContent === 'Delete focus check'`,
+    `document.querySelector('[data-part="profile-name"]')?.value === 'Delete focus check'`,
     'The disposable profile could not be selected before delete-focus coverage.'
   )
   await selectMenuItem(debuggerClient, 'More profile actions', 'Delete profile')
@@ -2525,6 +3024,7 @@ async function runSmoke() {
   )
   await delay(300)
   await captureScreenshot(debuggerClient, deleteDialogScreenshotPath)
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'delete-profile-dialog-native.png'))
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[role="alertdialog"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'Delete profile')?.click()`
@@ -2547,9 +3047,7 @@ async function runSmoke() {
     ) === true`,
     'Profile deletion did not restore focus to the remaining selected profile.'
   )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Edit profile"]')?.click()`
-  })
+
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]') !== null`,
@@ -2602,15 +3100,16 @@ async function runSmoke() {
     'The profile name input did not accept keyboard text after another profile was deleted.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.trim() === 'Cancel')?.click()`
+    expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]
+      .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[aria-label="Profile name"]') === null`,
-    'Delete-focus coverage did not leave Edit mode.'
+    `document.querySelector('[aria-label="Profile name"]') !== null`,
+    'Delete-focus coverage did not discard unsaved changes.'
   )
 
+  await selectActivationOption(debuggerClient, 'Smoke profile')
   await debuggerClient.send('Runtime.evaluate', {
     expression: `history.replaceState({}, '', location.pathname + '?panel=mini')`
   })

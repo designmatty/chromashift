@@ -11,12 +11,9 @@ export interface UsePreviewDraftOptions {
   kind: PreviewSyncKind
   session: PreviewState
   /**
-   * Surface-specific gate for draft-to-session synchronization, e.g. Edit mode
-   * being active or display control not being paused. The hook additionally
-   * requires a draft with at least one display target, and an override session
-   * only syncs while the draft is dirty: overrides exist exactly while applied
-   * values diverge from the saved profile, while an edit session covers the
-   * whole edit.
+   * Surface-specific gate for synchronizing unsaved changes, e.g. Active display
+   * control and no navigation in progress. Overrides require a display target;
+   * edits may start without targets for metadata-only changes.
    */
   enabled: boolean
   onError: (error: ProductError | null) => void
@@ -35,11 +32,12 @@ export interface PreviewDraft {
   resetTo(source: ColorProfile | null, options?: { dirty?: boolean }): void
   /** Drop any scheduled-but-unsent synchronization. */
   invalidateSync(): void
+  settlePreview(): Promise<void>
   /**
    * Invalidate, wait for every in-flight synchronization, then cancel the
    * native session. Resolves only once the session is safely rolled back.
    */
-  rollbackPreview(): Promise<void>
+  rollbackPreview(throwOnError?: boolean): Promise<boolean>
 }
 
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
@@ -61,8 +59,8 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const sessionKind = session.state === 'active' ? session.kind : null
   const sessionProfileId = session.state === 'active' ? session.profileId : null
   useEffect(() => {
-    if (!enabled || draft === null || draft.displays.length === 0) return
-    if (kind === 'override' && !dirty) return
+    if (!enabled || draft === null || (kind === 'override' && draft.displays.length === 0)) return
+    if (!dirty) return
     sync.schedule(draft, session)
     return () => sync.cancelScheduled()
   }, [enabled, dirty, draftSignature, sessionKind, sessionProfileId])
@@ -82,6 +80,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
       setDirty(resetOptions?.dirty ?? false)
     },
     invalidateSync: () => sync.invalidate(),
-    rollbackPreview: () => sync.rollback()
+    settlePreview: () => sync.settle(),
+    rollbackPreview: (throwOnError) => sync.rollback(throwOnError)
   }
 }

@@ -86,12 +86,65 @@ describe('preview sync session', () => {
     expect(port.calls).toEqual([`update:${profile.id}`])
   })
 
-  it('starts fresh over a session of a different kind or profile', () => {
-    session.schedule(profile, activeSession('preview'))
-    vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+  it('starts fresh over a different profile', () => {
     session.schedule(profile, activeSession('edit', 'other-profile'))
     vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
-    expect(port.calls).toEqual([`start:edit:${profile.id}`, `start:edit:${profile.id}`])
+    expect(port.calls).toEqual([`start:edit:${profile.id}`])
+  })
+
+  it('promotes unchanged preview targets before sending the edited draft', async () => {
+    const preview = {
+      ...activeSession('preview'),
+      targets: structuredClone(profile.displays)
+    } as PreviewState
+    const changed = structuredClone(profile)
+    changed.displays[0]!.color.brightness = 61
+    const start = vi.spyOn(port, 'startPreview')
+    session.schedule(changed, preview)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(start).toHaveBeenCalledWith(profile, 'edit')
+    expect(port.calls).toEqual([`start:edit:${profile.id}`, `update:${profile.id}`])
+  })
+
+  it('does not send edited values after promotion fails', async () => {
+    port.startResult = { ok: false, error: { code: 'OPERATION_FAILED', message: 'Blocked' } }
+    session.schedule(profile, activeSession('preview'))
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(port.calls).toEqual([`start:edit:${profile.id}`])
+    expect(errors.at(-1)?.message).toBe('Blocked')
+  })
+
+  it('promotes once when another edit arrives with the stale preview snapshot', async () => {
+    port.deferStart = () => undefined
+    const preview = { ...activeSession('preview'), targets: profile.displays } as PreviewState
+    session.schedule(profile, preview)
+    vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+    session.schedule(profile, preview)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(port.calls).toEqual([`start:edit:${profile.id}`])
+    port.deferStart()
+    await vi.runAllTimersAsync()
+    expect(port.calls).toEqual([
+      `start:edit:${profile.id}`,
+      `update:${profile.id}`,
+      `update:${profile.id}`
+    ])
+  })
+
+  it('settles an in-flight send and invalidates a scheduled send before commit', async () => {
+    port.deferStart = () => undefined
+    session.schedule(profile, inactive)
+    vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+    session.schedule(profile, inactive)
+    let settled = false
+    const settling = session.settle().then(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(settled).toBe(false)
+    port.deferStart()
+    await settling
+    expect(port.calls).toEqual([`start:edit:${profile.id}`])
   })
 
   it('coalesces rapid schedules into one send', () => {
@@ -137,6 +190,22 @@ describe('preview sync session', () => {
     vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
     await rollback
     expect(port.calls).toEqual(['cancel'])
+  })
+
+  it('surfaces failed restoration to the serialized app action even after the session ends', async () => {
+    const failure = { code: 'OPERATION_FAILED' as const, message: 'Preview restoration failed.' }
+    port.cancelResult = { ok: false, error: failure }
+    session.schedule(profile, activeSession('edit'))
+    await expect(session.rollback(true)).rejects.toEqual(failure)
+    await vi.runAllTimersAsync()
+    expect(port.calls).toEqual(['cancel'])
+    expect(errors).toEqual([failure])
+  })
+
+  it('preserves the mini-panel boolean failure result for a rejected rollback request', async () => {
+    port.cancelPreview = () => Promise.reject(new Error('IPC connection failed'))
+    expect(await session.rollback()).toBe(false)
+    expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: 'IPC connection failed' }])
   })
 
   it('reports send failures through onError', async () => {

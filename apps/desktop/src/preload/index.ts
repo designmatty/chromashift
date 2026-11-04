@@ -200,6 +200,14 @@ const api: ChromaShiftApi = {
     ipcRenderer.removeAllListeners(productIpcChannels.appPanelClosed)
     ipcRenderer.on(productIpcChannels.appPanelClosed, () => listener())
   },
+  onAppPanelMinimized: (listener) => {
+    ipcRenderer.removeAllListeners(productIpcChannels.appPanelMinimized)
+    ipcRenderer.on(productIpcChannels.appPanelMinimized, (_event, input: unknown) => {
+      const request = emptyRequestSchema.safeParse(input)
+      if (request.success) listener()
+      else console.error('Rejected invalid app-panel minimize event.', request.error)
+    })
+  },
   onAppPanelNavigation: (listener) => appPanelNavigation.subscribe(listener),
   onAppPanelProfileSelection: (listener) => appPanelProfileSelection.subscribe(listener)
 }

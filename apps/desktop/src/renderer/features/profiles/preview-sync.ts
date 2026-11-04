@@ -30,6 +30,7 @@ export class PreviewSyncSession {
   #timer: ReturnType<typeof setTimeout> | undefined
   #rollback: Promise<boolean> | undefined
   #needsStart = false
+  #promotedProfileId: string | null = null
 
   public constructor(
     private readonly port: PreviewSyncPort,
@@ -45,11 +46,35 @@ export class PreviewSyncSession {
       this.#timer = undefined
       if (generation !== this.#generation) return
       const rollback = this.#rollback
+      const previousSends = [...this.#pending]
       const pending = (async () => {
         // A new slider change can arrive before rollback's inactive state has
         // reached the renderer. Wait for cancellation and start a fresh session.
         if (rollback !== undefined && !(await rollback)) return
+        if (previousSends.length > 0) await Promise.allSettled(previousSends)
         if (generation !== this.#generation) return
+        if (
+          this.kind === 'edit' &&
+          session.state === 'active' &&
+          session.kind === 'preview' &&
+          session.profileId === draft.id
+        ) {
+          if (this.#promotedProfileId !== draft.id) {
+            const promoted = await run(
+              this.port.startPreview({ ...draft, displays: session.targets }, 'edit'),
+              this.onError
+            )
+            if (promoted === undefined || generation !== this.#generation) return
+            this.#promotedProfileId = draft.id
+          }
+          this.#needsStart = false
+          const updated = await run(
+            this.port.updatePreview(draft.id, activeColorTargets(draft)),
+            this.onError
+          )
+          if (updated !== undefined) this.onError(null)
+          return
+        }
         const joinsCurrentSession =
           !this.#needsStart &&
           session.state === 'active' &&
@@ -80,21 +105,32 @@ export class PreviewSyncSession {
     this.cancelScheduled()
   }
 
-  public async rollback(): Promise<void> {
+  public async settle(): Promise<void> {
+    this.invalidate()
+    await Promise.allSettled([...this.#pending])
+  }
+
+  public async rollback(throwOnError = false): Promise<boolean> {
     this.invalidate()
     this.#needsStart = true
+    this.#promotedProfileId = null
     const pending = [...this.#pending]
     const previousRollback = this.#rollback
     const rollback = (async () => {
       await previousRollback
       await Promise.allSettled(pending)
-      const result = await run(this.port.cancelPreview(), this.onError)
+      let failure: ProductError | null = null
+      const result = await run(this.port.cancelPreview(), (error) => {
+        failure = error
+        this.onError(error)
+      })
+      if (failure !== null && throwOnError) throw failure
       if (result !== undefined) this.onError(null)
       return result !== undefined
     })()
     this.#rollback = rollback
     try {
-      await rollback
+      return await rollback
     } finally {
       if (this.#rollback === rollback) this.#rollback = undefined
     }

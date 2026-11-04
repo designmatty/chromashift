@@ -73,8 +73,9 @@ _Avoid_: Active profile, applied profile
 
 **Preview session**:
 The explicit activation session that applies unsaved values from the native
-baseline. Its kind is Edit (app-panel editing, lives for the whole edit),
-Preview (a user-controlled toggle of a saved profile), or Temporary override
+baseline. Its kind is Preview (started by clicking an app-panel profile),
+Edit (the first change promotes Preview in place; changes remain unsaved until
+Update profile), or Temporary override
 (mini-panel quick changes, exists exactly while applied values diverge from
 the saved profile).
 _Avoid_: Live mode, draft mode

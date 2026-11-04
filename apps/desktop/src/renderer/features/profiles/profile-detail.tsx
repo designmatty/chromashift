@@ -12,18 +12,7 @@ import {
   Stack,
   Text
 } from '@chakra-ui/react'
-import {
-  Copy,
-  Ellipsis,
-  EyeOff,
-  PowerOff,
-  ScanEye,
-  Edit,
-  Trash2,
-  Monitor,
-  AppWindow,
-  Power
-} from 'lucide-react'
+import { Copy, Ellipsis, PowerOff, Trash2, Monitor, AppWindow, Power } from 'lucide-react'
 import { useId } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -36,15 +25,11 @@ const DEFAULT_ID = 'default'
 export interface ProfileDetailProps {
   profile: ColorProfile
   product: ProductState
-  editing: boolean
   busy: boolean
   dirty: boolean
-  previewing: boolean
-  onEdit(): void
   onChange(profile: ColorProfile): void
   onCancel(): void
   onSave(): void
-  onPreview(): void
   onCopy(): void
   onDelete(): void
   onToggleEnabled(): void
@@ -63,109 +48,102 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       data-display-target-count={profile.displays.length}
     >
       <Flex as="header" align="center" gap={3}>
-        {props.editing ? (
-          <>
-            <Input
-              value={profile.name}
-              variant={'subtle'}
-              maxLength={65}
-              maxW={'300px'}
-              aria-label="Profile name"
-              bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
-              fontSize="lg"
-              size={'sm'}
-              fontWeight="700"
-              onChange={(event) => props.onChange({ ...profile, name: event.target.value })}
-            />
-            {isDefault && <ProfileBadge>Default</ProfileBadge>}
-            <Flex ml="auto" align="center" gap={3}>
-              <Button rounded="full" variant={'surface'} size={'2xs'} onClick={props.onCancel}>
-                Cancel
+        <Input
+          data-part="profile-name"
+          value={profile.name}
+          variant="subtle"
+          maxLength={65}
+          maxW="300px"
+          aria-label="Profile name"
+          bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
+          fontSize="lg"
+          size="sm"
+          fontWeight="700"
+          disabled={props.busy || props.product.chromaShift.status !== 'active'}
+          onChange={(event) => props.onChange({ ...profile, name: event.target.value })}
+        />
+        {isDefault && <ProfileBadge>Default</ProfileBadge>}
+        {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
+        <Flex ml="auto" align="center" gap="5">
+          {props.dirty && (
+            <Flex data-part="unsaved-changes-actions" gap="2" align="center">
+              <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
+                Discard changes
               </Button>
               <Button
-                rounded="full"
-                size={'2xs'}
-                disabled={!props.dirty || props.busy || profile.name.trim().length === 0}
+                size="xs"
+                disabled={
+                  props.busy ||
+                  profile.name.trim().length === 0 ||
+                  props.product.chromaShift.status !== 'active'
+                }
                 onClick={props.onSave}
               >
-                Save
+                Update profile
               </Button>
             </Flex>
-          </>
-        ) : (
-          <>
-            <Heading as="h1" data-part="profile-name" size="lg" fontWeight="700">
-              {profile.name}
-            </Heading>
-            {isDefault && <ProfileBadge>Default</ProfileBadge>}
-            {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
-            <Flex ml="auto" align="center" gap="5">
-              <Tooltip content={props.previewing ? 'Stop preview' : 'Preview'}>
-                <IconButton
-                  variant={props.previewing ? 'subtle' : 'ghost'}
-                  boxSize="20px"
-                  minW="20px"
-                  p="0"
-                  onClick={props.onPreview}
-                  aria-label={props.previewing ? 'Stop preview' : 'Preview'}
-                >
-                  {props.previewing ? <EyeOff /> : <ScanEye />}
-                </IconButton>
-              </Tooltip>
-              <Tooltip content="Edit profile">
+          )}
+          <Menu.Root ids={{ trigger: actionsTriggerId }}>
+            <Tooltip ids={{ trigger: actionsTriggerId }} content="More profile actions">
+              <Menu.Trigger asChild>
                 <IconButton
                   boxSize="20px"
                   minW="20px"
                   p="0"
                   variant="ghost"
-                  onClick={props.onEdit}
-                  aria-label="Edit profile"
+                  aria-label="More profile actions"
                 >
-                  <Edit />
+                  <Ellipsis />
                 </IconButton>
-              </Tooltip>
-              <Menu.Root ids={{ trigger: actionsTriggerId }}>
-                <Tooltip ids={{ trigger: actionsTriggerId }} content="More profile actions">
-                  <Menu.Trigger asChild>
-                    <IconButton
-                      boxSize="20px"
-                      minW="20px"
-                      p="0"
-                      variant="ghost"
-                      aria-label="More profile actions"
-                    >
-                      <Ellipsis />
-                    </IconButton>
-                  </Menu.Trigger>
-                </Tooltip>
-                <Portal>
-                  <Menu.Positioner>
-                    <Menu.Content>
-                      <Menu.Item value="duplicate" onClick={props.onCopy}>
-                        <Copy />
-                        Clone profile
-                      </Menu.Item>
-                      {!isDefault && (
-                        <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
-                          {profile.enabled ? <PowerOff /> : <Power />}
-                          {profile.enabled ? 'Disable profile' : 'Enable profile'}
-                        </Menu.Item>
-                      )}
-                      {!isDefault && (
-                        <Menu.Item value="delete" onClick={props.onDelete}>
-                          <Trash2 />
-                          Delete profile
-                        </Menu.Item>
-                      )}
-                    </Menu.Content>
-                  </Menu.Positioner>
-                </Portal>
-              </Menu.Root>
-            </Flex>
-          </>
-        )}
+              </Menu.Trigger>
+            </Tooltip>
+            <Portal>
+              <Menu.Positioner>
+                <Menu.Content>
+                  <Menu.Item value="duplicate" onClick={props.onCopy}>
+                    <Copy />
+                    Clone profile
+                  </Menu.Item>
+                  {!isDefault && (
+                    <Menu.Item value="toggle" onClick={props.onToggleEnabled}>
+                      {profile.enabled ? <PowerOff /> : <Power />}
+                      {profile.enabled ? 'Disable profile' : 'Enable profile'}
+                    </Menu.Item>
+                  )}
+                  {!isDefault && (
+                    <Menu.Item value="delete" onClick={props.onDelete}>
+                      <Trash2 />
+                      Delete profile
+                    </Menu.Item>
+                  )}
+                </Menu.Content>
+              </Menu.Positioner>
+            </Portal>
+          </Menu.Root>
+        </Flex>
       </Flex>
 
+      {props.product.chromaShift.status !== 'active' && (
+        <Flex align="center" gap="3" role="status">
+          <Text color="fg.muted">
+            {props.product.chromaShift.status === 'paused'
+              ? 'ChromaShift is paused'
+              : 'ChromaShift is safety blocked'}
+          </Text>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={props.busy || props.product.chromaShift.transitionInProgress}
+            onClick={() =>
+              void window.chromaShift.controlChromaShift('resume').then((result) => {
+                if (!result.ok) props.onError(result.error)
+              })
+            }
+          >
+            Resume
+          </Button>
+        </Flex>
+      )}
       <Box as="section" pt="10px">
         <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
           Select the display you would like to change
@@ -173,7 +151,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         <DisplayControls
           profile={profile}
           product={props.product}
-          editing={props.editing}
+          editing={props.product.chromaShift.status === 'active' && !props.busy}
           onChange={props.onChange}
         />
       </Box>
@@ -189,7 +167,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         {!isDefault && (
           <ApplicationAssignments
             profile={profile}
-            editing={props.editing}
+            editing={props.product.chromaShift.status === 'active' && !props.busy}
             onChange={props.onChange}
             onError={props.onError}
           />

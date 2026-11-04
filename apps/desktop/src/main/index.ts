@@ -388,6 +388,9 @@ function createWindow(): BrowserWindow {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
+  window.on('minimize', () => {
+    window.webContents.send(productIpcChannels.appPanelMinimized, {})
+  })
   if (settingsStores.windowState.current.windowMaximized === true) window.maximize()
   window.on('resize', () => appWindowStateController.schedule(window))
   window.on('move', () => appWindowStateController.schedule(window))
