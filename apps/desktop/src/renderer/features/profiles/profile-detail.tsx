@@ -5,6 +5,7 @@ import {
   Flex,
   Group,
   Heading,
+  Icon,
   IconButton,
   Input,
   Menu,
@@ -12,10 +13,20 @@ import {
   Stack,
   Text
 } from '@chakra-ui/react'
-import { Copy, Ellipsis, PowerOff, Trash2, Monitor, AppWindow, Power } from 'lucide-react'
+import {
+  Copy,
+  Ellipsis,
+  PowerOff,
+  Trash2,
+  Monitor,
+  AppWindow,
+  Power,
+  SquarePen
+} from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useTextTruncated } from '@/hooks/use-text-truncated'
 import type { ProductError, ProductState } from '@shared/product-api.js'
 import { ApplicationAssignments } from '@/features/profiles/application-assignments'
 import { DisplayControls } from '@/features/profiles/display-controls'
@@ -45,6 +56,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const [naming, setNaming] = useState(props.startNaming ?? false)
   const [name, setName] = useState(profile.name)
   const nameInput = useRef<HTMLInputElement>(null)
+  const [titleRef, titleTruncated] = useTextTruncated<HTMLSpanElement>(profile.name)
   useEffect(() => {
     if (!naming) setName(profile.name)
   }, [profile.name, naming])
@@ -75,23 +87,41 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
     >
       <Flex as="header" align="center" gap={3}>
         {!naming && (
-          <Button
-            data-part="profile-title"
-            variant="plain"
-            p="0"
-            fontSize="lg"
-            fontWeight="700"
-            minW="0"
-            maxW="300px"
-            disabled={props.busy || props.product.chromaShift.status !== 'active'}
-            aria-label={`Rename ${profile.name}`}
-            onClick={() => {
-              setName(profile.name)
-              setNaming(true)
-            }}
-          >
-            <Text truncate>{profile.name}</Text>
-          </Button>
+          <Tooltip content={profile.name} disabled={!titleTruncated}>
+            <Button
+              data-part="profile-title"
+              variant="plain"
+              px="1"
+              gap="2"
+              fontSize="lg"
+              fontWeight="700"
+              minW="0"
+              maxW="300px"
+              _hover={{ bg: 'bg.muted', '& [data-part="rename-icon"]': { opacity: 1 } }}
+              _focusVisible={{ bg: 'bg.muted', '& [data-part="rename-icon"]': { opacity: 1 } }}
+              disabled={props.busy || props.product.chromaShift.status !== 'active'}
+              aria-label={`Rename ${profile.name}`}
+              onClick={() => {
+                setName(profile.name)
+                setNaming(true)
+              }}
+            >
+              <Text as="span" ref={titleRef} data-part="profile-title-text" minW="0" truncate>
+                {profile.name}
+              </Text>
+              <Icon
+                data-part="rename-icon"
+                aria-hidden="true"
+                boxSize="4"
+                flexShrink="0"
+                opacity="0"
+                transition="opacity 120ms ease-out"
+                _motionReduce={{ transition: 'none' }}
+              >
+                <SquarePen />
+              </Icon>
+            </Button>
+          </Tooltip>
         )}
         <Input
           ref={nameInput}
