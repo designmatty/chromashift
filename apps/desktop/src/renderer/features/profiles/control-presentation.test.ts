@@ -90,6 +90,13 @@ describe('control pill', () => {
   ] as const)('prioritizes %s over dirty edits and mode', (status, label, palette) => {
     const product = state()
     product.chromaShift.status = status
+    product.preview = {
+      state: 'active',
+      kind: 'edit',
+      profileId: 'game',
+      targets: [],
+      unsavedChanges: true
+    }
     expect(controlPill(product, true)).toEqual({ label, palette, previewing: false })
   })
 })

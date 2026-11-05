@@ -2871,10 +2871,28 @@ async function runSmoke() {
     '[data-part="mode-toggle"] [aria-label="Automatic"]',
     'Automatic (Ctrl+Alt+Shift+F7)'
   )
+  // Expanded names show a tooltip only when truncated. Check the profile
+  // shortcut on the collapsed rail, whose row tooltip is always available.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px'`,
+    'The sidebar did not collapse for the profile-shortcut tooltip check.'
+  )
   await focusTooltip(
     debuggerClient,
     '[data-reorder-id="default"] [data-part="profile-select"]',
     'Ctrl+Alt+Shift+F6'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Expand sidebar"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width !== '40px'`,
+    'The sidebar did not expand after the profile-shortcut tooltip check.'
   )
   await debuggerClient.send('Runtime.evaluate', { expression: 'document.activeElement?.blur()' })
   await debuggerClient.send('Runtime.evaluate', {

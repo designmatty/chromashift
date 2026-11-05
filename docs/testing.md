@@ -99,6 +99,18 @@ reopening, and renderer release.
 Paused mode-selection behavior belongs to #71's controller coverage; the renderer
 smoke does not assert that dependency before it merges. Native dark/light app and
 collapsed-rail captures cover the toggle, live ring and preview/disabled badges.
+The deterministic presentation tests cover Shift+Enter activation, clean Edit
+preview eyes, and the single-pill precedence: Paused or Safety blocked, unsaved
+hold, non-live preview, then Active mode. Safety blocked retains Retry; no native
+fault is induced for these label and color checks.
+
+The smoke retains the neutral new-profile, persistent preview-strip,
+same-profile no-op, in-place header Update/Discard, truncated-name tooltip,
+mini-panel ellipsis, override-hydration and native quit-Cancel checks from main.
+It explicitly dismisses any remaining profile menu before inline naming and
+waits for the unselected-profile delete dialog to focus Cancel before choosing
+an action. Intermittent assertions and native quit automation limits are tracked
+in GitHub issue #81; their assertions remain in place.
 
 It records and fires configurable shortcuts with no renderer alive, fires the
 fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact display
