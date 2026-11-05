@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings } from '@chromashift/core'
 import type { DisplayCapabilityReport } from '@chromashift/native-client/protocol'
 import {
+  createControlValueEdit,
   degreesToHue,
   formatValue,
   hueToDegrees,
@@ -10,6 +11,23 @@ import {
 } from '@/features/profiles/control-values'
 
 describe('color control presentation', () => {
+  for (const [key, value, initial, changed, expected] of [
+    ['hue', 50.5, '181', '182', 51],
+    ['gamma', 1.234, '1.234', '1.235', 1.235],
+    ['brightness', 50.5, '50.5', '51.5', 51.5]
+  ] as const) {
+    it(`preserves fractional ${key} on unchanged Enter or blur, cancels Escape, and commits actual edits`, () => {
+      const edit = createControlValueEdit(key, value, key === 'gamma' ? 0.3 : 0, 100)
+      expect(edit.text).toBe(initial)
+      for (const action of ['Enter', 'blur', 'Escape']) {
+        expect(edit.finish(edit.text, action !== 'Escape')).toBeUndefined()
+      }
+      expect(edit.finish(changed, false)).toBeUndefined()
+      expect(edit.finish(changed, true)).toBe(expected)
+      expect(edit.finish('', true)).toBeUndefined()
+    })
+  }
+
   it('round-trips every stored hue through displayed degrees', () => {
     for (let stored = 0; stored <= 100; stored++) {
       expect(degreesToHue(hueToDegrees(stored))).toBe(stored)

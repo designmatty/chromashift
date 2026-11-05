@@ -36,3 +36,20 @@ export function parseControlValue(
   const stored = key === 'hue' ? degreesToHue(value) : value
   return Math.min(max, Math.max(min, stored))
 }
+
+export function createControlValueEdit(
+  key: ColorControlKey,
+  value: number,
+  min: number,
+  max: number
+): { text: string; finish(text: string, save: boolean): number | undefined } {
+  const text = String(key === 'hue' ? hueToDegrees(value) : value)
+  return {
+    text,
+    finish(nextText, save) {
+      if (!save || nextText === text) return undefined
+      const next = parseControlValue(key, nextText, min, max)
+      return next === value ? undefined : next
+    }
+  }
+}

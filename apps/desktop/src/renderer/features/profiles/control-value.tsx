@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { useWheelAdjustment } from '@/hooks/use-wheel-adjustment'
 import {
   formatValue,
+  createControlValueEdit,
   hueToDegrees,
   parseControlValue,
   type ColorControlKey
@@ -30,6 +31,7 @@ export function ControlValue({
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState('')
   const finished = useRef(false)
+  const edit = useRef<ReturnType<typeof createControlValueEdit> | null>(null)
   const normalize = (next: number): number => Number(Math.min(max, Math.max(min, next)).toFixed(2))
   const adjust = (direction: number): void => {
     const current = editing ? (parseControlValue(control, text, min, max) ?? value) : value
@@ -41,10 +43,8 @@ export function ControlValue({
   function finish(save: boolean): void {
     if (finished.current) return
     finished.current = true
-    if (save) {
-      const next = parseControlValue(control, text, min, max)
-      if (next !== undefined && next !== value) onChange(next)
-    }
+    const next = edit.current?.finish(text, save)
+    if (next !== undefined) onChange(next)
     setEditing(false)
   }
   return (
@@ -92,13 +92,8 @@ export function ControlValue({
           aria-label={label}
           onClick={() => {
             finished.current = false
-            setText(
-              control === 'hue'
-                ? String(hueToDegrees(value))
-                : control === 'gamma'
-                  ? value.toFixed(2)
-                  : String(value)
-            )
+            edit.current = createControlValueEdit(control, value, min, max)
+            setText(edit.current.text)
             setEditing(true)
           }}
           onKeyDown={(event) => {
