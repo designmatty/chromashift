@@ -3970,16 +3970,44 @@ async function runSmoke() {
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
   })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.preview.state === 'active' &&
-        result.value.preview.targets[0]?.color.brightness === 50 &&
-        document.querySelector('[aria-label="Reset brightness to neutral"]') === null
-    })()`,
-    'The Default brightness reset did not restore the neutral value.'
-  )
+  try {
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const result = await window.chromaShift.getState()
+        return result.ok && result.value.preview.state === 'active' &&
+          result.value.preview.targets[0]?.color.brightness === 50 &&
+          document.querySelector('[aria-label="Reset brightness to neutral"]') === null
+      })()`,
+      'The Default brightness reset did not restore the neutral value.'
+    )
+  } catch (error) {
+    // Failure-only evidence for #81. Keep the reset assertion and timing intact.
+    try {
+      const snapshot = await debuggerClient.send('Runtime.evaluate', {
+        expression: `(async () => {
+          const state = await window.chromaShift.getState()
+          const reset = document.querySelector('[aria-label="Reset brightness to neutral"]')
+          const slider = document.querySelector('[data-part="color-control"] [role="slider"]')
+          return {
+            preview: state.ok ? state.value.preview : state.error,
+            control: state.ok ? state.value.chromaShift : null,
+            focused: document.activeElement?.outerHTML.slice(0, 800),
+            reset: reset?.outerHTML,
+            slider: slider?.outerHTML,
+            profile: document.querySelector('[data-part="active-profile"]')?.textContent,
+            alerts: [...document.querySelectorAll('[role="alert"]')].map(node => node.textContent)
+          }
+        })()`,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      globalThis.console.error('Default brightness reset failure snapshot: ' + JSON.stringify(snapshot.result.value))
+    } catch (diagnosticError) {
+      globalThis.console.error('Default brightness reset snapshot unavailable: ' + diagnosticError.message)
+    }
+    throw error
+  }
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]
       .find((candidate) => candidate.textContent?.trim() === 'Discard changes')?.click()`
