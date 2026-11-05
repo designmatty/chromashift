@@ -79,7 +79,7 @@ export function DisplayControls({
             <Text maxW="190px" truncate as="span" color={'inherit'}>
               {row.display.name}
             </Text>
-            {row.display.primary && <Badge colorPalette="blue">Primary</Badge>}
+            {row.display.primary && <Badge colorPalette="gray">Primary</Badge>}
           </Tabs.Trigger>
         ))}
         <Tabs.Indicator border={'1px solid {color.red.500}'} />

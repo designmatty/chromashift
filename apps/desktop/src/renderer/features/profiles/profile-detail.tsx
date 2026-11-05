@@ -269,7 +269,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
 
 function ProfileBadge({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <Badge bg={'colorPalette.muted'} color={'colorPalette.fg'}>
+    <Badge colorPalette="gray" bg={'colorPalette.muted'} color={'colorPalette.fg'}>
       {children}
     </Badge>
   )
