@@ -1307,8 +1307,8 @@ async function verifyLongProfileName(debuggerClient, name) {
   await hoverElement(debuggerClient, `[data-part="profile-item"] [aria-label="${name}"]`)
   await waitForExpression(
     debuggerClient,
-    `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})`,
-    'The collapsed rail did not show the full long profile name.'
+    `[...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(`${name} · Previewing · Use this profile (Shift+Enter)`)})`,
+    'The collapsed rail did not show the full long profile name and activation hint.'
   )
   await closeTooltips(debuggerClient, 'collapsed rail')
   await debuggerClient.send('Runtime.evaluate', {
