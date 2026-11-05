@@ -1202,6 +1202,21 @@ async function verifyLongProfileName(debuggerClient, name) {
       await delay(200)
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-profile-name-${theme}-native.png`))
       await closeTooltips(debuggerClient, `long profile name (${theme})`)
+      await hoverElement(debuggerClient, '[data-part="profile-title"]')
+      await waitForExpression(
+        debuggerClient,
+        `(() => {
+          const title = document.querySelector('[data-part="profile-title-text"]')
+          const icon = document.querySelector('[data-part="rename-icon"]')
+          return title !== null && title.scrollWidth > title.clientWidth &&
+            getComputedStyle(title).textOverflow === 'ellipsis' &&
+            icon?.getAttribute('aria-hidden') === 'true' && getComputedStyle(icon).opacity === '1' &&
+            [...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})
+        })()`,
+        `The truncated header name did not show its tooltip and edit affordance (${theme}).`
+      )
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-header-name-${theme}-native.png`))
+      await closeTooltips(debuggerClient, `long header name (${theme})`)
     }
   } finally {
     await setTheme(debuggerClient, originalTheme)
@@ -2585,6 +2600,57 @@ async function runSmoke() {
     })()`,
     awaitPromise: true
   })
+  // Use the real fixed-size, non-activating native mini window for both its
+  // footer trigger and picker rows. A renderer viewport cannot prove this fit.
+  const longMiniName = 'A very long mini panel profile name that must end in an ellipsis instead of being clipped'
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = (await window.chromaShift.getState()).value
+      const id = state.chromaShift.intendedTarget?.profileId ?? 'default'
+      window.__smokeMiniProfile = state.configuration.profiles.find((item) => item.id === id)
+      const result = await window.chromaShift.saveProfile({ ...window.__smokeMiniProfile, name: ${JSON.stringify(longMiniName)} })
+      if (!result.ok) throw new Error(result.error.message)
+    })()`,
+    awaitPromise: true
+  })
+  try {
+    for (const theme of ['dark', 'light']) {
+      await setTheme(pausedMiniDebugger, theme)
+      await waitForExpression(pausedMiniDebugger, `(() => {
+        const name = document.querySelector('[data-part="active-profile-name"]')
+        const trigger = document.querySelector('[data-part="active-profile"]')
+        return name?.textContent === ${JSON.stringify(longMiniName)} && name.scrollWidth > name.clientWidth &&
+          getComputedStyle(name).textOverflow === 'ellipsis' && trigger.scrollWidth <= trigger.clientWidth + 1
+      })()`, `The mini-panel trigger did not truncate the long name (${theme}).`)
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-long-name-${theme}-native.png`))
+      await pausedMiniDebugger.send('Runtime.evaluate', {
+        expression: `document.querySelector('[data-part="active-profile"]')?.click()`
+      })
+      await waitForExpression(pausedMiniDebugger, `(() => {
+        const name = [...document.querySelectorAll('[data-part="mini-profile-name"]')]
+          .find((item) => item.textContent === ${JSON.stringify(longMiniName)})
+        const row = name?.closest('[data-scope="radio-group"][data-part="item"]')
+        return name !== undefined && name.scrollWidth > name.clientWidth &&
+          getComputedStyle(name).textOverflow === 'ellipsis' && row.scrollWidth <= row.clientWidth + 1 &&
+          document.querySelector('[role="tooltip"]') === null
+      })()`, `The mini-panel picker did not truncate the long name (${theme}).`)
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-picker-long-name-${theme}-native.png`))
+      await pausedMiniDebugger.send('Runtime.evaluate', {
+        expression: `[...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Back')?.click()`
+      })
+      await waitForExpression(pausedMiniDebugger, `document.querySelector('[data-part="active-profile"]') !== null`,
+        'The mini-panel picker did not return to controls.')
+    }
+  } finally {
+    await pausedMiniDebugger.send('Runtime.evaluate', {
+      expression: `(async () => {
+        await window.chromaShift.saveProfile(window.__smokeMiniProfile)
+        const state = (await window.chromaShift.getState()).value
+        await window.chromaShift.updateSettings({ ...state.settings, theme: window.__smokeTheme })
+      })()`,
+      awaitPromise: true
+    })
+  }
   await pausedMiniDebugger.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
   })
@@ -3555,6 +3621,11 @@ async function runSmoke() {
     'The app did not show the mini-panel override in its normal editable profile view.'
   )
   await captureNativeWindow(electron.pid, join(screenshotDirectory, 'app-override-hold-native.png'))
+  await delay(400)
+  await waitForExpression(debuggerClient, `(async () => {
+    const result = await window.chromaShift.getState()
+    return result.ok && result.value.preview.state === 'active' && result.value.preview.kind === 'override'
+  })()`, 'Opening the app unnecessarily promoted the unchanged mini-panel override.')
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('button')]

@@ -143,6 +143,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
         <>
           <Box
             flex="1"
+            minW="0"
             mx="3"
 
             borderWidth="1px"
@@ -152,6 +153,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             overflowY="auto"
           >
             <RadioGroup.Root
+              w="full"
+              minW="0"
               display={'flex'}
               flexDirection={'column'}
               value={pickerValue}
@@ -179,7 +182,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 </Box>
               )}
               {profileItems.length > 0 && (
-                <Flex gap={1} px={2} py={4} flexDirection={'column'}>
+                <Flex gap={1} px={2} py={4} minW="0" flexDirection={'column'}>
                   {profileItems.map((item) => (
                     <MiniProfilePickerOption
                       item={item}
@@ -302,6 +305,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             variant="plain"
             padding={0}
             width="210px"
+            minW="0"
             mr="auto"
             gap={3}
             textAlign="left"
@@ -311,13 +315,14 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             }}
             onClick={() => setPicker(true)}
           >
-            <Stack gap="0" flex={1}>
-              <Text color="fg.muted" fontSize="md">
+            <Stack gap="0" flex={1} minW="0">
+              <Text color="fg.muted" fontSize="md" truncate>
                 {product.chromaShift.intendedMode.kind === 'automatic'
                   ? 'Automatic'
                   : 'Manually selected'}
               </Text>
               <Text
+                data-part="active-profile-name"
                 overflow="hidden"
                 fontSize="lg"
                 fontWeight="700"
@@ -327,7 +332,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 {active.name}
               </Text>
             </Stack>
-            <Icon size={'sm'}>
+            <Icon size={'sm'} flexShrink="0">
               <ChevronsUpDown />
             </Icon>
           </Button>
@@ -419,6 +424,7 @@ function MiniProfilePickerOption({
     <RadioGroup.Item
       value={item.value}
       width="full"
+      minW="0"
       alignItems="center"
       gap={3}
       fontWeight={'700'}
@@ -434,8 +440,9 @@ function MiniProfilePickerOption({
       onClick={selected ? onSelect : undefined}
     >
       <RadioGroup.ItemHiddenInput />
-      <RadioGroup.ItemIndicator />
+      <RadioGroup.ItemIndicator flexShrink="0" />
       <RadioGroup.ItemText
+        data-part="mini-profile-name"
         minW="0"
         flex="1"
         overflow="hidden"
@@ -445,7 +452,7 @@ function MiniProfilePickerOption({
         {item.label}
       </RadioGroup.ItemText>
       {item.isDefault === true && (
-        <Badge size={'sm'} colorPalette={'blue'}>
+        <Badge size={'sm'} colorPalette={'blue'} flexShrink="0">
           Default
         </Badge>
       )}
