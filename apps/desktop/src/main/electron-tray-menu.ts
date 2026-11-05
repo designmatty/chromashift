@@ -7,6 +7,25 @@ import {
 } from 'electron'
 import type { TrayCommands, TrayMenuPort, TrayReadModel } from '@main/tray-controller.js'
 
+/** Longest profile-name length, in user-visible characters, shown in the native tray menu. */
+export const TRAY_MENU_NAME_MAX_LENGTH = 40
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/**
+ * Formats user text for a native Windows menu label. Native menus cannot
+ * ellipsize, so long names are shortened here without splitting a character.
+ * A single & would become a mnemonic underline, so it is escaped as &&.
+ */
+export function trayMenuLabel(text: string, maxLength = TRAY_MENU_NAME_MAX_LENGTH): string {
+  const characters = Array.from(graphemes.segment(text), (part) => part.segment)
+  const shortened =
+    characters.length <= maxLength
+      ? text
+      : `${characters.slice(0, maxLength - 1).join('').trimEnd()}…`
+  return shortened.replaceAll('&', '&&')
+}
+
 export function createAutomaticMenuItem(
   model: TrayReadModel,
   commands: TrayCommands
@@ -39,7 +58,7 @@ export class ElectronTrayMenu implements TrayMenuPort {
       model.profiles.length === 0
         ? [{ label: 'No profiles configured', enabled: false }]
         : model.profiles.map((profile) => ({
-            label: profile.name,
+            label: trayMenuLabel(profile.name),
             type: 'radio',
             enabled: profile.enabled,
             checked: profile.checked,
@@ -49,7 +68,7 @@ export class ElectronTrayMenu implements TrayMenuPort {
     this.#tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: `ChromaShift: ${model.chromaShiftStatusLabel}`, enabled: false },
-        { label: `Current: ${model.currentProfileLabel}`, enabled: false },
+        { label: `Current: ${trayMenuLabel(model.currentProfileLabel)}`, enabled: false },
         createAutomaticMenuItem(model, commands),
         { label: 'Profiles', submenu: profileItems },
         { type: 'separator' },
