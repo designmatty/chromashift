@@ -1202,14 +1202,22 @@ async function verifyLongProfileName(debuggerClient, name) {
       await delay(200)
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-profile-name-${theme}-native.png`))
       await closeTooltips(debuggerClient, `long profile name (${theme})`)
+      await debuggerClient.send('Runtime.evaluate', {
+        expression: `window.__smokeTitleWidth = document.querySelector('[data-part="profile-title"]').getBoundingClientRect().width`
+      })
       await hoverElement(debuggerClient, '[data-part="profile-title"]')
       await waitForExpression(
         debuggerClient,
         `(() => {
           const title = document.querySelector('[data-part="profile-title-text"]')
           const icon = document.querySelector('[data-part="rename-icon"]')
+          const button = document.querySelector('[data-part="profile-title"]')
+          const panel = document.querySelector('[data-part="main-panel"]')
           return title !== null && title.scrollWidth > title.clientWidth &&
             getComputedStyle(title).textOverflow === 'ellipsis' &&
+            getComputedStyle(button).backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+            getComputedStyle(button).backgroundColor !== getComputedStyle(panel).backgroundColor &&
+            Math.abs(button.getBoundingClientRect().width - window.__smokeTitleWidth) < 0.1 &&
             icon?.getAttribute('aria-hidden') === 'true' && getComputedStyle(icon).opacity === '1' &&
             [...document.querySelectorAll('[role="tooltip"]')].some((tooltip) => tooltip.textContent?.trim() === ${JSON.stringify(name)})
         })()`,
@@ -1217,6 +1225,31 @@ async function verifyLongProfileName(debuggerClient, name) {
       )
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `long-header-name-${theme}-native.png`))
       await closeTooltips(debuggerClient, `long header name (${theme})`)
+      for (const type of ['keyDown', 'keyUp']) {
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9
+        })
+      }
+      await debuggerClient.send('Runtime.evaluate', {
+        expression: `document.querySelector('[data-part="profile-title"]').focus()`
+      })
+      await waitForExpression(debuggerClient, `(() => {
+        const button = document.querySelector('[data-part="profile-title"]')
+        const icon = document.querySelector('[data-part="rename-icon"]')
+        return button.matches(':focus-visible') && getComputedStyle(icon).opacity === '1' &&
+          getComputedStyle(button).backgroundColor !== getComputedStyle(document.querySelector('[data-part="main-panel"]')).backgroundColor
+      })()`, `The header edit affordance did not appear on keyboard focus (${theme}).`)
+      await debuggerClient.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+      })
+      await waitForExpression(debuggerClient,
+        `getComputedStyle(document.querySelector('[data-part="rename-icon"]')).transitionDuration === '0s'`,
+        'The header edit icon did not respect reduced motion.')
+      await debuggerClient.send('Emulation.setEmulatedMedia', { features: [] })
+      await debuggerClient.send('Runtime.evaluate', {
+        expression: `document.querySelector('[data-part="profile-title"]').blur()`
+      })
+      await closeTooltips(debuggerClient, `keyboard header name (${theme})`)
     }
   } finally {
     await setTheme(debuggerClient, originalTheme)
@@ -2622,6 +2655,10 @@ async function runSmoke() {
         return name?.textContent === ${JSON.stringify(longMiniName)} && name.scrollWidth > name.clientWidth &&
           getComputedStyle(name).textOverflow === 'ellipsis' && trigger.scrollWidth <= trigger.clientWidth + 1
       })()`, `The mini-panel trigger did not truncate the long name (${theme}).`)
+      await hoverElement(pausedMiniDebugger, '[data-part="active-profile-name"]')
+      await delay(600)
+      await waitForExpression(pausedMiniDebugger, `document.querySelector('[role="tooltip"]') === null`,
+        'The mini-panel profile name unexpectedly showed a tooltip.')
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-long-name-${theme}-native.png`))
       await pausedMiniDebugger.send('Runtime.evaluate', {
         expression: `document.querySelector('[data-part="active-profile"]')?.click()`
@@ -2634,6 +2671,8 @@ async function runSmoke() {
           getComputedStyle(name).textOverflow === 'ellipsis' && row.scrollWidth <= row.clientWidth + 1 &&
           document.querySelector('[role="tooltip"]') === null
       })()`, `The mini-panel picker did not truncate the long name (${theme}).`)
+      await hoverElement(pausedMiniDebugger, '[data-part="mini-profile-name"]')
+      await delay(600)
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-picker-long-name-${theme}-native.png`))
       await pausedMiniDebugger.send('Runtime.evaluate', {
         expression: `[...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Back')?.click()`

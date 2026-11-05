@@ -97,8 +97,14 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
               fontWeight="700"
               minW="0"
               maxW="300px"
-              _hover={{ bg: 'bg.muted', '& [data-part="rename-icon"]': { opacity: 1 } }}
-              _focusVisible={{ bg: 'bg.muted', '& [data-part="rename-icon"]': { opacity: 1 } }}
+              _hover={{
+                bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
+                '& [data-part="rename-icon"]': { opacity: 1 }
+              }}
+              _focusVisible={{
+                bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
+                '& [data-part="rename-icon"]': { opacity: 1 }
+              }}
               disabled={props.busy || props.product.chromaShift.status !== 'active'}
               aria-label={`Rename ${profile.name}`}
               onClick={() => {
