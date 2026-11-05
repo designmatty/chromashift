@@ -10,7 +10,8 @@ export interface PreviewSyncPort {
   startPreview(profile: ColorProfile, kind: PreviewSyncKind): Promise<ProductResult<null>>
   updatePreview(
     profileId: string,
-    targets: ReturnType<typeof activeColorTargets>
+    targets: ReturnType<typeof activeColorTargets>,
+    draft?: ColorProfile
   ): Promise<ProductResult<null>>
   cancelPreview(): Promise<ProductResult<null>>
 }
@@ -28,6 +29,7 @@ export class PreviewSyncSession {
   #generation = 0
   readonly #pending = new Set<Promise<unknown>>()
   #timer: ReturnType<typeof setTimeout> | undefined
+  #scheduledSend: (() => void) | undefined
   #rollback: Promise<boolean> | undefined
   #needsStart = false
   #promotedProfileId: string | null = null
@@ -42,8 +44,9 @@ export class PreviewSyncSession {
   public schedule(draft: ColorProfile, session: PreviewState): void {
     this.cancelScheduled()
     const generation = this.#generation
-    this.#timer = setTimeout(() => {
+    this.#scheduledSend = () => {
       this.#timer = undefined
+      this.#scheduledSend = undefined
       if (generation !== this.#generation) return
       const rollback = this.#rollback
       const previousSends = [...this.#pending]
@@ -56,7 +59,7 @@ export class PreviewSyncSession {
         if (
           this.kind === 'edit' &&
           session.state === 'active' &&
-          session.kind === 'preview' &&
+          session.kind !== 'edit' &&
           session.profileId === draft.id
         ) {
           if (this.#promotedProfileId !== draft.id) {
@@ -69,7 +72,7 @@ export class PreviewSyncSession {
           }
           this.#needsStart = false
           const updated = await run(
-            this.port.updatePreview(draft.id, activeColorTargets(draft)),
+            this.port.updatePreview(draft.id, activeColorTargets(draft), draft),
             this.onError
           )
           if (updated !== undefined) this.onError(null)
@@ -81,7 +84,7 @@ export class PreviewSyncSession {
           session.kind === this.kind &&
           session.profileId === draft.id
         const request = joinsCurrentSession
-          ? this.port.updatePreview(draft.id, activeColorTargets(draft))
+          ? this.port.updatePreview(draft.id, activeColorTargets(draft), draft)
           : this.port.startPreview(draft, this.kind)
         const result = await run(request, this.onError)
         if (result !== undefined && generation === this.#generation) {
@@ -91,13 +94,24 @@ export class PreviewSyncSession {
       })()
       this.#pending.add(pending)
       void pending.finally(() => this.#pending.delete(pending))
-    }, this.debounceMs)
+    }
+    this.#timer = setTimeout(this.#scheduledSend, this.debounceMs)
+  }
+
+  /** Send the current renderer draft now, then drain writes before main checks quit. */
+  public async flush(draft: ColorProfile, session: PreviewState): Promise<void> {
+    this.schedule(draft, session)
+    const send = this.#scheduledSend
+    this.cancelScheduled()
+    send?.()
+    await Promise.allSettled([...this.#pending])
   }
 
   public cancelScheduled(): void {
     if (this.#timer === undefined) return
     clearTimeout(this.#timer)
     this.#timer = undefined
+    this.#scheduledSend = undefined
   }
 
   public invalidate(): void {

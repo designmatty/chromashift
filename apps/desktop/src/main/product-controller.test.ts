@@ -162,6 +162,13 @@ function capabilityReport(supported: boolean): DisplayCapabilityReport {
 }
 
 describe('ProductController settings ownership', () => {
+  it('numbers new profiles and clones at the main boundary', async () => {
+    const { product } = controller()
+    const first = await product.createProfile('New profile')
+    expect((await product.createProfile('New profile')).name).toBe('New profile 2')
+    expect((await product.duplicateProfile(first.id)).name).toBe('New profile 3')
+  })
+
   it('saves and applies renderer preference updates', async () => {
     const saved: Parameters<ProductSettingsPort['save']>[0][] = []
     const applied: Parameters<ProductSettingsPort['apply']>[0][] = []
@@ -453,5 +460,56 @@ describe('ProductController hardware snapshots', () => {
       false
     )
     expect(hardwareReads).toBe(2)
+  })
+})
+
+it('saving a shown profile clears main-owned unsaved state while preserving its session', async () => {
+  const { product } = controller()
+  const saved = await product.createProfile('Saved')
+  const renamed = { ...saved, name: 'Renamed' }
+  await product.startPreview(saved, 'preview')
+  await product.startPreview(renamed, 'edit')
+  expect((await product.getState()).preview).toMatchObject({ unsavedChanges: true })
+  await product.saveProfile(renamed)
+  expect((await product.getState()).preview).toMatchObject({
+    state: 'active',
+    kind: 'edit',
+    draft: renamed,
+    unsavedChanges: false
+  })
+  const next = { ...renamed, name: 'Another edit' }
+  await product.updatePreview(next.id, next.displays, next)
+  expect((await product.getState()).preview).toMatchObject({ unsavedChanges: true })
+  await product.updatePreview(renamed.id, renamed.displays, renamed)
+  expect((await product.getState()).preview).toMatchObject({
+    unsavedChanges: false,
+    draft: renamed
+  })
+})
+
+it('an external saved update preserves a distinct local draft', async () => {
+  const { product } = controller()
+  const saved = await product.createProfile('Saved')
+  const draft = { ...saved, name: 'Local edit' }
+  await product.startPreview(draft, 'edit')
+  await product.saveProfile({ ...saved, enabled: false })
+  expect((await product.getState()).preview).toMatchObject({
+    state: 'active',
+    draft,
+    unsavedChanges: true
+  })
+})
+
+it('an external saved toggle on a clean Edit session does not create unsaved changes', async () => {
+  const { product } = controller()
+  const saved = await product.createProfile('Saved')
+  await product.startPreview(saved, 'edit')
+  const disabled = { ...saved, enabled: false }
+  await product.saveProfile(disabled)
+  expect((await product.getState()).preview).toMatchObject({
+    state: 'active',
+    kind: 'edit',
+    draft: disabled,
+    unsavedChanges: false
   })
 })

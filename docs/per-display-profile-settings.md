@@ -83,8 +83,10 @@ targets remain persisted and resume when the same physical display returns.
 - Every selected tab shows its color values without a display-level override
   checkbox. A connected display without saved settings starts from the neutral
   values, and the first change creates its complete display target.
-- Opening the app selects the Intended target's profile, or Default, and scrolls
-  it into view. Non-profile views remain remembered; profile requests from main win.
+- Without an unsaved session, opening the app selects the Intended target's
+  profile, or Default, and scrolls it into view. Non-profile views remain remembered;
+  profile requests from main win. An unsaved session opens directly in Profiles
+  with its draft selected, including when Settings was the last view.
 - Clicking a profile previews its saved values unless it is already live, so a
   new profile opens as a native Preview at neutral values. Connected displays
   without a target are held at Original settings, including profiles with no
@@ -109,6 +111,11 @@ targets remain persisted and resume when the same physical display returns.
   offers Update, Discard, or Cancel before leaving unsaved changes through
   profile selection, activation selection, or navigation; either choice then
   continues to that destination.
+- Click the header title to rename a profile in place. Enter or blur records the
+  name in the unsaved draft; Escape cancels the name input. New profiles open
+  with naming focused. New profiles use `New profile`, `New profile 2`, and the
+  first free number thereafter. Clones use the source name with the first free
+  numeric suffix, including when cloning an already numbered name.
 - Deleting a profile shows only the delete confirmation, even with unsaved changes.
   Cancel preserves the draft and session. Confirm ends only the deleted profile's
   session before deletion; deleting another profile preserves the open session.
@@ -118,8 +125,10 @@ targets remain persisted and resume when the same physical display returns.
   the content's top position stable. A decorative icon sits left of
   "Previewing: <name>".
   `Use this profile` selects it manually; disabled profiles offer `Enable`.
-  `End preview`, selecting the live profile, closing, or minimizing ends preview
-  and returns the editor to the live profile. Focus loss leaves preview active.
+  `End preview`, selecting the live profile, or closing ends preview and returns
+  the editor to the live profile. Minimizing ends only a clean preview. A dirty
+  edit or temporary override stays applied with its draft intact and automatic
+  switching on hold. Focus loss leaves preview active.
   Switching from one previewed or edited profile to another profile that will
   preview keeps the strip mounted and names the destination. It hides only when
   the destination is the live profile or the switch fails.
@@ -161,8 +170,45 @@ serialized activation rollback resets deduplication and reapplies the prior targ
 on every display, including displays held at Original settings. Restore failures
 surface as preview failures.
 
+While Edit or Temporary override has unsaved changes, the app status pill and
+mini-panel power icon show amber `Auto-switching on hold`. Their tooltips explain
+the unsaved changes. The tray tooltip and status menu label show the same hold;
+there is no separate tray icon asset. Active, Paused, and Safety blocked retain
+their existing meanings, with Paused and Safety blocked taking precedence over
+the hold indicator.
+
+Main exposes the latest blocked automatic target through validated ProductState.
+An app-view toast says `<Profile> not applied — unsaved changes on <edited profile>`
+and offers Update and Discard. Both finish the session through the existing path
+that resolves the latest queued foreground application. Update preserves the
+activation mode. A later foreground change replaces the queued target; returning
+to the currently intended target clears it.
+
+Opening the app with a mini-panel override shows its applied values in editable
+sliders and the normal `Update profile` / `Discard changes` bar. An existing unsaved
+session opens directly in Profiles with that profile selected, even if the last
+remembered view was Settings. Draft dirtiness compares current content with the
+saved profile. Reverting all edits makes the draft clean; minimizing then ends it
+through serialized rollback, including while main still has the older dirty state.
+Promotion from
+Override to Edit reuses matching targets without restoring, recapturing, or writing
+to displays. The separate inverted override banner is removed.
+
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete
-temporary draft across touched displays; `Reset changes` remains the separate
-session rollback action. The panel remains non-activating, always on top,
+temporary draft across touched displays; `Discard changes` rolls the session back.
+Picking a profile discards the temporary changes without a blocking dialog.
+The panel remains non-activating, always on top,
 pointer-oriented, and non-resizable.
+
+Tray Exit and other application quit requests warn when an Edit or Temporary
+override session has unsaved changes. The main-process dialog names the profile
+and offers `Update profile`, `Discard changes`, or `Cancel`, including when no
+renderer exists. Before checking the main-owned draft, quit requests a renderer
+draft flush and waits up to 750 ms for a validated acknowledgement. This includes
+edits still inside the preview-sync debounce. Without a renderer or a timely
+response, quit uses main-owned state. Update saves the main-owned complete draft through the existing
+confirmation path before shutdown. Discard proceeds with normal restore-safe
+shutdown. Cancel keeps the application and session running. Save or restoration
+failure keeps the application alive; connected-display restoration remains a
+requirement for exit.

@@ -172,6 +172,23 @@ class FakeMenu implements TrayMenuPort {
 const logger: StructuredLogger = { write: () => undefined }
 
 describe('tray read model', () => {
+  it('shows the hold while retaining Paused and Safety blocked precedence', () => {
+    const activation = new FakeActivation()
+    expect(
+      createTrayReadModel(profiles, activation.state, activation.chromaShiftState, true)
+        .chromaShiftStatusLabel
+    ).toBe('Auto-switching on hold')
+    for (const status of ['paused', 'safetyBlocked'] as const) {
+      const model = createTrayReadModel(
+        profiles,
+        activation.state,
+        { ...activation.chromaShiftState, status },
+        true
+      )
+      expect(model.chromaShiftStatusLabel).toBe(status === 'paused' ? 'Paused' : 'Safety blocked')
+    }
+  })
+
   it('shows the current target, automatic mode, and enabled profile choices', () => {
     const model = createTrayReadModel(
       profiles,

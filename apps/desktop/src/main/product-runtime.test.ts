@@ -111,7 +111,11 @@ afterEach(async () => {
 
 async function createHarness(
   intentOverrides: Partial<ChromaShiftIntent> = {},
-  options: { profiles?: ColorProfile[]; foregroundApplication?: ForegroundApplication } = {}
+  options: {
+    profiles?: ColorProfile[]
+    foregroundApplication?: ForegroundApplication
+    confirmUnsavedQuit?: ProductRuntimePorts['dialogs']['confirmUnsavedQuit']
+  } = {}
 ): Promise<{
   runtime: ProductRuntime
   client: FakeRuntimeNativeClient
@@ -195,6 +199,7 @@ async function createHarness(
       showError: (title, message) => {
         errors.push({ title, message })
       },
+      confirmUnsavedQuit: options.confirmUnsavedQuit ?? (() => Promise.resolve('cancel')),
       confirmShutdownRetry: () => Promise.resolve('cancel'),
       warnShortcutsUnavailable: () => undefined,
       pickApplicationFile: () => Promise.resolve(null)
@@ -223,6 +228,23 @@ async function createHarness(
 }
 
 describe('product runtime startup wiring', () => {
+  it('saves the main-owned override draft before restore-safe quit without a renderer', async () => {
+    const decide = vi.fn(async () => 'update' as const)
+    const harness = await createHarness({}, { confirmUnsavedQuit: decide })
+    await harness.runtime.start()
+    const product = harness.runtime.productController!
+    const saved = (await product.getState()).configuration.profiles[0]!
+    const draft = { ...saved, name: 'Unsaved quit name' }
+    await product.startPreview(draft, 'override')
+    const stop = vi.spyOn(harness.client, 'stop')
+    expect(await harness.runtime.shutdownCoordinator!.request('tray')).toBe(true)
+    expect(decide).toHaveBeenCalledWith(draft.name)
+    expect((await product.getState()).configuration.profiles[0]!.name).toBe(draft.name)
+    expect(stop).toHaveBeenCalledOnce()
+    expect(harness.logger.has('ApplicationExiting')).toBe(true)
+    await harness.runtime.dispose()
+  })
+
   it('ends a failed reconnect preview and surfaces it through the product error dialog', async () => {
     const empty: ColorProfile = {
       id: 'empty',

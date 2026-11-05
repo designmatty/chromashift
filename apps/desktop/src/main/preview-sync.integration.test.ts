@@ -1,16 +1,22 @@
-import { createNeutralColorSettings, JsonProfileRepository, type ColorProfile } from '@chromashift/core'
+import {
+  createNeutralColorSettings,
+  JsonProfileRepository,
+  type ColorProfile
+} from '@chromashift/core'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { ProductController } from '@main/product-controller.js'
 import { defaultUserPreferences } from '@main/app-settings.js'
 import { FakeNativeDisplayPort, testDisplay } from '@main/testing/fake-native-display.js'
-import {
-  PreviewSyncSession,
-  PREVIEW_SYNC_DEBOUNCE_MS
-} from '@/features/profiles/preview-sync.js'
+import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
 import { shouldPreviewProfile } from '@/features/profiles/app-preview-state.js'
 import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
+import type { ProductState } from '@shared/product-api.js'
+import { commitAppPreview } from '@/features/profiles/app-preview-actions.js'
+import { prepareUnsavedQuit } from '@main/unsaved-quit.js'
+import { profilesDiffer } from '@shared/unsaved-changes.js'
+import { shouldEndPreviewOnMinimize } from '@/features/profiles/app-preview-state.js'
 
 const profile: ColorProfile = {
   id: 'gaming',
@@ -23,46 +29,206 @@ const profile: ColorProfile = {
 }
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
+
+it('warns on quit for a rename still inside the renderer debounce, then saves that exact draft', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  await controller.start(profile, 'preview', profile)
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await controller.start(draft, kind, profile)
+        return ok
+      },
+      updatePreview: async (id, targets, draft) => {
+        await controller.update(id, targets, draft)
+        return ok
+      },
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+  const renamed = { ...profile, name: 'Recent rename' }
+  const before = controller.state
+  sync.schedule(renamed, before)
+  expect(controller.state).toMatchObject({ unsavedChanges: false })
+  const decide = vi.fn(async () => 'update' as const)
+  const confirm = vi.fn(async () => undefined)
+  expect(
+    await prepareUnsavedQuit({
+      flushRendererDrafts: () => sync.flush(renamed, before),
+      settle: () => controller.waitForIdle(),
+      state: () => controller.state,
+      decide,
+      confirm
+    })
+  ).toBe(true)
+  expect(decide).toHaveBeenCalledExactlyOnceWith(renamed.name)
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(renamed)
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('rolls back a reverted draft on minimize through the serialized session queue', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const cancel = vi.fn(async () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: cancel,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const changed = structuredClone(profile)
+  changed.displays[0]!.color.brightness = 61
+  await controller.start(changed, 'edit', profile)
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async () => ok,
+      updatePreview: async () => ok,
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+  const reverted = structuredClone(profile)
+  sync.schedule(reverted, controller.state)
+  if (shouldEndPreviewOnMinimize(profilesDiffer(reverted, profile))) await sync.rollback(true)
+  expect(controller.state).toEqual({ state: 'inactive' })
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(native.restored).toContain('display:abc')
+  expect(vi.getTimerCount()).toBe(0)
+})
+it('commitAppPreview promotes the matching override without native calls before confirmation', async () => {
+  const native = new FakeNativeDisplayPort(0, [
+    testDisplay('display:abc'),
+    testDisplay('display:other')
+  ])
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => ['display:abc', 'display:other'],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const saved = structuredClone(profile)
+  saved.displays[0]!.color.brightness = 50
+  await controller.start(profile, 'override', saved)
+  const before = native.calls.length
+  await commitAppPreview(profile, async () => undefined, {
+    getState: async () => ({ ok: true, value: { preview: controller.state } as ProductState }),
+    startPreview: async (draft, kind) => {
+      await controller.start(draft, kind, saved)
+      return ok
+    },
+    updatePreview: async (id, targets, draft) => {
+      await controller.update(id, targets, draft)
+      return ok
+    },
+    confirmPreview: async (draft, activation) => {
+      expect(activation).toBe('preserve')
+      expect(controller.state).toMatchObject({ kind: 'edit', draft, unsavedChanges: true })
+      expect(native.calls).toHaveLength(before)
+      return { ok: true, value: draft }
+    }
+  })
+})
+
 it('app rollback reports PreviewRestoreError even when teardown has published inactive', async () => {
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
-  const controller = new PreviewSessionController(native, {
-    beginPreview: async () => [],
-    cancelPreview: async () => undefined,
-    confirmPreview: async () => undefined
-  }, () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
   await controller.start(profile, 'preview')
   native.failRestoreDisplayIds.add('display:abc')
   const errors: (ProductError | null)[] = []
-  const sync = new PreviewSyncSession({
-    startPreview: async () => ok,
-    updatePreview: async () => ok,
-    cancelPreview: async () => {
-      try {
-        await controller.cancel()
-        return ok
-      } catch (error) {
-        expect(error).toBeInstanceOf(PreviewRestoreError)
-        return { ok: false, error: { code: 'OPERATION_FAILED', message: (error as Error).message } }
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async () => ok,
+      updatePreview: async () => ok,
+      cancelPreview: async () => {
+        try {
+          await controller.cancel()
+          return ok
+        } catch (error) {
+          expect(error).toBeInstanceOf(PreviewRestoreError)
+          return {
+            ok: false,
+            error: { code: 'OPERATION_FAILED', message: (error as Error).message }
+          }
+        }
       }
-    }
-  }, 'edit', (error) => errors.push(error))
-  await expect(sync.rollback(true)).rejects.toMatchObject({ message: expect.stringContaining('Some displays could not be restored.') })
+    },
+    'edit',
+    (error) => errors.push(error)
+  )
+  await expect(sync.rollback(true)).rejects.toMatchObject({
+    message: expect.stringContaining('Some displays could not be restored.')
+  })
   expect(controller.state).toEqual({ state: 'inactive' })
-  expect(errors).toEqual([{ code: 'OPERATION_FAILED', message: expect.stringContaining('Some displays could not be restored.') }])
+  expect(errors).toEqual([
+    {
+      code: 'OPERATION_FAILED',
+      message: expect.stringContaining('Some displays could not be restored.')
+    }
+  ])
 })
 it('promotes a clicked preview before applying edits without restoring or recapturing', async () => {
   vi.useFakeTimers()
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
-  const controller = new PreviewSessionController(native, {
-    beginPreview: async () => [],
-    cancelPreview: async () => undefined,
-    confirmPreview: async () => undefined
-  }, () => undefined)
-  const sync = new PreviewSyncSession({
-    startPreview: async (draft, kind) => { await controller.start(draft, kind); return ok },
-    updatePreview: async (id, targets) => { await controller.update(id, targets); return ok },
-    cancelPreview: async () => { await controller.cancel(); return ok }
-  }, 'edit', () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      cancelPreview: async () => undefined,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await controller.start(draft, kind)
+        return ok
+      },
+      updatePreview: async (id, targets) => {
+        await controller.update(id, targets)
+        return ok
+      },
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
   // Sidebar navigation settles the previous draft before starting the clicked
   // profile outside the draft synchronizer.
   await sync.rollback()
@@ -157,7 +323,12 @@ it('previews a new profile at neutral values and promotes its first edit in plac
     },
     () => undefined
   )
-  const outcome = { status: 'activated' as const, resolution: null, failures: [], deferredDisplayIds: [] }
+  const outcome = {
+    status: 'activated' as const,
+    resolution: null,
+    failures: [],
+    deferredDisplayIds: []
+  }
   let stored: string | null = null
   const product = new ProductController(
     new JsonProfileRepository({
@@ -192,7 +363,11 @@ it('previews a new profile at neutral values and promotes its first edit in plac
     },
     previewController,
     { pick: async () => null, describe: async () => null },
-    { get: async () => defaultUserPreferences, save: async (value) => value, apply: () => undefined },
+    {
+      get: async () => defaultUserPreferences,
+      save: async (value) => value,
+      apply: () => undefined
+    },
     { refreshTray: async () => undefined, stateChanged: () => undefined }
   )
   const sessions: PreviewState[] = []

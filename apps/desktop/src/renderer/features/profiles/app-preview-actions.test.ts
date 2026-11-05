@@ -8,6 +8,7 @@ import {
 } from '@/features/profiles/app-preview-actions'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync'
 import type { ProductState, PreviewState, ProductResult } from '@shared/product-api'
+import { profilesDiffer } from '@shared/unsaved-changes'
 
 const profile: ColorProfile = {
   id: 'a',
@@ -21,10 +22,13 @@ changed.displays[0]!.color.brightness = 60
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
 
-function fixture(kind: 'preview' | 'edit' | 'override' = 'override') {
+function fixture(kind: 'preview' | 'edit' | 'override' = 'override', savedProfile = profile) {
+  let saved = savedProfile
+  let appliedDraft = profile
   let preview: PreviewState = {
     state: 'active',
     kind,
+    unsavedChanges: true,
     profileId: profile.id,
     targets: profile.displays
   }
@@ -33,12 +37,21 @@ function fixture(kind: 'preview' | 'edit' | 'override' = 'override') {
     getState: async () => ({ ok: true as const, value: { preview } as ProductState }),
     startPreview: async (draft: ColorProfile, kind: 'edit' | 'override') => {
       calls.push('start')
-      preview = { state: 'active', kind, profileId: draft.id, targets: draft.displays }
+      appliedDraft = draft
+      preview = {
+        state: 'active',
+        kind,
+        profileId: draft.id,
+        targets: draft.displays,
+        unsavedChanges: profilesDiffer(appliedDraft, saved)
+      }
       return ok
     },
-    updatePreview: async (_id: string, targets: ColorProfile['displays']) => {
+    updatePreview: async (_id: string, targets: ColorProfile['displays'], draft?: ColorProfile) => {
       calls.push('update')
-      if (preview.state === 'active') preview = { ...preview, targets }
+      appliedDraft = { ...(draft ?? appliedDraft), displays: targets }
+      if (preview.state === 'active')
+        preview = { ...preview, targets, unsavedChanges: profilesDiffer(appliedDraft, saved) }
       return ok
     },
     cancelPreview: async () => {
@@ -53,6 +66,9 @@ function fixture(kind: 'preview' | 'edit' | 'override' = 'override') {
     }),
     saveProfile: vi.fn(async (draft: ColorProfile) => {
       calls.push('save')
+      saved = draft
+      if (preview.state === 'active')
+        preview = { ...preview, unsavedChanges: profilesDiffer(appliedDraft, saved) }
       return { ok: true as const, value: draft }
     }),
     deleteProfile: async (id: string) => {
@@ -227,7 +243,8 @@ it.each([
       state: 'active',
       kind: 'edit',
       profileId: profile.id,
-      targets: draft.displays
+      targets: draft.displays,
+      unsavedChanges: false
     })
   }
 )
@@ -242,7 +259,7 @@ it.each([
   async (timing, emptyTargets) => {
     const saved = emptyTargets ? { ...profile, displays: [] } : profile
     vi.useFakeTimers()
-    const f = fixture('edit')
+    const f = fixture('edit', saved)
     let release!: () => void
     if (timing === 'in flight') {
       const update = f.api.updatePreview
@@ -266,7 +283,8 @@ it.each([
       state: 'active',
       kind: 'edit',
       profileId: profile.id,
-      targets: saved.displays
+      targets: saved.displays,
+      unsavedChanges: false
     })
   }
 )

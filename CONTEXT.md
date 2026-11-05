@@ -72,8 +72,8 @@ _Avoid_: Active profile, applied profile
 ## Preview
 
 **Preview session**:
-The explicit activation session that applies unsaved values from the native
-baseline. During app-panel Preview or Edit, displays without a target are held
+The explicit activation session that applies saved or unsaved profile values
+from Original settings. During app-panel Preview or Edit, displays without a target are held
 at Original settings; ending the session reapplies the prior activation target.
 Its kind is Preview (started by clicking an app-panel profile),
 Edit (the first change promotes Preview in place; changes remain unsaved until
@@ -83,7 +83,7 @@ the saved profile).
 _Avoid_: Live mode, draft mode
 
 **Draft**:
-The renderer's unsaved copy of a profile whose changes a Preview session
-applies. A dirty draft differs from the saved profile in applied display
-values, not merely in remembered control metadata.
+The unsaved copy of a profile whose changes a Preview session applies. A dirty
+draft differs from saved profile content, including its name, applications,
+availability, or display values; reverting all edits makes it clean.
 _Avoid_: Working copy, pending profile

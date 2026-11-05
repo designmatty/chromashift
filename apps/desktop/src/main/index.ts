@@ -12,6 +12,7 @@ import {
   screen,
   shell,
   type IpcMainInvokeEvent,
+  type IpcMainEvent,
   type NativeImage,
   type OpenDialogOptions
 } from 'electron'
@@ -35,6 +36,7 @@ import { UpdateChecker } from '@main/update-checker.js'
 import { AppUpdateService } from '@main/app-update-service.js'
 import { NsisUpdateInstaller } from '@main/nsis-update-installer.js'
 import { createProductRuntime } from '@main/product-runtime.js'
+import { flushRendererDrafts } from '@main/renderer-draft-flush.js'
 import {
   RendererRecoveryController,
   type RendererExitReason,
@@ -157,6 +159,16 @@ const runtime = createProductRuntime({
     }
   },
   shell: {
+    flushRendererDrafts: () =>
+      flushRendererDrafts(
+        ipcMain,
+        [mainWindow, miniWindow]
+          .flatMap((window) =>
+            window === undefined || window.isDestroyed() ? [] : [window.webContents]
+          )
+          .slice(0, 1),
+        assertTrustedRenderer
+      ),
     openWindow: () => openWindow(),
     openProfile: (profileId) => openProfile(profileId),
     openAppPanel: () => panelController.openAppPanel(),
@@ -169,6 +181,18 @@ const runtime = createProductRuntime({
   },
   dialogs: {
     showError: (title, message) => dialog.showErrorBox(title, message),
+    confirmUnsavedQuit: async (profileName) => {
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Unsaved changes',
+        message: `${profileName} has unsaved changes`,
+        buttons: ['Update profile', 'Discard changes', 'Cancel'],
+        defaultId: 2,
+        cancelId: 2,
+        noLink: true
+      })
+      return result.response === 0 ? 'update' : result.response === 1 ? 'discard' : 'cancel'
+    },
     confirmShutdownRetry: async (title, message) => {
       const result = await dialog.showMessageBox({
         type: 'warning',
@@ -294,7 +318,7 @@ async function loadTrayIcon(): Promise<NativeImage> {
   return nativeImage.createFromPath(iconPath)
 }
 
-function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   const senderUrl = event.senderFrame?.url
   if (senderUrl === undefined) throw new Error('Renderer IPC sender is unavailable.')
   if (

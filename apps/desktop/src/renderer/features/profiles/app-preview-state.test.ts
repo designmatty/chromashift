@@ -10,6 +10,12 @@ import {
   shouldPreviewProfile,
   updatePlan
 } from '@/features/profiles/app-preview-state'
+import {
+  appSessionDraft,
+  initialAppView,
+  shouldEndPreviewOnMinimize
+} from '@/features/profiles/app-preview-state'
+import { profilesDiffer } from '@shared/unsaved-changes'
 
 const profiles: ColorProfile[] = [
   { id: 'default', name: 'Default profile', enabled: true, applications: [], displays: [] },
@@ -37,6 +43,57 @@ function state(
   }
 }
 describe('app preview selection', () => {
+  it('ends a reverted clean draft on minimize even before main receives the reverted values', () => {
+    const saved = profiles[1]!
+    const draft = structuredClone(saved)
+    draft.displays[0]!.color.saturation = 80
+    expect(profilesDiffer(draft, saved)).toBe(true)
+    draft.displays[0]!.color.saturation = saved.displays[0]!.color.saturation
+    const dirty = profilesDiffer(draft, saved)
+    expect(dirty).toBe(false)
+    expect(shouldEndPreviewOnMinimize(dirty)).toBe(true)
+    expect(profilesDiffer({ ...draft, name: 'Renamed' }, saved)).toBe(true)
+  })
+
+  it('opens hydrated unsaved sessions in Profiles even when Settings was remembered', () => {
+    for (const kind of ['edit', 'override'] as const) {
+      const draft = { ...profiles[1]!, name: 'Unsaved game' }
+      const product = {
+        ...state(),
+        preview: {
+          state: 'active',
+          kind,
+          profileId: draft.id,
+          targets: draft.displays,
+          draft,
+          unsavedChanges: true
+        }
+      } as ProductState
+      expect(initialAppView(product, 'settings')).toBe('profiles')
+      expect(appSessionDraft(product)).toEqual(draft)
+    }
+    expect(
+      initialAppView({ ...state(), preview: { state: 'inactive' } } as ProductState, 'settings')
+    ).toBe('settings')
+  })
+  it('hydrates the editor with a mini-panel override and preserves it on minimize', () => {
+    const saved = profiles[1]!
+    const draft = structuredClone(saved)
+    draft.displays[0]!.color.saturation = 80
+    const preview: ProductState['preview'] = {
+      state: 'active',
+      kind: 'override',
+      profileId: saved.id,
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+    const product = { ...state(), preview } as ProductState
+    expect(appSessionDraft(product)).toEqual(draft)
+    expect(shouldEndPreviewOnMinimize(profilesDiffer(draft, saved))).toBe(false)
+    expect(shouldEndPreviewOnMinimize(profilesDiffer(saved, saved))).toBe(true)
+  })
+
   it('opens the intended profile, with Default as the original-settings fallback', () => {
     const product = state()
     product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'GAME' }
@@ -114,7 +171,13 @@ describe('preview banner while switching profiles', () => {
   const previewing = (
     kind: 'preview' | 'edit' | 'override',
     profileId = 'game'
-  ): ProductState['preview'] => ({ state: 'active', profileId, kind, targets: [] })
+  ): ProductState['preview'] => ({
+    state: 'active',
+    profileId,
+    kind,
+    targets: [],
+    unsavedChanges: kind !== 'preview'
+  })
 
   it('keeps the banner from one previewed or edited profile to another', () => {
     expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('preview')), third)).toBe(true)
@@ -177,6 +240,7 @@ describe('header Update and Discard', () => {
   ): ProductState['preview'] => ({
     state: 'active',
     kind: overrides.kind ?? 'edit',
+    unsavedChanges: true,
     profileId: overrides.profileId ?? 'game',
     targets
   })

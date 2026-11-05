@@ -20,6 +20,7 @@ import {
   commitSessionRequestSchema,
   startSessionRequestSchema,
   previewUpdateRequestSchema,
+  previewDraftFlushSchema,
   productIpcChannels,
   productStateResultSchema,
   productStateSchema,
@@ -161,10 +162,11 @@ const api: ChromaShiftApi = {
       profile,
       kind
     }),
-  updatePreview: (profileId, targets) =>
+  updatePreview: (profileId, targets, draft) =>
     invoke(productIpcChannels.updatePreview, previewUpdateRequestSchema, voidResultSchema, {
       profileId,
-      targets
+      targets,
+      ...(draft === undefined ? {} : { draft })
     }),
   confirmPreview: (profile, activation) =>
     invoke(productIpcChannels.confirmPreview, commitSessionRequestSchema, profileResultSchema, {
@@ -207,6 +209,22 @@ const api: ChromaShiftApi = {
       if (request.success) listener()
       else console.error('Rejected invalid app-panel minimize event.', request.error)
     })
+  },
+  onFlushPreviewDraft: (listener) => {
+    const receive = (_event: unknown, input: unknown): void => {
+      const request = previewDraftFlushSchema.safeParse(input)
+      if (!request.success) return
+      void listener()
+        .then(() => {
+          ipcRenderer.send(
+            productIpcChannels.previewDraftFlushed,
+            previewDraftFlushSchema.parse(request.data)
+          )
+        })
+        .catch((error: unknown) => console.error('Could not flush the preview draft.', error))
+    }
+    ipcRenderer.on(productIpcChannels.flushPreviewDraft, receive)
+    return () => ipcRenderer.removeListener(productIpcChannels.flushPreviewDraft, receive)
   },
   onAppPanelNavigation: (listener) => appPanelNavigation.subscribe(listener),
   onAppPanelProfileSelection: (listener) => appPanelProfileSelection.subscribe(listener)

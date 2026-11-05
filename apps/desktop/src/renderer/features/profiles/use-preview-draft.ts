@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import {
   PreviewSyncSession,
@@ -6,6 +6,7 @@ import {
   type PreviewSyncPort
 } from '@/features/profiles/preview-sync.js'
 import type { PreviewState, ProductError } from '@shared/product-api.js'
+import { hasUnsavedSession, profilesDiffer } from '@shared/unsaved-changes.js'
 
 export interface UsePreviewDraftOptions {
   kind: PreviewSyncKind
@@ -19,6 +20,8 @@ export interface UsePreviewDraftOptions {
   onError: (error: ProductError | null) => void
   initialDraft?: () => ColorProfile | null
   initialDirty?: () => boolean
+  /** Saved content for the app editor, including metadata-only changes. */
+  savedProfile?: ColorProfile | null
 }
 
 export interface PreviewDraft {
@@ -43,27 +46,43 @@ export interface PreviewDraft {
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const { kind, session, enabled, onError } = options
   const [draft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
-  const [dirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
+  const [markedDirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
+  // Hydration can be dirty without representing a new local edit. Only user
+  // changes schedule writes; main's session broadcasts must not echo them back.
+  const [localRevision, setLocalRevision] = useState(0)
+  const dirty =
+    options.savedProfile === undefined
+      ? markedDirty
+      : markedDirty &&
+        draft !== null &&
+        options.savedProfile !== null &&
+        profilesDiffer(draft, options.savedProfile)
   const syncRef = useRef<PreviewSyncSession | null>(null)
   if (syncRef.current === null) {
     const port: PreviewSyncPort = {
       startPreview: (profile, sessionKind) => window.chromaShift.startPreview(profile, sessionKind),
-      updatePreview: (profileId, targets) => window.chromaShift.updatePreview(profileId, targets),
+      updatePreview: (profileId, targets, draft) =>
+        window.chromaShift.updatePreview(profileId, targets, draft),
       cancelPreview: () => window.chromaShift.cancelPreview()
     }
     syncRef.current = new PreviewSyncSession(port, kind, onError)
   }
   const sync = syncRef.current
 
-  const draftSignature = JSON.stringify(draft)
-  const sessionKind = session.state === 'active' ? session.kind : null
-  const sessionProfileId = session.state === 'active' ? session.profileId : null
   useEffect(() => {
+    if (localRevision === 0) return
     if (!enabled || draft === null || (kind === 'override' && draft.displays.length === 0)) return
-    if (!dirty) return
+    if (!dirty && !hasUnsavedSession(session)) return
     sync.schedule(draft, session)
     return () => sync.cancelScheduled()
-  }, [enabled, dirty, draftSignature, sessionKind, sessionProfileId])
+  }, [enabled, localRevision])
+
+  useLayoutEffect(() => {
+    return window.chromaShift.onFlushPreviewDraft(async () => {
+      if (localRevision !== 0 && enabled && draft !== null && (dirty || hasUnsavedSession(session)))
+        await sync.flush(draft, session)
+    })
+  })
 
   return {
     draft,
@@ -71,6 +90,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     updateDraft: (profile) => {
       setDraft(profile)
       setDirty(true)
+      setLocalRevision((revision) => revision + 1)
     },
     replaceDraft: (profile) => {
       setDraft(profile)
@@ -78,6 +98,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     resetTo: (source, resetOptions) => {
       setDraft(source === null ? null : structuredClone(source))
       setDirty(resetOptions?.dirty ?? false)
+      setLocalRevision(0)
     },
     invalidateSync: () => sync.invalidate(),
     settlePreview: () => sync.settle(),

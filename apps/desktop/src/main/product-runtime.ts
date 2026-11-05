@@ -27,6 +27,8 @@ import { PhysicalDisplayClient, type EndpointDisplayPort } from '@main/physical-
 import { rewriteProfilesForPhysicalDisplays } from '@main/physical-display-profile-rewrite.js'
 import { PowerEventAdapter, type PowerMonitorPort } from '@main/power-event-adapter.js'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
+import { prepareUnsavedQuit, type UnsavedQuitDecision } from '@main/unsaved-quit.js'
+import { hasUnsavedSession } from '@shared/unsaved-changes.js'
 import { ProductController } from '@main/product-controller.js'
 import { migrateLegacyProfileConfiguration } from '@main/profile-configuration-migration.js'
 import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
@@ -89,10 +91,12 @@ export interface ProductRuntimePorts {
     openMiniPanel: () => void
     createTrayMenu: () => Promise<TrayMenuPort>
     broadcastProductState: () => void
+    flushRendererDrafts?: () => Promise<void>
   }
   dialogs: {
     showError: (title: string, message: string) => void
     confirmShutdownRetry: (title: string, message: string) => Promise<'retry' | 'cancel'>
+    confirmUnsavedQuit: (profileName: string) => Promise<UnsavedQuitDecision>
     warnShortcutsUnavailable: (message: string) => void
     pickApplicationFile: () => Promise<string | null>
   }
@@ -275,19 +279,39 @@ export class ProductRuntime {
     }
 
     this.#shutdownCoordinator = new ShutdownCoordinator(
-      automaticActivation,
+      {
+        waitForIdle: async () => {
+          await this.#previewController?.waitForIdle()
+          await automaticActivation.waitForIdle()
+        }
+      },
       nativeClient,
       system.application,
       {
         show: () => shell.openWindow(),
         showError: (title, message) => dialogs.confirmShutdownRetry(title, message)
       },
-      logger
+      logger,
+      () =>
+        prepareUnsavedQuit({
+          flushRendererDrafts: shell.flushRendererDrafts,
+          settle: () => this.#previewController?.waitForIdle() ?? Promise.resolve(),
+          state: () => this.#previewController?.state ?? { state: 'inactive' },
+          decide: (name) => dialogs.confirmUnsavedQuit(name),
+          confirm: (profile) => {
+            if (this.#productController === undefined)
+              throw new Error('Profile saving is unavailable.')
+            return this.#productController.confirmPreview(profile, 'preserve')
+          }
+        })
     )
     const previewController = new PreviewSessionController(
       physicalDisplayClient,
       automaticActivation,
-      () => shell.broadcastProductState()
+      () => {
+        shell.broadcastProductState()
+        void this.#trayController?.refresh()
+      }
     )
     this.#previewController = previewController
     const chromaShiftController = new ChromaShiftController(
@@ -342,7 +366,8 @@ export class ProductRuntime {
       },
       this.#shutdownCoordinator,
       await shell.createTrayMenu(),
-      logger
+      logger,
+      () => hasUnsavedSession(previewController.state)
     )
     this.#trayController = trayController
     const profileNotifications = new ProfileNotificationController(

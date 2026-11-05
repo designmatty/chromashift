@@ -1,15 +1,5 @@
-import {
-  Alert,
-  Button,
-  CloseButton,
-  Flex,
-  Heading,
-  Icon,
-  Stack,
-  Text,
-  VStack
-} from '@chakra-ui/react'
-import { CircleAlert, Power } from 'lucide-react'
+import { Alert, Button, CloseButton, Flex, Icon, Stack, Text, VStack } from '@chakra-ui/react'
+import { Power } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { Empty, TitleBar } from '@/components/layout/presentational'
@@ -45,19 +35,26 @@ import { useProductTheme } from '@/hooks/use-product-theme'
 import { run } from '@/lib/product-result'
 import type { AppPanelView, ProductError, ProductResult, ProductState } from '@shared/product-api'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants'
+import { autoSwitchingOnHold, hasUnsavedSession } from '@shared/unsaved-changes'
+import {
+  appSessionDraft,
+  initialAppView,
+  shouldEndPreviewOnMinimize
+} from '@/features/profiles/app-preview-state'
 
 const LAST_PROFILE_KEY = 'chromashift.app-panel.selected-profile'
 const LAST_VIEW_KEY = 'chromashift.app-panel.view'
 const SIDEBAR_COLLAPSED_KEY = 'chromashift.app-panel.sidebar-collapsed'
 
 export function MainApp({ product }: { product: ProductState }): React.JSX.Element {
-  const [view, setView] = useState<AppPanelView>(readLastView)
+  const [view, setView] = useState<AppPanelView>(() => initialAppView(product, readLastView()))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   )
-  const [selectedId, setSelectedId] = useState(() => liveProfile(product)?.id ?? null)
+  const [selectedId, setSelectedId] = useState(() => appSessionDraft(product)?.id ?? null)
   const [error, setError] = useState<ProductError | null>(null)
   const [busy, setBusy] = useState(false)
+  const [namingProfileId, setNamingProfileId] = useState<string | null>(null)
   const [profilePendingDeletion, setProfilePendingDeletion] = useState<ColorProfile | null>(null)
   // Destination of a preview-to-preview switch, keeping the banner mounted
   // while the previous session rolls back and the next one starts.
@@ -69,14 +66,25 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   } | null>(null)
   const taskTail = useRef(Promise.resolve())
   const followingLive = useRef(true)
-  const { draft, dirty, updateDraft, resetTo, invalidateSync, settlePreview, rollbackPreview } =
-    usePreviewDraft({
-      kind: 'edit',
-      session: product.preview,
-      enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
-      onError: setError,
-      initialDraft: () => liveProfile(product)
-    })
+  const locallyEdited = useRef(false)
+  const {
+    draft,
+    dirty,
+    updateDraft: changeDraft,
+    resetTo: resetDraft,
+    invalidateSync,
+    settlePreview,
+    rollbackPreview
+  } = usePreviewDraft({
+    kind: 'edit',
+    session: product.preview,
+    enabled: view === 'profiles' && !busy && product.chromaShift.status === 'active',
+    onError: setError,
+    initialDraft: () => appSessionDraft(product),
+    initialDirty: () => hasUnsavedSession(product.preview),
+    savedProfile:
+      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
+  })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
     liveProfile(product)
@@ -96,8 +104,12 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     else localStorage.setItem(LAST_PROFILE_KEY, selectedId)
   }, [selectedId])
   useEffect(() => {
-    if (!dirty && selected !== null) resetTo(selected)
-  }, [selected])
+    // Main can still publish an older dirty draft after the user has reverted it.
+    if (!dirty && !locallyEdited.current && selected !== null) {
+      const unsaved = hasUnsavedSession(product.preview) && activeSession?.profileId === selected.id
+      resetTo(unsaved ? appSessionDraft(product) : selected, { dirty: unsaved })
+    }
+  }, [selected, activeSession?.profileId, activeSession?.kind])
   useEffect(() => {
     if (followingLive.current && !dirty && activeSession === null) setSelectedId(currentProfileId)
   }, [currentProfileId, activeSession, dirty])
@@ -105,6 +117,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (pendingPreviewId !== null && activeSession?.profileId === pendingPreviewId)
       setPendingPreviewId(null)
   }, [activeSession, pendingPreviewId])
+
+  function updateDraft(profile: ColorProfile): void {
+    locallyEdited.current = true
+    changeDraft(profile)
+  }
+  function resetTo(profile: ColorProfile | null, options?: { dirty?: boolean }): void {
+    locallyEdited.current = false
+    resetDraft(profile, options)
+  }
 
   async function value<T>(request: Promise<ProductResult<T>>): Promise<T> {
     const result = await request
@@ -239,7 +260,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       }
       followingLive.current = liveProfile(state)?.id === current.id
       setSelectedId(current.id)
-      resetTo(current)
+      resetTo(keepingOverride ? appSessionDraft(state) : current, { dirty: keepingOverride })
       setView('profiles')
       // The pending destination clears once its session reaches the renderer.
       if (shouldPreviewProfile(state, current))
@@ -293,16 +314,18 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   })
   useEffect(() => {
-    const endAppPreview = () => {
+    const endAppPreview = (includeOverride = false) => {
       invalidateSync()
       setPendingContinuation(null)
       perform(async () => {
-        if (temporaryOverride === null) await rollback()
+        if (includeOverride || temporaryOverride === null) await rollback()
         await returnToLive()
       })
     }
     window.chromaShift.onAppPanelClosed(endAppPreview)
-    window.chromaShift.onAppPanelMinimized(endAppPreview)
+    window.chromaShift.onAppPanelMinimized(() => {
+      if (shouldEndPreviewOnMinimize(dirty)) endAppPreview(true)
+    })
   })
   function endPreview(): void {
     continueAfterChanges(async () => {
@@ -342,7 +365,12 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             accelerator: formatShortcutAccelerator(binding.accelerator)
           })
         )
-      else await value(window.chromaShift.saveProfile({ ...current, enabled: !current.enabled }))
+      else {
+        const saved = await value(
+          window.chromaShift.saveProfile({ ...current, enabled: !current.enabled })
+        )
+        if (saved.id === selectedId) resetTo(saved)
+      }
     })
   }
   function createProfile(copy?: ColorProfile): void {
@@ -354,6 +382,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           : window.chromaShift.duplicateProfile(copy.id)
       )
       await openProfile(profile)
+      if (copy === undefined) setNamingProfileId(profile.id)
     })
   }
   const savedProfile = draft ?? selected
@@ -366,84 +395,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       : savedProfile
   const showPreviewBanner =
     view === 'profiles' && previewBannerVisible(product, shownProfile, pendingPreviewId)
-  const OverrideBanner = () => {
-    return temporaryOverride !== null ? (
-      <Flex
-        data-part="override-banner"
-        mx={2.5}
-        px="3"
-        py="3"
-        align="center"
-        gap="3"
-        rounded="lg"
-        bg="bg.inverted"
-        color="fg.inverted"
-        flex={'none'}
-        _dark={{
-          bg: 'bg.inverted',
-          color: 'fg.inverted'
-        }}
-      >
-        <CircleAlert />
-        <Stack flex="1" gap="0">
-          <Heading overflow="hidden" size="lg" textOverflow="ellipsis" whiteSpace="nowrap">
-            You have unsaved changes on{' '}
-            {product.configuration.profiles.find(
-              (profile) => profile.id === temporaryOverride.profileId
-            )?.name ?? 'profile'}
-          </Heading>
-          <Text
-            overflow="hidden"
-            fontFamily="mono"
-            fontSize="xs"
-            textOverflow="ellipsis"
-            whiteSpace="nowrap"
-            lineHeight={1}
-          >
-            The applied values differ from the saved profile
-          </Text>
-        </Stack>
-        <Button
-          size={'xs'}
-          variant={'subtle'}
-          disabled={busy}
-          onClick={() => {
-            invalidateSync()
-            perform(async () => {
-              await rollback()
-              await returnToLive()
-            })
-          }}
-        >
-          Discard changes
-        </Button>
-        <Button
-          size={'xs'}
-          disabled={busy}
-          onClick={() => {
-            invalidateSync()
-            const profile = product.configuration.profiles.find(
-              (item) => item.id === temporaryOverride.profileId
-            )
-            if (profile !== undefined) {
-              perform(async () => {
-                await updateProfile(
-                  dirty && draft?.id === profile.id
-                    ? draft
-                    : applyOverrideTargets(profile, temporaryOverride.targets)
-                )
-                await returnToLive()
-              })
-            }
-          }}
-        >
-          Update profile
-        </Button>
-      </Flex>
-    ) : (
-      <></>
-    )
-  }
+  const onHold = autoSwitchingOnHold(product) || (dirty && product.chromaShift.status === 'active')
+  const queued = product.activation.queuedTarget
+  const queuedName =
+    queued?.kind === 'profile'
+      ? (product.configuration.profiles.find((profile) => profile.id === queued.profileId)?.name ??
+        'Profile')
+      : 'Original settings'
 
   return (
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
@@ -456,7 +414,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           })
         }
         brandAccessory={
-          <Tooltip content={chromaShiftActionLabel(product)}>
+          <Tooltip
+            content={
+              onHold
+                ? 'Auto-switching on hold — unsaved changes. Update profile or discard changes to continue.'
+                : chromaShiftActionLabel(product)
+            }
+          >
             <Button
               data-part="chromashift-control"
               data-status={product.chromaShift.status}
@@ -464,12 +428,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               variant="subtle"
               colorPalette={
                 product.chromaShift.status === 'active'
-                  ? 'green'
+                  ? onHold
+                    ? 'yellow'
+                    : 'green'
                   : product.chromaShift.status === 'safetyBlocked'
                     ? 'red'
                     : 'gray'
               }
               rounded="sm"
+              _hover={{ bg: 'colorPalette.muted' }}
               disabled={product.chromaShift.transitionInProgress}
               loading={product.chromaShift.transitionInProgress}
               aria-label={chromaShiftActionLabel(product)}
@@ -486,7 +453,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               <Power size={14} />
               Status:{' '}
               {product.chromaShift.status === 'active'
-                ? 'Active'
+                ? onHold
+                  ? 'Auto-switching on hold'
+                  : 'Active'
                 : product.chromaShift.status === 'safetyBlocked'
                   ? 'Safety blocked'
                   : 'Paused'}
@@ -494,7 +463,53 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           </Tooltip>
         }
       />
-      <OverrideBanner />
+      {onHold && queued != null && (
+        <Flex
+          data-part="blocked-switch-toast"
+          role="status"
+          position="fixed"
+          top="12"
+          right="4"
+          zIndex="toast"
+          p="3"
+          gap="3"
+          align="center"
+          rounded="lg"
+          bg="bg.panel"
+          borderWidth="1px"
+          shadow="md"
+        >
+          <Text>
+            {queuedName} not applied — unsaved changes on{' '}
+            {shownProfile?.name ?? activeSession?.draft?.name ?? 'profile'}
+          </Text>
+          <Button
+            size="xs"
+            disabled={busy}
+            onClick={() =>
+              perform(async () => {
+                await updateProfile()
+                await returnToLive()
+              })
+            }
+          >
+            Update
+          </Button>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              perform(async () => {
+                await rollback()
+                await returnToLive()
+              })
+            }
+          >
+            Discard
+          </Button>
+        </Flex>
+      )}
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
           <Alert.Indicator />
@@ -570,6 +585,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   <Empty title="No profile selected" />
                 ) : (
                   <ProfileDetail
+                    key={shownProfile.id}
+                    startNaming={namingProfileId === shownProfile.id}
+                    onNamingEnded={() => setNamingProfileId(null)}
                     profile={shownProfile}
                     product={product}
                     busy={busy}

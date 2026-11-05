@@ -13,6 +13,7 @@ import type {
   DisplayRestoreResult
 } from '@chromashift/native-client'
 import type { PreviewState } from '@shared/product-api.js'
+import { profilesDiffer } from '@shared/unsaved-changes.js'
 import { describeError } from '@main/structured-logger.js'
 
 export interface PreviewNativePort {
@@ -48,6 +49,8 @@ export class PreviewRestoreError extends Error {
 }
 
 interface ActivePreview {
+  draft: ColorProfile
+  saved: ColorProfile
   profileId: string
   kind: 'preview' | 'edit' | 'override'
   /** Currently applied settings, keyed by lowercased display ID. */
@@ -58,6 +61,10 @@ interface ActivePreview {
   validated: Map<string, Set<ColorSettingName>>
   /** Desired targets currently absent from the native display snapshot. */
   disconnected: Set<string>
+}
+
+function hasUnsavedChanges(active: ActivePreview): boolean {
+  return active.kind !== 'preview' && profilesDiffer(active.draft, active.saved)
 }
 
 interface RestoreTouchedResult {
@@ -87,6 +94,8 @@ export class PreviewSessionController {
       state: 'active',
       profileId: this.#active.profileId,
       kind: this.#active.kind,
+      draft: structuredClone(this.#active.draft),
+      unsavedChanges: hasUnsavedChanges(this.#active),
       targets: [...this.#active.applied.values()].map((target) => ({
         displayId: target.displayId,
         color: { ...target.color }
@@ -94,17 +103,46 @@ export class PreviewSessionController {
     }
   }
 
-  public async start(profile: ColorProfile, kind: 'preview' | 'edit' | 'override'): Promise<void> {
-    return this.#enqueue(() => this.#start(profile, kind))
+  /** The full unsaved draft, for main-process flows that outlive the renderer. */
+  public get unsavedDraft(): ColorProfile | null {
+    if (this.#active === null || !hasUnsavedChanges(this.#active)) return null
+    return structuredClone(this.#active.draft)
   }
 
-  async #start(profile: ColorProfile, kind: 'preview' | 'edit' | 'override'): Promise<void> {
+  /** Refresh saved content without changing the applied draft or display ownership. */
+  public async profileSaved(profile: ColorProfile): Promise<void> {
+    return this.#enqueue(async () => {
+      const active = this.#active
+      if (active === null || active.profileId.toLowerCase() !== profile.id.toLowerCase()) return
+      if (!profilesDiffer(active.draft, active.saved)) {
+        active.draft = structuredClone({ ...profile, displays: active.draft.displays })
+      }
+      active.saved = structuredClone(profile)
+      this.onStateChanged(this.state)
+    })
+  }
+
+  public async start(
+    profile: ColorProfile,
+    kind: 'preview' | 'edit' | 'override',
+    saved = profile
+  ): Promise<void> {
+    return this.#enqueue(() => this.#start(profile, kind, saved))
+  }
+
+  async #start(
+    profile: ColorProfile,
+    kind: 'preview' | 'edit' | 'override',
+    saved: ColorProfile
+  ): Promise<void> {
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
-      if (this.#active.kind === 'preview' && kind === 'edit') {
+      const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
+      this.#active.draft = structuredClone(profile)
+      if (this.#active.kind !== 'edit' && kind === 'edit') {
         this.#active.kind = 'edit'
-        this.onStateChanged(this.state)
       }
+      if (changed) this.onStateChanged(this.state)
       return
     }
     if (this.#active !== null) {
@@ -159,15 +197,31 @@ export class PreviewSessionController {
       throw error
     }
 
-    this.#active = { profileId: profile.id, kind, applied, touched, validated, disconnected }
+    this.#active = {
+      profileId: profile.id,
+      kind,
+      draft: structuredClone(profile),
+      saved: structuredClone(saved),
+      applied,
+      touched,
+      validated,
+      disconnected
+    }
     this.onStateChanged(this.state)
   }
 
-  public async update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
+  public async update(
+    profileId: string,
+    targets: DisplayColorTarget[],
+    draft?: ColorProfile
+  ): Promise<void> {
     return this.#enqueue(async () => {
       this.#requireActive(profileId)
       try {
         await this.#update(profileId, targets)
+        const active = this.#requireActive(profileId)
+        active.draft = structuredClone({ ...(draft ?? active.draft), displays: targets })
+        this.onStateChanged(this.state)
       } catch (error) {
         const rollback = await this.#teardown()
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
@@ -225,8 +279,6 @@ export class PreviewSessionController {
       }
       active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
     }
-
-    this.onStateChanged(this.state)
   }
 
   public async confirm(profileId: string): Promise<void> {
@@ -271,6 +323,10 @@ export class PreviewSessionController {
 
   public async dispose(): Promise<void> {
     await this.cancel()
+  }
+
+  public waitForIdle(): Promise<void> {
+    return this.#operationTail
   }
 
   public reapplyAfterDisplayTransition(): Promise<boolean> {
@@ -504,7 +560,7 @@ export class PreviewSessionController {
   ): boolean {
     if (this.#active === null) return false
     if (this.#active.profileId.toLowerCase() !== profileId.toLowerCase()) return false
-    if (this.#active.kind !== kind && !(this.#active.kind === 'preview' && kind === 'edit')) {
+    if (this.#active.kind !== kind && !(kind === 'edit' && this.#active.kind !== 'edit')) {
       return false
     }
     if (this.#active.applied.size !== targets.length) return false
