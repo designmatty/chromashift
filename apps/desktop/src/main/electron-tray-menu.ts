@@ -8,7 +8,7 @@ import {
 import type { TrayCommands, TrayMenuPort, TrayReadModel } from '@main/tray-controller.js'
 
 /** Longest profile-name length, in user-visible characters, shown in the native tray menu. */
-export const TRAY_MENU_NAME_MAX_LENGTH = 40
+export const TRAY_MENU_NAME_MAX_LENGTH = 30
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
