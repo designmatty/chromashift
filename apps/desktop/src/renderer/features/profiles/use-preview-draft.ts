@@ -47,6 +47,9 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const { kind, session, enabled, onError } = options
   const [draft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
   const [markedDirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
+  // Hydration can be dirty without representing a new local edit. Only user
+  // changes schedule writes; main's session broadcasts must not echo them back.
+  const [localRevision, setLocalRevision] = useState(0)
   const dirty =
     options.savedProfile === undefined
       ? markedDirty
@@ -66,20 +69,17 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   }
   const sync = syncRef.current
 
-  const draftSignature = JSON.stringify(draft)
-  const sessionKind = session.state === 'active' ? session.kind : null
-  const sessionProfileId = session.state === 'active' ? session.profileId : null
-  const sessionUnsaved = hasUnsavedSession(session)
   useEffect(() => {
+    if (localRevision === 0) return
     if (!enabled || draft === null || (kind === 'override' && draft.displays.length === 0)) return
-    if (!dirty && !sessionUnsaved) return
+    if (!dirty && !hasUnsavedSession(session)) return
     sync.schedule(draft, session)
     return () => sync.cancelScheduled()
-  }, [enabled, dirty, draftSignature, sessionKind, sessionProfileId, sessionUnsaved])
+  }, [enabled, localRevision])
 
   useLayoutEffect(() => {
     return window.chromaShift.onFlushPreviewDraft(async () => {
-      if (enabled && draft !== null && (dirty || hasUnsavedSession(session)))
+      if (localRevision !== 0 && enabled && draft !== null && (dirty || hasUnsavedSession(session)))
         await sync.flush(draft, session)
     })
   })
@@ -90,6 +90,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     updateDraft: (profile) => {
       setDraft(profile)
       setDirty(true)
+      setLocalRevision((revision) => revision + 1)
     },
     replaceDraft: (profile) => {
       setDraft(profile)
@@ -97,6 +98,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     resetTo: (source, resetOptions) => {
       setDraft(source === null ? null : structuredClone(source))
       setDirty(resetOptions?.dirty ?? false)
+      setLocalRevision(0)
     },
     invalidateSync: () => sync.invalidate(),
     settlePreview: () => sync.settle(),
