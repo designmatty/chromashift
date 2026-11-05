@@ -167,10 +167,12 @@ targets remain persisted and resume when the same physical display returns.
   Gamma always displays two decimal places. Hue displays 0–359°, calculated as
   `round(stored hue × 3.59)`; degree input rounds back to the nearest stored
   value on the 0–100 scale. Storage and native requests remain unchanged.
-- Each slider has a neutral tick. Non-neutral controls show an aligned ↺ action
-  with the tooltip and accessible name `Reset to neutral`. It changes that
+- Each slider has a neutral tick. Non-neutral controls show a ↺ action directly
+  after the control label, with the tooltip and accessible name
+  `Reset to neutral`. It changes that
   control to its neutral value, independently of the last saved profile.
-  Hue has a rainbow track; saturation has a grey-to-vivid track.
+  Hue has a rainbow track; saturation has a grey-to-vivid track that ends in the
+  theme accent (orange in light, pink in dark).
 - Unsupported controls stay disabled and explain their unavailable state, while
   a non-neutral value can still be returned to neutral while editing. Color
   temperature appears in both panels when its capability is supported. Otherwise
@@ -188,7 +190,8 @@ targets remain persisted and resume when the same physical display returns.
 - Sidebar profile names stay on one line and truncate with an ellipsis. A
   truncated name shows its full text in the shared tooltip on hover; the
   collapsed rail's row tooltip always names the profile.
-- `Copy to` sits next to the display selector and copies the selected display's
+- `Copy to` sits flush right on the adapter and connection line below the
+  display tabs and copies the selected display's
   complete vector. With two connected displays it names the destination directly,
   for example `Copy to VG278`. With three or more it opens a destination menu.
 

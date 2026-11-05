@@ -224,10 +224,14 @@ export function ColorControls({
                 <Box aria-hidden="true" color={support.available ? 'fg.muted' : 'fg/70'}>
                   {control.icon}
                 </Box>
-                <Text flex="1" whiteSpace="nowrap" color={support.available ? 'inherit' : 'fg/70'}>
+                <Text
+                  flex="none"
+                  whiteSpace="nowrap"
+                  color={support.available ? 'inherit' : 'fg/70'}
+                >
                   {control.label}
                 </Text>
-                <Box width="24px" flex="none">
+                <Box flex="1" minW="0" display="flex" alignItems="center">
                   {editable && overridden && (
                     <Tooltip content="Reset to neutral">
                       <IconButton

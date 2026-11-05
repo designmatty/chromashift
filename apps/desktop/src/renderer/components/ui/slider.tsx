@@ -84,14 +84,14 @@ export function Slider(props: SliderProps): React.JSX.Element {
                 props.track === 'hue'
                   ? 'linear-gradient(to right, {colors.control.red}, {colors.control.yellow}, {colors.control.green}, {colors.control.cyan}, {colors.control.blue}, {colors.control.magenta}, {colors.control.red})'
                   : props.track === 'saturation'
-                    ? 'linear-gradient(to right, {colors.fg.muted}, {colors.control.magenta})'
+                    ? 'linear-gradient(to right, {colors.fg.muted}, {colors.control.saturation})'
                     : undefined
               }
             >
               <ChakraSlider.Range
                 bg={
                   props.track === undefined
-                    ? { base: 'bg.inverted', _dark: 'colorPalette.solid' }
+                    ? { base: 'bg.inverted', _dark: 'colorPalette.600' }
                     : 'transparent'
                 }
               />

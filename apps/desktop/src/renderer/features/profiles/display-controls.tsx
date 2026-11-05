@@ -87,15 +87,6 @@ export function DisplayControls({
           ))}
           <Tabs.Indicator border={'1px solid {color.red.500}'} />
         </Tabs.List>
-        {editing && (
-          <CopyToMenu
-            profile={profile}
-            sourceDisplayId={selected.displayId}
-            color={selected.target?.color ?? createNeutralColorSettings()}
-            rows={rows}
-            onChange={onChange}
-          />
-        )}
       </Flex>
       {rows.map((row) => {
         const color = row.target?.color ?? createNeutralColorSettings()
@@ -107,7 +98,7 @@ export function DisplayControls({
             data-part="display-control"
             data-display-id={row.displayId}
           >
-            <Flex align="start" gap="3" mb="4">
+            <Flex align="center" gap="3" mb="4" minH="6">
               <Box minW="0" flex="1">
                 <Text
                   overflow="hidden"
@@ -120,6 +111,15 @@ export function DisplayControls({
                   {`${row.display.adapter.name} • ${row.display.connection}`}
                 </Text>
               </Box>
+              {editing && (
+                <CopyToMenu
+                  profile={profile}
+                  sourceDisplayId={row.displayId}
+                  color={color}
+                  rows={rows}
+                  onChange={onChange}
+                />
+              )}
             </Flex>
             <ColorControls
               displayId={row.displayId}
