@@ -3941,6 +3941,13 @@ async function runSmoke() {
     throw new Error('Could not prepare the Default profile mini-panel round-trip check.')
   }
   await waitForText(debuggerClient, 'Default profile')
+  // getState can see the first override before its broadcast reaches React.
+  // The mini-panel power color changes to amber only when that state renders.
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `window.__smokeDefaultControlColor = getComputedStyle(
+      document.querySelector('[data-part="chromashift-control"]')
+    ).color`
+  })
   await debuggerClient.send('Runtime.evaluate', {
     expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
   })
@@ -3963,12 +3970,20 @@ async function runSmoke() {
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.kind === 'override' &&
         result.value.preview.targets[0]?.color.brightness === 51 &&
+        getComputedStyle(document.querySelector('[data-part="chromashift-control"]')).color !== window.__smokeDefaultControlColor &&
+        document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-valuenow') === '51' &&
         document.querySelector('[aria-label="Reset brightness to neutral"]') !== null
     })()`,
     'Changing Default brightness did not start the mini-panel override.'
   )
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
+    expression: `(async () => {
+      // Let effects from the matching product render hydrate the draft first.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      delete window.__smokeDefaultControlColor
+      document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()
+    })()`,
+    awaitPromise: true
   })
   try {
     await waitForExpression(
