@@ -185,10 +185,11 @@ with no native write. Main retains the complete draft, including metadata, and
 reports whether it differs from the saved profile. The app opens that override in
 the normal editable profile view and unsaved action bar, even if Settings was the
 last remembered view. Dirtiness compares the draft with saved content, so reverting
-an edit clears it. On the live profile, `Update profile` commits while preserving mode and `Discard
-changes` rolls back. On another profile, both stay on it: Update saves while its
+an edit clears it. On the live profile, `Update profile` commits while preserving
+mode and `Discard changes` rolls back. On another profile, both stay on it: Update saves while its
 session keeps previewing the saved values, and Discard reverts the session to them
-in place, restoring Original settings for targets the saved profile lacks. Renderer dialogs guard navigation and activation changes
+in place, restoring Original settings for targets the saved profile lacks.
+Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, and close return to
 the live profile. Minimize ends only a clean preview; unsaved edits and overrides
 stay applied with their draft intact. While unsaved changes hold automatic writes,

@@ -83,8 +83,10 @@ targets remain persisted and resume when the same physical display returns.
 - Every selected tab shows its color values without a display-level override
   checkbox. A connected display without saved settings starts from the neutral
   values, and the first change creates its complete display target.
-- Opening the app selects the Intended target's profile, or Default, and scrolls
-  it into view. Non-profile views remain remembered; profile requests from main win.
+- Without an unsaved session, opening the app selects the Intended target's
+  profile, or Default, and scrolls it into view. Non-profile views remain remembered;
+  profile requests from main win. An unsaved session opens directly in Profiles
+  with its draft selected, including when Settings was the last view.
 - Clicking a profile previews its saved values unless it is already live, so a
   new profile opens as a native Preview at neutral values. Connected displays
   without a target are held at Original settings, including profiles with no
