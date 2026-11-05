@@ -1,4 +1,4 @@
-import { Box, Button, Input } from '@chakra-ui/react'
+import { Box, Button, Input, Text } from '@chakra-ui/react'
 import { useRef, useState } from 'react'
 import { useWheelAdjustment } from '@/hooks/use-wheel-adjustment'
 import {
@@ -17,6 +17,7 @@ export function ControlValue({
   step,
   label,
   disabled,
+  pointerOnly = false,
   onChange
 }: {
   control: ColorControlKey
@@ -26,6 +27,7 @@ export function ControlValue({
   step: number
   label: string
   disabled: boolean
+  pointerOnly?: boolean
   onChange(value: number): void
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
@@ -56,7 +58,17 @@ export function ControlValue({
       fontFamily="mono"
       fontVariantNumeric="tabular-nums"
     >
-      {editing && !disabled ? (
+      {pointerOnly ? (
+        <Text
+          data-part="color-value"
+          aria-label={label}
+          textAlign="right"
+          fontSize="xs"
+          color={disabled ? 'fg.muted' : undefined}
+        >
+          {formatValue(control, value)}
+        </Text>
+      ) : editing && !disabled ? (
         <Input
           autoFocus
           size="xs"

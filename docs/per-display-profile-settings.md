@@ -154,11 +154,15 @@ targets remain persisted and resume when the same physical display returns.
   preview keeps the strip mounted and names the destination. It hides only when
   the destination is the live profile or the switch fails.
 - Color controls keep the app's label/value/slider row and the mini panel's
-  label/value above the slider. Values appear as plain text. Click a value to
-  edit it inline; Enter or blur saves and Escape cancels. There are no stepper
-  arrows. Arrow keys and the mouse wheel adjust values and sliders, within the
-  current bounds. The mini panel retains its pointer-oriented, non-activating
-  native window contract.
+  label/value above the slider. Values appear as plain text. In the app panel,
+  click a value to edit it inline; Enter or blur saves and Escape cancels.
+  Opening and closing an unchanged editor preserves the exact stored value,
+  including fractional hue and gamma. Gamma keeps full precision while editing.
+  There are no stepper arrows. Arrow keys and the mouse wheel adjust app-panel
+  values and sliders within the current bounds. Mini-panel values remain plain
+  text without an editor; use the slider or scroll over a value or slider to
+  adjust. Exact text entry is in the app panel. The mini panel retains its
+  pointer-oriented, non-activating native window contract.
 - Brightness, contrast, saturation, and color temperature display percentages.
   Gamma always displays two decimal places. Hue displays 0–359°, calculated as
   `round(stored hue × 3.59)`; degree input rounds back to the nearest stored

@@ -4119,6 +4119,15 @@ async function runSmoke() {
     throw new Error('Could not prepare the Default profile mini-panel round-trip check.')
   }
   await waitForText(debuggerClient, 'Default profile')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-control="brightness"] [data-part="color-value"]')?.click()`
+  })
+  await waitForExpression(debuggerClient, `(() => {
+    const row = document.querySelector('[data-control="brightness"]')
+    const value = row?.querySelector('[data-part="color-value"]')
+    return value?.tagName === 'P' && value.textContent.trim() === '50%' &&
+      row.querySelector('input:not([type="hidden"])') === null
+  })()`, 'Mini-panel values did not remain plain text after a click.')
   // getState can see the first override before its broadcast reaches React.
   // The mini-panel power color changes to amber only when that state renders.
   await debuggerClient.send('Runtime.evaluate', {
@@ -4127,19 +4136,7 @@ async function runSmoke() {
     ).color`
   })
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
-  })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39
-  })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39
+    expression: `document.querySelector('[data-control="brightness"] [data-part="color-value"]')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
   })
   await waitForExpression(
     debuggerClient,

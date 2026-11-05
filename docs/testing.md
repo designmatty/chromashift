@@ -69,7 +69,10 @@ underlying provider error. A TypeScript preview regression checks full-vector
 restoration, the Electron user-facing message, and forwarding that structured
 diagnostic to the existing logger. No protocol version or error-envelope change
 is needed. Hue conversion tests round-trip every integer stored value; renderer
-tests cover temperature visibility and disabled non-neutral values in both panels.
+tests cover temperature visibility and disabled non-neutral values in both panels,
+plus plain mini-panel values and app-panel edit buttons. Fractional hue, gamma,
+and brightness edit regressions cover unchanged Enter/blur, Escape cancellation,
+and actual changes without silently rounding stored values.
 
 Repository tests also enforce the public-source policy files, verify local
 Markdown links, and scan reachable Git history for credential-bearing filenames,
@@ -164,8 +167,9 @@ Phase-4 desktop smoke changes:
 - Check percentage, hue-degree, and two-decimal gamma labels, neutral ticks, and
   the absence of numeric stepper controls. Check computed hue and saturation
   gradients so theme backgrounds cannot silently clear them.
-- Exercise inline value Enter, blur, and Escape, value arrow keys, and wheel
-  adjustment on both the value and slider using mild brightness changes.
+- Exercise app-panel inline value Enter, blur, and Escape, value arrow keys, and
+  wheel adjustment on both the value and slider using mild brightness changes.
+  Mini-panel values stay plain text after a click and adjust with the wheel.
 - Capture both themes with hatched gamma limits and the sixth temperature row
   while Paused. Restore the saved fixture before Resume and verify unchanged
   native display state. These presentation values are never applied to hardware.

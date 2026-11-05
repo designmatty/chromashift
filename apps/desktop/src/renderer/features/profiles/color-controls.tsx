@@ -244,6 +244,7 @@ export function ColorControls({
                   )}
                 </Box>
                 <ControlValue
+                  pointerOnly={compact}
                   control={control.key}
                   value={value}
                   min={allowedMin}

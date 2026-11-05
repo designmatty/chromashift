@@ -38,6 +38,9 @@ describe('color controls in both panels', () => {
       expect(temperature).toContain('Reset to neutral')
       expect(temperature).toContain('63%')
       expect(temperature).toContain('disabled=""')
+      const values = [...html.matchAll(/<([a-z]+)\b[^>]*data-part="color-value"[^>]*>/g)]
+      expect(values).toHaveLength(6)
+      expect(values.every((match) => match[1] === (compact ? 'p' : 'button'))).toBe(true)
       expect(html.match(/data-part="slider-neutral"/g)).toHaveLength(6)
       report.capabilities.colorTemperature = { supported: true, provider: 'amd' }
       expect(render(50)).toContain('data-control="colorTemperature"')
