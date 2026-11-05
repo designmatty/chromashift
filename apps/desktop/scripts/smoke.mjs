@@ -4126,7 +4126,7 @@ async function runSmoke() {
     const row = document.querySelector('[data-control="brightness"]')
     const value = row?.querySelector('[data-part="color-value"]')
     return value?.tagName === 'P' && value.textContent.trim() === '50%' &&
-      row.querySelector('input:not([type="hidden"])') === null
+      value.parentElement.querySelector('input') === null
   })()`, 'Mini-panel values did not remain plain text after a click.')
   // getState can see the first override before its broadcast reaches React.
   // The mini-panel power color changes to amber only when that state renders.
