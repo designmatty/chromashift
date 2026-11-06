@@ -164,7 +164,7 @@ rejected states, plus light-theme captures, are written under
 Phase-4 desktop smoke changes:
 
 - Scope neutral-action selectors to their control and use `Reset to neutral`.
-- Check percentage, hue-degree, and two-decimal gamma labels, neutral ticks, and
+- Check percentage, hue-degree, and two-decimal gamma labels, neutral markers, and
   the absence of numeric stepper controls. Check computed hue and saturation
   gradients so theme backgrounds cannot silently clear them.
 - Exercise app-panel inline value Enter, blur, and Escape, value arrow keys, and

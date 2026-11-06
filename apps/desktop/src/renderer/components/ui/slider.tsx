@@ -119,21 +119,24 @@ export function Slider(props: SliderProps): React.JSX.Element {
                   pointerEvents="none"
                 />
               )}
-              {props.neutral !== undefined && (
-                <Box
-                  data-part="slider-neutral"
-                  aria-hidden="true"
-                  position="absolute"
-                  top="0"
-                  bottom="0"
-                  left={`clamp(0px, ${((props.neutral - props.min) / span) * 100}%, calc(100% - 2px))`}
-                  width="2px"
-                  bg="fg"
-                  opacity={0.7}
-                  pointerEvents="none"
-                />
-              )}
             </ChakraSlider.Track>
+            {props.neutral !== undefined && (
+              // A downward triangle just above the track, centered where the
+              // thumb sits at the neutral value (the 16px thumb is contained).
+              <Box
+                data-part="slider-neutral"
+                aria-hidden="true"
+                position="absolute"
+                top="calc(50% - 16px)"
+                left={`calc(8px + (100% - 16px) * ${span === 0 ? 0 : (props.neutral - props.min) / span})`}
+                transform="translateX(-50%)"
+                width="8px"
+                height="5px"
+                bg="fg.muted"
+                clipPath="polygon(0 0, 100% 0, 50% 100%)"
+                pointerEvents="none"
+              />
+            )}
             <ChakraSlider.Thumb
               index={0}
               aria-valuetext={props['aria-valuetext']}

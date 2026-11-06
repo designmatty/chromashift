@@ -82,7 +82,16 @@ export function DisplayControls({
               <Text maxW="190px" truncate as="span" color={'inherit'}>
                 {row.display.name}
               </Text>
-              {row.display.primary && <Badge colorPalette="gray">Primary</Badge>}
+              {row.display.primary && (
+                // Light theme: the inactive tab list is bg.muted, the same as
+                // the subtle gray badge, so lift the badge to bg.emphasized.
+                <Badge
+                  colorPalette="gray"
+                  bg={{ base: 'bg.emphasized', _dark: 'colorPalette.subtle' }}
+                >
+                  Primary
+                </Badge>
+              )}
             </Tabs.Trigger>
           ))}
           <Tabs.Indicator border={'1px solid {color.red.500}'} />
