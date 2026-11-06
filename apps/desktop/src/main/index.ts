@@ -13,7 +13,6 @@ import {
   shell,
   type IpcMainInvokeEvent,
   type IpcMainEvent,
-  type MessageBoxOptions,
   type NativeImage,
   type OpenDialogOptions
 } from 'electron'
@@ -24,6 +23,7 @@ import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, resolveWindowBounds } from '@share
 import { productIpcChannels, type AppPanelView } from '@shared/product-api.js'
 import { AppWindowStateController } from '@main/app-window-state-controller.js'
 import { AppPanelCloseController } from '@main/app-panel-close-controller.js'
+import { confirmRestoreRetry } from '@main/restore-retry-dialog.js'
 import { createSettingsStores } from '@main/app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
 import { ElectronNotificationPort } from '@main/electron-notification.js'
@@ -195,7 +195,7 @@ const runtime = createProductRuntime({
       })
       return result.response === 0 ? 'update' : result.response === 1 ? 'discard' : 'cancel'
     },
-    confirmShutdownRetry: confirmRestoreRetry,
+    confirmShutdownRetry: (title, message) => confirmRestoreRetry(dialog, title, message),
     warnShortcutsUnavailable: (message) => {
       void dialog.showMessageBox({
         type: 'warning',
@@ -260,27 +260,6 @@ function saveMiniPanelPosition(position: { x: number; y: number }): void {
         ...describeError(error)
       })
     })
-}
-
-async function confirmRestoreRetry(
-  title: string,
-  message: string,
-  window?: BrowserWindow
-): Promise<'retry' | 'cancel'> {
-  const options: MessageBoxOptions = {
-    type: 'warning',
-    title,
-    message,
-    buttons: ['Try again', window === undefined ? 'Keep ChromaShift running' : 'Keep the window open'],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true
-  }
-  const result =
-    window === undefined
-      ? await dialog.showMessageBox(options)
-      : await dialog.showMessageBox(window, options)
-  return result.response === 0 ? 'retry' : 'cancel'
 }
 
 /** The theme preference resolved against Windows, shared with renderer loading screens. */
@@ -413,7 +392,7 @@ function createWindow(): BrowserWindow {
     releaseToTray: (event) => windowController.handleClose(event, window),
     errors: {
       show: () => panelController.openAppPanel(),
-      showError: (title, message) => confirmRestoreRetry(title, message, window)
+      showError: (title, message) => confirmRestoreRetry(dialog, title, message, window)
     },
     logger
   })
