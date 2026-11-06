@@ -39,7 +39,8 @@ The TypeScript and native test suites cover these contracts:
 - Preview start, update, promotion, save, rollback after pending writes, dirty
   navigation, mini-panel overrides, per-control neutral reset, target removal,
   close-time restoration before renderer release, visible failure guidance and
-  retries, and disconnected/HDR baseline retention without a restore failure
+  retries, disconnected/HDR baseline retention without a restore failure, and
+  overlapping close controllers after renderer recovery
 - Physical-display grouping, safe capability intersection, endpoint fanout,
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
@@ -103,6 +104,14 @@ starts a fresh helper and compares the restored gamma-ramp hash.
 `npm run smoke:desktop` builds and launches the actual Electron application. It
 checks the sandboxed preload bridge and drives the visible app and mini panel
 through Chromium debugging plus Windows interaction.
+
+The close-retry presentation fixture uses the production close controller and
+native dialog adapter with a fake restore error. It starts no DisplayService and
+writes no displays. It checks the window-modal prompt, both button labels, the
+native capture at `close-retry-guidance-native.png`, Keep open through native
+Cancel, and a later successful close. Actual hardware restore failures remain
+distinct from this presentation evidence. A deterministic two-window regression
+covers renderer recovery during a pending close without starving either drain.
 
 The flow covers independent profile navigation, the Automatic | Manual toggle
 in expanded and collapsed A | M forms, keeping the live profile when entering

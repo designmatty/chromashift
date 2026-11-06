@@ -272,6 +272,12 @@ according to settings. `app-panel-close-controller.ts` waits for pending non-ove
 preview/edit teardown before notifying the renderer or releasing it through the
 window controller. A genuine restore failure keeps the app panel open and visible
 and uses the same retry/cancel guidance as shutdown; a later close retries restoration.
+The close dialog is modal to its app window and offers `Try again` or
+`Keep the window open`; shutdown keeps its existing `Keep ChromaShift running`
+wording. The shared shell adapter is `restore-retry-dialog.ts`. Concurrent close
+drains, including an old and recovered renderer's windows, share the preview queue
+without invalidating one another's checkpoint. New session commands still force
+another drain before renderer release.
 Override sessions stay active when the app panel closes. This does not change
 Safety blocked semantics. Opening the app recreates the renderer from main-owned
 product state. ChromaShift holds a single-instance lock, so launching it again
