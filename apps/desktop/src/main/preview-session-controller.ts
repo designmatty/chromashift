@@ -317,7 +317,7 @@ export class PreviewSessionController {
   public async cancelNonOverride(onCancelled?: () => void): Promise<void> {
     let ready = false
     while (!ready) {
-      const version = this.#operationVersion + 1
+      const version = this.#operationVersion
       ready = await this.#enqueue(async () => {
         if (this.#active !== null && this.#active.kind !== 'override') {
           const rollback = await this.#restoreTouched()
@@ -340,7 +340,7 @@ export class PreviewSessionController {
         if (onCancelled !== undefined && version !== this.#operationVersion) return false
         onCancelled?.()
         return true
-      })
+      }, false)
     }
   }
 
@@ -491,8 +491,10 @@ export class PreviewSessionController {
     return { failures, retainedDisplayIds }
   }
 
-  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    this.#operationVersion += 1
+  #enqueue<T>(operation: () => Promise<T>, changesSession = true): Promise<T> {
+    // Concurrent close drains must not invalidate one another's queue checkpoint.
+    // Starts, edits, and other session commands still force another drain pass.
+    if (changesSession) this.#operationVersion += 1
     const result = this.#operationTail.then(operation)
     this.#operationTail = result.then(
       () => undefined,

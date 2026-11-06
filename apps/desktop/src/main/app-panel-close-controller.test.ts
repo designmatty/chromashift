@@ -49,7 +49,7 @@ function setup() {
   let behavior: 'tray' | 'shutdown' = 'tray'
   const native = new FakeNativeDisplayPort()
   const activation = {
-    beginPreview: vi.fn(async () => undefined),
+    beginPreview: vi.fn(async () => []),
     cancelPreview: vi.fn(async () => undefined),
     confirmPreview: vi.fn(async () => undefined)
   }
@@ -140,9 +140,13 @@ describe('AppPanelCloseController', () => {
     const { controller, ports, native, event, start, preview, window } = setup()
     await start()
     let releaseRestore!: () => void
-    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    const restoreGate = new Promise<void>((resolve) => {
+      releaseRestore = resolve
+    })
     let restoreStarted!: () => void
-    const restoring = new Promise<void>((resolve) => { restoreStarted = resolve })
+    const restoring = new Promise<void>((resolve) => {
+      restoreStarted = resolve
+    })
     const restore = native.restoreDisplay.bind(native)
     vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
       restoreStarted()
@@ -150,9 +154,13 @@ describe('AppPanelCloseController', () => {
       return restore(displayId)
     })
     let releaseApply!: () => void
-    const applyGate = new Promise<void>((resolve) => { releaseApply = resolve })
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve
+    })
     let applyStarted!: () => void
-    const applying = new Promise<void>((resolve) => { applyStarted = resolve })
+    const applying = new Promise<void>((resolve) => {
+      applyStarted = resolve
+    })
     const apply = native.applyDisplaySettings.bind(native)
     vi.spyOn(native, 'applyDisplaySettings').mockImplementationOnce(async (displayId, color) => {
       applyStarted()
@@ -174,6 +182,43 @@ describe('AppPanelCloseController', () => {
     expect(native.restored).toEqual(['display:one', 'display:one'])
     expect(preview.state).toEqual({ state: 'inactive' })
     expect(window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('settles overlapping close controllers after renderer recovery during restoration', async () => {
+    const { controller, ports, window, event, native, start, preview } = setup()
+    await start()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered!: () => void
+    const restoring = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const restore = native.restoreDisplay.bind(native)
+    vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
+      entered()
+      await waiting
+      return restore(displayId)
+    })
+    const first = controller.handleClose(event)
+    await restoring
+    window.destroy()
+    const releaseReplacement = vi.fn()
+    const recovered = new AppPanelCloseController({
+      ...ports,
+      isDestroyed: () => false,
+      isVisible: () => true,
+      releaseToTray: releaseReplacement
+    })
+    const second = recovered.handleClose({ preventDefault: vi.fn() })
+    release()
+    await Promise.all([first, second])
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(native.restored).toEqual(['display:one'])
+    expect(ports.releaseToTray).not.toHaveBeenCalled()
+    expect(releaseReplacement).toHaveBeenCalledOnce()
+    expect(ports.notifyClosed).toHaveBeenCalledOnce()
   })
 
   it('drains a start queued immediately after close with no active session', async () => {
@@ -250,12 +295,14 @@ describe('AppPanelCloseController', () => {
     expect(preview.state).toEqual({ state: 'inactive' })
     expect(ports.errors.show).not.toHaveBeenCalled()
     expect(ports.errors.showError).not.toHaveBeenCalled()
-    expect(ports.logger.write).toHaveBeenCalledWith(expect.objectContaining({
-      level: 'error',
-      eventName: 'PreviewCancelOnCloseFailed',
-      reason: 'previewCancelFailed',
-      message: error.message
-    }))
+    expect(ports.logger.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'error',
+        eventName: 'PreviewCancelOnCloseFailed',
+        reason: 'previewCancelFailed',
+        message: error.message
+      })
+    )
     expect(window.destroy).not.toHaveBeenCalled()
 
     await controller.handleClose(event)
@@ -311,15 +358,20 @@ describe('AppPanelCloseController', () => {
   )
 
   it('keeps a reopened app window after restoration during a mini-panel handoff', async () => {
-    const { controller, ports, event, window, start, native, preview, panels, isMiniVisible } = setup()
+    const { controller, ports, event, window, start, native, preview, panels, isMiniVisible } =
+      setup()
     await start()
     panels.openMiniPanel()
     expect(window.isVisible()).toBe(false)
     expect(isMiniVisible()).toBe(true)
     let releaseRestore!: () => void
-    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    const restoreGate = new Promise<void>((resolve) => {
+      releaseRestore = resolve
+    })
     let restoreStarted!: () => void
-    const restoring = new Promise<void>((resolve) => { restoreStarted = resolve })
+    const restoring = new Promise<void>((resolve) => {
+      restoreStarted = resolve
+    })
     const restore = native.restoreDisplay.bind(native)
     vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
       restoreStarted()
