@@ -269,7 +269,16 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             {error.message}
           </Box>
         )}
-        <MiniPanelContent>
+        <MiniPanelContent
+          overlay={
+            product.chromaShift.status === 'paused' && (
+              <MiniPausedOverlay
+                disabled={product.chromaShift.transitionInProgress}
+                onResume={() => void run(window.chromaShift.controlChromaShift('resume'), setError)}
+              />
+            )
+          }
+        >
           {product.displays.length > 1 && selectedDisplay !== undefined && (
             <MiniDisplaySelect
               displays={product.displays}
@@ -379,21 +388,79 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   )
 }
 
-function MiniPanelContent({ children }: { children: React.ReactNode }): React.JSX.Element {
+function MiniPanelContent({
+  children,
+  overlay
+}: {
+  children: React.ReactNode
+  overlay?: React.ReactNode
+}): React.JSX.Element {
+  const covered = overlay !== undefined && overlay !== null && overlay !== false
   return (
-    <Box
-      flex="1"
-      mx="3"
-      px={2.5}
-      py={4}
-      borderWidth="1px"
-      borderColor="border"
+    <Flex position="relative" flex="1" minH="0" mx="3" direction="column">
+      <Box
+        flex="1"
+        minH="0"
+        px={2.5}
+        py={4}
+        borderWidth="1px"
+        borderColor="border"
+        rounded="2xl"
+        bg={{ base: 'bg.panel', _dark: 'bg.muted' }}
+        overflow={covered ? 'hidden' : 'auto'}
+        inert={covered}
+        aria-hidden={covered || undefined}
+      >
+        {children}
+      </Box>
+      {overlay}
+    </Flex>
+  )
+}
+
+function MiniPausedOverlay({
+  disabled,
+  onResume
+}: {
+  disabled: boolean
+  onResume(): void
+}): React.JSX.Element {
+  return (
+    // Inputs are already disabled while Paused; the overlay makes the state
+    // obvious over the controls pane and keeps Resume in reach.
+    <Flex
+      data-part="paused-overlay"
+      position="absolute"
+      inset="0"
+      zIndex="1"
+      justify="center"
+      align="center"
+      p="4"
+      bg="bg/70"
+      backdropFilter="blur(2px)"
       rounded="2xl"
-      bg={{ base: 'bg.panel', _dark: 'bg.muted' }}
-      overflow={'auto'}
     >
-      {children}
-    </Box>
+      <Flex
+        role="status"
+        direction="column"
+        align="center"
+        gap="2"
+        px="5"
+        py="4"
+        bg="bg.panel"
+        borderWidth="1px"
+        rounded="lg"
+        shadow="md"
+      >
+        <Text fontWeight="medium">ChromaShift is paused</Text>
+        <Text fontSize="sm" color="fg.muted" textAlign="center">
+          Displays stay at their original settings until you resume.
+        </Text>
+        <Button size="xs" variant="outline" disabled={disabled} onClick={onResume}>
+          Resume
+        </Button>
+      </Flex>
+    </Flex>
   )
 }
 

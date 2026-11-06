@@ -47,9 +47,9 @@ export function Slider(props: SliderProps): React.JSX.Element {
     change(props.value.map((value) => value + direction * props.step))
   )
   const disabledStyle = {
-    bgColor: 'bg.emphasized',
+    bgColor: 'bg.muted',
     backgroundImage:
-      'repeating-linear-gradient(135deg, transparent 0px, transparent 3px, {colors.fg.muted} 3px, {colors.fg.muted} 4px)'
+      'repeating-linear-gradient(135deg, transparent 0px, transparent 5px, {colors.border.emphasized} 5px, {colors.border.emphasized} 6px)'
   }
   return (
     <Tooltip
@@ -69,7 +69,9 @@ export function Slider(props: SliderProps): React.JSX.Element {
           value={props.value}
           w="full"
           _disabled={{
-            opacity: 0.7
+            opacity: 0.7,
+            // Drop the hue and saturation track colors; neutral tracks are unaffected.
+            filter: 'grayscale(1)'
           }}
           aria-label={props['aria-label'] === undefined ? undefined : [props['aria-label']]}
           onValueChange={(details) => change(details.value)}
@@ -119,24 +121,25 @@ export function Slider(props: SliderProps): React.JSX.Element {
                   pointerEvents="none"
                 />
               )}
+              {props.neutral !== undefined && (
+                // A two-tone line centered where the contained 16px thumb sits at
+                // the neutral value. The fg core with a bg halo keeps contrast on
+                // the fill, the empty track, hatching, and the hue gradient.
+                <Box
+                  data-part="slider-neutral"
+                  aria-hidden="true"
+                  position="absolute"
+                  top="0"
+                  bottom="0"
+                  left={`calc(8px + (100% - 16px) * ${span === 0 ? 0 : (props.neutral - props.min) / span})`}
+                  transform="translateX(-50%)"
+                  width="2px"
+                  bg="fg"
+                  boxShadow="0 0 0 1px {colors.bg}"
+                  pointerEvents="none"
+                />
+              )}
             </ChakraSlider.Track>
-            {props.neutral !== undefined && (
-              // A downward triangle just above the track, centered where the
-              // thumb sits at the neutral value (the 16px thumb is contained).
-              <Box
-                data-part="slider-neutral"
-                aria-hidden="true"
-                position="absolute"
-                top="calc(50% - 16px)"
-                left={`calc(8px + (100% - 16px) * ${span === 0 ? 0 : (props.neutral - props.min) / span})`}
-                transform="translateX(-50%)"
-                width="8px"
-                height="5px"
-                bg="fg.muted"
-                clipPath="polygon(0 0, 100% 0, 50% 100%)"
-                pointerEvents="none"
-              />
-            )}
             <ChakraSlider.Thumb
               index={0}
               aria-valuetext={props['aria-valuetext']}

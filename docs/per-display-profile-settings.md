@@ -117,7 +117,12 @@ targets remain persisted and resume when the same physical display returns.
   profile the Profiles view already shows does nothing, whether it is live or
   previewed.
 - While Paused or Safety blocked, profile clicks show values without applying
-  them. Inputs are disabled and a Resume action remains available.
+  them. Inputs are disabled and a Resume action remains available. While
+  Paused, a translucent overlay covers the whole Profiles pane, including the
+  header, with a centered `ChromaShift is paused` card and Resume. The mini
+  panel shows the same card over its controls pane; its title bar, profile
+  picker, and footer stay usable. Both overlays blur the content beneath by 2px
+  and stop it scrolling. Safety blocked keeps its inline status row.
 - The first change promotes Preview to Edit in place before applying the draft.
   Only sidebar rows, including the collapsed rail, mark unsaved changes with a bullet.
   When dirty, the header shows `Discard changes` then primary `Update profile`
@@ -167,13 +172,14 @@ targets remain persisted and resume when the same physical display returns.
   Gamma always displays two decimal places. Hue displays 0–359°, calculated as
   `round(stored hue × 3.59)`; degree input rounds back to the nearest stored
   value on the 0–100 scale. Storage and native requests remain unchanged.
-- Each slider marks its neutral value with a small downward triangle just above
-  the track, centered where the thumb sits at neutral. Non-neutral controls show
+- Each slider marks its neutral value with a two-tone line in the track, centered
+  where the thumb sits at neutral. Non-neutral controls show
   a ↺ action directly after the control label, with the tooltip and accessible
   name `Reset to neutral`. It changes that control to its neutral value,
   independently of the last saved profile.
   Hue has a rainbow track; saturation has a grey-to-vivid track that ends in the
-  theme accent (orange in light, pink in dark).
+  theme accent (orange in light, pink in dark). Disabled sliders render in
+  grayscale, so neither colored track suggests it can be adjusted.
 - Unsupported controls stay disabled and explain their unavailable state, while
   a non-neutral value can still be returned to neutral while editing. Color
   temperature appears in both panels when its capability is supported. Otherwise

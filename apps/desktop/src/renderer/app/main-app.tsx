@@ -421,6 +421,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     view === 'profiles' && previewBannerVisible(product, shownProfile, pendingPreviewId)
   const onHold = autoSwitchingOnHold(product) || (dirty && product.chromaShift.status === 'active')
   const pill = controlPill(product, dirty)
+  const pausedOverlay =
+    view === 'profiles' && shownProfile !== null && product.chromaShift.status === 'paused'
   const queued = product.activation.queuedTarget
   const queuedName =
     queued?.kind === 'profile'
@@ -584,47 +586,98 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           />
         )}
         <Flex flex={1} minW={0} minH={0} flexDir="column" gap={3}>
-          <Flex
-            as="main"
-            data-part="main-panel"
-            flex={1}
-            gap={2}
-            flexDir={'column'}
-            minH={0}
-            p="20px"
-            overflow="auto"
-            rounded="xl"
-            bg={{ base: 'bg', _dark: 'bg.muted' }}
-          >
-            {view === 'profiles' && (
-              <>
-                {shownProfile === null ? (
-                  <Empty title="No profile selected" />
-                ) : (
-                  <ProfileDetail
-                    key={shownProfile.id}
-                    startNaming={namingProfileId === shownProfile.id}
-                    onNamingEnded={() => setNamingProfileId(null)}
-                    profile={shownProfile}
-                    product={product}
-                    busy={busy}
-                    dirty={dirty}
-                    onChange={updateDraft}
-                    onCancel={() => perform(discardShownChanges)}
-                    onSave={() => perform(updateShownProfile)}
-                    onCopy={() => createProfile(shownProfile)}
-                    onDelete={() => requestProfileDeletion(shownProfile)}
-                    onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
-                    onError={setError}
-                  />
-                )}
-              </>
+          <Flex position="relative" flex={1} minH={0} flexDir="column">
+            {pausedOverlay && (
+              // Inputs are already disabled while Paused; the overlay makes the state
+              // obvious over the whole pane and keeps Resume in reach.
+              <Flex
+                data-part="paused-overlay"
+                position="absolute"
+                inset="0"
+                zIndex="1"
+                justify="center"
+                align="center"
+                p="6"
+                bg="bg/70"
+                backdropFilter="blur(2px)"
+                rounded="xl"
+              >
+                <Flex
+                  role="status"
+                  direction="column"
+                  align="center"
+                  gap="3"
+                  px="6"
+                  py="4"
+                  bg="bg.panel"
+                  borderWidth="1px"
+                  rounded="lg"
+                  shadow="md"
+                >
+                  <Text fontWeight="medium">ChromaShift is paused</Text>
+                  <Text fontSize="sm" color="fg.muted" textAlign="center">
+                    Displays stay at their original settings until you resume.
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={busy || product.chromaShift.transitionInProgress}
+                    onClick={() =>
+                      perform(async () => {
+                        await value(window.chromaShift.controlChromaShift('resume'))
+                        if (!dirty) await returnToLive()
+                      })
+                    }
+                  >
+                    Resume
+                  </Button>
+                </Flex>
+              </Flex>
             )}
-            {view === 'displays' && <DisplaysView product={product} onError={setError} />}
-            {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
-            {view === 'shortcuts' && <ShortcutsPanel product={product} onError={setError} />}
-            {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
-            {view === 'about' && <AboutPanel version={product.version} />}
+            <Flex
+              as="main"
+              data-part="main-panel"
+              flex={1}
+              gap={2}
+              flexDir={'column'}
+              minH={0}
+              p="20px"
+              overflow={pausedOverlay ? 'hidden' : 'auto'}
+              rounded="xl"
+              bg={{ base: 'bg', _dark: 'bg.muted' }}
+              inert={pausedOverlay}
+              aria-hidden={pausedOverlay || undefined}
+            >
+              {view === 'profiles' && (
+                <>
+                  {shownProfile === null ? (
+                    <Empty title="No profile selected" />
+                  ) : (
+                    <ProfileDetail
+                      key={shownProfile.id}
+                      startNaming={namingProfileId === shownProfile.id}
+                      onNamingEnded={() => setNamingProfileId(null)}
+                      profile={shownProfile}
+                      product={product}
+                      busy={busy}
+                      dirty={dirty}
+                      onChange={updateDraft}
+                      onCancel={() => perform(discardShownChanges)}
+                      onSave={() => perform(updateShownProfile)}
+                      onCopy={() => createProfile(shownProfile)}
+                      onDelete={() => requestProfileDeletion(shownProfile)}
+                      onToggleEnabled={() => toggleProfileEnabled(shownProfile)}
+                      onError={setError}
+                    />
+                  )}
+                </>
+              )}
+              {view === 'displays' && <DisplaysView product={product} onError={setError} />}
+              {view === 'settings' && <SettingsPanel product={product} onError={setError} />}
+              {view === 'shortcuts' && <ShortcutsPanel product={product} onError={setError} />}
+              {view === 'diagnostics' && <DiagnosticsPanel onError={setError} />}
+              {view === 'about' && <AboutPanel version={product.version} />}
+            </Flex>
           </Flex>
           {showPreviewBanner && shownProfile !== null && (
             <Flex
