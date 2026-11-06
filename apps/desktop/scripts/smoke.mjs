@@ -271,7 +271,16 @@ async function waitForExpression(debuggerClient, expression, failureMessage) {
     if (evaluation.result.value === true) return
     await delay(100)
   }
-  throw new Error(failureMessage)
+  const diagnostic = await debuggerClient
+    .send('Runtime.evaluate', {
+      expression: `(async () => { const state = await window.chromaShift.getState(); return { preview: state.ok ? state.value.preview : state.error,
+      controls: [...document.querySelectorAll('[data-part="color-control"]')].map((row) => ({ key: row.dataset.control, value: row.querySelector('[data-part="color-value"]')?.textContent, neutralAction: row.querySelector('[aria-label="Reset to neutral"]')?.outerHTML })),
+      text: document.body.innerText.slice(-1500) } })()`,
+      awaitPromise: true,
+      returnByValue: true
+    })
+    .catch(() => null)
+  throw new Error(failureMessage + ' ' + JSON.stringify(diagnostic))
 }
 
 async function captureScreenshot(debuggerClient, path) {
@@ -853,6 +862,91 @@ async function hoverElement(debuggerClient, selector) {
 
 function displayStateFingerprint(state) {
   return JSON.stringify(state)
+}
+
+async function verifyColorValues(debuggerClient, rowSelector) {
+  const row = JSON.stringify(rowSelector)
+  const brightness = `document.querySelector(${row})?.querySelector('[data-control="brightness"]')`
+  const button = `${brightness}?.querySelector('[data-part="color-value"]')`
+  const input = `${brightness}?.querySelector('input:not([type="hidden"])')`
+  const reset = async () => {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `${brightness}?.querySelector('[aria-label="Reset to neutral"]')?.click()`
+    })
+    await waitForExpression(
+      debuggerClient,
+      `${button}?.textContent?.trim() === '50%'`,
+      'Color-value smoke did not return brightness to neutral.'
+    )
+  }
+  const press = async (key, code) => {
+    for (const type of ['keyDown', 'keyUp'])
+      await debuggerClient.send('Input.dispatchKeyEvent', {
+        type,
+        key,
+        code: key,
+        windowsVirtualKeyCode: code
+      })
+  }
+  const presentation = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(() => {
+      const row = document.querySelector(${row})
+      return { values: [...row.querySelectorAll('[data-part="color-value"]')].map((value) => value.textContent), ticks: row.querySelectorAll('[data-part="slider-neutral"]').length,
+        gradients: ['hue', 'saturation'].map((control) => { const track = row.querySelector('[data-control="' + control + '"] [data-scope="slider"][data-part="track"]'); return track === null ? null : getComputedStyle(track).backgroundImage }),
+        steppers: row.querySelectorAll('[data-scope="number-input"]').length }
+    })()`,
+    returnByValue: true
+  })
+  globalThis.console.log('Color control presentation:', JSON.stringify(presentation))
+  await waitForExpression(
+    debuggerClient,
+    `(() => {
+    const row = document.querySelector(${row})
+    return row?.querySelector('[data-control="gamma"] [data-part="color-value"]')?.textContent?.trim() === '1.00' &&
+      row?.querySelector('[data-control="hue"] [data-part="color-value"]')?.textContent?.trim() === '0°' &&
+      row?.querySelectorAll('[data-part="slider-neutral"]').length >= 5 &&
+      ['hue', 'saturation'].every((control) => getComputedStyle(row.querySelector('[data-control="' + control + '"] [data-scope="slider"][data-part="track"]')).backgroundImage.includes('linear-gradient')) &&
+      row?.querySelector('[data-scope="number-input"]') === null
+  })()`,
+    'Color controls did not show formatted values, neutral ticks, and plain values without steppers.'
+  )
+  for (const action of ['Escape', 'Enter', 'blur']) {
+    await debuggerClient.send('Runtime.evaluate', { expression: `${button}?.click()` })
+    await waitForExpression(
+      debuggerClient,
+      `document.activeElement === ${input}`,
+      'Inline brightness input did not receive focus.'
+    )
+    await debuggerClient.send('Input.insertText', { text: '51' })
+    if (action === 'blur')
+      await debuggerClient.send('Runtime.evaluate', { expression: `${input}?.blur()` })
+    else await press(action, action === 'Escape' ? 27 : 13)
+    await waitForExpression(
+      debuggerClient,
+      `${button}?.textContent?.trim() === '${action === 'Escape' ? '50%' : '51%'}'`,
+      `Inline brightness ${action} did not save or cancel correctly.`
+    )
+    if (action !== 'Escape') await reset()
+  }
+  await debuggerClient.send('Runtime.evaluate', { expression: `${button}?.focus()` })
+  await press('ArrowUp', 38)
+  await waitForExpression(
+    debuggerClient,
+    `${button}?.textContent?.trim() === '51%'`,
+    'Arrow keys did not adjust the plain value.'
+  )
+  await reset()
+  for (const selector of ['[data-part="color-value"]', '[data-slot="slider"]']) {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `${brightness}?.querySelector('${selector}')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
+    })
+    await waitForExpression(
+      debuggerClient,
+      `${button}?.textContent?.trim() === '51%'`,
+      'Mouse wheel did not adjust the color control.'
+    )
+    await reset()
+  }
 }
 
 async function waitForRestoredDisplayState(native, displayId, expectedFingerprint) {
@@ -2289,6 +2383,12 @@ async function runSmoke() {
     'Edit mode did not expose enabled color controls without a display override step.'
   )
 
+  await captureNativeWindow(
+    electron.pid,
+    join(screenshotDirectory, 'color-controls-initial-native.png')
+  )
+  await verifyColorValues(debuggerClient, guardedDisplayRowSelector)
+
   const sliderFocus = await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-part="color-control"] [role="slider"]')
@@ -2351,7 +2451,7 @@ async function runSmoke() {
   }
 
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()`
+    expression: `document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]')?.click()`
   })
   await waitForExpression(
     debuggerClient,
@@ -2359,7 +2459,7 @@ async function runSmoke() {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.preview.state === 'active' &&
         result.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 50 &&
-        document.querySelector('[aria-label="Reset brightness to neutral"]') === null
+        document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]') === null
     })()`,
     'The brightness reset action did not restore only the neutral brightness value.'
   )
@@ -2483,7 +2583,7 @@ async function runSmoke() {
   )
   const cancelScheduledChange = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
-      const reset = document.querySelector('[aria-label="Reset brightness to neutral"]')
+      const reset = document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]')
       if (reset === null) return false
       reset.click()
       await new Promise((resolve) => setTimeout(resolve, 20))
@@ -2602,6 +2702,58 @@ async function runSmoke() {
     })()`,
     'The renderer-free Toggle ChromaShift shortcut did not enter Paused.'
   )
+  // Render envelope edges and unsupported temperature while Paused. Restore the
+  // fixture before Resume; corner values must never reach a display in this check.
+  const pausedColorFixture = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok || result.value.chromaShift.status !== 'paused' || result.value.preview.state !== 'inactive') throw new Error('Paused color fixture requires confirmed restoration')
+      const state = result.value
+      const id = state.chromaShift.intendedTarget?.kind === 'profile' ? state.chromaShift.intendedTarget.profileId : 'default'
+      const profile = state.configuration.profiles.find((profile) => profile.id === id)
+      const target = { displayId: ${JSON.stringify(guardedProductDisplayId)}, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 100, gamma: 2.3, colorTemperature: 63 } }
+      const saved = await window.chromaShift.saveProfile({ ...profile, displays: [target, ...profile.displays.filter((display) => display.displayId !== target.displayId)] })
+      if (!saved.ok) throw new Error(saved.error.message)
+      return { profile, theme: state.settings.theme }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  const pausedColors = pausedColorFixture.result.value
+  if (pausedColors?.profile === undefined)
+    throw new Error('Could not prepare paused color presentation fixture')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[data-part="profile-select"]')].find((item) => item.querySelector('strong')?.textContent?.trim() === ${JSON.stringify(pausedColors.profile.name)})?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Profile name"]')?.value === ${JSON.stringify(pausedColors.profile.name)} && document.querySelector('[aria-label="Profile name"]')?.disabled === true`,
+    'The paused color fixture was not selected'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector(${JSON.stringify(guardedDisplayTabSelector)})?.click()`
+  })
+  for (const theme of ['dark', 'light']) {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(async () => { const state = await window.chromaShift.getState(); await window.chromaShift.updateSettings({ ...state.value.settings, theme: '${theme}' }) })()`,
+      awaitPromise: true
+    })
+    await waitForExpression(
+      debuggerClient,
+      `(() => { const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)}); const hatch = row?.querySelector('[data-part="slider-disabled-upper"]');
+      return document.documentElement.classList.contains('${theme}') && hatch && getComputedStyle(hatch).backgroundImage.includes('repeating-linear-gradient') && row.querySelector('[data-control="colorTemperature"] [data-part="color-value"]')?.textContent?.trim() === '63%' && row.querySelector('[data-control="gamma"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
+    })()`,
+      'Paused color controls did not expose temperature and hatched gamma limits'
+    )
+    await captureNativeWindow(
+      electron.pid,
+      join(screenshotDirectory, `color-controls-app-limits-${theme}-native.png`)
+    )
+  }
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => { const state = await window.chromaShift.getState(); await window.chromaShift.updateSettings({ ...state.value.settings, theme: ${JSON.stringify(pausedColors.theme)} }) })()`,
+    awaitPromise: true
+  })
   await captureScreenshot(debuggerClient, pausedStatusScreenshotPath)
   const pausedAppEvents = debuggerClient.events
   await debuggerClient.send('Runtime.evaluate', {
@@ -2626,6 +2778,11 @@ async function runSmoke() {
          document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-disabled') === 'true'
     })()`,
     'The Paused mini panel did not show status or disable color controls.'
+  )
+  await waitForExpression(
+    pausedMiniDebugger,
+    `document.querySelector('[data-control="colorTemperature"] [data-part="color-value"]')?.textContent?.trim() === '63%' && document.querySelectorAll('[data-part="color-control"]').length === 6`,
+    'The mini panel did not include its sixth color-temperature row'
   )
   await captureScreenshot(pausedMiniDebugger, pausedMiniScreenshotPath)
   await captureNativeWindow(electron.pid, nativeMiniScreenshotPath)
@@ -2706,6 +2863,23 @@ async function runSmoke() {
       })()`,
       awaitPromise: true
     })
+  }
+  await pausedMiniDebugger.send('Runtime.evaluate', {
+    expression: `(async () => { const state = await window.chromaShift.getState(); if (state.value.chromaShift.status !== 'paused') throw new Error('Color fixture must be restored before Resume'); const result = await window.chromaShift.saveProfile(${JSON.stringify(pausedColors.profile)}); if (!result.ok) throw new Error(result.error.message) })()`,
+    awaitPromise: true
+  })
+  const restoredPausedMiniLoaded = pausedMiniDebugger.waitForEvent('Page.loadEventFired')
+  await pausedMiniDebugger.send('Page.reload', { ignoreCache: true })
+  await restoredPausedMiniLoaded
+  await waitForExpression(
+    pausedMiniDebugger,
+    `document.querySelector('[data-part="slider-disabled-upper"]') === null && document.querySelector('[aria-label="Resume ChromaShift"]') !== null`,
+    'The paused presentation fixture remained after restoring the saved profile'
+  )
+  for (const display of guardedDisplays) {
+    const unchanged = await restorationGuard.getDisplayState(display.id)
+    if (displayStateFingerprint(unchanged) !== guardedBaselines.get(display.id))
+      throw new Error('Paused color presentation changed native display output')
   }
   await pausedMiniDebugger.send('Runtime.evaluate', {
     expression: `document.querySelector('[aria-label="Resume ChromaShift"]')?.click()`
@@ -3385,6 +3559,10 @@ async function runSmoke() {
       electron.pid,
       join(screenshotDirectory, `phase3-${theme}-expanded-native.png`)
     )
+    await captureNativeWindow(
+      electron.pid,
+      join(screenshotDirectory, `color-controls-app-${theme}-native.png`)
+    )
     await debuggerClient.send('Runtime.evaluate', {
       expression: `document.querySelector('[aria-label="Collapse sidebar"]')?.click()`
     })
@@ -3941,6 +4119,15 @@ async function runSmoke() {
     throw new Error('Could not prepare the Default profile mini-panel round-trip check.')
   }
   await waitForText(debuggerClient, 'Default profile')
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[data-control="brightness"] [data-part="color-value"]')?.click()`
+  })
+  await waitForExpression(debuggerClient, `(() => {
+    const row = document.querySelector('[data-control="brightness"]')
+    const value = row?.querySelector('[data-part="color-value"]')
+    return value?.tagName === 'P' && value.textContent.trim() === '50%' &&
+      value.parentElement.querySelector('input') === null
+  })()`, 'Mini-panel values did not remain plain text after a click.')
   // getState can see the first override before its broadcast reaches React.
   // The mini-panel power color changes to amber only when that state renders.
   await debuggerClient.send('Runtime.evaluate', {
@@ -3949,19 +4136,7 @@ async function runSmoke() {
     ).color`
   })
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`
-  })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39
-  })
-  await debuggerClient.send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'ArrowRight',
-    code: 'ArrowRight',
-    windowsVirtualKeyCode: 39
+    expression: `document.querySelector('[data-control="brightness"] [data-part="color-value"]')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
   })
   await waitForExpression(
     debuggerClient,
@@ -3972,7 +4147,7 @@ async function runSmoke() {
         result.value.preview.targets[0]?.color.brightness === 51 &&
         getComputedStyle(document.querySelector('[data-part="chromashift-control"]')).color !== window.__smokeDefaultControlColor &&
         document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-valuenow') === '51' &&
-        document.querySelector('[aria-label="Reset brightness to neutral"]') !== null
+        document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]') !== null
     })()`,
     'Changing Default brightness did not start the mini-panel override.'
   )
@@ -3981,7 +4156,7 @@ async function runSmoke() {
       // Let effects from the matching product render hydrate the draft first.
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       delete window.__smokeDefaultControlColor
-      document.querySelector('[aria-label="Reset brightness to neutral"]')?.click()
+      document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]')?.click()
     })()`,
     awaitPromise: true
   })
@@ -3992,7 +4167,7 @@ async function runSmoke() {
         const result = await window.chromaShift.getState()
         return result.ok && result.value.preview.state === 'active' &&
           result.value.preview.targets[0]?.color.brightness === 50 &&
-          document.querySelector('[aria-label="Reset brightness to neutral"]') === null
+          document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]') === null
       })()`,
       'The Default brightness reset did not restore the neutral value.'
     )
@@ -4002,7 +4177,7 @@ async function runSmoke() {
       const snapshot = await debuggerClient.send('Runtime.evaluate', {
         expression: `(async () => {
           const state = await window.chromaShift.getState()
-          const reset = document.querySelector('[aria-label="Reset brightness to neutral"]')
+          const reset = document.querySelector('[data-control="brightness"] [aria-label="Reset to neutral"]')
           const slider = document.querySelector('[data-part="color-control"] [role="slider"]')
           return {
             preview: state.ok ? state.value.preview : state.error,

@@ -4,7 +4,15 @@ using NvidiaDisplay = NvAPIWrapper.Display.Display;
 
 namespace ChromaShift.DisplayService.Providers.Nvidia;
 
-internal sealed class NvidiaColorProvider : IDisposable
+internal interface INvidiaColorProvider
+{
+    NvidiaDisplayState GetState(DisplayDescriptor display);
+    int SetSaturation(DisplayDescriptor display, double normalizedValue);
+    int SetHue(DisplayDescriptor display, double normalizedValue);
+    void Restore(DisplayDescriptor display, NvidiaDisplayState baseline);
+}
+
+internal sealed class NvidiaColorProvider : INvidiaColorProvider, IDisposable
 {
     private readonly Lock _sync = new();
     private readonly string? _initializationError;
@@ -23,7 +31,7 @@ internal sealed class NvidiaColorProvider : IDisposable
         }
     }
 
-    internal NvidiaDisplayState GetState(DisplayDescriptor display)
+    public NvidiaDisplayState GetState(DisplayDescriptor display)
     {
         if (display.Adapter.Vendor != "nvidia")
         {
@@ -52,7 +60,7 @@ internal sealed class NvidiaColorProvider : IDisposable
         }
     }
 
-    internal int SetSaturation(DisplayDescriptor display, double normalizedValue)
+    public int SetSaturation(DisplayDescriptor display, double normalizedValue)
     {
         ValidateNormalized(normalizedValue, nameof(normalizedValue));
         lock (_sync)
@@ -72,7 +80,7 @@ internal sealed class NvidiaColorProvider : IDisposable
         }
     }
 
-    internal int SetHue(DisplayDescriptor display, double normalizedValue)
+    public int SetHue(DisplayDescriptor display, double normalizedValue)
     {
         ValidateNormalized(normalizedValue, nameof(normalizedValue));
         lock (_sync)
@@ -91,7 +99,7 @@ internal sealed class NvidiaColorProvider : IDisposable
         }
     }
 
-    internal void Restore(DisplayDescriptor display, NvidiaDisplayState baseline)
+    public void Restore(DisplayDescriptor display, NvidiaDisplayState baseline)
     {
         lock (_sync)
         {

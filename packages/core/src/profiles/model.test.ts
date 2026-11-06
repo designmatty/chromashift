@@ -1,3 +1,5 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   clampGammaForBrightness,
@@ -80,5 +82,25 @@ describe('profile model', () => {
         ]
       })
     ).toThrow(/assigned more than once/)
+  })
+})
+
+const envelopeFixture = JSON.parse(
+  readFileSync(new URL('../../../../fixtures/gamma-envelope.json', import.meta.url), 'utf8')
+) as Array<{
+  brightness: number
+  min: number
+  max: number
+  tests: Array<{ gamma: number; accepted: boolean }>
+}>
+
+describe('shared gamma envelope fixture', () => {
+  it.each(envelopeFixture)('agrees at brightness $brightness', (row) => {
+    expect(gammaRangeForBrightness(row.brightness)).toEqual({ min: row.min, max: row.max })
+    for (const sample of row.tests)
+      expect(
+        colorSettingsSchema.safeParse(color({ brightness: row.brightness, gamma: sample.gamma }))
+          .success
+      ).toBe(sample.accepted)
   })
 })

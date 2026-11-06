@@ -56,6 +56,10 @@ range 0.3 through 2.8 and the brightness-dependent color safety envelope:
 | 97-99      | 0.3           | 2.4           |
 | 100        | 0.3           | 2.3           |
 
+The desktop displays hue as `round(value × 3.59)` degrees, 0–359°. Degree input
+rounds back to the nearest stored 0–100 value. This is presentation only; profile
+storage, validation, and native command units are unchanged.
+
 A missing display target means the display stays at its captured original state.
 Individual settings cannot be omitted or disabled in persistence. Unsupported
 values remain stored so user intent survives hardware changes; Electron filters

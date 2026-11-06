@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { displaySettingsSchema } from './protocol.js'
 import { describe, expect, it } from 'vitest'
 import {
   displayApplyRequestSchema,
@@ -193,5 +195,23 @@ describe('native protocol', () => {
         ]
       }).displays
     ).toHaveLength(5)
+  })
+})
+
+const envelopeFixture = JSON.parse(
+  readFileSync(new URL('../../../fixtures/gamma-envelope.json', import.meta.url), 'utf8')
+) as Array<{
+  brightness: number
+  min: number
+  max: number
+  tests: Array<{ gamma: number; accepted: boolean }>
+}>
+
+describe('shared gamma envelope fixture', () => {
+  it.each(envelopeFixture)('agrees at brightness $brightness', (row) => {
+    for (const sample of row.tests)
+      expect(
+        displaySettingsSchema.safeParse({ brightness: row.brightness, gamma: sample.gamma }).success
+      ).toBe(sample.accepted)
   })
 })

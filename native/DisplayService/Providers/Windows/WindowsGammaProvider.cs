@@ -4,12 +4,19 @@ using ChromaShift.DisplayService.Core;
 
 namespace ChromaShift.DisplayService.Providers.Windows;
 
-internal sealed class WindowsGammaProvider
+internal interface IWindowsGammaProvider
+{
+    bool IsSupported(string windowsDisplayName);
+    GammaRamp Read(string windowsDisplayName);
+    void Write(string windowsDisplayName, GammaRamp ramp);
+}
+
+internal sealed class WindowsGammaProvider : IWindowsGammaProvider
 {
     private const int ColorManagementCapabilities = 121;
     private const int ColorManagementGammaRamp = 0x00000002;
 
-    internal bool IsSupported(string windowsDisplayName)
+    public bool IsSupported(string windowsDisplayName)
     {
         try
         {
@@ -36,7 +43,7 @@ internal sealed class WindowsGammaProvider
         }
     }
 
-    internal GammaRamp Read(string windowsDisplayName)
+    public GammaRamp Read(string windowsDisplayName)
     {
         using var context = CreateContext(windowsDisplayName);
         var values = new ushort[GammaRamp.ChannelLength * 3];
@@ -55,7 +62,7 @@ internal sealed class WindowsGammaProvider
         return GammaRamp.FromInterleavedBuffer(values);
     }
 
-    internal void Write(string windowsDisplayName, GammaRamp ramp)
+    public void Write(string windowsDisplayName, GammaRamp ramp)
     {
         using var context = CreateContext(windowsDisplayName);
         var values = ramp.ToInterleavedBuffer();

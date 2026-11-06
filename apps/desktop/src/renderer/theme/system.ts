@@ -60,6 +60,15 @@ const config = defineConfig({
     },
     semanticTokens: {
       colors: {
+        'control.red': { value: '{colors.red.solid}' },
+        'control.yellow': { value: '{colors.yellow.solid}' },
+        'control.green': { value: '{colors.green.solid}' },
+        'control.cyan': { value: '{colors.cyan.solid}' },
+        'control.blue': { value: '{colors.blue.solid}' },
+        'control.magenta': { value: '{colors.purple.solid}' },
+        'control.saturation': {
+          value: { base: '{colors.orange.solid}', _dark: '{colors.pink.500}' }
+        },
         'profile.previewFg': {
           value: { base: '{colors.orange.700}', _dark: '{colors.pink.300}' }
         },

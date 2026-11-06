@@ -9,10 +9,10 @@ using ChromaShift.DisplayService.Ipc;
 namespace ChromaShift.DisplayService.Services;
 
 internal sealed class BaselineManager(
-    DisplayRegistry displays,
-    WindowsGammaProvider gamma,
-    NvidiaColorProvider nvidia,
-    AmdAdlxProvider amd)
+    IDisplayRegistry displays,
+    IWindowsGammaProvider gamma,
+    INvidiaColorProvider nvidia,
+    IAmdColorProvider amd)
 {
     private readonly Dictionary<string, BaselineEntry> _baselines = new(StringComparer.Ordinal);
     private readonly Lock _sync = new();
@@ -144,12 +144,23 @@ internal sealed class BaselineManager(
                             ["level"] = "error",
                             ["eventName"] = "GammaSettingsRejected",
                             ["displayId"] = display.Id,
+                            ["displayName"] = display.Name,
+                            ["windowsDisplayName"] = display.WindowsDisplayName,
+                            ["provider"] = "windows",
+                            ["adapterId"] = display.Adapter.Id,
+                            ["adapterName"] = display.Adapter.Name,
+                            ["adapterVendor"] = display.Adapter.Vendor,
+                            ["adapterDeviceId"] = display.Adapter.DeviceId,
+                            ["nativeMessage"] = exception.Message,
                             ["code"] = exception.Code,
-                            ["brightness"] = settings.Brightness,
-                            ["contrast"] = settings.Contrast,
-                            ["gamma"] = settings.Gamma
+                            ["brightness"] = settings.Brightness ?? 50,
+                            ["contrast"] = settings.Contrast ?? 50,
+                            ["gamma"] = settings.Gamma ?? 1
                         });
-                        throw;
+                        throw new DisplayOperationException(
+                            exception.Code,
+                            FormattableString.Invariant($"This display rejected gamma {settings.Gamma ?? 1:0.00} at brightness {settings.Brightness ?? 50:0.##}% ({display.Name})."),
+                            exception);
                     }
                     gammaHash = requested.GetHash();
                 }

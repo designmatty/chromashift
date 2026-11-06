@@ -447,8 +447,9 @@ export function mapProductError(error: unknown): ProductError {
     if (error.code === 'GAMMA_WRITE_FAILED' || error.code === 'GAMMA_VERIFY_FAILED') {
       return {
         code: 'OPERATION_FAILED',
-        message:
-          'The display driver rejected these color settings. Original settings were restored.'
+        message: error.nativeMessage.startsWith('This display rejected gamma ')
+          ? error.nativeMessage
+          : 'The display driver rejected these color settings. Original settings were restored.'
       }
     }
     return {
