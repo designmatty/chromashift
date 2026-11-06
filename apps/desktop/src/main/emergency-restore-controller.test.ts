@@ -218,8 +218,8 @@ describe('EmergencyRestoreController', () => {
             deferredDisplayIds
           })
         },
-        { prepareRestore: () => async () => undefined },
-      { write }
+        { prepareRestore: () => async () => restoreOutcome() },
+        { write }
       )
 
       await expect(controller.request()).resolves.toBe(restored)
@@ -251,7 +251,7 @@ describe('EmergencyRestoreController', () => {
         }
       },
       { restoreBaseline },
-      { prepareRestore: () => async () => undefined },
+      { prepareRestore: () => async () => restoreOutcome() },
       { write }
     )
 

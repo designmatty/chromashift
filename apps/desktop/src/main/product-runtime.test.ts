@@ -808,7 +808,7 @@ describe('product runtime display-control wiring', () => {
         expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
       )
       expect(dispose).toHaveBeenCalledOnce()
-      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledTimes(2)
       expect(dispose.mock.invocationCallOrder[0]!).toBeLessThan(cancel.mock.invocationCallOrder[0]!)
       expect(harness.intent()).toMatchObject({
         chromaShiftStatus: 'paused',
@@ -924,6 +924,57 @@ describe('product runtime display-control wiring', () => {
     intendedTarget: { kind: 'profile', profileId: 'default' }
   }
 
+  it('keeps original settings Paused when an in-flight topology refresh completes after emergency restore', async () => {
+    const harness = await createHarness()
+    harness.client.currentSettings.set('display:one', { brightness: 43 })
+    await harness.runtime.start()
+    expect(harness.client.currentSettings.get('display:one')?.brightness).toBe(60)
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const refresh = harness.client.refreshDisplayTopology.bind(harness.client)
+    const refreshing = vi
+      .spyOn(harness.client, 'refreshDisplayTopology')
+      .mockImplementationOnce(async () => {
+        await waiting
+        return refresh()
+      })
+    try {
+      vi.useFakeTimers()
+      harness.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      vi.useRealTimers()
+      expect(refreshing).toHaveBeenCalledOnce()
+      harness.emergencyRestore()
+      await vi.waitFor(() => expect(harness.logger.has('EmergencyRestoreCompleted')).toBe(true))
+      expect(harness.client.currentSettings.get('display:one')).toEqual({ brightness: 43 })
+      const appliesAfterRestore = harness.client.applied.length
+      release()
+      await vi.waitFor(() => expect(harness.logger.has('DisplayTransitionCompleted')).toBe(true))
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null
+      })
+      expect((await harness.runtime.productController!.getState()).chromaShift).toMatchObject({
+        status: 'paused',
+        transitionInProgress: false
+      })
+      expect(harness.client.currentSettings.get('display:one')).toEqual({ brightness: 43 })
+      expect(harness.client.applied).toHaveLength(appliesAfterRestore)
+      harness.client.emitForegroundApplication(gameApplication)
+      await harness.runtime.productController!.getState()
+      expect(harness.client.applied).toHaveLength(appliesAfterRestore)
+      expect(harness.errors).toEqual([])
+    } finally {
+      release()
+      harness.runtime.dispose()
+    }
+  })
+
   it('pauses after a successful emergency restore without a renderer', async () => {
     const harness = await createHarness(restorableIntent)
     await harness.runtime.start()
@@ -1002,7 +1053,7 @@ describe('product runtime display-control wiring', () => {
           expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
         )
         expect(restore).toHaveBeenCalledOnce()
-        expect(cancel).not.toHaveBeenCalled()
+        expect(cancel).toHaveBeenCalledOnce()
         expect(harness.intent()).toEqual(before)
         expect(harness.errors).toEqual([])
         expect(harness.notifications).toEqual([])
