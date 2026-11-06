@@ -1483,7 +1483,7 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
         return result.ok && result.value.preview.state === 'active' &&
           result.value.preview.kind === 'preview' &&
           result.value.preview.profileId === ${JSON.stringify(fixtureId)} &&
-          document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+          document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
             ?.textContent?.includes(${JSON.stringify(`Previewing: ${fixtureName}`)}) === true
       })()`,
       'Switching previews did not start the destination Preview with its banner.'
@@ -2297,7 +2297,7 @@ async function runSmoke() {
       if (!result.ok || result.value.preview.state !== 'active' ||
         result.value.preview.kind !== 'preview') return false
       const neutral = ${JSON.stringify(neutralColorSettings)}
-      const banner = document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+      const banner = document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
       return result.value.preview.targets.length === result.value.displays.length &&
         result.value.displays.every((display) => result.value.preview.targets.some(
           (target) => target.displayId === display.id &&
@@ -2520,7 +2520,7 @@ async function runSmoke() {
         document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
         document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
         document.querySelector('[data-part="unsaved-changes-actions"]') === null &&
-        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')
+        document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
           ?.textContent?.includes('Previewing: Smoke profile') === true
     })()`,
     'Update did not save the complete color vector and stay previewing the profile in automatic mode.'
@@ -2578,7 +2578,7 @@ async function runSmoke() {
         preview.targets.find((item) => item.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
         document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile' &&
         document.querySelector('[aria-label="Profile name"]')?.disabled === false &&
-        document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]') !== null
+        document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]') !== null
     })()`,
     'Discard did not revert an applied change while staying on the previewed profile.'
   )
@@ -2680,6 +2680,13 @@ async function runSmoke() {
     })()`,
     'The emergency restore did not leave display control Paused.'
   )
+  await waitForExpression(debuggerClient,
+    `document.querySelector('[data-part="paused-overlay"]')?.textContent?.includes('ChromaShift is paused') && document.querySelector('[data-part="main-panel"]')?.inert === true`,
+    'Emergency restoration did not show the Paused overlay and block the Profiles pane.')
+  await captureNativeWindow(electron.pid, join(screenshotDirectory, 'emergency-paused-native.png'))
+  await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    join(scriptDirectory, 'capture-paused-tray.ps1'), '-CapturePath',
+    join(screenshotDirectory, 'emergency-paused-tray-native.png')], { windowsHide: true, timeout: timeoutMilliseconds })
   await closeMainWindow(electron.pid)
   await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
   // Renderer-free Toggle: resume from the emergency pause, then pause again.
@@ -3181,7 +3188,7 @@ async function runSmoke() {
       [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Paused · Manual')`,
     'Paused display control was presented as a current applied profile.'
   )
-  await selectActivationOption(debuggerClient, 'Automatic')
+  await selectAppActivation(debuggerClient, 'Automatic')
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -3192,7 +3199,7 @@ async function runSmoke() {
     })()`,
     'Selecting Automatic while Paused resumed display control or lost the selection.'
   )
-  await selectActivationOption(debuggerClient, 'Default profile')
+  await selectAppActivation(debuggerClient, 'Default profile')
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -3543,7 +3550,7 @@ async function runSmoke() {
     const result = await window.chromaShift.getState()
     return result.ok && result.value.preview.state === 'active' &&
       result.value.preview.kind === 'preview' &&
-      document.querySelector('[data-part="main-panel"] + [data-part="preview-banner"]')?.textContent?.includes('Previewing: Smoke profile')
+      document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')?.textContent?.includes('Previewing: Smoke profile')
   })()`,
     'Clicking a profile did not start Preview or show the banner.'
   )

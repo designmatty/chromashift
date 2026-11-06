@@ -115,8 +115,10 @@ Pause and Resume, diagnostics, theme states, profile deletion focus, app and min
 mutual exclusion, native caption behavior, mini-panel non-activation, tray
 reopening, and renderer release.
 
-Paused mode-selection behavior belongs to #71's controller coverage; the renderer
-smoke does not assert that dependency before it merges. Native dark/light app and
+The smoke asserts that Automatic and manual selection while Paused update intent
+and remain Paused until explicit Resume. A fake-display runtime regression holds a
+topology refresh across emergency restoration and checks that completing the
+transition leaves original settings Paused without another profile apply. Native dark/light app and
 collapsed-rail captures cover the toggle, live ring and preview/disabled badges.
 The deterministic presentation tests cover Shift+Enter activation, clean Edit
 preview eyes, and the single-pill precedence: Paused or Safety blocked, unsaved
