@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.15] - 2026-11-07
+
+### Added
+
+- Click a profile to preview it on your displays without applying it. Editing a
+  preview has Update profile and Discard changes actions, and leaving with
+  unsaved changes asks first.
+- An Automatic | Manual toggle and a single title-bar status pill that shows
+  Active, Previewing, Auto-switching on hold, Paused, or Safety blocked.
+- A color temperature control, neutral markers on every slider, a reset to
+  neutral action per control, and a Copy to action for display settings.
+- Gamma sliders show the range each display can't accept as hatched limits.
+- A Paused overlay with Resume over the Profiles pane and the mini panel's
+  controls.
+- Quitting with unsaved changes asks whether to update or discard them.
+
+### Changed
+
+- Profiles without settings for a display preview that display at its original
+  settings.
+- Selecting a profile or changing mode while Paused stays Paused. Restore
+  original settings now pauses display control.
+- Values are edited inline; the mouse wheel changes a value only while its
+  editor is open. Disabled sliders appear in grayscale.
+- Minimizing keeps an unsaved draft, and long profile names truncate with the
+  full name in a tooltip.
+
+### Fixed
+
+- Closing the app while a preview's restore fails keeps the window open with
+  Try again guidance instead of hiding it with displays still changed.
+- Opening the app from the tray or a notification shows the requested view after
+  the renderer was released.
+- Loading screens use the selected light or dark theme.
+
 ## [0.1.0-preview.14] - 2026-10-31
 
 ### Added
