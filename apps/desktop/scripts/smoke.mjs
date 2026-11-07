@@ -10,6 +10,7 @@ import electronPath from 'electron'
 import { NativeClient } from '@chromashift/native-client'
 import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mjs'
 import { verifyShortcuts } from './shortcuts-smoke.mjs'
+import { verifyCloseRetryGuidance } from './close-retry-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
@@ -1530,6 +1531,7 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
 }
 
 async function runSmoke() {
+  await mkdir(screenshotDirectory, { recursive: true })
   const target = await waitForDebuggerTarget(
     debuggingPort,
     (candidate) => !candidate.url.includes('panel=mini')
@@ -1548,6 +1550,7 @@ async function runSmoke() {
   await loaded
 
   const ui = await waitForUi(debuggerClient)
+  await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
   const productState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',
     awaitPromise: true,

@@ -423,12 +423,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const pill = controlPill(product, dirty)
   const pausedOverlay =
     view === 'profiles' && shownProfile !== null && product.chromaShift.status === 'paused'
-  const queued = product.activation.queuedTarget
-  const queuedName =
-    queued?.kind === 'profile'
-      ? (product.configuration.profiles.find((profile) => profile.id === queued.profileId)?.name ??
-        'Profile')
-      : 'Original settings'
 
   return (
     <VStack data-part="app-shell" w="full" h="full" gap="4" alignItems={'stretch'} bg={'bg.subtle'}>
@@ -481,53 +475,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           </Tooltip>
         }
       />
-      {onHold && queued != null && (
-        <Flex
-          data-part="blocked-switch-toast"
-          role="status"
-          position="fixed"
-          top="12"
-          right="4"
-          zIndex="toast"
-          p="3"
-          gap="3"
-          align="center"
-          rounded="lg"
-          bg="bg.panel"
-          borderWidth="1px"
-          shadow="md"
-        >
-          <Text>
-            {queuedName} not applied — unsaved changes on{' '}
-            {shownProfile?.name ?? activeSession?.draft?.name ?? 'profile'}
-          </Text>
-          <Button
-            size="xs"
-            disabled={busy}
-            onClick={() =>
-              perform(async () => {
-                await updateProfile()
-                await returnToLive()
-              })
-            }
-          >
-            Update
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              perform(async () => {
-                await rollback()
-                await returnToLive()
-              })
-            }
-          >
-            Discard
-          </Button>
-        </Flex>
-      )}
       {error !== null && (
         <Alert.Root status="error" flex={'none'} size={'sm'} mx={2} width={'auto'}>
           <Alert.Indicator />

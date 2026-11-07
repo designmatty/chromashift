@@ -438,6 +438,16 @@ describe('true baseline preview with activation rollback', () => {
       native.failRestoreDisplayIds.add(two)
       native.calls.length = 0
       await expect(preview[end]()).rejects.toBeInstanceOf(PreviewRestoreError)
+      if (end === 'cancelNonOverride') {
+        expect(preview.state).toMatchObject({
+          state: 'active',
+          kind: 'preview',
+          profileId: empty.id
+        })
+        expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+        native.failRestoreDisplayIds.clear()
+        await preview.cancelNonOverride()
+      }
       expect(preview.state).toEqual({ state: 'inactive' })
       expectLive(native)
       expectOriginalCaptures(native)

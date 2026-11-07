@@ -202,6 +202,9 @@ navigation, and failure wait for pending writes before restoring the previous
 manual/foreground/default/baseline target. Preview has no countdown. Native apply
 restores baseline before each complete settings request so removing an override
 cannot inherit stale values. The mini-panel override flow remains separate.
+Close-to-tray cancellation reports genuine restore failures and retains the session
+and automatic-write suspension for retry. Disconnected and HDR display baselines
+still pass back to activation as retained ownership without a restore failure.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
 full app is focused or the non-activating mini panel is raised to the popup-menu
@@ -265,7 +268,18 @@ manual profile overrides, returns to automatic mode, restores original settings,
 and pauses, resumes, or retries display control. It exposes separate app- and
 mini-panel commands while preserving last-used-panel left-click behavior.
 Closing the window either releases its renderer to the tray or requests shutdown
-according to settings. Opening the app recreates the renderer from main-owned
+according to settings. `app-panel-close-controller.ts` waits for pending non-override
+preview/edit teardown before notifying the renderer or releasing it through the
+window controller. A genuine restore failure keeps the app panel open and visible
+and uses the same retry/cancel guidance as shutdown; a later close retries restoration.
+The close dialog is modal to its app window and offers `Try again` or
+`Keep the window open`; shutdown keeps its existing `Keep ChromaShift running`
+wording. The shared shell adapter is `restore-retry-dialog.ts`. Concurrent close
+drains, including an old and recovered renderer's windows, share the preview queue
+without invalidating one another's checkpoint. New session commands still force
+another drain before renderer release.
+Override sessions stay active when the app panel closes. This does not change
+Safety blocked semantics. Opening the app recreates the renderer from main-owned
 product state. ChromaShift holds a single-instance lock, so launching it again
 signals the existing tray process to recreate and focus the app panel instead
 of starting a second DisplayService owner. A hidden mini-panel renderer is
