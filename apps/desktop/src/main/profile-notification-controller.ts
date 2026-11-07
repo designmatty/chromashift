@@ -84,26 +84,35 @@ export class ProfileNotificationController {
     outcome: CompletedActivationOutcome,
     label: string
   ): Omit<ProductNotification, 'onClick'> {
+    if (outcome.pausedSelection !== undefined) {
+      const selection = outcome.pausedSelection.kind === 'automatic' ? 'Automatic' : label
+      return {
+        title: 'ChromaShift paused',
+        body: `${selection} applies when you resume.`,
+        severity: 'information',
+        urgency: 'normal'
+      }
+    }
     if (outcome.origin === 'originalSettingsRestore') {
       if (outcome.status === 'failed' || outcome.status === 'partialFailure') {
         return {
-          title: 'Original settings were not fully restored',
-          body: `${outcome.failures.length} display operation${outcome.failures.length === 1 ? '' : 's'} failed.`,
+          title: 'ChromaShift safety blocked',
+          body: 'Original settings were not fully restored. Retry the safety check.',
           severity: 'error',
           urgency: 'critical'
         }
       }
       if (outcome.deferredDisplayIds.length > 0) {
         return {
-          title: 'Original settings restoration is waiting',
-          body: `${outcome.deferredDisplayIds.length} display${outcome.deferredDisplayIds.length === 1 ? ' is' : 's are'} not currently restorable.`,
+          title: 'ChromaShift safety blocked',
+          body: 'Original settings restoration is waiting. Retry the safety check.',
           severity: 'warning',
           urgency: 'critical'
         }
       }
       return {
         title: 'Original settings restored',
-        body: 'ChromaShift remains active.',
+        body: 'ChromaShift is paused.',
         severity: 'information',
         urgency: 'normal'
       }

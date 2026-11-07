@@ -26,6 +26,18 @@ type ChromaShiftInitialState = Omit<ChromaShiftPersistedState, 'pendingOperation
   pendingOperation?: ChromaShiftPersistedState['pendingOperation']
 }
 
+type ChromaShiftIntent = Pick<ChromaShiftPersistedState, 'intendedMode' | 'intendedTarget'>
+
+/**
+ * The resume intent captured before a restore that runs outside this
+ * controller. `intentGeneration` identifies the latest real intent change at
+ * capture time, so a newer change can be detected after the outside restore
+ * has replaced the live target with original settings.
+ */
+export interface ChromaShiftIntentSnapshot extends ChromaShiftIntent {
+  readonly intentGeneration: number
+}
+
 export interface ChromaShiftState extends ChromaShiftPersistedState {
   transitionInProgress: boolean
 }
@@ -72,6 +84,12 @@ export class ChromaShiftController {
   readonly #operationalOutcomeListeners = new Set<(outcome: CompletedActivationOutcome) => void>()
   #state: ChromaShiftState
   #transition: Promise<CompletedActivationOutcome> | null = null
+  // The latest real intent and a counter that increments on every real change.
+  // State synchronization may report the direct restore's temporary baseline.
+  // Keep the resume intent independently until a real selection or completed
+  // resolution replaces it, including a genuine resolution to baseline.
+  #realIntent: ChromaShiftIntent
+  #intentGeneration = 0
 
   public constructor(
     private readonly activation: ChromaShiftActivationPort,
@@ -82,6 +100,7 @@ export class ChromaShiftController {
     private readonly logger: StructuredLogger
   ) {
     this.#state = { ...clonePersisted(initial), transitionInProgress: false }
+    this.#realIntent = cloneIntent(this.#state)
   }
 
   public get state(): ChromaShiftActivationPort['state'] {
@@ -93,6 +112,14 @@ export class ChromaShiftController {
       ...clonePersisted(this.#state),
       transitionInProgress: this.#state.transitionInProgress
     }
+  }
+
+  /**
+   * Captures the intent to resume before a restore that runs outside this
+   * controller. Pass the result to `restoreBaseline` once that restore succeeds.
+   */
+  public captureIntentSnapshot(): ChromaShiftIntentSnapshot {
+    return { ...cloneIntent(this.#realIntent), intentGeneration: this.#intentGeneration }
   }
 
   public subscribe(listener: (state: ChromaShiftState) => void): () => void {
@@ -110,33 +137,27 @@ export class ChromaShiftController {
   public pause(source: ActivationSource): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) return this.#transition
     if (this.#state.status === 'paused') return Promise.resolve(this.#statusOutcome(source))
-    this.#rememberActiveIntent()
-    return this.#runTransition(
-      async () => {
-        this.#state.status = 'safetyBlocked'
-        this.#state.pendingOperation = 'pause'
-        await this.#persistState()
-        await this.activation.suspendWrites()
-        try {
-          await this.preview.cancel()
-        } catch (error) {
-          this.logger.write({
-            level: 'error',
-            eventName: 'PausePreviewRestoreFailed',
-            ...describeError(error)
-          })
-          throw error
-        }
-        await this.activation.waitForIdle()
-        const outcome = await this.activation.restoreBaseline({ source, origin: 'pause' })
-        const restored = restorationComplete(outcome)
-        this.#state.status = restored ? 'paused' : 'safetyBlocked'
-        this.#state.pendingOperation = restored ? null : 'pause'
-        await this.#persistState()
-        return outcome
-      },
-      { source, origin: 'pause' }
-    )
+    return this.#restoreAndPause(source, 'pause')
+  }
+
+  /**
+   * Restore original settings: restores every owned baseline through the Pause
+   * path and leaves display control Paused, preserving the Intended target for
+   * a later resume. Paused and Safety-blocked control are left unchanged.
+   *
+   * `preservedIntent` is for a restore that already ran outside this
+   * controller (the emergency shortcut), which has replaced the live target
+   * with original settings. It comes from `captureIntentSnapshot` and supplies
+   * the intent to resume afterwards unless a real intent change happened after
+   * it was captured; the newer intent then survives.
+   */
+  public async restoreBaseline(
+    source: ActivationSource = 'manual',
+    preservedIntent?: ChromaShiftIntentSnapshot
+  ): Promise<CompletedActivationOutcome> {
+    while (this.#transition !== null) await this.#transition.catch(() => undefined)
+    if (this.#state.status !== 'active') return this.#statusOutcome(source)
+    return this.#restoreAndPause(source, 'originalSettingsRestore', preservedIntent)
   }
 
   public retrySafetyCheck(source: ActivationSource): Promise<CompletedActivationOutcome> {
@@ -178,6 +199,11 @@ export class ChromaShiftController {
     )
   }
 
+  /**
+   * Selects a manual profile. While Paused or Safety blocked, only the Intended
+   * target and mode change; display control stays where it is until the user
+   * resumes it or a safety retry succeeds.
+   */
   public async selectManualProfile(
     profileId: string,
     source: ActivationSource = 'manual'
@@ -186,11 +212,9 @@ export class ChromaShiftController {
     if (this.#state.status !== 'active') {
       const target = { kind: 'profile' as const, profileId }
       await this.activation.setSuspendedIntent(manualActivationMode(profileId), target)
-      this.#state.intendedMode = manualActivationMode(profileId)
-      this.#state.intendedTarget = target
+      this.#setIntent(manualActivationMode(profileId), target)
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#selectionStatusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -199,29 +223,26 @@ export class ChromaShiftController {
         origin: source === 'shortcut' ? 'shortcut' : 'profileSelection'
       })
     } catch (error) {
-      this.#state.intendedMode = manualActivationMode(profileId)
-      this.#state.intendedTarget = { kind: 'profile', profileId }
+      this.#setIntent(manualActivationMode(profileId), { kind: 'profile', profileId })
       await this.#persistState()
       if (source === 'shortcut') this.#publishOperationalFailure(source, 'shortcut', error)
       throw error
     }
-    this.#state.intendedMode = manualActivationMode(profileId)
-    this.#state.intendedTarget = cloneTarget(outcome.resolution?.target ?? null)
+    this.#setIntent(manualActivationMode(profileId), outcome.resolution?.target ?? null)
     await this.#persistState()
     return outcome
   }
 
+  /** Selects Automatic mode. While Paused or Safety blocked, only the intent changes. */
   public async enableAutomatic(
     source: ActivationSource = 'manual'
   ): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) await this.#transition
     if (this.#state.status !== 'active') {
       await this.activation.setSuspendedIntent(automaticActivationMode, null)
-      this.#state.intendedMode = automaticActivationMode
-      this.#state.intendedTarget = null
+      this.#setIntent(automaticActivationMode, null)
       await this.#persistState()
-      if (this.#state.status === 'safetyBlocked') return this.#statusOutcome(source)
-      return this.resume(source)
+      return this.#selectionStatusOutcome(source)
     }
     let outcome: CompletedActivationOutcome
     try {
@@ -230,13 +251,12 @@ export class ChromaShiftController {
         origin: source === 'shortcut' ? 'shortcut' : 'automaticSelection'
       })
     } catch (error) {
-      this.#state.intendedMode = automaticActivationMode
+      this.#setIntent(automaticActivationMode, this.#state.intendedTarget)
       await this.#persistState()
       if (source === 'shortcut') this.#publishOperationalFailure(source, 'shortcut', error)
       throw error
     }
-    this.#state.intendedMode = automaticActivationMode
-    this.#state.intendedTarget = cloneTarget(outcome.resolution?.target ?? null)
+    this.#setIntent(automaticActivationMode, outcome.resolution?.target ?? null)
     await this.#persistState()
     return outcome
   }
@@ -246,18 +266,6 @@ export class ChromaShiftController {
     if (this.#state.status === 'active') return this.pause(source)
     if (this.#state.status === 'paused') return this.resume(source)
     return this.retrySafetyCheck(source)
-  }
-
-  public restoreBaseline(): Promise<CompletedActivationOutcome> {
-    if (this.#state.status !== 'active') return Promise.resolve(this.#statusOutcome('manual'))
-    return this.#runTransition(
-      () =>
-        this.activation.restoreBaseline({
-          source: 'manual',
-          origin: 'originalSettingsRestore'
-        }),
-      { source: 'manual', origin: 'originalSettingsRestore' }
-    )
   }
 
   public refreshAfterConfigurationChange(change?: ConfigurationChange): Promise<void> {
@@ -270,14 +278,15 @@ export class ChromaShiftController {
       return
     }
     await this.activation.setSuspendedIntent(automaticActivationMode, null)
-    this.#state.intendedMode = automaticActivationMode
-    this.#state.intendedTarget = null
+    this.#setIntent(automaticActivationMode, null)
     await this.#persistState()
   }
 
   public async syncActiveIntent(): Promise<void> {
     if (this.#state.status !== 'active' || this.#state.transitionInProgress) return
-    this.#rememberActiveIntent()
+    // State alone cannot distinguish direct restoration from a resolved baseline.
+    // Completed resolutions record baseline intent through recordCompletedOutcome.
+    this.#rememberActiveIntent(true)
     await this.#persistState()
   }
 
@@ -288,9 +297,54 @@ export class ChromaShiftController {
       outcome.resolution === null
     )
       return
-    this.#state.intendedMode = { ...this.activation.state.mode }
-    this.#state.intendedTarget = { ...outcome.resolution.target }
+    this.#setIntent(this.activation.state.mode, outcome.resolution.target)
     await this.#persistState()
+  }
+
+  #restoreAndPause(
+    source: ActivationSource,
+    origin: 'pause' | 'originalSettingsRestore',
+    preservedIntent?: ChromaShiftIntentSnapshot
+  ): Promise<CompletedActivationOutcome> {
+    if (preservedIntent === undefined) {
+      this.#rememberActiveIntent()
+    } else {
+      // The outside restore replaced the live target with baseline, which is
+      // not a real intent change. Resume the snapshot unless a real change
+      // (a selection, preview teardown, or automatic resolution) followed it.
+      const intent =
+        preservedIntent.intentGeneration === this.#intentGeneration
+          ? preservedIntent
+          : this.#realIntent
+      this.#setIntent(intent.intendedMode, intent.intendedTarget)
+    }
+    return this.#runTransition(
+      async () => {
+        this.#state.status = 'safetyBlocked'
+        this.#state.pendingOperation = 'pause'
+        await this.#persistState()
+        await this.activation.suspendWrites()
+        try {
+          await this.preview.cancel()
+        } catch (error) {
+          this.logger.write({
+            level: 'error',
+            eventName: 'PausePreviewRestoreFailed',
+            origin,
+            ...describeError(error)
+          })
+          throw error
+        }
+        await this.activation.waitForIdle()
+        const outcome = await this.activation.restoreBaseline({ source, origin })
+        const restored = restorationComplete(outcome)
+        this.#state.status = restored ? 'paused' : 'safetyBlocked'
+        this.#state.pendingOperation = restored ? null : 'pause'
+        await this.#persistState()
+        return outcome
+      },
+      { source, origin }
+    )
   }
 
   #runTransition(
@@ -308,6 +362,7 @@ export class ChromaShiftController {
         if (failureContext !== undefined) {
           if (
             failureContext.origin === 'pause' ||
+            failureContext.origin === 'originalSettingsRestore' ||
             failureContext.origin === 'safetyRetry' ||
             failureContext.origin === 'resume'
           ) {
@@ -351,19 +406,38 @@ export class ChromaShiftController {
     })
     this.#state.status = 'active'
     this.#state.pendingOperation = null
-    this.#state.intendedMode = { ...this.activation.state.mode }
-    this.#state.intendedTarget = cloneTarget(
+    this.#setIntent(
+      this.activation.state.mode,
       outcome.resolution?.target ?? this.#state.intendedTarget
     )
     await this.#persistState()
     return outcome
   }
 
-  #rememberActiveIntent(): void {
-    this.#state.intendedMode = { ...this.activation.state.mode }
-    if (this.activation.state.currentTarget !== null) {
-      this.#state.intendedTarget = cloneTarget(this.activation.state.currentTarget)
-    }
+  #rememberActiveIntent(temporaryBaseline = false): void {
+    this.#setIntent(
+      this.activation.state.mode,
+      this.activation.state.currentTarget ?? this.#state.intendedTarget,
+      temporaryBaseline
+    )
+  }
+
+  #setIntent(
+    mode: ActivationMode,
+    target: ActivationTarget | null,
+    temporaryBaseline = false
+  ): void {
+    this.#state.intendedMode = { ...mode }
+    this.#state.intendedTarget = cloneTarget(target)
+    const real = this.#realIntent
+    if (
+      sameMode(mode, real.intendedMode) &&
+      ((temporaryBaseline && target?.kind === 'baseline') ||
+        sameTarget(target, real.intendedTarget))
+    )
+      return
+    this.#realIntent = cloneIntent(this.#state)
+    this.#intentGeneration += 1
   }
 
   async #persistState(): Promise<void> {
@@ -385,6 +459,15 @@ export class ChromaShiftController {
       source,
       origin: 'statusControl'
     }
+  }
+
+  #selectionStatusOutcome(source: ActivationSource): CompletedActivationOutcome {
+    const outcome = this.#statusOutcome(source)
+    if (source === 'shortcut' && this.#state.status === 'paused') {
+      outcome.pausedSelection = { ...this.#state.intendedMode }
+      this.#publishOperationalOutcome(outcome)
+    }
+    return outcome
   }
 
   #emit(): void {
@@ -428,6 +511,28 @@ function restorationComplete(outcome: CompletedActivationOutcome): boolean {
 
 function cloneTarget(target: ActivationTarget | null): ActivationTarget | null {
   return target === null ? null : { ...target }
+}
+
+function cloneIntent(intent: ChromaShiftIntent): ChromaShiftIntent {
+  return {
+    intendedMode: { ...intent.intendedMode },
+    intendedTarget: cloneTarget(intent.intendedTarget)
+  }
+}
+
+function sameMode(left: ActivationMode, right: ActivationMode): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind !== 'manual' || (right.kind === 'manual' && left.profileId === right.profileId))
+  )
+}
+
+function sameTarget(left: ActivationTarget | null, right: ActivationTarget | null): boolean {
+  if (left === null || right === null) return left === right
+  return (
+    left.kind === right.kind &&
+    (left.kind !== 'profile' || (right.kind === 'profile' && left.profileId === right.profileId))
+  )
 }
 
 function clonePersisted(state: ChromaShiftInitialState): ChromaShiftPersistedState {

@@ -21,7 +21,8 @@ _Avoid_: Enabled, running
 **Paused display control**:
 A persisted, user-selected state entered only after captured original settings
 have been restored, in which ChromaShift performs no profile writes until the
-user explicitly resumes control or selects an activation target or mode.
+user explicitly resumes control. Selecting an activation target or mode updates
+intent while display control stays Paused.
 _Avoid_: Disabled, restored
 
 **Safety block**:
@@ -36,9 +37,11 @@ the current control session.
 _Avoid_: Factory defaults, default profile
 
 **Restore original settings**:
-A one-shot restoration of Original settings that does not Pause display control
-or change the Intended target.
-_Avoid_: Pause, reset displays
+An action that restores Original settings and enters Paused display control
+after complete restoration. Paused persists until the user resumes; the Intended
+target is preserved. This action is a no-op while Paused or Safety blocked;
+the emergency shortcut still restores Original settings directly.
+_Avoid_: Reset displays
 
 **Color safety envelope**:
 The brightness and gamma combinations ChromaShift accepts to reduce the risk of

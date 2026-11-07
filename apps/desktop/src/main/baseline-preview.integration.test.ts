@@ -118,7 +118,12 @@ describe('true baseline preview with activation rollback', () => {
         new Error('transient restore failure')
       )
       const write = vi.fn()
-      const emergency = new EmergencyRestoreController(preview, activation, { write })
+      const emergency = new EmergencyRestoreController(
+        preview,
+        activation,
+        { prepareRestore: () => () => activation.restoreBaseline() },
+        { write }
+      )
 
       await expect(emergency.request()).resolves.toBe(true)
 

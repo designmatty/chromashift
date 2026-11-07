@@ -456,7 +456,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               colorPalette={pill.palette}
               bg={pill.previewing ? 'profile.live/15' : undefined}
               color={pill.previewing ? 'profile.previewFg' : undefined}
-              maxW="min(420px, calc(50vw - 210px))"
+              maxW="170px"
               minW="0"
               rounded="sm"
               _hover={{ bg: pill.previewing ? 'profile.live/25' : 'colorPalette.muted' }}

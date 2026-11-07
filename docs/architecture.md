@@ -252,10 +252,13 @@ Pause suspends new writes, waits for in-flight activation, restores every owned
 baseline, and enters Paused only after full restoration. An incomplete restore
 fails closed into Safety blocked. Resume re-resolves the latest foreground app
 and applies the preserved intended mode and target. Explicit profile or Automatic
-selection resumes a user pause; during a safety block it updates intent without
-bypassing the required retry. Safety blocked persists whether the interrupted
-operation was Pause or Resume so retry completes the correct operation. One-shot
-Restore original settings leaves display control Active and preserves intent.
+selection updates intent while staying Paused; during a safety block it updates
+intent without bypassing the required retry. Safety blocked persists whether the
+interrupted operation was Pause or Resume so retry completes the correct operation.
+Restore original settings reuses the Pause path and preserves intent. After full
+restoration, Paused persists until the user resumes. Restore original settings is
+a no-op while Paused or Safety blocked; the emergency shortcut still restores
+directly.
 
 The system tray reads the same activation and display-control state, supports
 manual profile overrides, returns to automatic mode, restores original settings,
@@ -295,7 +298,13 @@ recreated, and it hydrates from main-owned product state; three failures in one
 minute open the circuit instead of forming a reload loop. The global
 `Ctrl+Alt+Windows+R` shortcut remains main-process owned and requests preview
 rollback plus automatic-activation baseline restoration without relying on a
-renderer.
+renderer. Only a successful emergency restore then starts a detached call to the
+display-control Restore path to persist Paused while preserving intent. The direct
+restore request completes without waiting for that follow-up, so later shortcut
+presses can restore again even during a pending control transition. The follow-up
+preserves any newer intended mode or target instead of overwriting it with the
+snapshot taken before the direct restore. An emergency restore
+failure retains the current status and the critical log and error dialog.
 Tray Exit and other
 application quit requests share one shutdown coordinator. Before checking for
 unsaved changes, main requests a renderer draft flush with a 750 ms timeout, so

@@ -438,4 +438,6 @@ export interface ActivationContext {
 export interface CompletedActivationOutcome extends ActivationOutcome {
   source: ActivationSource
   origin: ActivationOrigin
+  // A shortcut changed only intent while Paused, without applying a profile.
+  pausedSelection?: ActivationMode
 }

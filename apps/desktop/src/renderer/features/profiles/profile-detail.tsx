@@ -213,13 +213,10 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         </Flex>
       </Flex>
 
-      {props.product.chromaShift.status !== 'active' && (
+      {/* Paused is covered by the pane overlay in main-app. */}
+      {props.product.chromaShift.status === 'safetyBlocked' && (
         <Flex align="center" gap="3" role="status">
-          <Text color="fg.muted">
-            {props.product.chromaShift.status === 'paused'
-              ? 'ChromaShift is paused'
-              : 'ChromaShift is safety blocked'}
-          </Text>
+          <Text color="fg.muted">ChromaShift is safety blocked</Text>
           <Button
             size="xs"
             variant="outline"

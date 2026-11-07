@@ -41,7 +41,8 @@ export function ControlValue({
     if (editing) setText(String(control === 'hue' ? hueToDegrees(next) : next))
     else onChange(next)
   }
-  const ref = useWheelAdjustment<HTMLDivElement>(!disabled, adjust)
+  // The wheel only adjusts an open editor, so scrolling past a value never changes it.
+  const ref = useWheelAdjustment<HTMLDivElement>(editing && !disabled, adjust)
   function finish(save: boolean): void {
     if (finished.current) return
     finished.current = true

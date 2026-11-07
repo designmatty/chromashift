@@ -42,7 +42,7 @@ The TypeScript and native test suites cover these contracts:
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
   persistence, including atomic writes and concurrent update queues
-- Pause, Resume, Safety blocked, one-shot restore, emergency restore,
+- Pause, Resume, Safety blocked, restore-and-pause, emergency restore,
   notification policy, global-shortcut replacement, tray commands, and
   renderer-free operation
 - Main-process composition, startup buffering, helper handshake and heartbeat,
@@ -115,8 +115,10 @@ Pause and Resume, diagnostics, theme states, profile deletion focus, app and min
 mutual exclusion, native caption behavior, mini-panel non-activation, tray
 reopening, and renderer release.
 
-Paused mode-selection behavior belongs to #71's controller coverage; the renderer
-smoke does not assert that dependency before it merges. Native dark/light app and
+The smoke asserts that Automatic and manual selection while Paused update intent
+and remain Paused until explicit Resume. A fake-display runtime regression holds a
+topology refresh across emergency restoration and checks that completing the
+transition leaves original settings Paused without another profile apply. Native dark/light app and
 collapsed-rail captures cover the toggle, live ring and preview/disabled badges.
 The deterministic presentation tests cover Shift+Enter activation, clean Edit
 preview eyes, and the single-pill precedence: Paused or Safety blocked, unsaved
@@ -168,8 +170,9 @@ Phase-4 desktop smoke changes:
   the absence of numeric stepper controls. Check computed hue and saturation
   gradients so theme backgrounds cannot silently clear them.
 - Exercise app-panel inline value Enter, blur, and Escape, value arrow keys, and
-  wheel adjustment on both the value and slider using mild brightness changes.
-  Mini-panel values stay plain text after a click and adjust with the wheel.
+  wheel adjustment on the slider and the open value editor using mild brightness
+  changes. Scrolling over a closed value changes nothing. Mini-panel values stay
+  plain text after a click and ignore the wheel.
 - Capture both themes with hatched gamma limits and the sixth temperature row
   while Paused. Restore the saved fixture before Resume and verify unchanged
   native display state. These presentation values are never applied to hardware.

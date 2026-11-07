@@ -6,11 +6,18 @@ import {
   PROTOCOL_VERSION,
   type DisplayTopologyRefreshResult,
   type ForegroundApplication,
+  type NativeEvent,
   type ServiceHealth,
   type SystemInfo
 } from '@chromashift/native-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { UserPreferences } from '@shared/product-api.js'
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+import { productIpcChannels, type UserPreferences } from '@shared/product-api.js'
+import { registerProductIpcHandlers } from '@main/product-ipc.js'
+import { DiagnosticsService } from '@main/diagnostics-service.js'
+import { AppUpdateService } from '@main/app-update-service.js'
+import { UpdateChecker } from '@main/update-checker.js'
+import type { ProductNotification } from '@main/profile-notification-controller.js'
 import {
   defaultChromaShiftIntent,
   defaultUserPreferences,
@@ -22,6 +29,7 @@ import {
   type ProductRuntimePorts
 } from '@main/product-runtime.js'
 import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
+import type { TrayCommands } from '@main/tray-controller.js'
 import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
 
 class RecordingLogger implements StructuredLogger {
@@ -43,8 +51,21 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
   public readonly potentialBaselineDisplayIds: string[] = []
   public readonly running = true
 
-  public on(): this {
+  private eventHandler: ((event: NativeEvent) => void) | undefined
+
+  public on(
+    name: string,
+    handler:
+      | ((event: NativeEvent) => void)
+      | ((message: string) => void)
+      | ((code: number | null, signal: NodeJS.Signals | null) => void)
+  ): this {
+    if (name === 'event') this.eventHandler = handler as (event: NativeEvent) => void
     return this
+  }
+
+  public emitForegroundApplication(application: ForegroundApplication): void {
+    this.eventHandler!({ event: 'foregroundApplicationChanged', data: { application } })
   }
 
   public async start(): Promise<SystemInfo> {
@@ -115,6 +136,7 @@ async function createHarness(
     profiles?: ColorProfile[]
     foregroundApplication?: ForegroundApplication
     confirmUnsavedQuit?: ProductRuntimePorts['dialogs']['confirmUnsavedQuit']
+    preferences?: Partial<UserPreferences>
   } = {}
 ): Promise<{
   runtime: ProductRuntime
@@ -124,6 +146,13 @@ async function createHarness(
   intent: () => ChromaShiftIntent
   errors: Array<{ title: string; message: string }>
   displayEvent: (event: 'displayAdded' | 'displayRemoved' | 'displayMetricsChanged') => void
+  emergencyRestore: () => void
+  trayCommands: () => TrayCommands
+  notifications: Array<ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }>
+  invokeRestore: () => Promise<unknown>
+  invokeActivate: (profileId: string) => Promise<unknown>
+  invokeAutomatic: () => Promise<unknown>
+  pressShortcut: (accelerator: string) => void
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-runtime-'))
   directories.push(directory)
@@ -148,12 +177,22 @@ async function createHarness(
   const client = new FakeRuntimeNativeClient()
   client.foregroundApplication = options.foregroundApplication ?? null
   const logger = new RecordingLogger()
-  let preferences: UserPreferences = { ...defaultUserPreferences }
+  let preferences: UserPreferences = {
+    ...defaultUserPreferences,
+    notificationsEnabled: true,
+    ...options.preferences
+  }
   let intent: ChromaShiftIntent = { ...defaultChromaShiftIntent, ...intentOverrides }
   let trayMenus = 0
   const errors: Array<{ title: string; message: string }> = []
   let displayEventListener: Parameters<ProductRuntimePorts['system']['onDisplayEvent']>[0] = () =>
     undefined
+  let emergencyHandler: (() => void) | undefined
+  let trayCommands: TrayCommands | undefined
+  const shortcutHandlers = new Map<string, () => void>()
+  const notifications: Array<
+    ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }
+  > = []
   const ports: ProductRuntimePorts = {
     logger,
     configuration: {
@@ -188,7 +227,9 @@ async function createHarness(
       createTrayMenu: () => {
         trayMenus += 1
         return Promise.resolve({
-          update: () => undefined,
+          update: (_model, commands) => {
+            trayCommands = commands
+          },
           showError: () => undefined,
           destroy: () => undefined
         })
@@ -207,23 +248,84 @@ async function createHarness(
     icons: { applicationIconDataUrl: () => Promise.resolve(null) },
     system: {
       application: { exit: () => undefined },
-      shortcutRegistrations: { register: () => true, unregister: () => undefined },
+      shortcutRegistrations: {
+        register: (accelerator, handler) => {
+          shortcutHandlers.set(accelerator, handler)
+          return true
+        },
+        unregister: (accelerator) => {
+          shortcutHandlers.delete(accelerator)
+        }
+      },
       powerMonitor: { on: () => undefined, off: () => undefined },
-      registerEmergencyRestoreShortcut: () => true,
+      registerEmergencyRestoreShortcut: (handler) => {
+        emergencyHandler = handler
+        return true
+      },
       onDisplayEvent: (listener) => {
         displayEventListener = listener
       }
     },
-    notifications: { isSupported: () => false, show: () => undefined }
+    notifications: {
+      isSupported: () => true,
+      show: (message) => notifications.push({ ...message, status: intent.chromaShiftStatus })
+    }
   }
+  const runtime = createProductRuntime(ports)
+  const handlers = new Map<
+    string,
+    (event: IpcMainInvokeEvent, input: unknown) => Promise<unknown>
+  >()
+  registerProductIpcHandlers(
+    {
+      handle: (
+        name: string,
+        handler: (event: IpcMainInvokeEvent, input: unknown) => Promise<unknown>
+      ) => handlers.set(name, handler)
+    } as unknown as IpcMain,
+    () => runtime.productController,
+    () => undefined,
+    async () => true,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => [],
+    new DiagnosticsService({
+      read: () => [],
+      copy: () => undefined,
+      download: async () => false,
+      clear: () => undefined,
+      context: () => ({}),
+      logger
+    }),
+    new AppUpdateService({
+      checker: new UpdateChecker({
+        currentVersion: '0.0.0-test',
+        fetch: async () => Response.json([])
+      }),
+      requestExit: async () => true
+    })
+  )
   return {
-    runtime: createProductRuntime(ports),
+    runtime,
     client,
     logger,
     trayMenusCreated: () => trayMenus,
     intent: () => intent,
     errors,
-    displayEvent: (event) => displayEventListener(event)
+    displayEvent: (event) => displayEventListener(event),
+    emergencyRestore: () => emergencyHandler!(),
+    trayCommands: () => trayCommands!,
+    notifications,
+    invokeRestore: () =>
+      handlers.get(productIpcChannels.restoreBaseline)!({} as IpcMainInvokeEvent, {}),
+    invokeActivate: (profileId) =>
+      handlers.get(productIpcChannels.activateProfile)!({} as IpcMainInvokeEvent, { profileId }),
+    invokeAutomatic: () =>
+      handlers.get(productIpcChannels.enableAutomatic)!({} as IpcMainInvokeEvent, {}),
+    pressShortcut: (accelerator) => shortcutHandlers.get(accelerator)!()
   }
 }
 
@@ -513,4 +615,551 @@ describe('profile reorder activation', () => {
       }
     }
   )
+})
+
+describe('product runtime display-control wiring', () => {
+  const gameApplication: ForegroundApplication = {
+    pid: 42,
+    executable: 'game.exe',
+    path: 'C:\\Games\\game.exe',
+    title: 'Game',
+    monitorDeviceName: null
+  }
+
+  it('keeps a newer Automatic target reached before the direct emergency restore', async () => {
+    const harness = await createHarness({}, { profiles: [reorderProfile('first')] })
+    await harness.runtime.start()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const preview = harness.runtime.previewController!
+    const dispose = preview.dispose.bind(preview)
+    const disposing = vi.spyOn(preview, 'dispose').mockImplementationOnce(async () => {
+      await waiting
+      return dispose()
+    })
+    try {
+      expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'default' })
+      harness.emergencyRestore()
+      await vi.waitFor(() => expect(disposing).toHaveBeenCalledOnce())
+      harness.client.emitForegroundApplication(gameApplication)
+      await vi.waitFor(() =>
+        expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'first' })
+      )
+      release()
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'first' }
+      })
+    } finally {
+      release()
+      harness.runtime.dispose()
+    }
+  })
+
+  it('preserves the newer Automatic target resolved during real emergency preview teardown', async () => {
+    const harness = await createHarness({}, { profiles: [reorderProfile('first')] })
+    await harness.runtime.start()
+    try {
+      await harness.runtime.productController!.startPreview(reorderProfile('first'), 'preview')
+      const appliedBefore = harness.client.applied.length
+      harness.client.emitForegroundApplication(gameApplication)
+      expect(harness.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'default' })
+      expect(harness.client.applied).toHaveLength(appliedBefore)
+
+      harness.emergencyRestore()
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'first' }
+      })
+      expect(harness.errors).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it.each([true, false])(
+    'handles Paused shortcut selection with notificationsEnabled=%s',
+    async (notificationsEnabled) => {
+      const harness = await createHarness(
+        { chromaShiftStatus: 'paused' },
+        {
+          preferences: {
+            notificationsEnabled,
+            shortcutBindings: [
+              { accelerator: 'CommandOrControl+Alt+1', action: { kind: 'defaultProfile' } },
+              { accelerator: 'CommandOrControl+Alt+2', action: { kind: 'automatic' } }
+            ]
+          }
+        }
+      )
+      await harness.runtime.start()
+      try {
+        harness.pressShortcut('CommandOrControl+Alt+1')
+        await vi.waitFor(() =>
+          expect(harness.intent().intendedActivationMode).toEqual({
+            kind: 'manual',
+            profileId: 'default'
+          })
+        )
+        harness.pressShortcut('CommandOrControl+Alt+2')
+        await vi.waitFor(() =>
+          expect(harness.intent().intendedActivationMode).toEqual({ kind: 'automatic' })
+        )
+        await vi.waitFor(() =>
+          expect(harness.notifications).toHaveLength(notificationsEnabled ? 2 : 0)
+        )
+        expect(harness.notifications).toMatchObject(
+          notificationsEnabled
+            ? [
+                {
+                  title: 'ChromaShift paused',
+                  body: 'Default applies when you resume.',
+                  status: 'paused'
+                },
+                {
+                  title: 'ChromaShift paused',
+                  body: 'Automatic applies when you resume.',
+                  status: 'paused'
+                }
+              ]
+            : []
+        )
+        expect(harness.client.calls).toEqual([])
+        expect(harness.intent()).toMatchObject({
+          chromaShiftStatus: 'paused',
+          intendedActivationMode: { kind: 'automatic' }
+        })
+      } finally {
+        harness.runtime.dispose()
+      }
+    }
+  )
+  it('runs a fresh direct emergency restore on a second press while Resume is held', async () => {
+    const harness = await createHarness({ chromaShiftStatus: 'paused' })
+    await harness.runtime.start()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const refresh = harness.client.refreshDisplayTopology.bind(harness.client)
+    const refreshing = vi
+      .spyOn(harness.client, 'refreshDisplayTopology')
+      .mockImplementationOnce(async () => {
+        await waiting
+        return refresh()
+      })
+    const restoring = vi.spyOn(harness.client, 'restoreAllBaselines')
+    const resuming = harness.runtime.productController!.controlChromaShift('resume')
+    try {
+      await vi.waitFor(() => expect(refreshing).toHaveBeenCalledOnce())
+      harness.emergencyRestore()
+      await vi.waitFor(() =>
+        expect(
+          harness.logger.events.filter((event) => event.eventName === 'EmergencyRestoreCompleted')
+        ).toHaveLength(1)
+      )
+      expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(false)
+      harness.emergencyRestore()
+      await vi.waitFor(() =>
+        expect(
+          harness.logger.events.filter((event) => event.eventName === 'EmergencyRestoreCompleted')
+        ).toHaveLength(2)
+      )
+      expect(restoring).toHaveBeenCalledTimes(2)
+      expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(false)
+      expect(harness.errors).toEqual([])
+    } finally {
+      release()
+      await resuming
+      await vi.waitFor(() =>
+        expect(
+          harness.logger.events.filter(
+            (event) => event.eventName === 'EmergencyRestorePauseCompleted'
+          )
+        ).toHaveLength(2)
+      )
+      expect(harness.intent().chromaShiftStatus).toBe('paused')
+      harness.runtime.dispose()
+    }
+  })
+
+  it('tears down an active preview before direct emergency restore and safely cancels again in the follow-up', async () => {
+    const harness = await createHarness({}, { profiles: [reorderProfile('first')] })
+    await harness.runtime.start()
+    try {
+      await harness.runtime.productController!.startPreview(reorderProfile('first'), 'preview')
+      const preview = harness.runtime.previewController!
+      const dispose = vi.spyOn(preview, 'dispose')
+      const cancel = vi.spyOn(preview, 'cancel')
+      harness.emergencyRestore()
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(dispose).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledTimes(2)
+      expect(dispose.mock.invocationCallOrder[0]!).toBeLessThan(cancel.mock.invocationCallOrder[0]!)
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      expect(harness.logger.has('EmergencyRestorePauseFailed')).toBe(false)
+      expect(harness.errors).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('preserves the newer Automatic target resolved by a held Resume after the emergency snapshot', async () => {
+    const harness = await createHarness(
+      { chromaShiftStatus: 'paused' },
+      {
+        profiles: [reorderProfile('first')]
+      }
+    )
+    await harness.runtime.start()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const refresh = harness.client.refreshDisplayTopology.bind(harness.client)
+    const refreshing = vi
+      .spyOn(harness.client, 'refreshDisplayTopology')
+      .mockImplementationOnce(async () => {
+        await waiting
+        return refresh()
+      })
+    const resuming = harness.runtime.productController!.controlChromaShift('resume')
+    try {
+      await vi.waitFor(() => expect(refreshing).toHaveBeenCalledOnce())
+      harness.emergencyRestore()
+      await vi.waitFor(() => expect(harness.logger.has('EmergencyRestoreCompleted')).toBe(true))
+      expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(false)
+      harness.client.foregroundApplication = {
+        pid: 42,
+        executable: 'game.exe',
+        path: 'C:\\Games\\game.exe',
+        title: 'Game',
+        monitorDeviceName: null
+      }
+      release()
+      await resuming
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'first' }
+      })
+      expect(harness.errors).toEqual([])
+    } finally {
+      release()
+      await resuming
+      harness.runtime.dispose()
+    }
+  })
+
+  it.each(['tray', 'ipc'] as const)(
+    'updates C2 selections through %s without bypassing Safety blocked',
+    async (surface) => {
+      const harness = await createHarness(
+        {
+          chromaShiftStatus: 'safetyBlocked',
+          pendingControlOperation: 'resume',
+          intendedActivationMode: { kind: 'manual', profileId: 'default' },
+          intendedTarget: { kind: 'profile', profileId: 'default' }
+        },
+        { profiles: [reorderProfile('first')] }
+      )
+      await harness.runtime.start()
+      try {
+        const callsBefore = [...harness.client.calls]
+        const refresh = vi.spyOn(harness.client, 'refreshDisplayTopology')
+        if (surface === 'tray') harness.trayCommands().selectProfile('first')
+        else expect(await harness.invokeActivate('first')).toMatchObject({ ok: true })
+        await vi.waitFor(() =>
+          expect(harness.intent()).toMatchObject({
+            chromaShiftStatus: 'safetyBlocked',
+            pendingControlOperation: 'resume',
+            intendedActivationMode: { kind: 'manual', profileId: 'first' },
+            intendedTarget: { kind: 'profile', profileId: 'first' }
+          })
+        )
+        if (surface === 'tray') harness.trayCommands().enableAutomatic()
+        else expect(await harness.invokeAutomatic()).toMatchObject({ ok: true })
+        await vi.waitFor(() =>
+          expect(harness.intent()).toMatchObject({
+            chromaShiftStatus: 'safetyBlocked',
+            pendingControlOperation: 'resume',
+            intendedActivationMode: { kind: 'automatic' },
+            intendedTarget: null
+          })
+        )
+        expect(harness.client.calls).toEqual(callsBefore)
+        expect(refresh).not.toHaveBeenCalled()
+        expect(harness.notifications).toEqual([])
+      } finally {
+        harness.runtime.dispose()
+      }
+    }
+  )
+  const restorableIntent: Partial<ChromaShiftIntent> = {
+    chromaShiftStatus: 'active',
+    intendedActivationMode: { kind: 'manual', profileId: 'default' },
+    intendedTarget: { kind: 'profile', profileId: 'default' }
+  }
+
+  it('keeps original settings Paused when an in-flight topology refresh completes after emergency restore', async () => {
+    const harness = await createHarness()
+    harness.client.currentSettings.set('display:one', { brightness: 43 })
+    await harness.runtime.start()
+    expect(harness.client.currentSettings.get('display:one')?.brightness).toBe(60)
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const refresh = harness.client.refreshDisplayTopology.bind(harness.client)
+    const refreshing = vi
+      .spyOn(harness.client, 'refreshDisplayTopology')
+      .mockImplementationOnce(async () => {
+        await waiting
+        return refresh()
+      })
+    try {
+      vi.useFakeTimers()
+      harness.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      vi.useRealTimers()
+      expect(refreshing).toHaveBeenCalledOnce()
+      harness.emergencyRestore()
+      await vi.waitFor(() => expect(harness.logger.has('EmergencyRestoreCompleted')).toBe(true))
+      expect(harness.client.currentSettings.get('display:one')).toEqual({ brightness: 43 })
+      const appliesAfterRestore = harness.client.applied.length
+      release()
+      await vi.waitFor(() => expect(harness.logger.has('DisplayTransitionCompleted')).toBe(true))
+      await vi.waitFor(() =>
+        expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null
+      })
+      expect((await harness.runtime.productController!.getState()).chromaShift).toMatchObject({
+        status: 'paused',
+        transitionInProgress: false
+      })
+      expect(harness.client.currentSettings.get('display:one')).toEqual({ brightness: 43 })
+      expect(harness.client.applied).toHaveLength(appliesAfterRestore)
+      harness.client.emitForegroundApplication(gameApplication)
+      await harness.runtime.productController!.getState()
+      expect(harness.client.applied).toHaveLength(appliesAfterRestore)
+      expect(harness.errors).toEqual([])
+    } finally {
+      release()
+      harness.runtime.dispose()
+    }
+  })
+
+  it('pauses after a successful emergency restore without a renderer', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      expect(harness.client.captured).toEqual(['display:one'])
+      await harness.runtime.productController!.activateProfile('default')
+
+      harness.emergencyRestore()
+
+      await vi.waitFor(() => expect(harness.intent().chromaShiftStatus).toBe('paused'))
+      expect(harness.intent()).toMatchObject({
+        pendingControlOperation: null,
+        intendedActivationMode: { kind: 'manual', profileId: 'default' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      expect(harness.client.calls.some((call) => call.operation === 'restoreAll')).toBe(true)
+      expect(harness.errors).toEqual([])
+      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
+      expect(harness.notifications[0]).toMatchObject({
+        title: 'Original settings restored',
+        body: 'ChromaShift is paused.',
+        status: 'paused'
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('keeps status and reports the existing failure when an emergency restore fails', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      harness.client.failRestoreAllDisplayIds.add('display:one')
+
+      harness.emergencyRestore()
+
+      await vi.waitFor(() => expect(harness.errors).toHaveLength(1))
+      expect(harness.errors[0]?.title).toBe('Emergency restore failed')
+      expect(harness.logger.has('EmergencyRestoreCompleted')).toBe(true)
+      expect(harness.logger.events).toContainEqual(
+        expect.objectContaining({
+          level: 'critical',
+          eventName: 'EmergencyRestoreCompleted',
+          restored: false
+        })
+      )
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'active',
+        pendingControlOperation: null
+      })
+      expect(harness.notifications).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it.each([
+    ['paused', null],
+    ['safetyBlocked', 'pause'],
+    ['safetyBlocked', 'resume']
+  ] as const)(
+    'leaves %s (%s) unchanged after an emergency restore succeeds',
+    async (status, pendingOperation) => {
+      const harness = await createHarness({
+        ...restorableIntent,
+        chromaShiftStatus: status,
+        pendingControlOperation: pendingOperation
+      })
+      await harness.runtime.start()
+      try {
+        const before = { ...harness.intent() }
+        const restore = vi.spyOn(harness.client, 'restoreAllBaselines')
+        const cancel = vi.spyOn(harness.runtime.previewController!, 'cancel')
+        harness.emergencyRestore()
+        await vi.waitFor(() =>
+          expect(harness.logger.has('EmergencyRestorePauseCompleted')).toBe(true)
+        )
+        expect(restore).toHaveBeenCalledOnce()
+        expect(cancel).toHaveBeenCalledOnce()
+        expect(harness.intent()).toEqual(before)
+        expect(harness.errors).toEqual([])
+        expect(harness.notifications).toEqual([])
+      } finally {
+        harness.runtime.dispose()
+      }
+    }
+  )
+
+  it('persists the pending pause before IPC restoration and announces completion only afterwards', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      let release!: () => void
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const restoreAll = harness.client.restoreAllBaselines.bind(harness.client)
+      const restoring = vi
+        .spyOn(harness.client, 'restoreAllBaselines')
+        .mockImplementation(async () => {
+          await waiting
+          return restoreAll()
+        })
+      const restore = harness.invokeRestore()
+      await vi.waitFor(() => expect(restoring).toHaveBeenCalledOnce())
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'safetyBlocked',
+        pendingControlOperation: 'pause'
+      })
+      expect(harness.notifications).toEqual([])
+      release()
+      expect(await restore).toMatchObject({ ok: true })
+      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
+      expect(harness.notifications[0]).toMatchObject({
+        title: 'Original settings restored',
+        status: 'paused'
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('pauses after the tray restores original settings', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      harness.trayCommands().resetBaseline()
+
+      await vi.waitFor(() => expect(harness.intent().chromaShiftStatus).toBe('paused'))
+      expect(harness.intent()).toMatchObject({
+        pendingControlOperation: null,
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('pauses after the Displays page restores original settings', async () => {
+    const harness = await createHarness(restorableIntent)
+    await harness.runtime.start()
+    try {
+      expect(await harness.invokeRestore()).toMatchObject({ ok: true, value: null })
+
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        pendingControlOperation: null,
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
+      expect(harness.notifications[0]).toMatchObject({
+        title: 'Original settings restored',
+        body: 'ChromaShift is paused.',
+        status: 'paused'
+      })
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
+
+  it('keeps display control Paused when a profile or Automatic is selected', async () => {
+    const harness = await createHarness({
+      ...restorableIntent,
+      chromaShiftStatus: 'paused'
+    })
+    await harness.runtime.start()
+    try {
+      const product = harness.runtime.productController!
+      await product.enableAutomatic()
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        intendedActivationMode: { kind: 'automatic' },
+        intendedTarget: null
+      })
+
+      await product.activateProfile('default')
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        intendedActivationMode: { kind: 'manual', profileId: 'default' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      })
+      expect(harness.client.applied).toEqual([])
+      expect(harness.client.captured).toEqual([])
+    } finally {
+      harness.runtime.dispose()
+    }
+  })
 })

@@ -126,9 +126,11 @@ Use the product terms from `CONTEXT.md`:
   ownership could not be confirmed.
 
 Pause enters Paused only after complete restoration. An incomplete pause or
-resume enters Safety blocked. Explicit profile or Automatic selection resumes a
-user pause, but it cannot bypass a safety block. One-shot Restore original
-settings leaves display control Active and preserves the intended target.
+resume enters Safety blocked. Explicit profile or Automatic selection updates
+intent while staying Paused or Safety blocked. Restore original settings uses
+the Pause path and preserves the intended target; after complete restoration,
+Paused persists until the user resumes. Restore original settings is a no-op
+while Paused or Safety blocked; the emergency shortcut still restores directly.
 
 ## Desktop application
 
