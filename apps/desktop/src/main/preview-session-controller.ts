@@ -81,6 +81,7 @@ interface RestoreTouchedResult {
 export class PreviewSessionController {
   #active: ActivePreview | null = null
   #operationTail: Promise<void> = Promise.resolve()
+  #operationVersion = 0
 
   public constructor(
     private readonly native: PreviewNativePort,
@@ -312,13 +313,35 @@ export class PreviewSessionController {
     })
   }
 
-  public async cancelNonOverride(): Promise<void> {
-    return this.#enqueue(async () => {
-      if (this.#active !== null && this.#active.kind !== 'override') {
-        const rollback = await this.#teardown()
-        if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
-      }
-    })
+  /** Release the app renderer only when all preview work queued during close has drained. */
+  public async cancelNonOverride(onCancelled?: () => void): Promise<void> {
+    let ready = false
+    while (!ready) {
+      const version = this.#operationVersion
+      ready = await this.#enqueue(async () => {
+        if (this.#active !== null && this.#active.kind !== 'override') {
+          const rollback = await this.#restoreTouched()
+          // Closing must remain retryable. Keep the session and automatic-write
+          // suspension until restoration succeeds, just as while previewing.
+          if (rollback.failures.length > 0) {
+            const retainedKeys = new Set(rollback.retainedDisplayIds.map((id) => id.toLowerCase()))
+            for (const key of this.#active.touched.keys()) {
+              if (retainedKeys.has(key)) continue
+              this.#active.applied.delete(key)
+              this.#active.touched.delete(key)
+            }
+            this.onStateChanged(this.state)
+            throw new PreviewRestoreError(rollback.failures)
+          }
+          await this.#endSession(rollback)
+        }
+        // A start or update may have arrived during restoration. Cancel it in
+        // queue order before releasing, even if it has not published state yet.
+        if (onCancelled !== undefined && version !== this.#operationVersion) return false
+        onCancelled?.()
+        return true
+      }, false)
+    }
   }
 
   public async dispose(): Promise<void> {
@@ -387,13 +410,17 @@ export class PreviewSessionController {
   async #teardown(): Promise<RestoreTouchedResult> {
     if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
     const rollback = await this.#restoreTouched()
+    await this.#endSession(rollback)
+    return rollback
+  }
+
+  async #endSession(rollback: RestoreTouchedResult): Promise<void> {
     this.#active = null
     try {
       await this.activation.cancelPreview(rollback.retainedDisplayIds)
     } finally {
       this.onStateChanged(this.state)
     }
-    return rollback
   }
 
   async #restoreTouched(): Promise<RestoreTouchedResult> {
@@ -464,7 +491,10 @@ export class PreviewSessionController {
     return { failures, retainedDisplayIds }
   }
 
-  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
+  #enqueue<T>(operation: () => Promise<T>, changesSession = true): Promise<T> {
+    // Concurrent close drains must not invalidate one another's queue checkpoint.
+    // Starts, edits, and other session commands still force another drain pass.
+    if (changesSession) this.#operationVersion += 1
     const result = this.#operationTail.then(operation)
     this.#operationTail = result.then(
       () => undefined,

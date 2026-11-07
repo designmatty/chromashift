@@ -233,9 +233,9 @@ their existing meanings, with Paused and Safety blocked taking precedence over
 the hold indicator.
 
 Main exposes the latest blocked automatic target through validated ProductState.
-An app-view toast says `<Profile> not applied — unsaved changes on <edited profile>`
-and offers Update and Discard. Both finish the session through the existing path
-that resolves the latest queued foreground application. Update preserves the
+There is no separate toast for it: the profile's `Update profile` and
+`Discard changes` actions finish the session through the existing path that
+resolves the latest queued foreground application. Update preserves the
 activation mode. A later foreground change replaces the queued target; returning
 to the currently intended target clears it.
 

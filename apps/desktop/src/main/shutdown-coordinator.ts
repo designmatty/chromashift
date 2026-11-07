@@ -1,4 +1,8 @@
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
+import {
+  showRestoreFailureGuidance,
+  type RestoreFailureGuidancePort
+} from '@main/restore-failure-guidance.js'
 
 export interface ShutdownActivationPort {
   waitForIdle(): Promise<void>
@@ -13,13 +17,7 @@ export interface ShutdownApplicationPort {
   exit(exitCode?: number): void
 }
 
-export interface ShutdownErrorPort {
-  show(): void
-  showError(
-    title: string,
-    message: string
-  ): Promise<'retry' | 'cancel' | void> | 'retry' | 'cancel' | void
-}
+export type ShutdownErrorPort = RestoreFailureGuidancePort
 
 export type ShutdownSource = 'tray' | 'application'
 export type ShutdownState = 'idle' | 'restoring' | 'failed' | 'complete'
@@ -105,11 +103,7 @@ export class ShutdownCoordinator {
           reason: 'baselineRestoreFailed',
           ...details
         })
-        this.errors.show()
-        const action = await this.errors.showError(
-          'Display settings need attention',
-          'ChromaShift could not restore one or more connected displays. You can try again now or keep ChromaShift running. Technical details are available in Diagnostics.'
-        )
+        const action = await showRestoreFailureGuidance(this.errors)
         if (action !== 'retry') return false
         this.#state = 'restoring'
       }
