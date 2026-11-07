@@ -170,8 +170,9 @@ Phase-4 desktop smoke changes:
   the absence of numeric stepper controls. Check computed hue and saturation
   gradients so theme backgrounds cannot silently clear them.
 - Exercise app-panel inline value Enter, blur, and Escape, value arrow keys, and
-  wheel adjustment on both the value and slider using mild brightness changes.
-  Mini-panel values stay plain text after a click and adjust with the wheel.
+  wheel adjustment on the slider and the open value editor using mild brightness
+  changes. Scrolling over a closed value changes nothing. Mini-panel values stay
+  plain text after a click and ignore the wheel.
 - Capture both themes with hatched gamma limits and the sixth temperature row
   while Paused. Restore the saved fixture before Resume and verify unchanged
   native display state. These presentation values are never applied to hardware.

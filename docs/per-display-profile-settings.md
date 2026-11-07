@@ -90,8 +90,8 @@ targets remain persisted and resume when the same physical display returns.
   or `Safety blocked` in red. Exactly one pill is shown. Paused or Safety blocked
   takes precedence over
   unsaved hold, which takes precedence over a non-live preview, then Active mode.
-  Safety blocked retains its Retry action. Long names truncate, with the full
-  state in the tooltip.
+  Safety blocked retains its Retry action. The pill is at most 170px wide; longer
+  labels truncate, with the full state in the tooltip.
 - Row menus offer Use this profile, Clone, Disable/Enable, then a divider and
   red Delete action. Default retains its protected availability and deletion
   behavior. Delete uses the existing confirmation dialog.
@@ -122,7 +122,8 @@ targets remain persisted and resume when the same physical display returns.
   header, with a centered `ChromaShift is paused` card and Resume. The mini
   panel shows the same card over its controls pane; its title bar, profile
   picker, and footer stay usable. Both overlays blur the content beneath by 2px
-  and stop it scrolling. Safety blocked keeps its inline status row.
+  and stop it scrolling. Paused has no inline status row under the profile
+  name. Safety blocked keeps its inline status row.
 - The first change promotes Preview to Edit in place before applying the draft.
   Only sidebar rows, including the collapsed rail, mark unsaved changes with a bullet.
   When dirty, the header shows `Discard changes` then primary `Update profile`
@@ -163,10 +164,11 @@ targets remain persisted and resume when the same physical display returns.
   click a value to edit it inline; Enter or blur saves and Escape cancels.
   Opening and closing an unchanged editor preserves the exact stored value,
   including fractional hue and gamma. Gamma keeps full precision while editing.
-  There are no stepper arrows. Arrow keys and the mouse wheel adjust app-panel
-  values and sliders within the current bounds. Mini-panel values remain plain
-  text without an editor; use the slider or scroll over a value or slider to
-  adjust. Exact text entry is in the app panel. The mini panel retains its
+  There are no stepper arrows. Arrow keys adjust app-panel values and sliders
+  within the current bounds. The mouse wheel adjusts sliders, and adjusts a value
+  only while its inline editor is open, so scrolling past a value never changes
+  it. Mini-panel values remain plain text without an editor; use the slider or
+  scroll over it to adjust. Exact text entry is in the app panel. The mini panel retains its
   pointer-oriented, non-activating native window contract.
 - Brightness, contrast, saturation, and color temperature display percentages.
   Gamma always displays two decimal places. Hue displays 0–359°, calculated as

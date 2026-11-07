@@ -936,17 +936,18 @@ async function verifyColorValues(debuggerClient, rowSelector) {
     'Arrow keys did not adjust the plain value.'
   )
   await reset()
+  // A closed value ignores the wheel; the slider then adds exactly one step.
   for (const selector of ['[data-part="color-value"]', '[data-slot="slider"]']) {
     await debuggerClient.send('Runtime.evaluate', {
       expression: `${brightness}?.querySelector('${selector}')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
     })
-    await waitForExpression(
-      debuggerClient,
-      `${button}?.textContent?.trim() === '51%'`,
-      'Mouse wheel did not adjust the color control.'
-    )
-    await reset()
   }
+  await waitForExpression(
+    debuggerClient,
+    `${button}?.textContent?.trim() === '51%'`,
+    'Mouse wheel did not adjust only the slider of the color control.'
+  )
+  await reset()
 }
 
 async function waitForRestoredDisplayState(native, displayId, expectedFingerprint) {
@@ -4199,7 +4200,7 @@ async function runSmoke() {
     ).color`
   })
   await debuggerClient.send('Runtime.evaluate', {
-    expression: `document.querySelector('[data-control="brightness"] [data-part="color-value"]')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
+    expression: `document.querySelector('[data-control="brightness"] [data-slot="slider"]')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))`
   })
   await waitForExpression(
     debuggerClient,
