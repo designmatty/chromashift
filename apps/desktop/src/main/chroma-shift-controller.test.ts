@@ -4,7 +4,8 @@ import type { CompletedActivationOutcome } from '@main/automatic-activation-cont
 import {
   ChromaShiftController,
   type ChromaShiftActivationPort,
-  type ChromaShiftPersistedState
+  type ChromaShiftPersistedState,
+  type ChromaShiftTopologyPort
 } from '@main/chroma-shift-controller.js'
 
 function outcome(
@@ -104,7 +105,7 @@ function create(
   }
 ) {
   const persisted: ChromaShiftPersistedState[] = []
-  const refreshTopology = vi.fn(() =>
+  const refreshTopology = vi.fn<ChromaShiftTopologyPort['refreshTopology']>(() =>
     Promise.resolve({ baselines: [{ ownership: 'owned' as const }] })
   )
   const cancelPreview = vi.fn(() => Promise.resolve())
@@ -239,6 +240,36 @@ describe('ChromaShiftController pause safety', () => {
 })
 
 describe('ChromaShiftController resume and intent', () => {
+  it.each(['ownership', 'resume'] as const)(
+    'keeps the preview recovery reason after a failed %s check until teardown completes',
+    async (failure) => {
+      const { activation, controller, refreshTopology } = create()
+      await controller.previewRestoreFailed()
+      if (failure === 'ownership') {
+        refreshTopology.mockResolvedValueOnce({ baselines: [{ ownership: 'providerChanged' }] })
+        await expect(controller.retrySafetyCheck('manual')).rejects.toThrow('ownership changed')
+      } else {
+        activation.resumeOutcome = outcome(undefined, {
+          status: 'partialFailure',
+          failures: [
+            { operation: 'apply', code: 'BASELINE_RESTORE_FAILED', message: 'Restore failed' }
+          ]
+        })
+        await controller.retrySafetyCheck('manual')
+      }
+      expect(controller.chromaShiftState).toMatchObject({
+        status: 'safetyBlocked',
+        pendingOperation: 'previewRestore'
+      })
+      activation.resumeOutcome = null
+      await controller.previewRestored()
+      expect(controller.chromaShiftState).toMatchObject({
+        status: 'active',
+        pendingOperation: null
+      })
+    }
+  )
+
   it('retries tracked preview restoration before completing a persisted resume recovery', async () => {
     const { activation, controller, cancelPreview, refreshTopology } = create(
       new FakeActivation(),

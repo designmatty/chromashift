@@ -80,6 +80,11 @@ interface RestoreTouchedResult {
   retainedDisplayIds: string[]
 }
 
+type PreviewRecovery = {
+  kind: 'continuation' | 'teardown'
+  displayIds: readonly string[]
+}
+
 /**
  * One atomic profile-edit session spanning several displays. Each display previews
  * its own draft settings, switching the edited display keeps the rest of the draft,
@@ -88,9 +93,8 @@ interface RestoreTouchedResult {
  */
 export class PreviewSessionController {
   #active: ActivePreview | null = null
-  #restorePending = false
-  // A failed in-session restoration must not turn Retry into user Discard.
-  #continuationRestoreIds: readonly string[] | null = null
+  // Teardown supersedes continuation, including the displays Retry must restore.
+  #recovery: PreviewRecovery | null = null
   #operationTail: Promise<void> = Promise.resolve()
   #operationVersion = 0
 
@@ -106,8 +110,8 @@ export class PreviewSessionController {
 
   public get state(): PreviewState {
     if (this.#active === null) return { state: 'inactive' }
-    if (this.#restorePending) {
-      return { state: 'restorePending', displayIds: [...this.#active.touched.values()] }
+    if (this.#recovery?.kind === 'teardown') {
+      return { state: 'restorePending', displayIds: [...this.#recovery.displayIds] }
     }
     return {
       state: 'active',
@@ -129,7 +133,7 @@ export class PreviewSessionController {
   }
 
   public get sessionRecoveryPending(): boolean {
-    return this.#continuationRestoreIds !== null
+    return this.#recovery?.kind === 'continuation'
   }
 
   /** Refresh saved content without changing the applied draft or display ownership. */
@@ -158,7 +162,7 @@ export class PreviewSessionController {
     kind: 'preview' | 'edit' | 'override',
     saved: ColorProfile
   ): Promise<void> {
-    if (this.#restorePending || this.#continuationRestoreIds !== null) {
+    if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
     }
     const targets = activeColorTargets(profile)
@@ -383,7 +387,10 @@ export class PreviewSessionController {
     while (!ready) {
       const version = this.#operationVersion
       ready = await this.#enqueue(async () => {
-        if (this.#active !== null && (this.#restorePending || this.#active.kind !== 'override')) {
+        if (
+          this.#active !== null &&
+          (this.#recovery?.kind === 'teardown' || this.#active.kind !== 'override')
+        ) {
           const rollback = await this.#teardown()
           if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         }
@@ -404,8 +411,7 @@ export class PreviewSessionController {
   public restoreAllConfirmed(): Promise<void> {
     return this.#enqueue(async () => {
       this.#active = null
-      this.#restorePending = false
-      this.#continuationRestoreIds = null
+      this.#recovery = null
       // A failed rollback keeps activation suspended; confirmed restore-all
       // releases only that hold, without resuming the intended profile.
       await this.activation.cancelPreview([])
@@ -436,15 +442,19 @@ export class PreviewSessionController {
   /** Retry an interrupted Edit/override without ending it or restoring unaffected SDR targets. */
   public retryRestoration(): Promise<boolean> {
     return this.#enqueue(async () => {
-      if (this.#continuationRestoreIds === null) return false
-      const result = await this.#restoreDisplayIds(this.#continuationRestoreIds)
-      if (result.failures.length > 0)
-        throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+      const recovery = this.#recovery
+      if (recovery?.kind !== 'continuation') return false
+      const result = await this.#restoreDisplayIds(recovery.displayIds)
       const retained = new Set(result.retainedDisplayIds.map((id) => id.toLowerCase()))
-      for (const id of this.#continuationRestoreIds) {
+      for (const id of recovery.displayIds) {
         if (!retained.has(id.toLowerCase())) this.#active?.touched.delete(id.toLowerCase())
       }
-      this.#continuationRestoreIds = null
+      if (result.failures.length > 0) {
+        const error = new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+        await this.#retainSessionForRecovery(error)
+        throw error
+      }
+      this.#recovery = null
       try {
         return await this.#reapplyAfterDisplayTransition()
       } catch (error) {
@@ -459,7 +469,10 @@ export class PreviewSessionController {
   }
 
   async #retainSessionForRecovery(error: PreviewRestoreError): Promise<void> {
-    this.#continuationRestoreIds = error.displayIds ?? [...(this.#active?.touched.values() ?? [])]
+    this.#recovery = {
+      kind: 'continuation',
+      displayIds: error.displayIds ?? [...(this.#active?.touched.values() ?? [])]
+    }
     try {
       await this.recovery.restoreFailed()
     } finally {
@@ -471,7 +484,7 @@ export class PreviewSessionController {
     const active = this.#active
     if (active === null) return false
     // A topology event must never reapply values whose rollback is unconfirmed.
-    if (this.#restorePending || this.#continuationRestoreIds !== null) return true
+    if (this.#recovery !== null) return true
 
     const displays = await this.native.getDisplays()
     await this.#restoreHdrDisplays(active.touched, displays)
@@ -525,10 +538,9 @@ export class PreviewSessionController {
   }
 
   async #endSession(rollback: RestoreTouchedResult): Promise<void> {
-    const recovering = this.#restorePending || this.#continuationRestoreIds !== null
+    const recovering = this.#recovery !== null
     this.#active = null
-    this.#restorePending = false
-    this.#continuationRestoreIds = null
+    this.#recovery = null
     try {
       await this.activation.cancelPreview(rollback.retainedDisplayIds)
       if (recovering) await this.recovery.restored()
@@ -540,7 +552,7 @@ export class PreviewSessionController {
   async #retainFailedRestore(rollback: RestoreTouchedResult): Promise<void> {
     const active = this.#active
     if (active === null) return
-    this.#restorePending = true
+    this.#recovery = { kind: 'teardown', displayIds: rollback.retainedDisplayIds }
     const retained = new Set(rollback.retainedDisplayIds.map((id) => id.toLowerCase()))
     for (const key of active.touched.keys()) {
       if (retained.has(key)) continue
@@ -556,7 +568,11 @@ export class PreviewSessionController {
 
   async #restoreTouched(): Promise<RestoreTouchedResult> {
     if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
-    return this.#restoreDisplayIds(this.#active.touched.values())
+    return this.#restoreDisplayIds(
+      this.#recovery?.kind === 'teardown'
+        ? this.#recovery.displayIds
+        : this.#active.touched.values()
+    )
   }
 
   /** HDR blocks desired settings, but never restoration of a captured baseline. */
@@ -731,7 +747,7 @@ export class PreviewSessionController {
   }
 
   #requireActive(profileId: string): ActivePreview {
-    if (this.#restorePending || this.#continuationRestoreIds !== null) {
+    if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before changing a preview.')
     }
     if (this.#active === null) throw new PreviewValidationError('No preview is active.')

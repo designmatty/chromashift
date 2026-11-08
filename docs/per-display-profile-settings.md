@@ -241,6 +241,12 @@ pill with Retry and its inline row. The mini panel shows the red Retry power
 control. Both panels disable color inputs. Pending teardown restoration is not an
 editable preview and shows no preview strip or eye badge. An interrupted
 in-session restoration retains its draft and session for recovery instead.
+If the user then ends the session, teardown replaces continuation recovery
+and tracks every remaining restore. A failure on another display must also be
+confirmed before Safety blocked clears. Failed retries retain the preview
+recovery reason in memory; a later successful End preview completes recovery
+without another Retry. Persisted control intent remains schema v1 with only
+`pause` or `resume` pending operations.
 Retry from either panel or the tray, another End preview or Discard, and close
 including `Try again` re-attempt the retained restores. Automatic and manual
 profile writes, including already queued work, stay suspended until restoration is confirmed; then Active resumes

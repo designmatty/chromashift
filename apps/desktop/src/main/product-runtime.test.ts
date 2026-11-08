@@ -1807,3 +1807,90 @@ it('keeps Original settings when an in-flight Retry resumes after emergency rest
     h.runtime.dispose()
   }
 })
+it('rereview90: Retry must restore a teardown failure after interrupted HDR continuation', async () => {
+  const one = 'display:one'
+  const two = 'display:two'
+  const saved = reorderProfile('draft', 50)
+  saved.displays.push({ displayId: two, color: createNeutralColorSettings() })
+  const draft = {
+    ...saved,
+    displays: saved.displays.map((target) => ({
+      ...target,
+      color: { ...target.color, brightness: 30 }
+    }))
+  }
+  const h = await createHarness({}, { profiles: [saved] })
+  await h.runtime.start()
+  const product = h.runtime.productController!
+  try {
+    await product.startPreview(draft, 'edit')
+    h.client.hdrDisplayIds.add(one)
+    h.client.failRestoreDisplayIds.add(one)
+    await expect(
+      h.runtime.previewController!.reapplyAfterDisplayTransition()
+    ).rejects.toBeInstanceOf(PreviewRestoreError)
+    expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+    h.client.failRestoreDisplayIds.delete(one)
+    h.client.failRestoreDisplayIds.add(two)
+    await expect(product.cancelPreview()).rejects.toBeInstanceOf(PreviewRestoreError)
+    expect((await product.getState()).preview).toMatchObject({
+      state: 'restorePending',
+      displayIds: [two]
+    })
+    expect(h.client.currentSettings.get(two)?.brightness).toBe(30)
+    const before = h.client.calls.length
+    await expect(product.controlChromaShift('retry')).rejects.toBeInstanceOf(PreviewRestoreError)
+    expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+    expect((await product.getState()).preview).toEqual({
+      state: 'restorePending',
+      displayIds: [two]
+    })
+    expect(h.client.calls.slice(before)).toEqual([{ operation: 'restore', displayId: two }])
+    expect(h.client.currentSettings.get(two)?.brightness).toBe(30)
+    h.client.failRestoreDisplayIds.clear()
+    const recoveryStart = h.client.calls.length
+    await product.controlChromaShift('retry')
+    expect(h.client.calls[recoveryStart]).toEqual({ operation: 'restore', displayId: two })
+    expect(h.client.currentSettings.get(two)).toEqual({})
+    expect((await product.getState()).preview).toEqual({ state: 'inactive' })
+    expect(h.intent()).toMatchObject({
+      chromaShiftStatus: 'active',
+      pendingControlOperation: null
+    })
+  } finally {
+    h.client.failRestoreDisplayIds.clear()
+    await h.runtime.dispose()
+  }
+})
+
+it('rereview90: End preview must recover after a failed continuation Retry', async () => {
+  const id = 'display:one'
+  const saved = reorderProfile('draft', 50)
+  const draft = reorderProfile('draft', 30)
+  const h = await createHarness({}, { profiles: [saved] })
+  await h.runtime.start()
+  const product = h.runtime.productController!
+  try {
+    await product.startPreview(draft, 'edit')
+    h.client.hdrDisplayIds.add(id)
+    h.client.failRestoreDisplayIds.add(id)
+    await expect(
+      h.runtime.previewController!.reapplyAfterDisplayTransition()
+    ).rejects.toBeInstanceOf(PreviewRestoreError)
+    await expect(product.controlChromaShift('retry')).rejects.toBeInstanceOf(PreviewRestoreError)
+    expect((await product.getState()).chromaShift.pendingOperation).toBe('previewRestore')
+    expect(h.intent()).toMatchObject({
+      chromaShiftStatus: 'safetyBlocked',
+      pendingControlOperation: 'resume'
+    })
+    h.client.failRestoreDisplayIds.clear()
+    await product.cancelPreview()
+    expect(h.intent().chromaShiftStatus).toBe('active')
+    expect((await product.getState()).preview).toEqual({ state: 'inactive' })
+    expect(h.intent().pendingControlOperation).toBeNull()
+    expect(h.client.currentSettings.get(id)).toEqual({})
+  } finally {
+    h.client.failRestoreDisplayIds.clear()
+    await h.runtime.dispose()
+  }
+})

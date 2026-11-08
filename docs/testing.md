@@ -43,6 +43,11 @@ The TypeScript and native test suites cover these contracts:
   drains. Dirty Edit and override sessions retain metadata and all display targets
   through repeated failure, ownership validation, Retry and HDR-off reapply.
   Update profile saves the retained draft while blocked without display writes.
+  Round-two proofs cover teardown superseding interrupted HDR continuation,
+  Retry attempting every pending display before resumption, and successful
+  End preview completing recovery after failed continuation retries. Recovery
+  retains its preview reason in memory through restore, ownership, and resume
+  failures while persisting only schema-v1 `resume`.
 - Preview start, update, promotion, save, rollback after pending writes, dirty
   navigation, mini-panel overrides, per-control neutral reset, target removal,
   close-time restoration before renderer release, visible failure guidance and
@@ -174,6 +179,13 @@ restoration guard with known original ramp hash and NVIDIA vibrance/hue values.
    full draft and SDR output survive, editing still works, and HDR-off reapplies
    the draft. Separately save with Update profile while blocked, confirm the
    saved values and no new display writes, then recover with Retry.
+8. After a failed HDR restore during Edit, end the preview and fail restoration
+   on the SDR display instead. Retry must attempt that SDR restore and remain
+   Safety blocked until it succeeds, with no profile writes during failure.
+   After confirmation, the preview ends and the intended target resumes.
+9. Fail an HDR continuation Retry, then allow restoration and choose End preview.
+   Confirm all pending displays restore and control becomes Active without an
+   additional Retry.
 
 Record GPU/driver, display model, Windows HDR toggle method, original and final
 ramp hashes and vendor values, logs, and any visual difference between read-back

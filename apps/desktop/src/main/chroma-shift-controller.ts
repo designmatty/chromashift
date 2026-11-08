@@ -155,7 +155,7 @@ export class ChromaShiftController {
   /** Called by the preview queue only after restoring and releasing its hold. */
   public async previewRestored(): Promise<void> {
     if (this.#state.pendingOperation !== 'previewRestore' || this.#transition !== null) return
-    this.#state.pendingOperation = 'resume'
+    // Keep the preview recovery reason until success. Persistence maps it to resume.
     await this.#runTransition(() => this.#resumeOperation('manual'), {
       source: 'manual',
       origin: 'resume'
@@ -200,7 +200,6 @@ export class ChromaShiftController {
       return this.#runTransition(
         async () => {
           if (!this.preview.sessionRecoveryPending) await this.preview.cancel()
-          this.#state.pendingOperation = 'resume'
           return this.#resumeOperation(source, this.preview.sessionRecoveryPending)
         },
         { source, origin: 'resume' }
@@ -443,7 +442,7 @@ export class ChromaShiftController {
     const topology = await this.topology.refreshTopology()
     if (topology.baselines.some((baseline) => baseline.ownership === 'providerChanged')) {
       this.#state.status = 'safetyBlocked'
-      this.#state.pendingOperation = 'resume'
+      if (this.#state.pendingOperation !== 'previewRestore') this.#state.pendingOperation = 'resume'
       throw new Error('Display baseline ownership changed; ChromaShift remains Safety blocked.')
     }
     if (recoverPreview && !(await this.preview.retryRestoration?.())) await this.preview.cancel()
@@ -455,7 +454,9 @@ export class ChromaShiftController {
     })
     const restoreFailed = outcome.status === 'failed' || outcome.status === 'partialFailure'
     this.#state.status = restoreFailed ? 'safetyBlocked' : 'active'
-    this.#state.pendingOperation = restoreFailed ? 'resume' : null
+    if (!restoreFailed) this.#state.pendingOperation = null
+    else if (this.#state.pendingOperation !== 'previewRestore')
+      this.#state.pendingOperation = 'resume'
     if (restoreFailed) await this.activation.suspendWrites()
     this.#setIntent(
       this.activation.state.mode,

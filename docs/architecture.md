@@ -100,6 +100,13 @@ continues to publish its full draft while Safety blocked disables color writes.
 Retry validates topology and ownership, restores the affected displays, and
 reapplies the retained draft without ending the session. Update profile can save
 the draft while blocked without changing display output.
+Preview recovery uses one model for its purpose and pending display IDs.
+Ending the session supersedes continuation recovery with every remaining
+teardown restore, including failures on previously unaffected SDR displays.
+Retry cannot resume activation until those restores are confirmed. The
+in-memory preview recovery reason survives failed retries, so a successful
+End preview completes recovery without an extra Retry. It still persists as
+schema-v1 `resume`.
 Both panels explain HDR above disabled target values; those values apply
 when HDR turns off through the existing topology transition. The mini panel keeps
 its fixed window sizing and scrolls the controls pane if needed. Windows gamma
@@ -292,8 +299,8 @@ intent without bypassing the required retry. Safety blocked persists whether the
 interrupted operation was Pause or Resume so retry completes the correct
 operation. The intent slice remains at schema version 1 with pending `pause`
 or `resume`. Pending preview restoration persists as `resume`; Retry first
-cancels and restores any tracked preview displays before validating topology
-and resuming activation. The preview-specific reason stays in memory and
+confirms tracked restores before activation resumes. An interrupted session
+continues, while pending teardown ends the session. The preview-specific reason stays in memory and
 validated product state, allowing a later successful End preview or Discard to
 resume automatically. After restart, Retry validates resumption without an
 in-memory preview session.
