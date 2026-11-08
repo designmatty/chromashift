@@ -78,6 +78,8 @@ export interface ChromaShiftTopologyPort {
 
 export interface ChromaShiftPreviewPort {
   cancel(): Promise<void>
+  readonly sessionRecoveryPending?: boolean
+  retryRestoration?(): Promise<boolean>
 }
 
 export class ChromaShiftController {
@@ -197,9 +199,9 @@ export class ChromaShiftController {
     ) {
       return this.#runTransition(
         async () => {
-          await this.preview.cancel()
+          if (!this.preview.sessionRecoveryPending) await this.preview.cancel()
           this.#state.pendingOperation = 'resume'
-          return this.#resumeOperation(source)
+          return this.#resumeOperation(source, this.preview.sessionRecoveryPending)
         },
         { source, origin: 'resume' }
       )
@@ -434,20 +436,24 @@ export class ChromaShiftController {
     return transition
   }
 
-  async #resumeOperation(source: ActivationSource): Promise<CompletedActivationOutcome> {
+  async #resumeOperation(
+    source: ActivationSource,
+    recoverPreview = false
+  ): Promise<CompletedActivationOutcome> {
     const topology = await this.topology.refreshTopology()
     if (topology.baselines.some((baseline) => baseline.ownership === 'providerChanged')) {
       this.#state.status = 'safetyBlocked'
       this.#state.pendingOperation = 'resume'
       throw new Error('Display baseline ownership changed; ChromaShift remains Safety blocked.')
     }
+    if (recoverPreview && !(await this.preview.retryRestoration?.())) await this.preview.cancel()
     await this.activation.setSuspendedIntent(this.#state.intendedMode, this.#state.intendedTarget)
     const currentApplication = await this.topology.getForegroundApplication?.()
     const outcome = await this.activation.resumeCurrent(currentApplication, {
       source,
       origin: 'resume'
     })
-    const restoreFailed = hasRestoreFailure(outcome)
+    const restoreFailed = outcome.status === 'failed' || outcome.status === 'partialFailure'
     this.#state.status = restoreFailed ? 'safetyBlocked' : 'active'
     this.#state.pendingOperation = restoreFailed ? 'resume' : null
     if (restoreFailed) await this.activation.suspendWrites()

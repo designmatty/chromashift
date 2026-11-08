@@ -35,6 +35,9 @@ topology changes. Every write is validated and read back. The baseline manager
 captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
+`ServiceLifecycle` owns the production input, parent-exit and watchdog loop and
+its final restore-all acknowledgement. Unit tests drive those routes with fake
+providers without launching a helper or touching Windows displays.
 
 `@chromashift/core` owns the vendor-neutral product model.
 It validates versioned JSON configuration, matches foreground applications, and
@@ -73,8 +76,12 @@ only after a successful transition, captures each desired display baseline befor
 applying, restores displays removed from the next profile, and restores all
 captured displays for a baseline target. Because the native baseline remains
 immutable across profile changes, gamma transforms never compound. Per-display
-failures are logged and returned as partial outcomes while remaining displays
-continue; failed transitions reset deduplication so a later event can retry.
+apply failures are logged and returned as partial outcomes while remaining displays
+continue. Restoration failures stop further profile writes in that transition
+and block queued activations before they execute. Explicit recovery confirms
+tracked baselines through restore-all before applying targets. Baseline restoration
+errors returned by native Apply also keep control blocked. Failed transitions
+reset deduplication so confirmed recovery can retry.
 External restoration and native-service exit also reset activation state.
 
 HDR blocks profile application and baseline capture in both Electron and the
@@ -88,7 +95,12 @@ failures suspend subsequent foreground writes, and a failed recovery stays
 blocked. Disconnected baseline retention is unchanged.
 
 HDR restoration preserves the Edit or override session, unsaved draft, and SDR
-targets. Both panels explain HDR above disabled target values; those values apply
+targets, including after a transient restore failure. The interrupted session
+continues to publish its full draft while Safety blocked disables color writes.
+Retry validates topology and ownership, restores the affected displays, and
+reapplies the retained draft without ending the session. Update profile can save
+the draft while blocked without changing display output.
+Both panels explain HDR above disabled target values; those values apply
 when HDR turns off through the existing topology transition. The mini panel keeps
 its fixed window sizing and scrolls the controls pane if needed. Windows gamma
 restore verifies the exact captured ramp, NVIDIA restore verifies vibrance/hue,
@@ -220,7 +232,9 @@ enters Safety blocked with a pending preview-restore operation. No rollback
 reapply occurs before restoration succeeds, including after a topology reapply
 failure. Retry or a later teardown restores the remaining displays, releases the
 preview hold, validates resumption, and reasserts the intended target through the
-activation queue. Disconnected baselines still pass back to activation as retained
+activation queue. In-session restoration failures instead retain the session and
+its draft for continuation, without restoring unaffected SDR draft targets or
+silently treating recovery as Discard. Disconnected baselines still pass back to activation as retained
 ownership without a restore failure. HDR displays restore immediately;
 `baselineNotCaptured` needs no restoration or capture.
 

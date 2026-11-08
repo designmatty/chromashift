@@ -64,6 +64,10 @@ not the Default profile.
   and override apply while HDR is active. Allow only restore writes of captured
   original settings, with read-back; restore immediately on an HDR-on transition.
   Preserve the draft and SDR output until the user discards or HDR turns off.
+- An unconfirmed restoration stops subsequent profile writes in the current
+  transition and in queued work. Retry confirms tracked restoration before
+  applying targets. In-session recovery preserves the full draft and session;
+  saving the draft remains available while Safety blocked.
 - Reacquire native handles after topology changes. Never reuse stale handles.
 - A provider or stable-identity mismatch fails closed. Do not recapture output
   that ChromaShift may already have modified.

@@ -22,7 +22,11 @@ changed.displays[0]!.color.brightness = 60
 const ok: ProductResult<null> = { ok: true, value: null }
 afterEach(() => vi.useRealTimers())
 
-function fixture(kind: 'preview' | 'edit' | 'override' = 'override', savedProfile = profile) {
+function fixture(
+  kind: 'preview' | 'edit' | 'override' = 'override',
+  savedProfile = profile,
+  status: ProductState['chromaShift']['status'] = 'active'
+) {
   let saved = savedProfile
   let appliedDraft = profile
   let preview: PreviewState = {
@@ -34,7 +38,10 @@ function fixture(kind: 'preview' | 'edit' | 'override' = 'override', savedProfil
   }
   const calls: string[] = []
   const api = {
-    getState: async () => ({ ok: true as const, value: { preview } as ProductState }),
+    getState: async () => ({
+      ok: true as const,
+      value: { preview, chromaShift: { status } } as ProductState
+    }),
     startPreview: async (draft: ColorProfile, kind: 'edit' | 'override') => {
       calls.push('start')
       appliedDraft = draft
@@ -79,6 +86,21 @@ function fixture(kind: 'preview' | 'edit' | 'override' = 'override', savedProfil
   const sync = new PreviewSyncSession(api, 'edit', () => undefined)
   return { api, sync, calls, state: () => preview }
 }
+
+it.each(['commit', 'save'] as const)(
+  'Update can %s a retained draft while Safety blocked without synchronizing colors',
+  async (action) => {
+    const f = fixture('edit', profile, 'safetyBlocked')
+    const settle = vi.fn(async () => undefined)
+    const saved =
+      action === 'commit'
+        ? await commitAppPreview(changed, settle, f.api)
+        : await saveAppPreview(changed, settle, f.api)
+    expect(saved).toEqual(changed)
+    expect(settle).toHaveBeenCalledOnce()
+    expect(f.calls).toEqual([action === 'commit' ? 'confirm:preserve' : 'save'])
+  }
+)
 
 it.each(['debouncing', 'in flight'] as const)(
   'banner Discard settles an %s edit before cancel, with no later apply',

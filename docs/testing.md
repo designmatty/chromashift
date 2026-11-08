@@ -36,6 +36,13 @@ The TypeScript and native test suites cover these contracts:
 - Serialized activation, baseline capture before apply, baseline-first profile
   changes, duplicate suppression after success, per-display failures, retry,
   disconnected targets, HDR apply deferral with immediate baseline restore, and topology reapply
+- Review #90 proof regressions: baseline-first Apply restoration failures keep
+  Safety blocked; failed HDR restoration stops SDR writes in the same transition
+  and already queued foreground work; recovery confirms tracked restoration
+  before profile writes. A queued preview also checks suspension after activation
+  drains. Dirty Edit and override sessions retain metadata and all display targets
+  through repeated failure, ownership validation, Retry and HDR-off reapply.
+  Update profile saves the retained draft while blocked without display writes.
 - Preview start, update, promotion, save, rollback after pending writes, dirty
   navigation, mini-panel overrides, per-control neutral reset, target removal,
   close-time restoration before renderer release, visible failure guidance and
@@ -66,7 +73,10 @@ The TypeScript and native test suites cover these contracts:
 - Native gamma transforms, HDR capture/apply rejection, restore-only HDR writes
   with gamma read-back and captured vendor baselines, foreground-window resolution,
   heartbeat deadlines, parent monitoring, display identity, baseline ownership,
-  and explicit shutdown policy
+  and explicit shutdown policy. AMD fake-provider write failure, custom-color and
+  LUT read-back mismatches retain ownership and succeed on retry for single and
+  restore-all routes. The production lifecycle loop is exercised through EOF,
+  parent exit and watchdog expiry with fake providers and an HDR display.
 
 `fixtures/gamma-envelope.json` is shared by the core, native-client, website,
 and C# tests. It covers both sides of the brightness boundaries 6/7, 29/30,
@@ -155,6 +165,15 @@ restoration guard with known original ramp hash and NVIDIA vibrance/hue values.
    must not claim restoration succeeded. Confirm a disconnected display still
    retains its baseline for reconnect and explicit shutdown discards only
    unreachable restoration records.
+6. Keep the restore failure present, turn HDR off, and Retry. A failure during
+   baseline-first Apply must remain Safety blocked. With a restore held, queue a
+   different foreground profile and then fail restoration. Confirm neither the
+   current transition nor queued work changes SDR output after the failure.
+7. Make an unsaved Edit or mini-panel override with different targets on both
+   displays. Fail HDR restoration once, then allow Retry to succeed. Confirm the
+   full draft and SDR output survive, editing still works, and HDR-off reapplies
+   the draft. Separately save with Update profile while blocked, confirm the
+   saved values and no new display writes, then recover with Retry.
 
 Record GPU/driver, display model, Windows HDR toggle method, original and final
 ramp hashes and vendor values, logs, and any visual difference between read-back

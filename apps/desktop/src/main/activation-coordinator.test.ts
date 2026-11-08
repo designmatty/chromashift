@@ -764,6 +764,27 @@ describe('AutomaticActivationController', () => {
     expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
   })
 
+  it('resumes a failed topology hold after the caller validates recovery', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([gameAProfile, gameBProfile]))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('GameA.exe'))
+    await controller.beginSystemTransition()
+    await controller.completeSystemTransition(false, false)
+    native.calls.length = 0
+    await controller.resumeCurrent(application('GameB.exe'))
+    expect(native.calls.filter((call) => call.operation === 'apply')).toMatchObject([
+      { displayId: 'display:two' }
+    ])
+    await expect(controller.selectManualProfile('game-a')).resolves.toMatchObject({
+      status: 'activated'
+    })
+  })
+
   it('buffers foreground events until configuration is validated and then enables automation', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
@@ -1015,7 +1036,7 @@ describe('AutomaticActivationController', () => {
     expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(1)
   })
 
-  it('retains failed baseline resets so a later transition retries stale displays', async () => {
+  it('retains failed baseline resets and requires explicit recovery before later transitions', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(
       repository(configuration([gameAProfile, gameBProfile])),
@@ -1030,13 +1051,18 @@ describe('AutomaticActivationController', () => {
       failures: [{ operation: 'restoreAll', displayId: 'display:one' }]
     })
     native.failRestoreAllDisplayIds.clear()
-    await coordinator.activate(application('GameB.exe'))
+    await expect(coordinator.activate(application('GameB.exe'))).resolves.toMatchObject({
+      status: 'failed',
+      failures: [{ code: 'RESTORE_PENDING' }]
+    })
+    expect(native.calls).toHaveLength(3)
+    await coordinator.activate(application('GameB.exe'), undefined, { recovery: true })
 
     expect(native.calls.map((call) => `${call.operation}:${call.displayId ?? 'all'}`)).toEqual([
       'capture:display:one',
       'apply:display:one',
       'restoreAll:all',
-      'restore:display:one',
+      'restoreAll:all',
       'capture:display:two',
       'apply:display:two'
     ])

@@ -109,7 +109,6 @@ export class AutomaticActivationController {
       }
 
       this.#enabled = true
-      this.#writesSuspended = false
       this.logger.write({
         level: 'information',
         eventName: 'AutomaticActivationEnabled'
@@ -215,6 +214,10 @@ export class AutomaticActivationController {
     if (this.#previewing) throw new Error('A display preview is already active.')
     this.#previewing = true
     await this.coordinator.waitForIdle()
+    if (this.#writesSuspended || this.coordinator.restorationBlocked) {
+      this.#previewing = false
+      throw new Error('Restore the pending displays before starting a preview.')
+    }
     return this.coordinator.capturedDisplayIds
   }
 
@@ -333,8 +336,10 @@ export class AutomaticActivationController {
     context: ActivationContext = { source: 'manual', origin: 'resume' }
   ): Promise<CompletedActivationOutcome> {
     if (currentApplication !== undefined) this.#currentApplication = currentApplication
+    // ChromaShiftController has validated a fresh topology before resuming.
+    this.#systemTransitioning = false
     this.#writesSuspended = false
-    return this.#activateCurrentApplication(context)
+    return this.#activateCurrentApplication(context, true)
   }
 
   public async handleNativeServiceExit(): Promise<void> {
@@ -370,11 +375,16 @@ export class AutomaticActivationController {
   }
 
   async #activateCurrentApplication(
-    context: ActivationContext
+    context: ActivationContext,
+    recovery = false
   ): Promise<CompletedActivationOutcome> {
-    const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode)
+    const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode, {
+      canWrite: () => !this.#writesSuspended && !this.#systemTransitioning && !this.#previewing,
+      recovery
+    })
     // Stop subsequent foreground writes before publishing an unconfirmed restore.
-    if (hasRestoreFailure(outcome)) this.#writesSuspended = true
+    if (hasRestoreFailure(outcome) || (recovery && outcome.failures.length > 0))
+      this.#writesSuspended = true
     this.#updateTarget(outcome)
     return this.#publishOutcome(outcome, context)
   }

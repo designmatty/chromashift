@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ChromaShift.DisplayService.Core;
+using ChromaShift.DisplayService.Ipc;
 using ChromaShift.DisplayService.Providers.Amd;
 using ChromaShift.DisplayService.Providers.Nvidia;
 using ChromaShift.DisplayService.Providers.Windows;
@@ -110,8 +111,89 @@ public sealed class HdrDisplaySafetyTests
         fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
         fixture.Manager.Restore(fixture.Displays.Current.Id);
         Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Restored);
-        Assert.Equal(new[] { "amd:restore" }, fixture.Calls);
+        Assert.Equal(new[] { "amd:restore", "amd:read" }, fixture.Calls);
         Assert.Equal(0, fixture.Manager.Count);
+    }
+
+    [Theory]
+    [InlineData("write", false)]
+    [InlineData("colorReadBack", false)]
+    [InlineData("gammaReadBack", false)]
+    [InlineData("write", true)]
+    [InlineData("colorReadBack", true)]
+    [InlineData("gammaReadBack", true)]
+    public void AmdHdrRestoreFailureRetainsCapturedOwnershipAndRetries(string failure, bool restoreAll)
+    {
+        var fixture = new Fixture(amd: true);
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Amd.Current = fixture.Amd.Baseline with { Brightness = Control(22), GammaRamp = Ramp(200) };
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Amd.FailWrite = failure == "write";
+        fixture.Amd.IgnoreColorWrite = failure == "colorReadBack";
+        fixture.Amd.IgnoreGammaWrite = failure == "gammaReadBack";
+        Assert.Equal("BASELINE_RESTORE_FAILED", Assert.Throws<DisplayOperationException>(() =>
+        {
+            if (restoreAll) fixture.Manager.RestoreAll(failOnError: true);
+            else fixture.Manager.Restore(fixture.Displays.Current.Id);
+        }).Code);
+        Assert.Equal(1, fixture.Manager.Count);
+        Assert.Contains("amd:restore", fixture.Calls);
+        if (failure != "write") Assert.Contains("amd:read", fixture.Calls);
+        fixture.Amd.FailWrite = fixture.Amd.IgnoreColorWrite = fixture.Amd.IgnoreGammaWrite = false;
+        fixture.Manager.Restore(fixture.Displays.Current.Id);
+        Assert.Equal(0, fixture.Manager.Count);
+        Assert.Equal(fixture.Amd.Baseline.Brightness, fixture.Amd.Current.Brightness);
+        Assert.Equal(fixture.Amd.Baseline.GammaRamp!.GetHash(), fixture.Amd.Current.GammaRamp!.GetHash());
+        Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Restored);
+    }
+
+    [Theory]
+    [InlineData("eof")]
+    [InlineData("parentExit")]
+    [InlineData("watchdog")]
+    public async Task ProductionLifecycleRouteRestoresHdrBaseline(string route)
+    {
+        var fixture = new Fixture();
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Gamma.Current = Ramp(200);
+        fixture.Nvidia.Current = new(Control(85), Control(40));
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        using var output = new StringWriter();
+        // The input thread blocks until released; no helper, processes or real providers run.
+        using var releaseInput = new ManualResetEventSlim(route == "eof");
+        using var inputRead = new ManualResetEventSlim();
+        var input = new ProtocolInputReader(new GatedInput(releaseInput, inputRead));
+        using var watchdog = new HeartbeatWatchdog(TimeSpan.FromSeconds(10), (handles, timeout) =>
+            timeout is null ? WaitHandle.WaitAny(handles) : WaitHandle.WaitTimeout);
+        if (route == "watchdog") watchdog.RecordHeartbeat();
+        var lifecycle = new ServiceLifecycle(input, watchdog, fixture.Manager, new ProtocolWriter(output));
+        try
+        {
+            await lifecycle.RunAsync(
+                _ => throw new InvalidOperationException("Unexpected command"),
+                () => false,
+                route == "parentExit" ? Task.CompletedTask : null).WaitAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(0, fixture.Manager.Count);
+            Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+            Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
+            Assert.Contains("service.baselinesRestored", output.ToString());
+            Assert.Contains("\"restored\":true", output.ToString());
+        }
+        finally
+        {
+            releaseInput.Set();
+            Assert.True(inputRead.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        }
+    }
+
+    private sealed class GatedInput(ManualResetEventSlim release, ManualResetEventSlim read) : TextReader
+    {
+        public override string? ReadLine()
+        {
+            release.Wait();
+            read.Set();
+            return null;
+        }
     }
 
     [Fact]
@@ -198,11 +280,21 @@ public sealed class HdrDisplaySafetyTests
         }
     }
 
-    private sealed class FakeAmd(List<string> calls) : IAmdColorProvider
+    private sealed class FakeAmd : IAmdColorProvider
     {
+        private readonly List<string> calls;
         internal readonly AmdDisplayState Baseline = new(Control(47), Control(48), Control(43), Control(12), Control(51), Ramp(250), null);
+        internal AmdDisplayState Current;
+        internal FakeAmd(List<string> calls)
+        {
+            this.calls = calls;
+            Current = Baseline;
+        }
         internal AmdDisplayState? Restored;
-        public AmdDisplayState GetState(DisplayDescriptor display) => display.Adapter.Vendor == "amd" ? Baseline : new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported, null, "unsupported");
+        internal bool FailWrite;
+        internal bool IgnoreColorWrite;
+        internal bool IgnoreGammaWrite;
+        public AmdDisplayState GetState(DisplayDescriptor display) => display.Adapter.Vendor == "amd" ? Current : new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported, null, "unsupported");
         public int SetBrightness(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected apply");
         public int SetContrast(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected apply");
         public int SetSaturation(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected apply");
@@ -212,6 +304,19 @@ public sealed class HdrDisplaySafetyTests
         public void Restore(DisplayDescriptor display, AmdDisplayState baseline)
         {
             calls.Add("amd:restore");
+            if (FailWrite) throw new DisplayOperationException("AMD_RESTORE_FAILED", "write failed");
+            Current = baseline with {
+                Brightness = IgnoreColorWrite ? Current.Brightness : baseline.Brightness,
+                GammaRamp = IgnoreGammaWrite ? Current.GammaRamp : baseline.GammaRamp
+            };
+            calls.Add("amd:read");
+            if (Current.Brightness != baseline.Brightness || Current.Contrast != baseline.Contrast ||
+                Current.Saturation != baseline.Saturation || Current.Hue != baseline.Hue ||
+                Current.ColorTemperature != baseline.ColorTemperature ||
+                Current.GammaRamp?.GetHash() != baseline.GammaRamp?.GetHash())
+            {
+                throw new DisplayOperationException("AMD_RESTORE_FAILED", "read-back mismatch");
+            }
             Restored = baseline;
         }
     }

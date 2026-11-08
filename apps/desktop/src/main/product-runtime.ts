@@ -324,7 +324,13 @@ export class ProductRuntime {
         refreshTopology: () => nativeClient.refreshDisplayTopology(),
         getForegroundApplication: () => nativeClient.getForegroundApplication()
       },
-      { cancel: () => previewController.cancel() },
+      {
+        cancel: () => previewController.cancel(),
+        get sessionRecoveryPending() {
+          return previewController.sessionRecoveryPending
+        },
+        retryRestoration: () => previewController.retryRestoration()
+      },
       {
         status: settings.chromaShiftIntent.current().chromaShiftStatus,
         pendingOperation: settings.chromaShiftIntent.current().pendingControlOperation,
@@ -517,7 +523,9 @@ export class ProductRuntime {
       () => {
         dialogs.showError(
           'Display preview failed',
-          'ChromaShift ended the preview after a display change. Check Diagnostics for details.'
+          previewController.sessionRecoveryPending
+            ? 'ChromaShift kept your preview and unsaved changes. Use Retry to restore display control. Check Diagnostics for details.'
+            : 'ChromaShift ended the preview after a display change. Check Diagnostics for details.'
         )
       }
     )

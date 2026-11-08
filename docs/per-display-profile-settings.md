@@ -209,7 +209,7 @@ targets remain persisted and resume when the same physical display returns.
 One preview session can touch several display targets. Clicking an app-panel
 profile starts Preview; its first change promotes the unchanged session to Edit
 without restoring or recapturing. Draft changes then apply immediately and remain
-unsaved until `Update profile`. Navigation or failure waits for pending writes
+unsaved until `Update profile`. Navigation or an ordinary apply failure waits for pending writes
 and restores the prior automatic or manual target. `Discard changes` also waits
 for pending writes; on a non-live profile it returns the session to the saved
 values instead. Preview
@@ -225,17 +225,25 @@ during an Edit or Temporary override transition. The session and full draft stay
 intact, SDR displays keep the draft, and HDR-off reapplies the current draft or
 target. Both panels show an HDR notice above disabled target values, explaining
 that they apply when HDR is off. Restoration never implicitly discards changes.
+If restoration fails during the session, the full draft remains available in
+main and both panels, with SDR draft output unchanged. Safety blocked disables
+color writes. Retry validates ownership, confirms the affected restoration, and
+continues the same session; turning HDR off then applies the retained draft.
+Update profile can save while blocked without applying settings or ending that
+session. An error returned by native baseline-first Apply is also a restoration
+failure and cannot clear Safety blocked.
 Teardown restores all session and activation-owned baselines before
 serialized activation rollback resets deduplication and reapplies the prior target
 on every display, including displays held at Original settings. An unconfirmed
 connected-display restore retains the affected displays as pending restoration
 and enters Safety blocked. The app panel shows the existing red Safety blocked
 pill with Retry and its inline row. The mini panel shows the red Retry power
-control. Both panels disable color inputs. Pending restoration is not an editable
-preview and shows no preview strip or eye badge.
+control. Both panels disable color inputs. Pending teardown restoration is not an
+editable preview and shows no preview strip or eye badge. An interrupted
+in-session restoration retains its draft and session for recovery instead.
 Retry from either panel or the tray, another End preview or Discard, and close
 including `Try again` re-attempt the retained restores. Automatic and manual
-profile writes stay suspended until restoration is confirmed; then Active resumes
+profile writes, including already queued work, stay suspended until restoration is confirmed; then Active resumes
 and serialized activation reasserts the prior automatic/manual target, resolving
 any intent or foreground changes remembered while blocked. Shutdown still
 requires native restoration of every connected baseline. Successful emergency

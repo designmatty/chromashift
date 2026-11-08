@@ -46,7 +46,10 @@ export class PreviewValidationError extends Error {
 export class PreviewRestoreError extends Error {
   public readonly failures: readonly string[]
 
-  public constructor(failures: readonly string[]) {
+  public constructor(
+    failures: readonly string[],
+    public readonly displayIds?: readonly string[]
+  ) {
     super(`Some displays could not be restored. ${failures.join(' ')}`)
     this.name = 'PreviewRestoreError'
     this.failures = failures
@@ -86,6 +89,8 @@ interface RestoreTouchedResult {
 export class PreviewSessionController {
   #active: ActivePreview | null = null
   #restorePending = false
+  // A failed in-session restoration must not turn Retry into user Discard.
+  #continuationRestoreIds: readonly string[] | null = null
   #operationTail: Promise<void> = Promise.resolve()
   #operationVersion = 0
 
@@ -119,9 +124,12 @@ export class PreviewSessionController {
 
   /** The full unsaved draft, for main-process flows that outlive the renderer. */
   public get unsavedDraft(): ColorProfile | null {
-    if (this.#restorePending || this.#active === null || !hasUnsavedChanges(this.#active))
-      return null
+    if (this.#active === null || !hasUnsavedChanges(this.#active)) return null
     return structuredClone(this.#active.draft)
+  }
+
+  public get sessionRecoveryPending(): boolean {
+    return this.#continuationRestoreIds !== null
   }
 
   /** Refresh saved content without changing the applied draft or display ownership. */
@@ -150,7 +158,7 @@ export class PreviewSessionController {
     kind: 'preview' | 'edit' | 'override',
     saved: ColorProfile
   ): Promise<void> {
-    if (this.#restorePending) {
+    if (this.#restorePending || this.#continuationRestoreIds !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
     }
     const targets = activeColorTargets(profile)
@@ -201,7 +209,7 @@ export class PreviewSessionController {
         const key = target.displayId.toLowerCase()
         if (!disconnected.has(key)) {
           try {
-            await this.native.applyDisplaySettings(target.displayId, target.color)
+            await this.#applyTarget(target)
           } catch (error) {
             if (!this.#isDisplayDeferred(error)) throw error
             disconnected.add(key)
@@ -220,6 +228,13 @@ export class PreviewSessionController {
         touched,
         validated,
         disconnected
+      }
+      if (error instanceof PreviewRestoreError) {
+        this.#active.applied = new Map(
+          targets.map((target) => [target.displayId.toLowerCase(), target])
+        )
+        await this.#retainSessionForRecovery(error)
+        throw error
       }
       const rollback = await this.#teardown()
       if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
@@ -252,6 +267,15 @@ export class PreviewSessionController {
         active.draft = structuredClone({ ...(draft ?? active.draft), displays: targets })
         this.onStateChanged(this.state)
       } catch (error) {
+        if (error instanceof PreviewRestoreError) {
+          const active = this.#active!
+          active.draft = structuredClone({ ...(draft ?? active.draft), displays: targets })
+          active.applied = new Map(
+            targets.map((target) => [target.displayId.toLowerCase(), target])
+          )
+          await this.#retainSessionForRecovery(error)
+          throw error
+        }
         const rollback = await this.#teardown()
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
@@ -284,7 +308,8 @@ export class PreviewSessionController {
     for (const [key, target] of [...active.applied]) {
       if (desiredKeys.has(key)) continue
       const restored = await this.#restoreDisplayIds([target.displayId])
-      if (restored.failures.length > 0) throw new PreviewRestoreError(restored.failures)
+      if (restored.failures.length > 0)
+        throw new PreviewRestoreError(restored.failures, restored.retainedDisplayIds)
       active.applied.delete(key)
       active.disconnected.delete(key)
     }
@@ -308,7 +333,7 @@ export class PreviewSessionController {
       }
       if (!active.disconnected.has(key)) {
         try {
-          await this.native.applyDisplaySettings(target.displayId, target.color)
+          await this.#applyTarget(target)
         } catch (error) {
           if (!this.#isDisplayDeferred(error)) throw error
           active.disconnected.add(key)
@@ -380,6 +405,7 @@ export class PreviewSessionController {
     return this.#enqueue(async () => {
       this.#active = null
       this.#restorePending = false
+      this.#continuationRestoreIds = null
       // A failed rollback keeps activation suspended; confirmed restore-all
       // releases only that hold, without resuming the intended profile.
       await this.activation.cancelPreview([])
@@ -396,6 +422,10 @@ export class PreviewSessionController {
       try {
         return await this.#reapplyAfterDisplayTransition()
       } catch (error) {
+        if (error instanceof PreviewRestoreError) {
+          await this.#retainSessionForRecovery(error)
+          throw error
+        }
         const rollback = await this.#teardown()
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
@@ -403,11 +433,45 @@ export class PreviewSessionController {
     })
   }
 
+  /** Retry an interrupted Edit/override without ending it or restoring unaffected SDR targets. */
+  public retryRestoration(): Promise<boolean> {
+    return this.#enqueue(async () => {
+      if (this.#continuationRestoreIds === null) return false
+      const result = await this.#restoreDisplayIds(this.#continuationRestoreIds)
+      if (result.failures.length > 0)
+        throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+      const retained = new Set(result.retainedDisplayIds.map((id) => id.toLowerCase()))
+      for (const id of this.#continuationRestoreIds) {
+        if (!retained.has(id.toLowerCase())) this.#active?.touched.delete(id.toLowerCase())
+      }
+      this.#continuationRestoreIds = null
+      try {
+        return await this.#reapplyAfterDisplayTransition()
+      } catch (error) {
+        await this.#retainSessionForRecovery(
+          error instanceof PreviewRestoreError
+            ? error
+            : new PreviewRestoreError([describeError(error).message])
+        )
+        throw error
+      }
+    })
+  }
+
+  async #retainSessionForRecovery(error: PreviewRestoreError): Promise<void> {
+    this.#continuationRestoreIds = error.displayIds ?? [...(this.#active?.touched.values() ?? [])]
+    try {
+      await this.recovery.restoreFailed()
+    } finally {
+      this.onStateChanged(this.state)
+    }
+  }
+
   async #reapplyAfterDisplayTransition(): Promise<boolean> {
     const active = this.#active
     if (active === null) return false
     // A topology event must never reapply values whose rollback is unconfirmed.
-    if (this.#restorePending) return true
+    if (this.#restorePending || this.#continuationRestoreIds !== null) return true
 
     const displays = await this.native.getDisplays()
     await this.#restoreHdrDisplays(active.touched, displays)
@@ -433,7 +497,7 @@ export class PreviewSessionController {
       try {
         await this.native.captureBaseline(target.displayId)
         active.touched.set(target.displayId.toLowerCase(), target.displayId)
-        await this.native.applyDisplaySettings(target.displayId, target.color)
+        await this.#applyTarget(target)
       } catch (error) {
         if (!this.#isDisplayDeferred(error)) throw error
         const key = target.displayId.toLowerCase()
@@ -461,9 +525,10 @@ export class PreviewSessionController {
   }
 
   async #endSession(rollback: RestoreTouchedResult): Promise<void> {
-    const recovering = this.#restorePending
+    const recovering = this.#restorePending || this.#continuationRestoreIds !== null
     this.#active = null
     this.#restorePending = false
+    this.#continuationRestoreIds = null
     try {
       await this.activation.cancelPreview(rollback.retainedDisplayIds)
       if (recovering) await this.recovery.restored()
@@ -509,7 +574,8 @@ export class PreviewSessionController {
     for (const id of displayIds) {
       if (!retained.has(id.toLowerCase())) touched.delete(id.toLowerCase())
     }
-    if (result.failures.length > 0) throw new PreviewRestoreError(result.failures)
+    if (result.failures.length > 0)
+      throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
   }
 
   /** Restore only known baselines. Missing targets never cause baseline capture. */
@@ -521,7 +587,8 @@ export class PreviewSessionController {
     const result = await this.#restoreDisplayIds(
       [...touched].filter(([key]) => !desired.has(key)).map(([, id]) => id)
     )
-    if (result.failures.length > 0) throw new PreviewRestoreError(result.failures)
+    if (result.failures.length > 0)
+      throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
   }
 
   async #restoreDisplayIds(displayIds: Iterable<string>): Promise<RestoreTouchedResult> {
@@ -648,8 +715,23 @@ export class PreviewSessionController {
     return code === 'DISPLAY_NOT_FOUND' || code === 'HDR_UNSAFE'
   }
 
+  async #applyTarget(target: DisplayColorTarget): Promise<void> {
+    try {
+      await this.native.applyDisplaySettings(target.displayId, target.color)
+    } catch (error) {
+      const details = describeError(error)
+      if (details.code === 'BASELINE_RESTORE_FAILED') {
+        throw new PreviewRestoreError(
+          [`${target.displayId}: ${details.message}`],
+          [target.displayId]
+        )
+      }
+      throw error
+    }
+  }
+
   #requireActive(profileId: string): ActivePreview {
-    if (this.#restorePending) {
+    if (this.#restorePending || this.#continuationRestoreIds !== null) {
       throw new PreviewValidationError('Restore the pending displays before changing a preview.')
     }
     if (this.#active === null) throw new PreviewValidationError('No preview is active.')

@@ -45,9 +45,12 @@ export interface ActivationOutcome {
   deferredDisplayIds: string[]
 }
 
-export function hasRestoreFailure(outcome: ActivationOutcome): boolean {
+export function hasRestoreFailure(outcome: Pick<ActivationOutcome, 'failures'>): boolean {
   return outcome.failures.some(
-    (failure) => failure.operation === 'restore' || failure.operation === 'restoreAll'
+    (failure) =>
+      failure.operation === 'restore' ||
+      failure.operation === 'restoreAll' ||
+      failure.code === 'BASELINE_RESTORE_FAILED'
   )
 }
 
@@ -68,6 +71,7 @@ export class ActivationCoordinator {
   readonly #resolver = new ActivationResolver()
   readonly #capturedDisplayIds = new Set<string>()
   #queue: Promise<void> = Promise.resolve()
+  #restorationBlocked = false
 
   public constructor(
     private readonly repository: ProfileRepository,
@@ -77,9 +81,44 @@ export class ActivationCoordinator {
 
   public activate(
     foregroundApplication: ForegroundApplication | null,
-    mode: ActivationMode = automaticActivationMode
+    mode: ActivationMode = automaticActivationMode,
+    options: { canWrite?: () => boolean; recovery?: boolean } = {}
   ): Promise<ActivationOutcome> {
-    return this.#enqueue(() => this.#transition(foregroundApplication, mode))
+    return this.#enqueue(async () => {
+      // Check inside the existing queue, before configuration reads or native work.
+      if (this.#restorationBlocked && !options.recovery) {
+        return {
+          status: 'failed',
+          resolution: null,
+          deferredDisplayIds: [],
+          failures: [
+            {
+              operation: 'control',
+              code: 'RESTORE_PENDING',
+              message: 'Display restoration is pending.'
+            }
+          ]
+        }
+      }
+      if (options.canWrite?.() === false) {
+        return { status: 'skipped', resolution: null, failures: [], deferredDisplayIds: [] }
+      }
+      if (this.#restorationBlocked && options.recovery) {
+        // Confirm all tracked restoration before allowing any recovery profile writes.
+        const restoration = await this.#restoreBaseline({
+          target: { kind: 'baseline' },
+          reason: 'baseline',
+          changed: true,
+          previousTarget: this.#resolver.currentTarget
+        })
+        if (hasRestoreFailure(restoration)) return { ...restoration, resolution: null }
+        this.#resolver.reset()
+      }
+      const outcome = await this.#transition(foregroundApplication, mode)
+      if (hasRestoreFailure(outcome)) this.#restorationBlocked = true
+      else if (options.recovery && outcome.failures.length === 0) this.#restorationBlocked = false
+      return outcome
+    })
   }
 
   public restoreBaseline(): Promise<ActivationOutcome> {
@@ -91,6 +130,7 @@ export class ActivationCoordinator {
         changed: previousTarget?.kind !== 'baseline',
         previousTarget
       })
+      this.#restorationBlocked = hasRestoreFailure(outcome)
       if (outcome.status === 'activated' && outcome.deferredDisplayIds.length === 0) {
         this.#reset('externalRestore')
       }
@@ -129,6 +169,10 @@ export class ActivationCoordinator {
   /** Snapshot only; the native service remains the immutable baseline owner. */
   public get capturedDisplayIds(): readonly string[] {
     return [...this.#capturedDisplayIds]
+  }
+
+  public get restorationBlocked(): boolean {
+    return this.#restorationBlocked
   }
 
   async #transition(
@@ -291,6 +335,8 @@ export class ActivationCoordinator {
     }
 
     for (const target of desiredTargets) {
+      // A restore failure blocks every subsequent profile write, including SDR.
+      if (hasRestoreFailure({ failures })) break
       if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
         this.#deferDisplay(
           profile.id,
@@ -551,6 +597,7 @@ export class ActivationCoordinator {
     reason: 'externalRestore' | 'nativeServiceRestart',
     retainedDisplayIds: readonly string[] = []
   ): void {
+    if (reason === 'nativeServiceRestart') this.#restorationBlocked = false
     this.#resolver.reset()
     this.#capturedDisplayIds.clear()
     for (const displayId of retainedDisplayIds) this.#capturedDisplayIds.add(displayId)
