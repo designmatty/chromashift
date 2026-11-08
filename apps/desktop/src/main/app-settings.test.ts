@@ -71,6 +71,22 @@ describe('settings slice stores', () => {
     })
   })
 
+  it('persists and reloads pending restoration as v1 resume recovery', async () => {
+    const directory = await temporaryDirectory()
+    const blocked = {
+      schemaVersion: 1 as const,
+      chromaShiftStatus: 'safetyBlocked' as const,
+      pendingControlOperation: 'resume' as const,
+      intendedActivationMode: { kind: 'manual' as const, profileId: 'gaming' },
+      intendedTarget: { kind: 'profile' as const, profileId: 'gaming' }
+    }
+    await createSettingsStores(directory).chromaShiftIntent.update(() => blocked)
+    expect(JSON.parse(await readFile(join(directory, 'chroma-shift.json'), 'utf8'))).toEqual(
+      blocked
+    )
+    await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual(blocked)
+  })
+
   it('migrates the profile notification preference into the global notification switch', async () => {
     const directory = await temporaryDirectory()
     await writeFile(

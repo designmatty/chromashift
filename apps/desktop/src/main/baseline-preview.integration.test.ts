@@ -251,6 +251,11 @@ describe('true baseline preview with activation rollback', () => {
       { operation: 'restore', displayId: two }
     ])
     expect(coordinator.capturedDisplayIds).toContain(one)
+    expect(preview.state).toEqual({ state: 'restorePending', displayIds: [one] })
+    expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    native.failRestoreDisplayIds.clear()
+    native.calls.length = 0
+    await preview.cancel()
     expectLive(native)
     expectOriginalCaptures(native)
   })
@@ -373,6 +378,10 @@ describe('true baseline preview with activation rollback', () => {
       }
       const write = vi.fn()
       const onPreviewFailed = vi.fn(() => {
+        if (failure === 'also fails during teardown') {
+          expect(preview.state).toEqual({ state: 'restorePending', displayIds: [two] })
+          return
+        }
         expect(preview.state).toEqual({ state: 'inactive' })
         expectLive(native)
       })
@@ -403,19 +412,24 @@ describe('true baseline preview with activation rollback', () => {
         await transitions.flush()
 
         expect(onPreviewFailed).toHaveBeenCalledExactlyOnceWith(expect.any(PreviewRestoreError))
-        expect(stateChanged).toHaveBeenLastCalledWith({ state: 'inactive' })
-        expect(preview.state).toEqual({ state: 'inactive' })
+        const expectedState =
+          failure === 'also fails during teardown'
+            ? { state: 'restorePending', displayIds: [two] }
+            : { state: 'inactive' }
+        expect(stateChanged).toHaveBeenLastCalledWith(expectedState)
+        expect(preview.state).toEqual(expectedState)
         expect(activation.state.mode).toEqual(previousMode)
         expect(complete).toHaveBeenCalledExactlyOnceWith(false, true)
         expect(write).toHaveBeenCalledWith(
           expect.objectContaining({ eventName: 'DisplayTransitionFailed' })
         )
-        expectLive(native)
+        if (failure !== 'also fails during teardown') expectLive(native)
         expectOriginalCaptures(native)
         expect(native.maxConcurrentCalls).toBe(1)
 
         // Rollback must release the preview hold so future activation can proceed.
         native.failRestoreDisplayIds.clear()
+        if (failure === 'also fails during teardown') await preview.cancel()
         await activation.enableAutomatic()
         expect(activation.state.currentTarget).toEqual(
           mode === 'manual'
@@ -438,16 +452,10 @@ describe('true baseline preview with activation rollback', () => {
       native.failRestoreDisplayIds.add(two)
       native.calls.length = 0
       await expect(preview[end]()).rejects.toBeInstanceOf(PreviewRestoreError)
-      if (end === 'cancelNonOverride') {
-        expect(preview.state).toMatchObject({
-          state: 'active',
-          kind: 'preview',
-          profileId: empty.id
-        })
-        expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
-        native.failRestoreDisplayIds.clear()
-        await preview.cancelNonOverride()
-      }
+      expect(preview.state).toEqual({ state: 'restorePending', displayIds: [two] })
+      expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+      native.failRestoreDisplayIds.clear()
+      await preview[end]()
       expect(preview.state).toEqual({ state: 'inactive' })
       expectLive(native)
       expectOriginalCaptures(native)

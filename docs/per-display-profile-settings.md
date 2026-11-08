@@ -222,8 +222,23 @@ needs no write. Adding a target uses normal capture-before-apply; removing it
 restores Original settings. HDR and disconnected baselines remain retained and
 deferred. Teardown restores all session and activation-owned baselines before
 serialized activation rollback resets deduplication and reapplies the prior target
-on every display, including displays held at Original settings. Restore failures
-surface as preview failures.
+on every display, including displays held at Original settings. An unconfirmed
+connected-display restore retains the affected displays as pending restoration
+and enters Safety blocked. The app panel shows the existing red Safety blocked
+pill with Retry and its inline row. The mini panel shows the red Retry power
+control. Both panels disable color inputs. Pending restoration is not an editable
+preview and shows no preview strip or eye badge.
+Retry from either panel or the tray, another End preview or Discard, and close
+including `Try again` re-attempt the retained restores. Automatic and manual
+profile writes stay suspended until restoration is confirmed; then Active resumes
+and serialized activation reasserts the prior automatic/manual target, resolving
+any intent or foreground changes remembered while blocked. Shutdown still
+requires native restoration of every connected baseline. Successful emergency
+restore-all clears pending tracking without a renderer. Its follow-up drains any
+in-flight Retry or Resume, suspends writes, and confirms Original settings again
+through the Pause path before entering Paused.
+Disconnected/HDR retention does not block, and `baselineNotCaptured` means there
+is nothing to restore. Restoration uses only captured baselines.
 
 While Edit or Temporary override has unsaved changes, the app status pill and
 mini-panel power icon show amber `Auto-switching on hold`. Their tooltips explain

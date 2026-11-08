@@ -33,6 +33,18 @@ function state(): Parameters<typeof controlPill>[0] {
 }
 
 describe('control pill', () => {
+  it('shows pending restoration as Safety blocked without an editable preview marker', () => {
+    const product = state()
+    product.chromaShift.status = 'safetyBlocked'
+    product.chromaShift.pendingOperation = 'previewRestore'
+    product.preview = { state: 'restorePending', displayIds: ['display:one'] }
+    expect(controlPill(product, true)).toEqual({
+      label: 'Safety blocked',
+      palette: 'red',
+      previewing: false
+    })
+    expect(previewMarkerProfileId(product.preview)).toBeNull()
+  })
   it('names the live manual profile, including subsequent renames', () => {
     const product = state()
     expect(controlPill(product)).toEqual({

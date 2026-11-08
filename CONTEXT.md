@@ -26,8 +26,9 @@ intent while display control stays Paused.
 _Avoid_: Disabled, restored
 
 **Safety block**:
-A fail-closed state in which ChromaShift prevents display writes because safe
-restoration, baseline ownership, or display identity cannot be confirmed. It is
+A fail-closed state that suspends profile writes until restoration, baseline
+ownership, or display identity can be confirmed, including an unconfirmed
+Preview-session rollback. Affected displays remain pending restoration; this is
 not a user-selected pause.
 _Avoid_: Paused, disabled
 

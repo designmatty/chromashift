@@ -43,6 +43,16 @@ function state(
   }
 }
 describe('app preview selection', () => {
+  it('does not hydrate pending restoration as an editable preview or show its banner', () => {
+    const product = {
+      ...state('safetyBlocked'),
+      preview: { state: 'restorePending', displayIds: ['display:one'] }
+    } as ProductState
+    product.chromaShift.pendingOperation = 'previewRestore'
+    expect(appSessionDraft(product)).toEqual(profiles[0])
+    expect(previewBannerVisible(product, profiles[1]!, 'game')).toBe(false)
+    expect(shouldPreviewProfile(product, profiles[1]!)).toBe(false)
+  })
   it('ends a reverted clean draft on minimize even before main receives the reverted values', () => {
     const saved = profiles[1]!
     const draft = structuredClone(saved)

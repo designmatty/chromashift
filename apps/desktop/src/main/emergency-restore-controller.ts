@@ -3,6 +3,7 @@ import { describeError, type StructuredLogger } from '@main/structured-logger.js
 
 export interface EmergencyPreviewPort {
   dispose(): Promise<void>
+  restoreAllConfirmed?(): Promise<void>
 }
 
 export interface EmergencyActivationPort {
@@ -66,7 +67,10 @@ export class EmergencyRestoreController {
       })
       return false
     }
-    if (restored && pauseAfterRestore !== null) void this.#pause(pauseAfterRestore)
+    if (restored) {
+      await this.preview.restoreAllConfirmed?.()
+      if (pauseAfterRestore !== null) void this.#pause(pauseAfterRestore)
+    }
     return restored
   }
 

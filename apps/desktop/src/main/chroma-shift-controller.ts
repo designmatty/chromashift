@@ -17,7 +17,7 @@ export type ChromaShiftStatus = 'active' | 'paused' | 'safetyBlocked'
 
 export interface ChromaShiftPersistedState {
   status: ChromaShiftStatus
-  pendingOperation: 'pause' | 'resume' | null
+  pendingOperation: 'pause' | 'resume' | 'previewRestore' | null
   intendedMode: ActivationMode
   intendedTarget: ActivationTarget | null
 }
@@ -140,6 +140,33 @@ export class ChromaShiftController {
     return this.#restoreAndPause(source, 'pause')
   }
 
+  /** Preview retains ownership until its connected-display rollback is confirmed. */
+  public async previewRestoreFailed(): Promise<void> {
+    if (this.#state.status === 'active') this.#rememberActiveIntent()
+    this.#state.status = 'safetyBlocked'
+    this.#state.pendingOperation ??= 'previewRestore'
+    await this.activation.suspendWrites()
+    await this.#persistState()
+  }
+
+  /** Called by the preview queue only after restoring and releasing its hold. */
+  public async previewRestored(): Promise<void> {
+    if (this.#state.pendingOperation !== 'previewRestore' || this.#transition !== null) return
+    this.#state.pendingOperation = 'resume'
+    await this.#runTransition(() => this.#resumeOperation('manual'), {
+      source: 'manual',
+      origin: 'resume'
+    })
+  }
+
+  /** Reconfirm Original settings after draining any Retry or Resume writes. */
+  public async emergencyRestoreConfirmed(
+    intent: ChromaShiftIntentSnapshot
+  ): Promise<CompletedActivationOutcome> {
+    while (this.#transition !== null) await this.#transition.catch(() => undefined)
+    return this.#restoreAndPause('shortcut', 'originalSettingsRestore', intent)
+  }
+
   /**
    * Restore original settings: restores every owned baseline through the Pause
    * path and leaves display control Paused, preserving the Intended target for
@@ -163,15 +190,23 @@ export class ChromaShiftController {
   public retrySafetyCheck(source: ActivationSource): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) return this.#transition
     if (this.#state.status !== 'safetyBlocked') return Promise.resolve(this.#statusOutcome(source))
-    if (this.#state.pendingOperation === 'resume') {
-      return this.#runTransition(() => this.#resumeOperation(source), {
-        source,
-        origin: 'resume'
-      })
+    if (
+      this.#state.pendingOperation === 'previewRestore' ||
+      this.#state.pendingOperation === 'resume'
+    ) {
+      return this.#runTransition(
+        async () => {
+          await this.preview.cancel()
+          this.#state.pendingOperation = 'resume'
+          return this.#resumeOperation(source)
+        },
+        { source, origin: 'resume' }
+      )
     }
     return this.#runTransition(
       async () => {
         await this.activation.suspendWrites()
+        await this.preview.cancel()
         await this.activation.waitForIdle()
         const outcome = await this.activation.restoreBaseline({ source, origin: 'safetyRetry' })
         const restored = restorationComplete(outcome)
@@ -306,9 +341,9 @@ export class ChromaShiftController {
     origin: 'pause' | 'originalSettingsRestore',
     preservedIntent?: ChromaShiftIntentSnapshot
   ): Promise<CompletedActivationOutcome> {
-    if (preservedIntent === undefined) {
+    if (preservedIntent === undefined && this.#state.status === 'active') {
       this.#rememberActiveIntent()
-    } else {
+    } else if (preservedIntent !== undefined) {
       // The outside restore replaced the live target with baseline, which is
       // not a real intent change. Resume the snapshot unless a real change
       // (a selection, preview teardown, or automatic resolution) followed it.
@@ -367,7 +402,9 @@ export class ChromaShiftController {
             failureContext.origin === 'resume'
           ) {
             this.#state.status = 'safetyBlocked'
-            this.#state.pendingOperation = failureContext.origin === 'resume' ? 'resume' : 'pause'
+            if (this.#state.pendingOperation !== 'previewRestore') {
+              this.#state.pendingOperation = failureContext.origin === 'resume' ? 'resume' : 'pause'
+            }
             try {
               await this.#persistState()
             } catch (persistError) {
