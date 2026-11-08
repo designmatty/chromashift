@@ -136,7 +136,10 @@ it('commitAppPreview promotes the matching override without native calls before 
   await controller.start(profile, 'override', saved)
   const before = native.calls.length
   await commitAppPreview(profile, async () => undefined, {
-    getState: async () => ({ ok: true, value: { preview: controller.state } as ProductState }),
+    getState: async () => ({
+      ok: true,
+      value: { preview: controller.state, chromaShift: { status: 'active' } } as ProductState
+    }),
     startPreview: async (draft, kind) => {
       await controller.start(draft, kind, saved)
       return ok

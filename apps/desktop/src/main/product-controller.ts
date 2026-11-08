@@ -386,6 +386,11 @@ export class ProductController {
     activation: 'manual' | 'preserve'
   ): Promise<ColorProfile> {
     const saved = await this.saveProfile(profile)
+    // Saving is independent of display recovery. Keep the session for Retry.
+    if (this.activation.chromaShiftState.status === 'safetyBlocked') {
+      this.refresh.stateChanged()
+      return saved
+    }
     if (activation === 'manual') await this.preview.confirm(profile.id)
     else await this.preview.completePreservingMode(profile.id)
     await this.refresh.refreshTray()

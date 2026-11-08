@@ -226,7 +226,7 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('rolls back the whole session after a transient restore failure during start', async () => {
+  it('retains the session after a transient restore failure during start', async () => {
     const { native, preview } = await fixture()
     const restore = native.restoreDisplay.bind(native)
     vi.spyOn(native, 'restoreDisplay')
@@ -235,23 +235,27 @@ describe('true baseline preview with activation rollback', () => {
       })
       .mockImplementation(restore)
     await expect(preview.start(empty, 'preview')).rejects.toBeInstanceOf(PreviewRestoreError)
-    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+    expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    await preview.retryRestoration()
+    for (const [id, original] of originals) expect(native.currentSettings.get(id)).toEqual(original)
+    native.calls.length = 0
+    await preview.cancel()
     expectLive(native)
     expectOriginalCaptures(native)
   })
 
-  it('attempts all restores and retains a failed baseline when start rollback also fails', async () => {
+  it('attempts all restores and retains a failed baseline without ending the session', async () => {
     const { native, preview, coordinator } = await fixture()
     native.failRestoreDisplayIds.add(one)
     await expect(preview.start(empty, 'preview')).rejects.toBeInstanceOf(PreviewRestoreError)
     expect(native.calls.filter((call) => call.operation === 'restore')).toEqual([
       { operation: 'restore', displayId: one },
-      { operation: 'restore', displayId: two },
-      { operation: 'restore', displayId: one },
       { operation: 'restore', displayId: two }
     ])
     expect(coordinator.capturedDisplayIds).toContain(one)
-    expect(preview.state).toEqual({ state: 'restorePending', displayIds: [one] })
+    expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+    expect(preview.sessionRecoveryPending).toBe(true)
     expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
     native.failRestoreDisplayIds.clear()
     native.calls.length = 0
@@ -260,7 +264,7 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('treats an unsuccessful native restore result as a whole-session preview failure', async () => {
+  it('retains the session for recovery after an unsuccessful native restore result', async () => {
     const { native, preview } = await fixture()
     vi.spyOn(native, 'restoreDisplay').mockResolvedValueOnce({
       displayId: one,
@@ -269,12 +273,16 @@ describe('true baseline preview with activation rollback', () => {
       error: 'read-back failed'
     })
     await expect(preview.start(empty, 'preview')).rejects.toBeInstanceOf(PreviewRestoreError)
-    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+    expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    await preview.retryRestoration()
+    native.calls.length = 0
+    await preview.cancel()
     expectLive(native)
     expectOriginalCaptures(native)
   })
 
-  it('returns every display to the prior target when removing a target fails to restore', async () => {
+  it('keeps the requested draft when removing a target fails to restore', async () => {
     const { native, preview } = await fixture()
     await preview.start(partial, 'edit')
     native.calls.length = 0
@@ -285,7 +293,15 @@ describe('true baseline preview with activation rollback', () => {
       })
       .mockImplementation(restore)
     await expect(preview.update(partial.id, [])).rejects.toBeInstanceOf(PreviewRestoreError)
-    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(preview.state).toMatchObject({
+      state: 'active',
+      draft: { ...partial, displays: [] },
+      unsavedChanges: true
+    })
+    expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    await preview.retryRestoration()
+    native.calls.length = 0
+    await preview.cancel()
     expectLive(native)
     expectOriginalCaptures(native)
   })
@@ -310,16 +326,26 @@ describe('true baseline preview with activation rollback', () => {
   })
 
   it.each(['disconnected', 'hdr'] as const)(
-    'defers a missing %s display and restores it after reconnect or HDR-off',
+    'handles a missing %s display and reapplies after reconnect or HDR-off',
     async (state) => {
       const { native, preview, activation, coordinator } = await fixture()
       const deferred = state === 'hdr' ? native.hdrDisplayIds : native.disconnectedDisplayIds
       deferred.add(two)
       await preview.start(empty, 'preview')
-      expect(native.calls).toEqual([{ operation: 'restore', displayId: one }])
+      expect(native.calls).toEqual(
+        state === 'hdr'
+          ? [
+              { operation: 'restore', displayId: two },
+              { operation: 'restore', displayId: one }
+            ]
+          : [{ operation: 'restore', displayId: one }]
+      )
       await preview.cancel()
-      expect(coordinator.capturedDisplayIds).toContain(two)
-      expect(native.calls.filter((call) => call.displayId === two)).toEqual([])
+      expect(coordinator.capturedDisplayIds.includes(two)).toBe(state === 'disconnected')
+      expect(native.calls.filter((call) => call.displayId === two)).toEqual(
+        state === 'hdr' ? [{ operation: 'restore', displayId: two }] : []
+      )
+      if (state === 'hdr') expect(native.currentSettings.get(two)).toEqual(originals.get(two))
       deferred.delete(two)
       native.calls.length = 0
       await activation.beginSystemTransition()
@@ -351,7 +377,7 @@ describe('true baseline preview with activation rollback', () => {
     { mode: 'automatic' as const, failure: 'unsuccessful result' },
     { mode: 'manual' as const, failure: 'also fails during teardown' }
   ])(
-    'rolls back the whole preview and reports a reconnect restore failure in $mode mode when restore $failure',
+    'retains the preview and reports a reconnect restore failure in $mode mode when restore $failure',
     async ({ mode, failure }) => {
       const { native, preview, activation, coordinator, stateChanged } = await fixture(mode)
       const previousMode = activation.state.mode
@@ -378,12 +404,8 @@ describe('true baseline preview with activation rollback', () => {
       }
       const write = vi.fn()
       const onPreviewFailed = vi.fn(() => {
-        if (failure === 'also fails during teardown') {
-          expect(preview.state).toEqual({ state: 'restorePending', displayIds: [two] })
-          return
-        }
-        expect(preview.state).toEqual({ state: 'inactive' })
-        expectLive(native)
+        expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+        expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
       })
       const complete = vi.spyOn(activation, 'completeSystemTransition')
       const transitions = new DisplayTransitionController(
@@ -412,24 +434,27 @@ describe('true baseline preview with activation rollback', () => {
         await transitions.flush()
 
         expect(onPreviewFailed).toHaveBeenCalledExactlyOnceWith(expect.any(PreviewRestoreError))
-        const expectedState =
-          failure === 'also fails during teardown'
-            ? { state: 'restorePending', displayIds: [two] }
-            : { state: 'inactive' }
-        expect(stateChanged).toHaveBeenLastCalledWith(expectedState)
-        expect(preview.state).toEqual(expectedState)
+        expect(stateChanged).toHaveBeenLastCalledWith(
+          expect.objectContaining({ state: 'active', draft: empty })
+        )
+        expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+        expect(preview.sessionRecoveryPending).toBe(true)
         expect(activation.state.mode).toEqual(previousMode)
         expect(complete).toHaveBeenCalledExactlyOnceWith(false, true)
         expect(write).toHaveBeenCalledWith(
           expect.objectContaining({ eventName: 'DisplayTransitionFailed' })
         )
-        if (failure !== 'also fails during teardown') expectLive(native)
+        expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
         expectOriginalCaptures(native)
         expect(native.maxConcurrentCalls).toBe(1)
 
-        // Rollback must release the preview hold so future activation can proceed.
+        // Recovery continues the session; only explicit cancellation releases its hold.
         native.failRestoreDisplayIds.clear()
-        if (failure === 'also fails during teardown') await preview.cancel()
+        await preview.retryRestoration()
+        expect(preview.state).toMatchObject({ state: 'active', draft: empty })
+        for (const [id, original] of originals)
+          expect(native.currentSettings.get(id)).toEqual(original)
+        await preview.cancel()
         await activation.enableAutomatic()
         expect(activation.state.currentTarget).toEqual(
           mode === 'manual'
@@ -504,14 +529,19 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('defers HDR assigned targets as well as missing targets without any SDR writes', async () => {
+  it('restores HDR assigned and missing targets without capture or profile writes', async () => {
     const { native, preview } = await fixture()
     native.hdrDisplayIds.add(one)
     native.hdrDisplayIds.add(two)
     await preview.start(partial, 'preview')
     await preview.update(partial.id, [{ displayId: one, color: color({ brightness: 70 }) }])
     await preview.cancel()
-    expect(native.calls).toEqual([])
+    expect(native.calls).toEqual([
+      { operation: 'restore', displayId: one },
+      { operation: 'restore', displayId: two }
+    ])
+    expect(native.currentSettings.get(one)).toEqual(originals.get(one))
+    expect(native.currentSettings.get(two)).toEqual(originals.get(two))
     expectOriginalCaptures(native)
   })
 })

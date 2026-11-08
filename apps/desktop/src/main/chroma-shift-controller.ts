@@ -12,6 +12,7 @@ import type {
   ActivationSource
 } from '@main/automatic-activation-controller.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
+import { hasRestoreFailure } from '@main/activation-coordinator.js'
 
 export type ChromaShiftStatus = 'active' | 'paused' | 'safetyBlocked'
 
@@ -77,6 +78,8 @@ export interface ChromaShiftTopologyPort {
 
 export interface ChromaShiftPreviewPort {
   cancel(): Promise<void>
+  readonly sessionRecoveryPending?: boolean
+  retryRestoration?(): Promise<boolean>
 }
 
 export class ChromaShiftController {
@@ -152,7 +155,7 @@ export class ChromaShiftController {
   /** Called by the preview queue only after restoring and releasing its hold. */
   public async previewRestored(): Promise<void> {
     if (this.#state.pendingOperation !== 'previewRestore' || this.#transition !== null) return
-    this.#state.pendingOperation = 'resume'
+    // Keep the preview recovery reason until success. Persistence maps it to resume.
     await this.#runTransition(() => this.#resumeOperation('manual'), {
       source: 'manual',
       origin: 'resume'
@@ -196,9 +199,8 @@ export class ChromaShiftController {
     ) {
       return this.#runTransition(
         async () => {
-          await this.preview.cancel()
-          this.#state.pendingOperation = 'resume'
-          return this.#resumeOperation(source)
+          if (!this.preview.sessionRecoveryPending) await this.preview.cancel()
+          return this.#resumeOperation(source, this.preview.sessionRecoveryPending)
         },
         { source, origin: 'resume' }
       )
@@ -333,6 +335,11 @@ export class ChromaShiftController {
     )
       return
     this.#setIntent(this.activation.state.mode, outcome.resolution.target)
+    if (hasRestoreFailure(outcome)) {
+      this.#state.status = 'safetyBlocked'
+      this.#state.pendingOperation = 'resume'
+      await this.activation.suspendWrites()
+    }
     await this.#persistState()
   }
 
@@ -428,21 +435,29 @@ export class ChromaShiftController {
     return transition
   }
 
-  async #resumeOperation(source: ActivationSource): Promise<CompletedActivationOutcome> {
+  async #resumeOperation(
+    source: ActivationSource,
+    recoverPreview = false
+  ): Promise<CompletedActivationOutcome> {
     const topology = await this.topology.refreshTopology()
     if (topology.baselines.some((baseline) => baseline.ownership === 'providerChanged')) {
       this.#state.status = 'safetyBlocked'
-      this.#state.pendingOperation = 'resume'
+      if (this.#state.pendingOperation !== 'previewRestore') this.#state.pendingOperation = 'resume'
       throw new Error('Display baseline ownership changed; ChromaShift remains Safety blocked.')
     }
+    if (recoverPreview && !(await this.preview.retryRestoration?.())) await this.preview.cancel()
     await this.activation.setSuspendedIntent(this.#state.intendedMode, this.#state.intendedTarget)
     const currentApplication = await this.topology.getForegroundApplication?.()
     const outcome = await this.activation.resumeCurrent(currentApplication, {
       source,
       origin: 'resume'
     })
-    this.#state.status = 'active'
-    this.#state.pendingOperation = null
+    const restoreFailed = outcome.status === 'failed' || outcome.status === 'partialFailure'
+    this.#state.status = restoreFailed ? 'safetyBlocked' : 'active'
+    if (!restoreFailed) this.#state.pendingOperation = null
+    else if (this.#state.pendingOperation !== 'previewRestore')
+      this.#state.pendingOperation = 'resume'
+    if (restoreFailed) await this.activation.suspendWrites()
     this.#setIntent(
       this.activation.state.mode,
       outcome.resolution?.target ?? this.#state.intendedTarget

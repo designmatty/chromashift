@@ -15,6 +15,8 @@ async function applyDraftToEditSession(
 ): Promise<void> {
   await settlePreview()
   const state = await value(api.getState())
+  // Recovery keeps the draft available to save, but must not synchronize colors.
+  if (state.chromaShift.status === 'safetyBlocked') return
   if (
     state.preview.state === 'active' &&
     state.preview.kind !== 'edit' &&

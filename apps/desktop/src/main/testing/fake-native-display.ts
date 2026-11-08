@@ -127,6 +127,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
 
   public captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
     return this.#call({ operation: 'capture', displayId }, async () => {
+      this.#ensureSdr(displayId, 'baseline.capture')
       if (this.disconnectedDisplayIds.has(displayId)) {
         throw new NativeServiceError(
           'DISPLAY_NOT_FOUND',
@@ -154,6 +155,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     return this.#call({ operation: 'apply', displayId, settings }, async () => {
+      this.#ensureSdr(displayId, 'display.apply')
       if (this.disconnectOnApplyDisplayIds.delete(displayId)) {
         this.disconnectedDisplayIds.add(displayId)
       }
@@ -192,14 +194,6 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
           'test-request'
         )
       }
-      if (this.hdrDisplayIds.has(displayId)) {
-        throw new NativeServiceError(
-          'HDR_UNSAFE',
-          `HDR is active on ${displayId}`,
-          'display.restore',
-          'test-request'
-        )
-      }
       const wasCaptured = this.#capturedDisplayIds.delete(displayId)
       if (wasCaptured) {
         this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId) })
@@ -223,9 +217,6 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
             error: `Display not found: ${displayId}`
           }
         }
-        if (this.hdrDisplayIds.has(displayId)) {
-          return { displayId, restored: false as const, reason: 'hdrActive' }
-        }
         if (this.failRestoreAllDisplayIds.has(displayId)) {
           return { displayId, restored: false as const, error: `Restore failed on ${displayId}` }
         }
@@ -236,6 +227,20 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       })
       return { displays }
     })
+  }
+
+  #ensureSdr(displayId: string, command: string): void {
+    if (
+      this.hdrDisplayIds.has(displayId) ||
+      this.displays.some((display) => display.id === displayId && display.hdr)
+    ) {
+      throw new NativeServiceError(
+        'HDR_UNSAFE',
+        `HDR is active on ${displayId}`,
+        command,
+        'test-request'
+      )
+    }
   }
 
   async #call<T>(call: NativeCall, operation: () => Promise<T>): Promise<T> {

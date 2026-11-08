@@ -525,10 +525,10 @@ describe('PreviewSessionController', () => {
 
       await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
 
-      expect(native.restored).toEqual([])
+      expect(native.restored).toEqual(reason === 'hdr' ? [display.id] : [])
       expect(controller.state).toEqual({ state: 'inactive' })
       expect(activation.retainedDisplayIds).toEqual([
-        { operation: 'cancel', displayIds: [display.id] }
+        { operation: 'cancel', displayIds: reason === 'hdr' ? [] : [display.id] }
       ])
     }
   )
@@ -554,7 +554,7 @@ describe('PreviewSessionController', () => {
     expect(activation.calls).toEqual(['begin', 'cancel'])
   })
 
-  it.each([{ reason: 'hdrActive' }, { code: 'HDR_UNSAFE' }, { code: 'DISPLAY_NOT_FOUND' }])(
+  it.each([{ code: 'DISPLAY_NOT_FOUND' }])(
     'retains a deferred restore response on close: %j',
     async (result) => {
       const native = new FakeNative()
@@ -575,6 +575,88 @@ describe('PreviewSessionController', () => {
       ])
     }
   )
+
+  it.each([{ reason: 'hdrActive' }, { code: 'HDR_UNSAFE' }])(
+    'treats an unconfirmed HDR restore as a restore failure: %j',
+    async (result) => {
+      const native = new FakeNative()
+      const failed = vi.fn(async () => undefined)
+      const controller = new PreviewSessionController(
+        native,
+        new FakeActivation(),
+        () => undefined,
+        {
+          restoreFailed: failed,
+          restored: async () => undefined
+        }
+      )
+      await controller.start(profile(), 'edit')
+      vi.spyOn(native, 'restoreDisplay').mockResolvedValueOnce({
+        displayId: display.id,
+        restored: false,
+        ...result
+      })
+      await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
+      expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
+      expect(failed).toHaveBeenCalledOnce()
+    }
+  )
+
+  it.each(['edit', 'override'] as const)(
+    'restores HDR immediately and preserves the %s draft and SDR output',
+    async (kind) => {
+      const native = new FakeNative()
+      const original = { brightness: 48, saturation: 42 }
+      native.currentSettings.set(display.id, original)
+      const saved = profile(
+        targets([display.id, { brightness: 60 }], [secondDisplay.id, { brightness: 65 }])
+      )
+      const draft = {
+        ...saved,
+        name: 'Unsaved draft',
+        displays: targets(
+          [display.id, { brightness: 30, saturation: 85 }],
+          [secondDisplay.id, { brightness: 35 }]
+        )
+      }
+      const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+      await controller.start(draft, kind, saved)
+      native.hdrDisplayIds.add(display.id)
+      const before = native.calls.length
+      await controller.reapplyAfterDisplayTransition()
+      expect(native.calls.slice(before).filter((call) => call.displayId === display.id)).toEqual([
+        { operation: 'restore', displayId: display.id }
+      ])
+      expect(native.currentSettings.get(display.id)).toEqual(original)
+      expect(native.currentSettings.get(secondDisplay.id)?.brightness).toBe(35)
+      expect(controller.unsavedDraft).toEqual(draft)
+      expect(controller.state).toMatchObject({ state: 'active', kind, unsavedChanges: true, draft })
+      native.hdrDisplayIds.clear()
+      await controller.reapplyAfterDisplayTransition()
+      expect(native.currentSettings.get(display.id)).toEqual(draft.displays[0]!.color)
+      expect(controller.unsavedDraft).toEqual(draft)
+      expect(
+        native.baselineCaptures
+          .filter((capture) => capture.displayId === display.id)
+          .map((capture) => capture.settings)
+      ).toEqual([original, original])
+    }
+  )
+
+  it('discards to saved targets while HDR stays original, then applies saved values on HDR off', async () => {
+    const native = new FakeNative()
+    const saved = profile()
+    const draft = profile(targets([display.id, { brightness: 30, saturation: 85 }]))
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(draft, 'edit', saved)
+    native.hdrDisplayIds.add(display.id)
+    await controller.update(saved.id, saved.displays, saved)
+    expect(native.currentSettings.get(display.id)).toEqual({})
+    expect(controller.state).toMatchObject({ state: 'active', unsavedChanges: false, draft: saved })
+    native.hdrDisplayIds.clear()
+    await controller.reapplyAfterDisplayTransition()
+    expect(native.currentSettings.get(display.id)).toEqual(saved.displays[0]!.color)
+  })
 
   it('does nothing on close when no session is active', async () => {
     const native = new FakeNative()

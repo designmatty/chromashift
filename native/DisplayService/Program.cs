@@ -96,57 +96,8 @@ await NativeLog.WriteAsync(new JsonObject
     ["processId"] = Environment.ProcessId
 });
 
-try
-{
-    while (!processor.ShutdownRequested)
-    {
-        var readLine = input.ReadLineAsync();
-        var completed = parentExited is null
-            ? await Task.WhenAny(readLine, heartbeat.Expired)
-            : await Task.WhenAny(readLine, parentExited, heartbeat.Expired);
-        if (completed == heartbeat.Expired)
-        {
-            await NativeLog.WriteAsync(new JsonObject
-            {
-                ["level"] = "critical",
-                ["eventName"] = "HeartbeatTimedOut"
-            });
-            break;
-        }
-        if (parentExited is not null && completed == parentExited)
-        {
-            await NativeLog.WriteAsync(new JsonObject
-            {
-                ["level"] = "warning",
-                ["eventName"] = "ParentProcessExited",
-                ["parentProcessId"] = parentProcessId
-            });
-            break;
-        }
-        if (await readLine is not { } line)
-        {
-            break;
-        }
-        await processor.ProcessLineAsync(line);
-    }
-}
-finally
-{
-    var restoration = baselines.RestoreAll();
-    try
-    {
-        await protocol.WriteEventAsync("service.baselinesRestored", restoration);
-    }
-    catch (Exception exception)
-    {
-        await NativeLog.WriteAsync(new JsonObject
-        {
-            ["level"] = "warning",
-            ["eventName"] = "BaselineRestoreAcknowledgementFailed",
-            ["message"] = exception.Message
-        });
-    }
-}
+await new ServiceLifecycle(input, heartbeat, baselines, protocol).RunAsync(
+    processor.ProcessLineAsync, () => processor.ShutdownRequested, parentExited, parentProcessId);
 
 await NativeLog.WriteAsync(new JsonObject
 {

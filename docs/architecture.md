@@ -35,6 +35,9 @@ topology changes. Every write is validated and read back. The baseline manager
 captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
+`ServiceLifecycle` owns the production input, parent-exit and watchdog loop and
+its final restore-all acknowledgement. Unit tests drive those routes with fake
+providers without launching a helper or touching Windows displays.
 
 `@chromashift/core` owns the vendor-neutral product model.
 It validates versioned JSON configuration, matches foreground applications, and
@@ -73,18 +76,44 @@ only after a successful transition, captures each desired display baseline befor
 applying, restores displays removed from the next profile, and restores all
 captured displays for a baseline target. Because the native baseline remains
 immutable across profile changes, gamma transforms never compound. Per-display
-failures are logged and returned as partial outcomes while remaining displays
-continue; failed transitions reset deduplication so a later event can retry.
+apply failures are logged and returned as partial outcomes while remaining displays
+continue. Restoration failures stop further profile writes in that transition
+and block queued activations before they execute. Explicit recovery confirms
+tracked baselines through restore-all before applying targets. Baseline restoration
+errors returned by native Apply also keep control blocked. Failed transitions
+reset deduplication so confirmed recovery can retry.
 External restoration and native-service exit also reset activation state.
 
-HDR is a quiescent activation state, not a failed profile transition. Electron
-checks the current display snapshot before capture or apply, defers every target
-on an HDR display, and suppresses duplicate foreground retries. The helper also
-rejects capture and every provider write as defense in depth. If HDR becomes
-active after ChromaShift captured an SDR baseline, that immutable baseline stays
-owned and is not recaptured or released; restore-all reports `hdrActive`, and the
-next validated HDR-off topology transition restores or reapplies it. Topology
-resets invalidate target deduplication without discarding baseline ownership.
+HDR blocks profile application and baseline capture in both Electron and the
+helper. Restore-only writes of an existing immutable baseline are allowed with
+read-back, independently of the unsupported apply capabilities. An HDR-on
+transition restores the display immediately. Discard, End preview, profile
+switches, shutdown, watchdog, parent exit, and stdin EOF also restore HDR displays.
+Only confirmed restoration releases ownership; an unconfirmed restore enters
+Safety blocked in the running app and remains retryable. Activation restore
+failures suspend subsequent foreground writes, and a failed recovery stays
+blocked. Disconnected baseline retention is unchanged.
+
+HDR restoration preserves the Edit or override session, unsaved draft, and SDR
+targets, including after a transient restore failure. The interrupted session
+continues to publish its full draft while Safety blocked disables color writes.
+Retry validates topology and ownership, restores the affected displays, and
+reapplies the retained draft without ending the session. Update profile can save
+the draft while blocked without changing display output.
+Preview recovery uses one model for its purpose and pending display IDs.
+Ending the session supersedes continuation recovery with every remaining
+teardown restore, including failures on previously unaffected SDR displays.
+Retry cannot resume activation until those restores are confirmed. The
+in-memory preview recovery reason survives failed retries, so a successful
+End preview completes recovery without an extra Retry. It still persists as
+schema-v1 `resume`.
+Both panels explain HDR above disabled target values; those values apply
+when HDR turns off through the existing topology transition. The mini panel keeps
+its fixed window sizing and scrolls the controls pane if needed. Windows gamma
+restore verifies the exact captured ramp, NVIDIA restore verifies vibrance/hue,
+and AMD's existing restore writes captured custom-color values and LUT directly
+with read-back. No provider's profile setters are enabled under HDR. Restore under
+HDR still requires owner NVIDIA hardware verification; AMD remains unverified.
 
 Display and power transitions use a second coordinator around that same activation
 queue. Electron lock/suspend notifications pause new writes immediately; unlock,
@@ -210,9 +239,11 @@ enters Safety blocked with a pending preview-restore operation. No rollback
 reapply occurs before restoration succeeds, including after a topology reapply
 failure. Retry or a later teardown restores the remaining displays, releases the
 preview hold, validates resumption, and reasserts the intended target through the
-activation queue. Disconnected and HDR baselines still pass back to activation
-as retained ownership without a restore failure; `baselineNotCaptured` needs no
-restoration or capture.
+activation queue. In-session restoration failures instead retain the session and
+its draft for continuation, without restoring unaffected SDR draft targets or
+silently treating recovery as Discard. Disconnected baselines still pass back to activation as retained
+ownership without a restore failure. HDR displays restore immediately;
+`baselineNotCaptured` needs no restoration or capture.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
 full app is focused or the non-activating mini panel is raised to the popup-menu
@@ -268,8 +299,8 @@ intent without bypassing the required retry. Safety blocked persists whether the
 interrupted operation was Pause or Resume so retry completes the correct
 operation. The intent slice remains at schema version 1 with pending `pause`
 or `resume`. Pending preview restoration persists as `resume`; Retry first
-cancels and restores any tracked preview displays before validating topology
-and resuming activation. The preview-specific reason stays in memory and
+confirms tracked restores before activation resumes. An interrupted session
+continues, while pending teardown ends the session. The preview-specific reason stays in memory and
 validated product state, allowing a later successful End preview or Discard to
 resume automatically. After restart, Retry validates resumption without an
 in-memory preview session.

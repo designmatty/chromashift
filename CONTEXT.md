@@ -34,7 +34,8 @@ _Avoid_: Paused, disabled
 
 **Original settings**:
 The display state captured before ChromaShift first modified a display during
-the current control session.
+the current control session. These are also the intended on-screen settings
+while HDR prevents profile or draft application.
 _Avoid_: Factory defaults, default profile
 
 **Restore original settings**:
@@ -90,4 +91,7 @@ _Avoid_: Live mode, draft mode
 The unsaved copy of a profile whose changes a Preview session applies. A dirty
 draft differs from saved profile content, including its name, applications,
 availability, or display values; reverting all edits makes it clean.
+An interrupted in-session restoration retains the complete draft while display
+control is Safety blocked. Retry restores the affected displays and continues
+the session; Update profile can save without applying display settings.
 _Avoid_: Working copy, pending profile

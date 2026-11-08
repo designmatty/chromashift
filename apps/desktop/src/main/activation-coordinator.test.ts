@@ -563,7 +563,7 @@ describe('ActivationCoordinator', () => {
     ])
   })
 
-  it('retains an SDR baseline through HDR and restores it once HDR turns off', async () => {
+  it('restores an SDR baseline immediately while HDR is on', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(
       repository(configuration([gameAProfile])),
@@ -575,13 +575,15 @@ describe('ActivationCoordinator', () => {
     native.hdrDisplayIds.add('display:one')
     await coordinator.resetForDisplayTransition()
     await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
-      status: 'skipped',
-      deferredDisplayIds: ['display:one'],
+      status: 'activated',
+      deferredDisplayIds: [],
       failures: []
     })
     await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
       status: 'skipped'
     })
+    expect(native.currentSettings.get('display:one')).toEqual({})
+    expect(coordinator.capturedDisplayIds).toEqual([])
 
     native.hdrDisplayIds.clear()
     await coordinator.resetForDisplayTransition()
@@ -596,6 +598,39 @@ describe('ActivationCoordinator', () => {
       'restoreAll'
     ])
   })
+
+  it.each(['game-a', 'default', 'game-b'])(
+    'restores an HDR display before switching to %s',
+    async (next) => {
+      const native = new FakeNativeActivationPort()
+      native.currentSettings.set('display:one', { brightness: 47, saturation: 43 })
+      const coordinator = new ActivationCoordinator(
+        repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default')),
+        native,
+        new RecordingLogger()
+      )
+      await coordinator.activate(null, manualActivationMode('game-a'))
+      native.hdrDisplayIds.add('display:one')
+      await coordinator.resetForDisplayTransition()
+      const before = native.calls.length
+      await expect(coordinator.activate(null, manualActivationMode(next))).resolves.toMatchObject({
+        status: 'activated',
+        failures: []
+      })
+      expect(native.calls.slice(before).filter((call) => call.displayId === 'display:one')).toEqual(
+        [{ operation: 'restore', displayId: 'display:one' }]
+      )
+      expect(native.currentSettings.get('display:one')).toEqual({ brightness: 47, saturation: 43 })
+      native.hdrDisplayIds.clear()
+      await coordinator.resetForDisplayTransition()
+      await coordinator.activate(null, manualActivationMode(next))
+      if (next !== 'game-b') {
+        expect(native.currentSettings.get('display:one')?.saturation).toBe(
+          next === 'game-a' ? 75 : 50
+        )
+      }
+    }
+  )
 
   it('invalidates duplicate suppression after external restore and native restart', async () => {
     const native = new FakeNativeActivationPort()
@@ -727,6 +762,27 @@ describe('AutomaticActivationController', () => {
     await controller.resumeCurrent(application('Browser.exe'))
 
     expect(native.calls.map((call) => call.operation)).toEqual(['capture', 'apply'])
+  })
+
+  it('resumes a failed topology hold after the caller validates recovery', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([gameAProfile, gameBProfile]))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('GameA.exe'))
+    await controller.beginSystemTransition()
+    await controller.completeSystemTransition(false, false)
+    native.calls.length = 0
+    await controller.resumeCurrent(application('GameB.exe'))
+    expect(native.calls.filter((call) => call.operation === 'apply')).toMatchObject([
+      { displayId: 'display:two' }
+    ])
+    await expect(controller.selectManualProfile('game-a')).resolves.toMatchObject({
+      status: 'activated'
+    })
   })
 
   it('buffers foreground events until configuration is validated and then enables automation', async () => {
@@ -980,7 +1036,7 @@ describe('AutomaticActivationController', () => {
     expect(native.calls.filter((call) => call.operation === 'apply')).toHaveLength(1)
   })
 
-  it('retains failed baseline resets so a later transition retries stale displays', async () => {
+  it('retains failed baseline resets and requires explicit recovery before later transitions', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(
       repository(configuration([gameAProfile, gameBProfile])),
@@ -995,13 +1051,18 @@ describe('AutomaticActivationController', () => {
       failures: [{ operation: 'restoreAll', displayId: 'display:one' }]
     })
     native.failRestoreAllDisplayIds.clear()
-    await coordinator.activate(application('GameB.exe'))
+    await expect(coordinator.activate(application('GameB.exe'))).resolves.toMatchObject({
+      status: 'failed',
+      failures: [{ code: 'RESTORE_PENDING' }]
+    })
+    expect(native.calls).toHaveLength(3)
+    await coordinator.activate(application('GameB.exe'), undefined, { recovery: true })
 
     expect(native.calls.map((call) => `${call.operation}:${call.displayId ?? 'all'}`)).toEqual([
       'capture:display:one',
       'apply:display:one',
       'restoreAll:all',
-      'restore:display:one',
+      'restoreAll:all',
       'capture:display:two',
       'apply:display:two'
     ])
