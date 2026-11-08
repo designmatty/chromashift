@@ -34,7 +34,8 @@ _Avoid_: Paused, disabled
 
 **Original settings**:
 The display state captured before ChromaShift first modified a display during
-the current control session.
+the current control session. These are also the intended on-screen settings
+while HDR prevents profile or draft application.
 _Avoid_: Factory defaults, default profile
 
 **Restore original settings**:

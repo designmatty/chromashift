@@ -88,12 +88,7 @@ internal sealed class BaselineManager(
             GammaRampTransform.ValidateSettings(
                 new GammaSettings(settings.Brightness, settings.Contrast, settings.Gamma));
             var display = FindDisplay(displayId);
-            if (display.Hdr && HasAnySetting(settings))
-            {
-                throw new DisplayOperationException(
-                    "HDR_UNSAFE",
-                    $"Display writes are disabled while HDR is active on {display.Name}; HDR provider behavior has not been validated.");
-            }
+            EnsureDisplayWritesSafe(display);
             if (!_baselines.TryGetValue(displayId, out var baseline))
             {
                 _ = Capture(displayId);
@@ -256,20 +251,6 @@ internal sealed class BaselineManager(
             {
                 try
                 {
-                    var display = FindDisplay(displayId);
-                    if (display.Hdr)
-                    {
-                        results.Add((JsonNode?)RestoreResult(displayId, restored: false, reason: "hdrActive"));
-                        failures.Add($"{displayId}: restoration is deferred while HDR is active");
-                        NativeLog.Write(new JsonObject
-                        {
-                            ["level"] = "information",
-                            ["eventName"] = "BaselineRestoreDeferred",
-                            ["displayId"] = displayId,
-                            ["reason"] = "hdrActive"
-                        });
-                        continue;
-                    }
                     results.Add((JsonNode?)Restore(displayId));
                 }
                 catch (DisplayOperationException exception)
@@ -388,13 +369,14 @@ internal sealed class BaselineManager(
 
     private void RestoreEntry(DisplayDescriptor display, BaselineEntry baseline)
     {
-        EnsureDisplayWritesSafe(display);
+        // Restore accepts only immutable captured state, including under HDR.
+        // Capture and Apply keep their separate HDR guards.
         var failures = new List<string>();
         if (baseline.GammaRamp is not null)
         {
             try
             {
-                EnsureGammaSafe(display);
+                EnsureGammaSupported(display);
                 WriteAndVerify(display, baseline.GammaRamp);
             }
             catch (Exception exception)
@@ -504,6 +486,11 @@ internal sealed class BaselineManager(
                 $"Windows gamma-ramp operations are disabled while HDR is active on {display.Name}.");
         }
 
+        EnsureGammaSupported(display);
+    }
+
+    private void EnsureGammaSupported(DisplayDescriptor display)
+    {
         if (!gamma.IsSupported(display.WindowsDisplayName))
         {
             throw new DisplayOperationException(
@@ -517,8 +504,8 @@ internal sealed class BaselineManager(
         if (!display.Hdr) return;
         throw new DisplayOperationException(
             "HDR_UNSAFE",
-            $"Display baseline capture and writes are disabled while HDR is active on {display.Name}; " +
-            "HDR provider behavior has not been validated.");
+            $"Baseline capture and profile application are disabled while HDR is active on {display.Name}; " +
+            "only captured original settings may be restored.");
     }
 
     private static JsonObject Describe(BaselineEntry entry, string state) => new()
@@ -575,8 +562,4 @@ internal sealed class BaselineManager(
     private static bool HasAmdCapability(AmdDisplayState state) =>
         state.Brightness.Supported || state.Contrast.Supported || state.Saturation.Supported ||
         state.Hue.Supported || state.ColorTemperature.Supported || state.GammaRamp is not null;
-
-    private static bool HasAnySetting(DisplaySettings settings) =>
-        settings.Brightness is not null || settings.Contrast is not null || settings.Gamma is not null ||
-        settings.Saturation is not null || settings.Hue is not null || settings.ColorTemperature is not null;
 }

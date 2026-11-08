@@ -12,7 +12,11 @@ import {
   type ForegroundApplication as NativeForegroundApplication,
   type NativeEvent
 } from '@chromashift/native-client'
-import { ActivationCoordinator, type ActivationOutcome } from '@main/activation-coordinator.js'
+import {
+  ActivationCoordinator,
+  hasRestoreFailure,
+  type ActivationOutcome
+} from '@main/activation-coordinator.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export class AutomaticActivationController {
@@ -369,6 +373,8 @@ export class AutomaticActivationController {
     context: ActivationContext
   ): Promise<CompletedActivationOutcome> {
     const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode)
+    // Stop subsequent foreground writes before publishing an unconfirmed restore.
+    if (hasRestoreFailure(outcome)) this.#writesSuspended = true
     this.#updateTarget(outcome)
     return this.#publishOutcome(outcome, context)
   }

@@ -310,16 +310,26 @@ describe('true baseline preview with activation rollback', () => {
   })
 
   it.each(['disconnected', 'hdr'] as const)(
-    'defers a missing %s display and restores it after reconnect or HDR-off',
+    'handles a missing %s display and reapplies after reconnect or HDR-off',
     async (state) => {
       const { native, preview, activation, coordinator } = await fixture()
       const deferred = state === 'hdr' ? native.hdrDisplayIds : native.disconnectedDisplayIds
       deferred.add(two)
       await preview.start(empty, 'preview')
-      expect(native.calls).toEqual([{ operation: 'restore', displayId: one }])
+      expect(native.calls).toEqual(
+        state === 'hdr'
+          ? [
+              { operation: 'restore', displayId: two },
+              { operation: 'restore', displayId: one }
+            ]
+          : [{ operation: 'restore', displayId: one }]
+      )
       await preview.cancel()
-      expect(coordinator.capturedDisplayIds).toContain(two)
-      expect(native.calls.filter((call) => call.displayId === two)).toEqual([])
+      expect(coordinator.capturedDisplayIds.includes(two)).toBe(state === 'disconnected')
+      expect(native.calls.filter((call) => call.displayId === two)).toEqual(
+        state === 'hdr' ? [{ operation: 'restore', displayId: two }] : []
+      )
+      if (state === 'hdr') expect(native.currentSettings.get(two)).toEqual(originals.get(two))
       deferred.delete(two)
       native.calls.length = 0
       await activation.beginSystemTransition()
@@ -504,14 +514,19 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('defers HDR assigned targets as well as missing targets without any SDR writes', async () => {
+  it('restores HDR assigned and missing targets without capture or profile writes', async () => {
     const { native, preview } = await fixture()
     native.hdrDisplayIds.add(one)
     native.hdrDisplayIds.add(two)
     await preview.start(partial, 'preview')
     await preview.update(partial.id, [{ displayId: one, color: color({ brightness: 70 }) }])
     await preview.cancel()
-    expect(native.calls).toEqual([])
+    expect(native.calls).toEqual([
+      { operation: 'restore', displayId: one },
+      { operation: 'restore', displayId: two }
+    ])
+    expect(native.currentSettings.get(one)).toEqual(originals.get(one))
+    expect(native.currentSettings.get(two)).toEqual(originals.get(two))
     expectOriginalCaptures(native)
   })
 })

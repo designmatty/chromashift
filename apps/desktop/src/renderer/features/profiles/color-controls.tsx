@@ -139,24 +139,20 @@ export function controlSupport(
     }
   }
 
+  if (display.hdr) {
+    return {
+      available: false,
+      status: 'unavailable',
+      reason: 'HDR is on. These values apply when HDR is turned off.'
+    }
+  }
+
   const capability = report?.capabilities[key]
   if (capability === undefined || !capability.supported) {
     return {
       available: false,
       status: 'unavailable',
       reason: capability?.reason ?? 'Unsupported by the active provider.'
-    }
-  }
-
-  if (
-    display.hdr &&
-    capability.provider === 'windows' &&
-    (key === 'brightness' || key === 'contrast' || key === 'gamma')
-  ) {
-    return {
-      available: false,
-      status: 'unavailable',
-      reason: 'Windows gamma controls are unsafe while HDR is active.'
     }
   }
 
@@ -192,6 +188,13 @@ export function ColorControls({
 
   return (
     <Stack gap={compact ? 4 : 3}>
+      {display?.hdr && (
+        <Text role="status" fontSize="xs" color="fg.muted">
+          {product.chromaShift?.status === 'safetyBlocked'
+            ? "HDR is on and isn't supported yet. Restoration needs confirmation. Use Retry to restore original settings."
+            : "HDR is on and isn't supported yet. This display stays at its original settings. Values below apply when HDR is off."}
+        </Text>
+      )}
       {controls
         .filter(
           (control) =>

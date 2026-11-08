@@ -563,7 +563,7 @@ describe('ActivationCoordinator', () => {
     ])
   })
 
-  it('retains an SDR baseline through HDR and restores it once HDR turns off', async () => {
+  it('restores an SDR baseline immediately while HDR is on', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(
       repository(configuration([gameAProfile])),
@@ -575,13 +575,15 @@ describe('ActivationCoordinator', () => {
     native.hdrDisplayIds.add('display:one')
     await coordinator.resetForDisplayTransition()
     await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
-      status: 'skipped',
-      deferredDisplayIds: ['display:one'],
+      status: 'activated',
+      deferredDisplayIds: [],
       failures: []
     })
     await expect(coordinator.activate(application('Browser.exe'))).resolves.toMatchObject({
       status: 'skipped'
     })
+    expect(native.currentSettings.get('display:one')).toEqual({})
+    expect(coordinator.capturedDisplayIds).toEqual([])
 
     native.hdrDisplayIds.clear()
     await coordinator.resetForDisplayTransition()
@@ -596,6 +598,39 @@ describe('ActivationCoordinator', () => {
       'restoreAll'
     ])
   })
+
+  it.each(['game-a', 'default', 'game-b'])(
+    'restores an HDR display before switching to %s',
+    async (next) => {
+      const native = new FakeNativeActivationPort()
+      native.currentSettings.set('display:one', { brightness: 47, saturation: 43 })
+      const coordinator = new ActivationCoordinator(
+        repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default')),
+        native,
+        new RecordingLogger()
+      )
+      await coordinator.activate(null, manualActivationMode('game-a'))
+      native.hdrDisplayIds.add('display:one')
+      await coordinator.resetForDisplayTransition()
+      const before = native.calls.length
+      await expect(coordinator.activate(null, manualActivationMode(next))).resolves.toMatchObject({
+        status: 'activated',
+        failures: []
+      })
+      expect(native.calls.slice(before).filter((call) => call.displayId === 'display:one')).toEqual(
+        [{ operation: 'restore', displayId: 'display:one' }]
+      )
+      expect(native.currentSettings.get('display:one')).toEqual({ brightness: 47, saturation: 43 })
+      native.hdrDisplayIds.clear()
+      await coordinator.resetForDisplayTransition()
+      await coordinator.activate(null, manualActivationMode(next))
+      if (next !== 'game-b') {
+        expect(native.currentSettings.get('display:one')?.saturation).toBe(
+          next === 'game-a' ? 75 : 50
+        )
+      }
+    }
+  )
 
   it('invalidates duplicate suppression after external restore and native restart', async () => {
     const native = new FakeNativeActivationPort()

@@ -219,8 +219,13 @@ During app-panel Preview or Edit, connected SDR displays without a draft target
 are held at Original settings. The session restores any existing immutable native
 baseline without capturing modified output. A display without a captured baseline
 needs no write. Adding a target uses normal capture-before-apply; removing it
-restores Original settings. HDR and disconnected baselines remain retained and
-deferred. Teardown restores all session and activation-owned baselines before
+restores Original settings. Disconnected baselines remain retained and deferred.
+HDR displays restore their captured Original settings immediately, including
+during an Edit or Temporary override transition. The session and full draft stay
+intact, SDR displays keep the draft, and HDR-off reapplies the current draft or
+target. Both panels show an HDR notice above disabled target values, explaining
+that they apply when HDR is off. Restoration never implicitly discards changes.
+Teardown restores all session and activation-owned baselines before
 serialized activation rollback resets deduplication and reapplies the prior target
 on every display, including displays held at Original settings. An unconfirmed
 connected-display restore retains the affected displays as pending restoration
@@ -237,8 +242,9 @@ requires native restoration of every connected baseline. Successful emergency
 restore-all clears pending tracking without a renderer. Its follow-up drains any
 in-flight Retry or Resume, suspends writes, and confirms Original settings again
 through the Pause path before entering Paused.
-Disconnected/HDR retention does not block, and `baselineNotCaptured` means there
-is nothing to restore. Restoration uses only captured baselines.
+Disconnected retention does not block, and `baselineNotCaptured` means there
+is nothing to restore. HDR restore failures use Safety blocked and Retry rather
+than deferral. Restoration uses only captured baselines.
 
 While Edit or Temporary override has unsaved changes, the app status pill and
 mini-panel power icon show amber `Auto-switching on hold`. Their tooltips explain

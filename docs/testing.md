@@ -35,11 +35,11 @@ The TypeScript and native test suites cover these contracts:
   case-insensitive display IDs, matching, and activation precedence
 - Serialized activation, baseline capture before apply, baseline-first profile
   changes, duplicate suppression after success, per-display failures, retry,
-  disconnected targets, HDR deferral, and topology reapply
+  disconnected targets, HDR apply deferral with immediate baseline restore, and topology reapply
 - Preview start, update, promotion, save, rollback after pending writes, dirty
   navigation, mini-panel overrides, per-control neutral reset, target removal,
   close-time restoration before renderer release, visible failure guidance and
-  retries, disconnected/HDR baseline retention without a restore failure, and
+  retries, disconnected baseline retention and confirmed HDR restoration, and
   overlapping close controllers after renderer recovery
 - Unconfirmed preview restoration retained across End preview, Discard, close
   Try again, and persistent failures; Safety blocked prevents automatic/manual
@@ -47,7 +47,7 @@ The TypeScript and native test suites cover these contracts:
   intent. Fake-native runtime coverage includes failed topology reapply plus
   failed rollback, renderer-free emergency restore-all clearing tracking into
   Paused, a held Retry resuming after emergency restore, shutdown retry, and
-  disconnected/HDR retention without blocking. Pending preview restoration
+  disconnected retention without blocking and HDR restore failure recovery. Pending preview restoration
   persists as schema-v1 `resume` recovery, with Retry restoring tracked previews
   before resuming and working after restart without an in-memory session.
 - Physical-display grouping, safe capability intersection, endpoint fanout,
@@ -63,7 +63,8 @@ The TypeScript and native test suites cover these contracts:
 - Sender-validated Zod IPC, sandboxed preload behavior, CSP, navigation policy,
   Electron fuses, package layout, staged Azure signing order, signed-installer
   update metadata, release preflight, renderer size, and package footprint
-- Native gamma transforms, HDR rejection, foreground-window resolution,
+- Native gamma transforms, HDR capture/apply rejection, restore-only HDR writes
+  with gamma read-back and captured vendor baselines, foreground-window resolution,
   heartbeat deadlines, parent monitoring, display identity, baseline ownership,
   and explicit shutdown policy
 
@@ -115,11 +116,51 @@ interactive hardware with a restoration guard:
    Original settings again, Paused, and no later profile writes. Separately
    confirm Exit retries restoration and stays alive on a connected-display
    failure, then exits only after restoration succeeds.
-5. Confirm disconnected and HDR baselines remain deferred without Safety blocked,
-   and an ordinary mini-panel override survives closing the app panel.
+5. Confirm disconnected baselines remain deferred without Safety blocked, HDR
+   baselines restore immediately, and an ordinary mini-panel override survives
+   closing the app panel.
 
 These are owner retest instructions, not hardware verification evidence. AMD
 writes remain hardware-unverified.
+
+### Owner HDR retest for #88
+
+Required before merge on the owner's NVIDIA-driven HDR display with a second
+display in SDR. No smoke, native integration, desktop driving, process stops, or
+real-display writes were run to implement #88. Unit and fake-native results do
+not establish HDR restore safety or hardware acceptance. Use an independent
+restoration guard with known original ramp hash and NVIDIA vibrance/hue values.
+
+1. Start in SDR over a known automatic or manual target. Edit mild brightness and
+   saturation values without saving, with a separate draft target on the SDR
+   display. Enable HDR in Windows. Confirm immediate original output and exact
+   baseline read-back on the HDR display, unchanged draft and Update/Discard
+   actions, and unchanged draft output on the SDR display.
+2. Check both app and mini panels. The HDR notice must explain original settings
+   and disabled target values that apply when HDR is off. Check both themes and
+   scrolling in the fixed-size, non-activating mini panel. Turn HDR off and
+   confirm the unsaved draft reapplies. Repeat with a mini-panel override.
+3. With HDR on, test Discard, End preview, a same-display profile switch, a switch
+   to a profile without that target, and Default. The HDR display must stay at
+   original settings. Turn HDR off after each and confirm the saved or intended
+   target rather than the discarded edits.
+4. Edit again, turn HDR on, then tray Exit and choose Discard. Confirm exact
+   restoration and normal exit without an HDR deferral. Separately exercise the
+   helper watchdog and parent-exit/EOF restoration under the owner's guarded
+   hardware procedure, confirming the original ramp and vendor values before
+   any relaunch. The implementation agent must not stop a running app.
+5. Under a controlled restore failure or read-back mismatch in HDR, confirm
+   Safety blocked, disabled inputs, retained baseline ownership, and repeated
+   Retry or Exit failure until restoration can be confirmed. The HDR notice
+   must not claim restoration succeeded. Confirm a disconnected display still
+   retains its baseline for reconnect and explicit shutdown discards only
+   unreachable restoration records.
+
+Record GPU/driver, display model, Windows HDR toggle method, original and final
+ramp hashes and vendor values, logs, and any visual difference between read-back
+and output. Restore-only HDR writes on NVIDIA and all AMD writes remain
+hardware-unverified until the corresponding owner checks are recorded. Real HDR
+profile support is tracked separately in #89.
 
 `npm run native:test:integration` launches the real
 `ChromaShift.DisplayService.exe`. It verifies:
@@ -295,7 +336,8 @@ Verified on this host:
 - two stable display endpoints and physical-panel grouping
 - parent-exit and heartbeat-timeout restoration
 - baseline-free helper recovery
-- SDR to HDR to SDR deferral and reapply with exact final restoration
+- Historical SDR to HDR to SDR apply deferral and reapply with exact final
+  restoration; this does not verify the new restore-only writes during HDR
 - active Edit during DisplayPort disconnect, cancel while absent, reconnect, and
   reapply to the same stable display
 - HDMI disconnect and reconnect with stable identity and exact restoration
@@ -309,6 +351,7 @@ in `display-research.md`. Package and runtime measurements live in
 Not hardware-verified:
 
 - AMD display writes and AMD-driven multi-monitor behavior
+- Restore-only writes while HDR is active on NVIDIA or AMD
 - mixed-GPU display control
 - suspend and resume, lock and unlock, refresh-rate and primary-display changes
 - NVIDIA driver reset

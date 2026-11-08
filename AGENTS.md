@@ -60,8 +60,10 @@ not the Default profile.
 - Validate and clamp values in TypeScript, IPC schemas, native commands, and the
   provider before a write.
 - Read back native writes. On a partial apply failure, restore the whole display.
-- Treat HDR as a capability change. Do not apply SDR gamma behavior while HDR is
-  active.
+- Treat HDR as a capability change. Block baseline capture and profile, preview,
+  and override apply while HDR is active. Allow only restore writes of captured
+  original settings, with read-back; restore immediately on an HDR-on transition.
+  Preserve the draft and SDR output until the user discards or HDR turns off.
 - Reacquire native handles after topology changes. Never reuse stale handles.
 - A provider or stable-identity mismatch fails closed. Do not recapture output
   that ChromaShift may already have modified.
@@ -116,8 +118,9 @@ preview; unsaved edits stay applied. Ordinary mini-panel overrides survive app
 panel close. Focus loss does not end Preview.
 If connected-display restoration cannot be confirmed, retain pending-restore
 tracking and enter Safety blocked. Retry, End preview, Discard, close, and shutdown
-must re-attempt restoration before releasing ownership. Disconnected/HDR retention
-and `baselineNotCaptured` remain non-failures.
+must re-attempt restoration before releasing ownership. Disconnected retention
+and `baselineNotCaptured` remain non-failures. HDR never defers a restore;
+an unconfirmed HDR restore enters Safety blocked.
 
 See `docs/core-domain.md` and `docs/per-display-profile-settings.md` for the full
 current contract.

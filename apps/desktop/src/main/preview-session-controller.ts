@@ -58,7 +58,7 @@ interface ActivePreview {
   saved: ColorProfile
   profileId: string
   kind: 'preview' | 'edit' | 'override'
-  /** Currently applied settings, keyed by lowercased display ID. */
+  /** Session targets, including desired values deferred by HDR or disconnection. */
   applied: Map<string, DisplayColorTarget>
   /** Activation-owned baselines plus every display written by this session. */
   touched: Map<string, string>
@@ -184,6 +184,7 @@ export class PreviewSessionController {
         .map((target) => target.displayId.toLowerCase())
     )
     try {
+      await this.#restoreHdrDisplays(touched, displays)
       if (kind !== 'override') await this.#holdOriginal(touched, targets)
       for (const target of targets) {
         const key = target.displayId.toLowerCase()
@@ -260,6 +261,14 @@ export class PreviewSessionController {
 
   async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
     const active = this.#requireActive(profileId)
+    const displays = await this.native.getDisplays()
+    await this.#restoreHdrDisplays(active.touched, displays)
+    for (const display of displays) {
+      if (display.hdr) {
+        active.disconnected.add(display.id.toLowerCase())
+        active.validated.delete(display.id.toLowerCase())
+      }
+    }
     const desired = targets
     const connectedDesired = desired.filter(
       (target) => !active.disconnected.has(target.displayId.toLowerCase())
@@ -401,6 +410,7 @@ export class PreviewSessionController {
     if (this.#restorePending) return true
 
     const displays = await this.native.getDisplays()
+    await this.#restoreHdrDisplays(active.touched, displays)
     const connectedDisplayIds = new Set(
       displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
     )
@@ -484,6 +494,24 @@ export class PreviewSessionController {
     return this.#restoreDisplayIds(this.#active.touched.values())
   }
 
+  /** HDR blocks desired settings, but never restoration of a captured baseline. */
+  async #restoreHdrDisplays(
+    touched: Map<string, string>,
+    displays: readonly Display[]
+  ): Promise<void> {
+    const hdrIds = new Set(
+      displays.filter((display) => display.hdr).map((display) => display.id.toLowerCase())
+    )
+    const displayIds = [...touched].filter(([key]) => hdrIds.has(key)).map(([, id]) => id)
+    if (displayIds.length === 0) return
+    const result = await this.#restoreDisplayIds(displayIds)
+    const retained = new Set(result.retainedDisplayIds.map((id) => id.toLowerCase()))
+    for (const id of displayIds) {
+      if (!retained.has(id.toLowerCase())) touched.delete(id.toLowerCase())
+    }
+    if (result.failures.length > 0) throw new PreviewRestoreError(result.failures)
+  }
+
   /** Restore only known baselines. Missing targets never cause baseline capture. */
   async #holdOriginal(
     touched: Map<string, string>,
@@ -500,33 +528,22 @@ export class PreviewSessionController {
     const failures: string[] = []
     const retainedDisplayIds: string[] = []
     let connectedDisplayIds: Set<string> | undefined
-    const hdrDisplayIds = new Set<string>()
     try {
       const displays = await this.native.getDisplays()
       connectedDisplayIds = new Set(displays.map((display) => display.id.toLowerCase()))
-      for (const display of displays) {
-        if (display.hdr) hdrDisplayIds.add(display.id.toLowerCase())
-      }
     } catch {
       // Enumeration failure must not suppress a restore attempt.
     }
 
     for (const displayId of displayIds) {
-      if (
-        hdrDisplayIds.has(displayId.toLowerCase()) ||
-        (connectedDisplayIds !== undefined && !connectedDisplayIds.has(displayId.toLowerCase()))
-      ) {
+      if (connectedDisplayIds !== undefined && !connectedDisplayIds.has(displayId.toLowerCase())) {
         retainedDisplayIds.push(displayId)
         continue
       }
       try {
         const result = await this.native.restoreDisplay(displayId)
         if (result.restored || result.reason === 'baselineNotCaptured') continue
-        if (
-          result.code === 'DISPLAY_NOT_FOUND' ||
-          result.code === 'HDR_UNSAFE' ||
-          result.reason === 'hdrActive'
-        ) {
+        if (result.code === 'DISPLAY_NOT_FOUND') {
           retainedDisplayIds.push(displayId)
         } else {
           failures.push(
@@ -536,7 +553,7 @@ export class PreviewSessionController {
         }
       } catch (error) {
         const details = describeError(error)
-        if (details.code === 'DISPLAY_NOT_FOUND' || details.code === 'HDR_UNSAFE') {
+        if (details.code === 'DISPLAY_NOT_FOUND') {
           retainedDisplayIds.push(displayId)
         } else {
           failures.push(`${displayId}: ${details.message}`)

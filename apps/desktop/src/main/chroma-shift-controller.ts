@@ -12,6 +12,7 @@ import type {
   ActivationSource
 } from '@main/automatic-activation-controller.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
+import { hasRestoreFailure } from '@main/activation-coordinator.js'
 
 export type ChromaShiftStatus = 'active' | 'paused' | 'safetyBlocked'
 
@@ -333,6 +334,11 @@ export class ChromaShiftController {
     )
       return
     this.#setIntent(this.activation.state.mode, outcome.resolution.target)
+    if (hasRestoreFailure(outcome)) {
+      this.#state.status = 'safetyBlocked'
+      this.#state.pendingOperation = 'resume'
+      await this.activation.suspendWrites()
+    }
     await this.#persistState()
   }
 
@@ -441,8 +447,10 @@ export class ChromaShiftController {
       source,
       origin: 'resume'
     })
-    this.#state.status = 'active'
-    this.#state.pendingOperation = null
+    const restoreFailed = hasRestoreFailure(outcome)
+    this.#state.status = restoreFailed ? 'safetyBlocked' : 'active'
+    this.#state.pendingOperation = restoreFailed ? 'resume' : null
+    if (restoreFailed) await this.activation.suspendWrites()
     this.#setIntent(
       this.activation.state.mode,
       outcome.resolution?.target ?? this.#state.intendedTarget

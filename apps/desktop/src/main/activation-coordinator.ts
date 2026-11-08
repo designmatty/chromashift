@@ -45,6 +45,12 @@ export interface ActivationOutcome {
   deferredDisplayIds: string[]
 }
 
+export function hasRestoreFailure(outcome: ActivationOutcome): boolean {
+  return outcome.failures.some(
+    (failure) => failure.operation === 'restore' || failure.operation === 'restoreAll'
+  )
+}
+
 function findSelectedProfile(
   configuration: ProfileConfiguration,
   resolution: ActivationResolution
@@ -222,7 +228,11 @@ export class ActivationCoordinator {
     )
 
     for (const displayId of [...this.#capturedDisplayIds]) {
-      if (normalizedDesiredIds.has(displayId.toLowerCase())) continue
+      if (
+        normalizedDesiredIds.has(displayId.toLowerCase()) &&
+        !hdrDisplayIds.has(displayId.toLowerCase())
+      )
+        continue
       if (!connectedDisplayIds.has(displayId.toLowerCase())) {
         this.#deferDisplay(
           profile.id,
@@ -233,17 +243,9 @@ export class ActivationCoordinator {
         )
         continue
       }
-      if (hdrDisplayIds.has(displayId.toLowerCase())) {
-        this.#deferDisplay(profile.id, displayId, 'restore', 'hdrActive', deferredDisplayIds)
-        continue
-      }
       try {
         const result = await this.native.restoreDisplay(displayId)
         if (!result.restored) {
-          if (result.reason === 'hdrActive' || result.code === 'HDR_UNSAFE') {
-            this.#deferDisplay(profile.id, displayId, 'restore', 'hdrActive', deferredDisplayIds)
-            continue
-          }
           if (result.code === 'DISPLAY_NOT_FOUND') {
             this.#deferDisplay(
               profile.id,
@@ -274,9 +276,7 @@ export class ActivationCoordinator {
           reason: result.restored ? 'profileTargetChanged' : result.reason
         })
       } catch (error) {
-        if (this.#isHdrUnsafe(error)) {
-          this.#deferDisplay(profile.id, displayId, 'restore', 'hdrActive', deferredDisplayIds)
-        } else if (this.#isDisplayDisconnected(error)) {
+        if (this.#isDisplayDisconnected(error)) {
           this.#deferDisplay(
             profile.id,
             displayId,
@@ -385,15 +385,6 @@ export class ActivationCoordinator {
       for (const display of result.displays) {
         if (display.restored || display.reason === 'baselineNotCaptured') {
           this.#capturedDisplayIds.delete(display.displayId)
-        } else if (display.reason === 'hdrActive' || display.code === 'HDR_UNSAFE') {
-          this.#capturedDisplayIds.add(display.displayId)
-          this.#deferDisplay(
-            undefined,
-            display.displayId,
-            'restoreAll',
-            'hdrActive',
-            deferredDisplayIds
-          )
         } else if (display.code === 'DISPLAY_NOT_FOUND') {
           this.#capturedDisplayIds.add(display.displayId)
           this.#deferDisplay(

@@ -77,14 +77,24 @@ failures are logged and returned as partial outcomes while remaining displays
 continue; failed transitions reset deduplication so a later event can retry.
 External restoration and native-service exit also reset activation state.
 
-HDR is a quiescent activation state, not a failed profile transition. Electron
-checks the current display snapshot before capture or apply, defers every target
-on an HDR display, and suppresses duplicate foreground retries. The helper also
-rejects capture and every provider write as defense in depth. If HDR becomes
-active after ChromaShift captured an SDR baseline, that immutable baseline stays
-owned and is not recaptured or released; restore-all reports `hdrActive`, and the
-next validated HDR-off topology transition restores or reapplies it. Topology
-resets invalidate target deduplication without discarding baseline ownership.
+HDR blocks profile application and baseline capture in both Electron and the
+helper. Restore-only writes of an existing immutable baseline are allowed with
+read-back, independently of the unsupported apply capabilities. An HDR-on
+transition restores the display immediately. Discard, End preview, profile
+switches, shutdown, watchdog, parent exit, and stdin EOF also restore HDR displays.
+Only confirmed restoration releases ownership; an unconfirmed restore enters
+Safety blocked in the running app and remains retryable. Activation restore
+failures suspend subsequent foreground writes, and a failed recovery stays
+blocked. Disconnected baseline retention is unchanged.
+
+HDR restoration preserves the Edit or override session, unsaved draft, and SDR
+targets. Both panels explain HDR above disabled target values; those values apply
+when HDR turns off through the existing topology transition. The mini panel keeps
+its fixed window sizing and scrolls the controls pane if needed. Windows gamma
+restore verifies the exact captured ramp, NVIDIA restore verifies vibrance/hue,
+and AMD's existing restore writes captured custom-color values and LUT directly
+with read-back. No provider's profile setters are enabled under HDR. Restore under
+HDR still requires owner NVIDIA hardware verification; AMD remains unverified.
 
 Display and power transitions use a second coordinator around that same activation
 queue. Electron lock/suspend notifications pause new writes immediately; unlock,
@@ -210,9 +220,9 @@ enters Safety blocked with a pending preview-restore operation. No rollback
 reapply occurs before restoration succeeds, including after a topology reapply
 failure. Retry or a later teardown restores the remaining displays, releases the
 preview hold, validates resumption, and reasserts the intended target through the
-activation queue. Disconnected and HDR baselines still pass back to activation
-as retained ownership without a restore failure; `baselineNotCaptured` needs no
-restoration or capture.
+activation queue. Disconnected baselines still pass back to activation as retained
+ownership without a restore failure. HDR displays restore immediately;
+`baselineNotCaptured` needs no restoration or capture.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
 full app is focused or the non-activating mini panel is raised to the popup-menu

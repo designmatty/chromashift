@@ -493,6 +493,87 @@ describe('unconfirmed preview restoration', () => {
     return { ...harness, product, draft }
   }
 
+  it('keeps an unconfirmed HDR transition restore Safety blocked until Retry succeeds', async () => {
+    const h = await previewHarness('manual', 'edit')
+    try {
+      h.client.hdrDisplayIds.add(id)
+      h.client.failRestoreDisplayIds.add(id)
+      vi.useFakeTimers()
+      h.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      await vi.waitFor(() => expect(h.logger.has('DisplayTransitionFailed')).toBe(true))
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      expect((await h.product.getState()).preview).toEqual(pending)
+      expect(
+        h.client.calls.filter((call) => call.operation === 'capture' || call.operation === 'apply')
+      ).toEqual([])
+      await expect(h.product.controlChromaShift('retry')).rejects.toBeInstanceOf(
+        PreviewRestoreError
+      )
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      h.client.failRestoreDisplayIds.clear()
+      await h.product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect(h.client.currentSettings.get(id)).toEqual({})
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('blocks failed HDR restoration during a profile switch and on repeated Retry', async () => {
+    const h = await createHarness({}, { profiles: [reorderProfile('live', 65)] })
+    await h.runtime.start()
+    const product = h.runtime.productController!
+    try {
+      h.client.hdrDisplayIds.add(id)
+      h.client.failRestoreDisplayIds.add(id)
+      await expect(product.activateProfile('live')).rejects.toThrow('Restore failed')
+      await vi.waitFor(() => expect(h.intent().chromaShiftStatus).toBe('safetyBlocked'))
+      await product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      const before = h.client.calls.length
+      await product.activateProfile('default')
+      expect(h.client.calls).toHaveLength(before)
+      h.client.failRestoreDisplayIds.clear()
+      await product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect(h.client.currentSettings.get(id)).toEqual({})
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('restores HDR baselines before Exit after the user discards unsaved changes', async () => {
+    const h = await createHarness({}, { confirmUnsavedQuit: async () => 'discard' })
+    await h.runtime.start()
+    const product = h.runtime.productController!
+    try {
+      const saved = (await product.getState()).configuration.profiles[0]!
+      const draft = {
+        ...saved,
+        displays: [
+          {
+            displayId: id,
+            color: { ...createNeutralColorSettings(), brightness: 30, saturation: 85 }
+          }
+        ]
+      }
+      await product.startPreview(draft, 'edit')
+      h.client.hdrDisplayIds.add(id)
+      const stop = vi.spyOn(h.client, 'stop').mockImplementation(async () => {
+        const result = await h.client.restoreAllBaselines()
+        expect(result.displays).toEqual([{ displayId: id, restored: true }])
+        expect(h.client.currentSettings.get(id)).toEqual({})
+      })
+      expect(await h.runtime.shutdownCoordinator!.request('tray')).toBe(true)
+      expect(stop).toHaveBeenCalledOnce()
+      expect(h.runtime.shutdownCoordinator!.state).toBe('complete')
+      expect(h.logger.has('ApplicationExiting')).toBe(true)
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
   it.each(['manual', 'automatic'] as const)(
     'retries End preview and restores the exact prior %s target',
     async (mode) => {
@@ -808,7 +889,7 @@ describe('unconfirmed preview restoration', () => {
   })
 
   it.each(['disconnected', 'hdr'] as const)(
-    'retains %s baselines without entering Safety blocked',
+    'handles %s baselines without entering Safety blocked',
     async (reason) => {
       const h = await previewHarness()
       try {
@@ -817,7 +898,9 @@ describe('unconfirmed preview restoration', () => {
         await h.product.cancelPreview()
         expect(h.intent().chromaShiftStatus).toBe('active')
         expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
-        expect(h.client.calls).toEqual([])
+        expect(h.client.calls).toEqual(
+          reason === 'hdr' ? [{ operation: 'restore', displayId: id }] : []
+        )
       } finally {
         h.runtime.dispose()
       }
