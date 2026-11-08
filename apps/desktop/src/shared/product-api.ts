@@ -82,6 +82,10 @@ export const previewTargetSchema = z
 export const previewStateSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('inactive') }),
   z.object({
+    state: z.literal('restorePending'),
+    displayIds: z.array(z.string().startsWith('display:'))
+  }),
+  z.object({
     state: z.literal('active'),
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
@@ -149,7 +153,7 @@ export const productStateSchema = z.object({
   chromaShift: z
     .object({
       status: z.enum(['active', 'paused', 'safetyBlocked']),
-      pendingOperation: z.enum(['pause', 'resume']).nullable(),
+      pendingOperation: z.enum(['pause', 'resume', 'previewRestore']).nullable(),
       intendedMode: activationModeSchema,
       intendedTarget: activationTargetSchema.nullable(),
       transitionInProgress: z.boolean()

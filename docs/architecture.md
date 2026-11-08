@@ -195,16 +195,24 @@ the live profile. Minimize ends only a clean preview; unsaved edits and override
 stay applied with their draft intact. While unsaved changes hold automatic writes,
 the app pill and mini-panel power icon are amber, and the tray tooltip and menu
 status say `Auto-switching on hold`. Main publishes the latest queued automatic
-target through the validated product state. The app toast offers Update or
+target through the validated product state. The profile offers Update or
 Discard, after which the existing rollback/completion path applies the latest
 foreground target. Focus loss does not end preview. Cancellation,
 navigation, and failure wait for pending writes before restoring the previous
 manual/foreground/default/baseline target. Preview has no countdown. Native apply
 restores baseline before each complete settings request so removing an override
 cannot inherit stale values. The mini-panel override flow remains separate.
-Close-to-tray cancellation reports genuine restore failures and retains the session
-and automatic-write suspension for retry. Disconnected and HDR display baselines
-still pass back to activation as retained ownership without a restore failure.
+Every teardown path retains unconfirmed connected-display restores in
+`PreviewSessionController` and reports `restorePending` through validated product
+state. This state exposes only tracked display IDs, so neither renderer hydrates
+it as an editable preview. `ChromaShiftController` suspends activation writes and
+enters Safety blocked with a pending preview-restore operation. No rollback
+reapply occurs before restoration succeeds, including after a topology reapply
+failure. Retry or a later teardown restores the remaining displays, releases the
+preview hold, validates resumption, and reasserts the intended target through the
+activation queue. Disconnected and HDR baselines still pass back to activation
+as retained ownership without a restore failure; `baselineNotCaptured` needs no
+restoration or capture.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
 full app is focused or the non-activating mini panel is raised to the popup-menu
@@ -257,7 +265,10 @@ fails closed into Safety blocked. Resume re-resolves the latest foreground app
 and applies the preserved intended mode and target. Explicit profile or Automatic
 selection updates intent while staying Paused; during a safety block it updates
 intent without bypassing the required retry. Safety blocked persists whether the
-interrupted operation was Pause or Resume so retry completes the correct operation.
+interrupted operation was Pause, Resume, or preview rollback so retry completes
+the correct operation. The intent slice uses schema version 2 for the preview
+restore reason and accepts version 1 through a migration that preserves status,
+mode, target, and pending Pause/Resume.
 Restore original settings reuses the Pause path and preserves intent. After full
 restoration, Paused persists until the user resumes. Restore original settings is
 a no-op while Paused or Safety blocked; the emergency shortcut still restores
@@ -271,15 +282,17 @@ Closing the window either releases its renderer to the tray or requests shutdown
 according to settings. `app-panel-close-controller.ts` waits for pending non-override
 preview/edit teardown before notifying the renderer or releasing it through the
 window controller. A genuine restore failure keeps the app panel open and visible
-and uses the same retry/cancel guidance as shutdown; a later close retries restoration.
+and enters Safety blocked with pending display tracking. It uses the same
+retry/cancel guidance as shutdown; a later close or `Try again` re-attempts the
+native restore rather than treating an ended session as proof of restoration.
 The close dialog is modal to its app window and offers `Try again` or
 `Keep the window open`; shutdown keeps its existing `Keep ChromaShift running`
 wording. The shared shell adapter is `restore-retry-dialog.ts`. Concurrent close
 drains, including an old and recovered renderer's windows, share the preview queue
 without invalidating one another's checkpoint. New session commands still force
 another drain before renderer release.
-Override sessions stay active when the app panel closes. This does not change
-Safety blocked semantics. Opening the app recreates the renderer from main-owned
+Override sessions stay active when the app panel closes. An override already
+pending restoration is retried on close. Opening the app recreates the renderer from main-owned
 product state. ChromaShift holds a single-instance lock, so launching it again
 signals the existing tray process to recreate and focus the app panel instead
 of starting a second DisplayService owner. A hidden mini-panel renderer is
@@ -312,13 +325,16 @@ recreated, and it hydrates from main-owned product state; three failures in one
 minute open the circuit instead of forming a reload loop. The global
 `Ctrl+Alt+Windows+R` shortcut remains main-process owned and requests preview
 rollback plus automatic-activation baseline restoration without relying on a
-renderer. Only a successful emergency restore then starts a detached call to the
-display-control Restore path to persist Paused while preserving intent. The direct
+renderer. Only a successful emergency restore then starts a detached
+display-control follow-up to persist Paused while preserving intent. The direct
 restore request completes without waiting for that follow-up, so later shortcut
 presses can restore again even during a pending control transition. The follow-up
 preserves any newer intended mode or target instead of overwriting it with the
 snapshot taken before the direct restore. An emergency restore
-failure retains the current status and the critical log and error dialog.
+that confirms restore-all while preview rollback is Safety blocked clears pending
+tracking and persists Paused without reapplying the profile. Other emergency
+restore behavior remains unchanged. An emergency restore failure retains pending
+tracking and the critical log and error dialog.
 Tray Exit and other
 application quit requests share one shutdown coordinator. Before checking for
 unsaved changes, main requests a renderer draft flush with a 750 ms timeout, so

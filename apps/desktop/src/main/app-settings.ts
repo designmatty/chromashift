@@ -26,9 +26,9 @@ export const windowStateSchema = z
 
 export const chromaShiftIntentSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     chromaShiftStatus: z.enum(['active', 'paused', 'safetyBlocked']),
-    pendingControlOperation: z.enum(['pause', 'resume']).nullable().default(null),
+    pendingControlOperation: z.enum(['pause', 'resume', 'previewRestore']).nullable().default(null),
     intendedActivationMode: activationModeSchema,
     intendedTarget: activationTargetSchema.nullable()
   })
@@ -36,6 +36,14 @@ export const chromaShiftIntentSchema = z
 
 export type WindowState = z.infer<typeof windowStateSchema>
 export type ChromaShiftIntent = z.infer<typeof chromaShiftIntentSchema>
+
+const legacyChromaShiftIntentSchema = chromaShiftIntentSchema.extend({
+  schemaVersion: z.literal(1),
+  pendingControlOperation: z.enum(['pause', 'resume']).nullable().default(null)
+})
+const persistedChromaShiftIntentSchema = z
+  .union([chromaShiftIntentSchema, legacyChromaShiftIntentSchema])
+  .transform((intent): ChromaShiftIntent => ({ ...intent, schemaVersion: 2 }))
 
 const legacyUserPreferencesSchema = userPreferencesSchema
   .omit({ schemaVersion: true, notificationsEnabled: true })
@@ -72,7 +80,7 @@ export const defaultWindowState: WindowState = {
 }
 
 export const defaultChromaShiftIntent: ChromaShiftIntent = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   chromaShiftStatus: 'active',
   pendingControlOperation: null,
   intendedActivationMode: { kind: 'automatic' },
@@ -99,7 +107,7 @@ export function createSettingsStores(userDataDirectory: string): SettingsStores 
     ),
     chromaShiftIntent: new SettingsSliceStore(
       join(userDataDirectory, 'chroma-shift.json'),
-      chromaShiftIntentSchema,
+      persistedChromaShiftIntentSchema,
       defaultChromaShiftIntent
     )
   }

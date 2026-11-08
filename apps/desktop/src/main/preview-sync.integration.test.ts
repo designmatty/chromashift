@@ -154,7 +154,7 @@ it('commitAppPreview promotes the matching override without native calls before 
   })
 })
 
-it('app rollback reports PreviewRestoreError even when teardown has published inactive', async () => {
+it('app rollback retains an unconfirmed restore and Discard retries the native restore', async () => {
   const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
   const controller = new PreviewSessionController(
     native,
@@ -191,13 +191,17 @@ it('app rollback reports PreviewRestoreError even when teardown has published in
   await expect(sync.rollback(true)).rejects.toMatchObject({
     message: expect.stringContaining('Some displays could not be restored.')
   })
-  expect(controller.state).toEqual({ state: 'inactive' })
+  expect(controller.state).toEqual({ state: 'restorePending', displayIds: ['display:abc'] })
   expect(errors).toEqual([
     {
       code: 'OPERATION_FAILED',
       message: expect.stringContaining('Some displays could not be restored.')
     }
   ])
+  native.failRestoreDisplayIds.clear()
+  await expect(sync.rollback(true)).resolves.toBe(true)
+  expect(native.calls.filter((call) => call.operation === 'restore')).toHaveLength(2)
+  expect(controller.state).toEqual({ state: 'inactive' })
 })
 it('promotes a clicked preview before applying edits without restoring or recapturing', async () => {
   vi.useFakeTimers()

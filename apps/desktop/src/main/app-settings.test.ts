@@ -71,6 +71,37 @@ describe('settings slice stores', () => {
     })
   })
 
+  it.each([null, 'pause', 'resume'] as const)(
+    'migrates intent v1 with pending %s without changing intent',
+    async (pendingControlOperation) => {
+      const directory = await temporaryDirectory()
+      const legacy = {
+        ...defaultChromaShiftIntent,
+        schemaVersion: 1,
+        chromaShiftStatus: 'safetyBlocked',
+        pendingControlOperation,
+        intendedActivationMode: { kind: 'manual', profileId: 'gaming' },
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      }
+      await writeFile(join(directory, 'chroma-shift.json'), JSON.stringify(legacy))
+      await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual({
+        ...legacy,
+        schemaVersion: 2
+      })
+    }
+  )
+
+  it('persists and reloads the pending preview-restore operation', async () => {
+    const directory = await temporaryDirectory()
+    const blocked = {
+      ...defaultChromaShiftIntent,
+      chromaShiftStatus: 'safetyBlocked' as const,
+      pendingControlOperation: 'previewRestore' as const
+    }
+    await createSettingsStores(directory).chromaShiftIntent.update(() => blocked)
+    await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual(blocked)
+  })
+
   it('migrates the profile notification preference into the global notification switch', async () => {
     const directory = await temporaryDirectory()
     await writeFile(

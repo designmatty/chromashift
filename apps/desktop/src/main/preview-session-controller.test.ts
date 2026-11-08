@@ -268,7 +268,7 @@ describe('PreviewSessionController', () => {
     expect(activation.calls).toEqual(['begin', 'cancel'])
   })
 
-  it('surfaces a restore failure without skipping the other displays or the rollback', async () => {
+  it('retains a restore failure without skipping other displays or releasing activation', async () => {
     const native = new FakeNative()
     native.failRestoreDisplayIds.add(display.id)
     const activation = new FakeActivation()
@@ -284,11 +284,11 @@ describe('PreviewSessionController', () => {
 
     await expect(controller.cancel()).rejects.toThrow(/could not be restored/)
     expect(native.restored).toEqual([secondDisplay.id])
+    expect(activation.calls).toEqual(['begin'])
+    expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
+    native.failRestoreDisplayIds.clear()
+    await controller.cancel()
     expect(activation.calls).toEqual(['begin', 'cancel'])
-    expect(activation.retainedDisplayIds).toContainEqual({
-      operation: 'cancel',
-      displayIds: [display.id]
-    })
     expect(controller.state).toEqual({ state: 'inactive' })
   })
 
@@ -474,7 +474,7 @@ describe('PreviewSessionController', () => {
         failures: [expect.stringContaining(display.id)]
       })
       expect(native.restored).toEqual([secondDisplay.id])
-      expect(controller.state).toMatchObject({ state: 'active', kind })
+      expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
       expect(activation.calls).toEqual(['begin'])
 
       native.failRestoreDisplayIds.clear()
@@ -485,7 +485,7 @@ describe('PreviewSessionController', () => {
     }
   )
 
-  it('publishes a partial close restore and recaptures restored targets on unchanged edits', async () => {
+  it('publishes only pending restores and rejects edits until restoration is confirmed', async () => {
     const native = new FakeNative()
     const activation = new FakeActivation()
     const onStateChanged = vi.fn()
@@ -500,21 +500,17 @@ describe('PreviewSessionController', () => {
 
     await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
 
-    expect(controller.state).toMatchObject({ state: 'active', targets: [draft.displays[0]] })
+    expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
     expect(onStateChanged).toHaveBeenCalledExactlyOnceWith(controller.state)
     expect(activation.calls).toEqual(['begin'])
     native.calls.length = 0
 
-    await controller.update(draft.id, draft.displays)
-
-    expect(native.calls).toEqual([
-      { operation: 'capture', displayId: secondDisplay.id },
-      { operation: 'apply', displayId: secondDisplay.id, settings: draft.displays[1]!.color }
-    ])
-    expect(controller.state).toMatchObject({ state: 'active', targets: draft.displays })
+    await expect(controller.update(draft.id, draft.displays)).rejects.toThrow('pending displays')
+    await expect(controller.start(draft, 'edit')).rejects.toThrow('pending displays')
+    expect(native.calls).toEqual([])
     native.failRestoreDisplayIds.clear()
     await controller.cancelNonOverride()
-    expect(native.restored).toEqual([secondDisplay.id, display.id, secondDisplay.id])
+    expect(native.restored).toEqual([secondDisplay.id, display.id])
   })
 
   it.each(['disconnected', 'hdr'] as const)(
@@ -543,7 +539,9 @@ describe('PreviewSessionController', () => {
     const controller = new PreviewSessionController(native, activation, () => undefined)
     await controller.start(profile(), 'edit')
     vi.spyOn(native, 'restoreDisplay').mockResolvedValueOnce({
-      displayId: display.id, restored: false, error: 'Read-back did not match.'
+      displayId: display.id,
+      restored: false,
+      error: 'Read-back did not match.'
     })
 
     await expect(controller.cancelNonOverride()).rejects.toMatchObject({
@@ -556,26 +554,27 @@ describe('PreviewSessionController', () => {
     expect(activation.calls).toEqual(['begin', 'cancel'])
   })
 
-  it.each([
-    { reason: 'hdrActive' },
-    { code: 'HDR_UNSAFE' },
-    { code: 'DISPLAY_NOT_FOUND' }
-  ])('retains a deferred restore response on close: %j', async (result) => {
-    const native = new FakeNative()
-    const activation = new FakeActivation()
-    const controller = new PreviewSessionController(native, activation, () => undefined)
-    await controller.start(profile(), 'edit')
-    vi.spyOn(native, 'restoreDisplay').mockResolvedValueOnce({
-      displayId: display.id, restored: false, ...result
-    })
+  it.each([{ reason: 'hdrActive' }, { code: 'HDR_UNSAFE' }, { code: 'DISPLAY_NOT_FOUND' }])(
+    'retains a deferred restore response on close: %j',
+    async (result) => {
+      const native = new FakeNative()
+      const activation = new FakeActivation()
+      const controller = new PreviewSessionController(native, activation, () => undefined)
+      await controller.start(profile(), 'edit')
+      vi.spyOn(native, 'restoreDisplay').mockResolvedValueOnce({
+        displayId: display.id,
+        restored: false,
+        ...result
+      })
 
-    await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
+      await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
 
-    expect(controller.state).toEqual({ state: 'inactive' })
-    expect(activation.retainedDisplayIds).toEqual([
-      { operation: 'cancel', displayIds: [display.id] }
-    ])
-  })
+      expect(controller.state).toEqual({ state: 'inactive' })
+      expect(activation.retainedDisplayIds).toEqual([
+        { operation: 'cancel', displayIds: [display.id] }
+      ])
+    }
+  )
 
   it('does nothing on close when no session is active', async () => {
     const native = new FakeNative()

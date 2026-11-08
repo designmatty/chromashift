@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings } from '@chromashift/core'
 import {
   controlChromaShiftRequestSchema,
+  previewStateSchema,
   activationStateSchema,
   diagnosticLogEntriesResultSchema,
   openAppPanelRequestSchema,
@@ -14,6 +15,18 @@ import {
 } from '@shared/product-api.js'
 
 describe('product API contracts', () => {
+  it('validates pending restoration display IDs without exposing an editable draft', () => {
+    expect(
+      previewStateSchema.parse({ state: 'restorePending', displayIds: ['display:one'] })
+    ).toEqual({
+      state: 'restorePending',
+      displayIds: ['display:one']
+    })
+    expect(
+      previewStateSchema.safeParse({ state: 'restorePending', displayIds: ['Display 0'] }).success
+    ).toBe(false)
+    expect(previewStateSchema.safeParse({ state: 'restorePending' }).success).toBe(false)
+  })
   it('validates queued switches and binds the full draft to its preview targets', () => {
     const activation = { enabled: true, mode: { kind: 'automatic' }, currentTarget: null }
     expect(

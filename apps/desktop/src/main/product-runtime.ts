@@ -305,12 +305,16 @@ export class ProductRuntime {
           }
         })
     )
-    const previewController = new PreviewSessionController(
+    const previewController: PreviewSessionController = new PreviewSessionController(
       physicalDisplayClient,
       automaticActivation,
       () => {
         shell.broadcastProductState()
         void this.#trayController?.refresh()
+      },
+      {
+        restoreFailed: () => chromaShiftController.previewRestoreFailed(),
+        restored: () => chromaShiftController.previewRestored()
       }
     )
     this.#previewController = previewController
@@ -420,7 +424,12 @@ export class ProductRuntime {
           // Direct restoration replaces activation's live target with baseline;
           // capture the resume intent before its state/outcome subscriptions run.
           const intent = chromaShiftController.captureIntentSnapshot()
-          return () => chromaShiftController.restoreBaseline('shortcut', intent)
+          const pendingPreviewRestore = previewController.state.state === 'restorePending'
+          return () =>
+            pendingPreviewRestore ||
+            chromaShiftController.chromaShiftState.pendingOperation === 'previewRestore'
+              ? chromaShiftController.emergencyRestoreConfirmed(intent)
+              : chromaShiftController.restoreBaseline('shortcut', intent)
         }
       },
       logger
@@ -493,7 +502,13 @@ export class ProductRuntime {
         this.#productController?.invalidateHardwareCache()
         shell.broadcastProductState()
         if (chromaShiftController.chromaShiftState.status === 'safetyBlocked') {
-          void chromaShiftController.retrySafetyCheck('automatic')
+          void chromaShiftController.retrySafetyCheck('automatic').catch((error: unknown) => {
+            logger.write({
+              level: 'error',
+              eventName: 'DisplayTransitionSafetyRetryFailed',
+              ...describeError(error)
+            })
+          })
         }
       },
       () => {

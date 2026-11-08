@@ -31,6 +31,11 @@ export interface PreviewActivationPort {
   confirmPreview(profileId: string, retainedDisplayIds?: readonly string[]): Promise<void>
 }
 
+export interface PreviewRecoveryPort {
+  restoreFailed(): Promise<void>
+  restored(): Promise<void>
+}
+
 export class PreviewValidationError extends Error {
   public constructor(message: string) {
     super(message)
@@ -80,17 +85,25 @@ interface RestoreTouchedResult {
  */
 export class PreviewSessionController {
   #active: ActivePreview | null = null
+  #restorePending = false
   #operationTail: Promise<void> = Promise.resolve()
   #operationVersion = 0
 
   public constructor(
     private readonly native: PreviewNativePort,
     private readonly activation: PreviewActivationPort,
-    private readonly onStateChanged: (state: PreviewState) => void
+    private readonly onStateChanged: (state: PreviewState) => void,
+    private readonly recovery: PreviewRecoveryPort = {
+      restoreFailed: async () => undefined,
+      restored: async () => undefined
+    }
   ) {}
 
   public get state(): PreviewState {
     if (this.#active === null) return { state: 'inactive' }
+    if (this.#restorePending) {
+      return { state: 'restorePending', displayIds: [...this.#active.touched.values()] }
+    }
     return {
       state: 'active',
       profileId: this.#active.profileId,
@@ -106,7 +119,8 @@ export class PreviewSessionController {
 
   /** The full unsaved draft, for main-process flows that outlive the renderer. */
   public get unsavedDraft(): ColorProfile | null {
-    if (this.#active === null || !hasUnsavedChanges(this.#active)) return null
+    if (this.#restorePending || this.#active === null || !hasUnsavedChanges(this.#active))
+      return null
     return structuredClone(this.#active.draft)
   }
 
@@ -136,6 +150,9 @@ export class PreviewSessionController {
     kind: 'preview' | 'edit' | 'override',
     saved: ColorProfile
   ): Promise<void> {
+    if (this.#restorePending) {
+      throw new PreviewValidationError('Restore the pending displays before starting a preview.')
+    }
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
       const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
@@ -192,8 +209,18 @@ export class PreviewSessionController {
         applied.set(key, target)
       }
     } catch (error) {
-      const rollback = await this.#restoreDisplayIds(touched.values())
-      await this.activation.cancelPreview(rollback.retainedDisplayIds)
+      // Even a partially started session owns the displays it may have changed.
+      this.#active = {
+        profileId: profile.id,
+        kind,
+        draft: structuredClone(profile),
+        saved: structuredClone(saved),
+        applied,
+        touched,
+        validated,
+        disconnected
+      }
+      const rollback = await this.#teardown()
       if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
       throw error
     }
@@ -293,6 +320,10 @@ export class PreviewSessionController {
   async #complete(profileId: string, activation: 'manual' | 'preserve'): Promise<void> {
     this.#requireActive(profileId)
     const rollback = await this.#restoreTouched()
+    if (rollback.failures.length > 0) {
+      await this.#retainFailedRestore(rollback)
+      throw new PreviewRestoreError(rollback.failures)
+    }
     this.#active = null
     try {
       if (activation === 'manual') {
@@ -303,7 +334,6 @@ export class PreviewSessionController {
     } finally {
       this.onStateChanged(this.state)
     }
-    if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
   }
 
   public async cancel(): Promise<void> {
@@ -319,21 +349,9 @@ export class PreviewSessionController {
     while (!ready) {
       const version = this.#operationVersion
       ready = await this.#enqueue(async () => {
-        if (this.#active !== null && this.#active.kind !== 'override') {
-          const rollback = await this.#restoreTouched()
-          // Closing must remain retryable. Keep the session and automatic-write
-          // suspension until restoration succeeds, just as while previewing.
-          if (rollback.failures.length > 0) {
-            const retainedKeys = new Set(rollback.retainedDisplayIds.map((id) => id.toLowerCase()))
-            for (const key of this.#active.touched.keys()) {
-              if (retainedKeys.has(key)) continue
-              this.#active.applied.delete(key)
-              this.#active.touched.delete(key)
-            }
-            this.onStateChanged(this.state)
-            throw new PreviewRestoreError(rollback.failures)
-          }
-          await this.#endSession(rollback)
+        if (this.#active !== null && (this.#restorePending || this.#active.kind !== 'override')) {
+          const rollback = await this.#teardown()
+          if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         }
         // A start or update may have arrived during restoration. Cancel it in
         // queue order before releasing, even if it has not published state yet.
@@ -346,6 +364,18 @@ export class PreviewSessionController {
 
   public async dispose(): Promise<void> {
     await this.cancel()
+  }
+
+  /** Called only after restore-all confirmed restoration of every owned display. */
+  public restoreAllConfirmed(): Promise<void> {
+    return this.#enqueue(async () => {
+      this.#active = null
+      this.#restorePending = false
+      // A failed rollback keeps activation suspended; confirmed restore-all
+      // releases only that hold, without resuming the intended profile.
+      await this.activation.cancelPreview([])
+      this.onStateChanged(this.state)
+    })
   }
 
   public waitForIdle(): Promise<void> {
@@ -367,6 +397,8 @@ export class PreviewSessionController {
   async #reapplyAfterDisplayTransition(): Promise<boolean> {
     const active = this.#active
     if (active === null) return false
+    // A topology event must never reapply values whose rollback is unconfirmed.
+    if (this.#restorePending) return true
 
     const displays = await this.native.getDisplays()
     const connectedDisplayIds = new Set(
@@ -410,14 +442,38 @@ export class PreviewSessionController {
   async #teardown(): Promise<RestoreTouchedResult> {
     if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
     const rollback = await this.#restoreTouched()
+    if (rollback.failures.length > 0) {
+      await this.#retainFailedRestore(rollback)
+      return rollback
+    }
     await this.#endSession(rollback)
     return rollback
   }
 
   async #endSession(rollback: RestoreTouchedResult): Promise<void> {
+    const recovering = this.#restorePending
     this.#active = null
+    this.#restorePending = false
     try {
       await this.activation.cancelPreview(rollback.retainedDisplayIds)
+      if (recovering) await this.recovery.restored()
+    } finally {
+      this.onStateChanged(this.state)
+    }
+  }
+
+  async #retainFailedRestore(rollback: RestoreTouchedResult): Promise<void> {
+    const active = this.#active
+    if (active === null) return
+    this.#restorePending = true
+    const retained = new Set(rollback.retainedDisplayIds.map((id) => id.toLowerCase()))
+    for (const key of active.touched.keys()) {
+      if (retained.has(key)) continue
+      active.applied.delete(key)
+      active.touched.delete(key)
+    }
+    try {
+      await this.recovery.restoreFailed()
     } finally {
       this.onStateChanged(this.state)
     }
@@ -576,6 +632,9 @@ export class PreviewSessionController {
   }
 
   #requireActive(profileId: string): ActivePreview {
+    if (this.#restorePending) {
+      throw new PreviewValidationError('Restore the pending displays before changing a preview.')
+    }
     if (this.#active === null) throw new PreviewValidationError('No preview is active.')
     if (this.#active.profileId.toLowerCase() !== profileId.toLowerCase()) {
       throw new PreviewValidationError('The active preview belongs to a different profile.')

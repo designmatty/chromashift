@@ -107,11 +107,17 @@ manual override
 
 Preview is user-controlled and has no countdown. Clicking an app-panel profile
 starts Preview without changing activation mode; the first change promotes the
-unchanged session to Edit without restore or recapture. Update profile commits
-unsaved changes while preserving mode. Discard changes, navigation away, or
-failure waits for pending writes and restores the prior automatic or manual
-target. End preview, selecting the live profile, closing, or minimizing returns
-the editor to the live profile. Focus loss does not end Preview.
+unchanged session to Edit without restore or recapture. Update profile saves while
+preserving mode; a non-live profile keeps previewing its saved values. Discard
+reverts a non-live session to saved values in place; otherwise it rolls back.
+End preview, navigation away, close, or failure waits for pending writes and
+restores the prior automatic or manual target. Minimizing ends only a clean
+preview; unsaved edits stay applied. Ordinary mini-panel overrides survive app
+panel close. Focus loss does not end Preview.
+If connected-display restoration cannot be confirmed, retain pending-restore
+tracking and enter Safety blocked. Retry, End preview, Discard, close, and shutdown
+must re-attempt restoration before releasing ownership. Disconnected/HDR retention
+and `baselineNotCaptured` remain non-failures.
 
 See `docs/core-domain.md` and `docs/per-display-profile-settings.md` for the full
 current contract.
@@ -131,6 +137,9 @@ intent while staying Paused or Safety blocked. Restore original settings uses
 the Pause path and preserves the intended target; after complete restoration,
 Paused persists until the user resumes. Restore original settings is a no-op
 while Paused or Safety blocked; the emergency shortcut still restores directly.
+For an unconfirmed preview rollback, Retry restores the tracked displays before
+returning to Active and reasserting the prior target through the activation queue.
+Successful emergency restore-all clears that tracking and ends Paused.
 
 ## Desktop application
 
