@@ -71,34 +71,19 @@ describe('settings slice stores', () => {
     })
   })
 
-  it.each([null, 'pause', 'resume'] as const)(
-    'migrates intent v1 with pending %s without changing intent',
-    async (pendingControlOperation) => {
-      const directory = await temporaryDirectory()
-      const legacy = {
-        ...defaultChromaShiftIntent,
-        schemaVersion: 1,
-        chromaShiftStatus: 'safetyBlocked',
-        pendingControlOperation,
-        intendedActivationMode: { kind: 'manual', profileId: 'gaming' },
-        intendedTarget: { kind: 'profile', profileId: 'gaming' }
-      }
-      await writeFile(join(directory, 'chroma-shift.json'), JSON.stringify(legacy))
-      await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual({
-        ...legacy,
-        schemaVersion: 2
-      })
-    }
-  )
-
-  it('persists and reloads the pending preview-restore operation', async () => {
+  it('persists and reloads pending restoration as v1 resume recovery', async () => {
     const directory = await temporaryDirectory()
     const blocked = {
-      ...defaultChromaShiftIntent,
+      schemaVersion: 1 as const,
       chromaShiftStatus: 'safetyBlocked' as const,
-      pendingControlOperation: 'previewRestore' as const
+      pendingControlOperation: 'resume' as const,
+      intendedActivationMode: { kind: 'manual' as const, profileId: 'gaming' },
+      intendedTarget: { kind: 'profile' as const, profileId: 'gaming' }
     }
     await createSettingsStores(directory).chromaShiftIntent.update(() => blocked)
+    expect(JSON.parse(await readFile(join(directory, 'chroma-shift.json'), 'utf8'))).toEqual(
+      blocked
+    )
     await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual(blocked)
   })
 

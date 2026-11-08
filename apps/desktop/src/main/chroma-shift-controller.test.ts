@@ -239,6 +239,36 @@ describe('ChromaShiftController pause safety', () => {
 })
 
 describe('ChromaShiftController resume and intent', () => {
+  it('retries tracked preview restoration before completing a persisted resume recovery', async () => {
+    const { activation, controller, cancelPreview, refreshTopology } = create(
+      new FakeActivation(),
+      {
+        status: 'safetyBlocked',
+        pendingOperation: 'resume',
+        intendedMode: manualActivationMode('gaming'),
+        intendedTarget: { kind: 'profile', profileId: 'gaming' }
+      }
+    )
+    cancelPreview.mockRejectedValueOnce(new Error('Restore still pending'))
+
+    await expect(controller.retrySafetyCheck('manual')).rejects.toThrow('Restore still pending')
+    expect(cancelPreview).toHaveBeenCalledOnce()
+    expect(refreshTopology).not.toHaveBeenCalled()
+    expect(activation.calls).toEqual([])
+    expect(controller.chromaShiftState).toMatchObject({
+      status: 'safetyBlocked',
+      pendingOperation: 'resume'
+    })
+
+    await controller.retrySafetyCheck('manual')
+    expect(cancelPreview).toHaveBeenCalledTimes(2)
+    expect(cancelPreview.mock.invocationCallOrder[1]).toBeLessThan(
+      refreshTopology.mock.invocationCallOrder[0]!
+    )
+    expect(activation.calls).toEqual(['intent:gaming', 'resume'])
+    expect(controller.chromaShiftState).toMatchObject({ status: 'active', pendingOperation: null })
+  })
+
   it.each(['manual', 'automatic'] as const)(
     'keeps a newer Active %s selection instead of the stale emergency snapshot',
     async (selection) => {

@@ -159,24 +159,12 @@ export class ChromaShiftController {
     })
   }
 
-  /** The emergency path has already confirmed restore-all without a renderer. */
+  /** Reconfirm Original settings after draining any Retry or Resume writes. */
   public async emergencyRestoreConfirmed(
     intent: ChromaShiftIntentSnapshot
   ): Promise<CompletedActivationOutcome> {
     while (this.#transition !== null) await this.#transition.catch(() => undefined)
-    await this.activation.suspendWrites()
-    const latest = intent.intentGeneration === this.#intentGeneration ? intent : this.#realIntent
-    this.#setIntent(latest.intendedMode, latest.intendedTarget)
-    this.#state.status = 'paused'
-    this.#state.pendingOperation = null
-    await this.#persistState()
-    const outcome: CompletedActivationOutcome = {
-      ...this.#statusOutcome('shortcut'),
-      status: 'activated',
-      origin: 'originalSettingsRestore'
-    }
-    this.#publishOperationalOutcome(outcome)
-    return outcome
+    return this.#restoreAndPause('shortcut', 'originalSettingsRestore', intent)
   }
 
   /**
@@ -202,7 +190,10 @@ export class ChromaShiftController {
   public retrySafetyCheck(source: ActivationSource): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) return this.#transition
     if (this.#state.status !== 'safetyBlocked') return Promise.resolve(this.#statusOutcome(source))
-    if (this.#state.pendingOperation === 'previewRestore') {
+    if (
+      this.#state.pendingOperation === 'previewRestore' ||
+      this.#state.pendingOperation === 'resume'
+    ) {
       return this.#runTransition(
         async () => {
           await this.preview.cancel()
@@ -211,12 +202,6 @@ export class ChromaShiftController {
         },
         { source, origin: 'resume' }
       )
-    }
-    if (this.#state.pendingOperation === 'resume') {
-      return this.#runTransition(() => this.#resumeOperation(source), {
-        source,
-        origin: 'resume'
-      })
     }
     return this.#runTransition(
       async () => {

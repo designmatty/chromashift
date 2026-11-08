@@ -502,9 +502,11 @@ describe('unconfirmed preview restoration', () => {
         await expect(h.product.cancelPreview()).rejects.toBeInstanceOf(PreviewRestoreError)
         expect((await h.product.getState()).preview).toEqual(pending)
         expect(h.intent()).toMatchObject({
+          schemaVersion: 1,
           chromaShiftStatus: 'safetyBlocked',
-          pendingControlOperation: 'previewRestore'
+          pendingControlOperation: 'resume'
         })
+        expect((await h.product.getState()).chromaShift.pendingOperation).toBe('previewRestore')
         expect(h.client.currentSettings.get(id)?.brightness).toBe(35)
         expect(h.client.calls).toEqual([{ operation: 'restore', displayId: id }])
         h.client.failRestoreDisplayIds.clear()
@@ -676,7 +678,7 @@ describe('unconfirmed preview restoration', () => {
     const h = await createHarness(
       {
         chromaShiftStatus: 'safetyBlocked',
-        pendingControlOperation: 'previewRestore',
+        pendingControlOperation: 'resume',
         intendedActivationMode: { kind: 'manual', profileId: 'live' },
         intendedTarget: { kind: 'profile', profileId: 'live' }
       },
@@ -686,6 +688,7 @@ describe('unconfirmed preview restoration', () => {
     try {
       expect(h.client.calls).toEqual([])
       await h.runtime.productController!.controlChromaShift('retry')
+      expect((await h.runtime.productController!.getState()).preview).toEqual({ state: 'inactive' })
       expect(h.intent().chromaShiftStatus).toBe('active')
       expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
     } finally {
@@ -742,10 +745,11 @@ describe('unconfirmed preview restoration', () => {
       expect(h.client.currentSettings.get(id)).toEqual({})
       expect(h.client.calls).toEqual([
         { operation: 'restore', displayId: id },
+        { operation: 'restoreAll' },
         { operation: 'restoreAll' }
       ])
       await h.product.cancelPreview()
-      expect(h.client.calls).toHaveLength(2)
+      expect(h.client.calls).toHaveLength(3)
     } finally {
       h.runtime.dispose()
     }
@@ -789,7 +793,7 @@ describe('unconfirmed preview restoration', () => {
       )
       expect(h.intent()).toMatchObject({
         chromaShiftStatus: 'safetyBlocked',
-        pendingControlOperation: 'previewRestore'
+        pendingControlOperation: 'resume'
       })
       expect((await h.product.getState()).preview).toEqual(pending)
       expect(h.client.currentSettings.get(id)?.brightness).toBe(35)
@@ -1160,6 +1164,11 @@ describe('product runtime display-control wiring', () => {
         ).toHaveLength(2)
       )
       expect(harness.intent().chromaShiftStatus).toBe('paused')
+      expect(harness.client.currentSettings.get('display:one')).toEqual({})
+      const applies = harness.client.applied.length
+      harness.client.emitForegroundApplication(gameApplication)
+      await harness.runtime.productController!.getState()
+      expect(harness.client.applied).toHaveLength(applies)
       harness.runtime.dispose()
     }
   })
@@ -1531,4 +1540,71 @@ describe('product runtime display-control wiring', () => {
       harness.runtime.dispose()
     }
   })
+})
+it('keeps Original settings when an in-flight Retry resumes after emergency restore', async () => {
+  const id = 'display:one'
+  const h = await createHarness(
+    {},
+    { profiles: [reorderProfile('live', 65), reorderProfile('preview', 35)] }
+  )
+  await h.runtime.start()
+  const product = h.runtime.productController!
+  await product.activateProfile('live')
+  await product.startPreview(reorderProfile('preview', 35), 'preview')
+  h.client.failRestoreDisplayIds.add(id)
+  await expect(product.cancelPreview()).rejects.toBeInstanceOf(PreviewRestoreError)
+  h.client.failRestoreDisplayIds.clear()
+  let releaseRestore!: () => void
+  let releaseTopology!: () => void
+  const restoreGate = new Promise<void>((resolve) => {
+    releaseRestore = resolve
+  })
+  const topologyGate = new Promise<void>((resolve) => {
+    releaseTopology = resolve
+  })
+  const restore = h.client.restoreDisplay.bind(h.client)
+  const refresh = h.client.refreshDisplayTopology.bind(h.client)
+  const restoring = vi
+    .spyOn(h.client, 'restoreDisplay')
+    .mockImplementationOnce(async (displayId) => {
+      await restoreGate
+      return restore(displayId)
+    })
+  const refreshing = vi
+    .spyOn(h.client, 'refreshDisplayTopology')
+    .mockImplementationOnce(async () => {
+      await topologyGate
+      return refresh()
+    })
+  const retry = product.controlChromaShift('retry')
+  try {
+    await vi.waitFor(() => expect(restoring).toHaveBeenCalledOnce())
+    h.emergencyRestore()
+    releaseRestore()
+    await vi.waitFor(() => expect(refreshing).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(h.logger.has('EmergencyRestoreCompleted')).toBe(true))
+    expect(h.client.currentSettings.get(id)).toEqual({})
+    releaseTopology()
+    await retry
+    await vi.waitFor(() => expect(h.logger.has('EmergencyRestorePauseCompleted')).toBe(true))
+    expect(h.intent().chromaShiftStatus).toBe('paused')
+    expect(h.client.currentSettings.get(id)).toEqual({})
+    expect(h.client.calls.at(-1)).toEqual({ operation: 'restoreAll' })
+    expect((await product.getState()).preview).toEqual({ state: 'inactive' })
+    const applies = h.client.applied.length
+    h.client.emitForegroundApplication({
+      pid: 42,
+      executable: 'game.exe',
+      path: null,
+      title: 'Game',
+      monitorDeviceName: null
+    })
+    await product.getState()
+    expect(h.client.applied).toHaveLength(applies)
+  } finally {
+    releaseRestore()
+    releaseTopology()
+    await retry.catch(() => undefined)
+    h.runtime.dispose()
+  }
 })

@@ -46,7 +46,10 @@ The TypeScript and native test suites cover these contracts:
   writes until Retry confirms restoration and serialized activation reasserts
   intent. Fake-native runtime coverage includes failed topology reapply plus
   failed rollback, renderer-free emergency restore-all clearing tracking into
-  Paused, shutdown retry, and disconnected/HDR retention without blocking.
+  Paused, a held Retry resuming after emergency restore, shutdown retry, and
+  disconnected/HDR retention without blocking. Pending preview restoration
+  persists as schema-v1 `resume` recovery, with Retry restoring tracked previews
+  before resuming and working after restart without an in-memory session.
 - Physical-display grouping, safe capability intersection, endpoint fanout,
   target rewrite, provider ownership, and restore-result aggregation
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
@@ -95,8 +98,9 @@ interactive hardware with a restoration guard:
 
 1. Preview or edit mild values over a known automatic or manual target. Induce a
    connected-display restore failure and End preview or Discard. Confirm the red
-   Safety blocked pill with Retry and inline row in both panels, disabled inputs,
-   and absence of an editable stuck preview. Check Diagnostics for the display.
+   Safety blocked pill with Retry and inline row in the app panel, and the red
+   Retry power control in the mini panel. Confirm disabled inputs and absence
+   of an editable stuck preview. Check Diagnostics for the display.
 2. Keep the failure present and retry from the pill, mini panel, tray, and close
    `Try again`. Each attempt must restore again and remain blocked on failure.
    Remove the failure and retry; confirm Active and the exact prior target, or
@@ -106,8 +110,11 @@ interactive hardware with a restoration guard:
    and no subsequent profile writes until a successful restore Retry.
 4. From that blocked state, use `Ctrl+Alt+Windows+R` without a renderer. Confirm
    exact Original settings, cleared pending tracking, and Paused after successful
-   restore-all. Separately confirm Exit retries restoration and stays alive on a
-   connected-display failure, then exits only after restoration succeeds.
+   restore-all. Repeat with Retry or Resume in flight, delaying topology refresh
+   until the direct emergency restore finishes. Release the refresh and confirm
+   Original settings again, Paused, and no later profile writes. Separately
+   confirm Exit retries restoration and stays alive on a connected-display
+   failure, then exits only after restoration succeeds.
 5. Confirm disconnected and HDR baselines remain deferred without Safety blocked,
    and an ordinary mini-panel override survives closing the app panel.
 

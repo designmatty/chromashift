@@ -335,7 +335,10 @@ export class ProductRuntime {
         await settings.chromaShiftIntent.update((intent) => ({
           ...intent,
           chromaShiftStatus: state.status,
-          pendingControlOperation: state.pendingOperation ?? null,
+          // The preview-specific reason is in memory only. Existing resume
+          // recovery restores tracked previews before validating activation.
+          pendingControlOperation:
+            state.pendingOperation === 'previewRestore' ? 'resume' : state.pendingOperation,
           intendedActivationMode: state.intendedMode,
           intendedTarget: state.intendedTarget
         }))

@@ -265,10 +265,14 @@ fails closed into Safety blocked. Resume re-resolves the latest foreground app
 and applies the preserved intended mode and target. Explicit profile or Automatic
 selection updates intent while staying Paused; during a safety block it updates
 intent without bypassing the required retry. Safety blocked persists whether the
-interrupted operation was Pause, Resume, or preview rollback so retry completes
-the correct operation. The intent slice uses schema version 2 for the preview
-restore reason and accepts version 1 through a migration that preserves status,
-mode, target, and pending Pause/Resume.
+interrupted operation was Pause or Resume so retry completes the correct
+operation. The intent slice remains at schema version 1 with pending `pause`
+or `resume`. Pending preview restoration persists as `resume`; Retry first
+cancels and restores any tracked preview displays before validating topology
+and resuming activation. The preview-specific reason stays in memory and
+validated product state, allowing a later successful End preview or Discard to
+resume automatically. After restart, Retry validates resumption without an
+in-memory preview session.
 Restore original settings reuses the Pause path and preserves intent. After full
 restoration, Paused persists until the user resumes. Restore original settings is
 a no-op while Paused or Safety blocked; the emergency shortcut still restores
@@ -332,9 +336,11 @@ presses can restore again even during a pending control transition. The follow-u
 preserves any newer intended mode or target instead of overwriting it with the
 snapshot taken before the direct restore. An emergency restore
 that confirms restore-all while preview rollback is Safety blocked clears pending
-tracking and persists Paused without reapplying the profile. Other emergency
-restore behavior remains unchanged. An emergency restore failure retains pending
-tracking and the critical log and error dialog.
+tracking, waits for any in-flight Retry or Resume, then uses the existing Pause
+path to suspend writes and confirm Original settings again before persisting
+Paused. This restores any profile values applied by that intervening transition.
+Other emergency restore behavior remains unchanged. An emergency restore failure
+retains pending tracking and the critical log and error dialog.
 Tray Exit and other
 application quit requests share one shutdown coordinator. Before checking for
 unsaved changes, main requests a renderer draft flush with a 750 ms timeout, so
