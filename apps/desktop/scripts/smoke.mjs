@@ -971,6 +971,16 @@ async function waitForExit(child) {
 }
 
 async function closeMainWindow(processId) {
+  await postMainWindowMessage(processId, 0x0010, 0, 'close')
+}
+
+// WM_SYSCOMMAND minimize/restore, the same path as the caption buttons.
+async function setMainWindowMinimized(processId, minimized) {
+  await postMainWindowMessage(processId, 0x0112, minimized ? 0xf020 : 0xf120,
+    minimized ? 'minimize' : 'restore')
+}
+
+async function postMainWindowMessage(processId, message, wParam, action) {
   const source = `
     using System;
     using System.Runtime.InteropServices;
@@ -982,7 +992,7 @@ async function closeMainWindow(processId) {
       [DllImport("user32.dll")] private static extern int GetWindowText(IntPtr handle, StringBuilder text, int count);
       [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr handle);
       [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
-      public static bool CloseVisibleWindow(uint processId) {
+      public static bool PostToVisibleWindow(uint processId, uint message, int wParam) {
         IntPtr target = IntPtr.Zero;
         EnumWindows((handle, parameter) => {
           uint owner;
@@ -994,14 +1004,14 @@ async function closeMainWindow(processId) {
           target = handle;
           return false;
         }, IntPtr.Zero);
-        return target != IntPtr.Zero && PostMessage(target, 0x0010, IntPtr.Zero, IntPtr.Zero);
+        return target != IntPtr.Zero && PostMessage(target, message, new IntPtr(wParam), IntPtr.Zero);
       }
     }
   `
   const command = `Add-Type -TypeDefinition @'
 ${source}
 '@
-[NativeWindowCloser]::CloseVisibleWindow(${processId})`
+[NativeWindowCloser]::PostToVisibleWindow(${processId}, ${message}, ${wParam})`
   const { stdout } = await execFileAsync(
     'powershell.exe',
     [
@@ -1013,7 +1023,7 @@ ${source}
     { windowsHide: true }
   )
   if (stdout.trim().toLowerCase() !== 'true') {
-    throw new Error('Windows did not accept the native app-panel close request.')
+    throw new Error(`Windows did not accept the native app-panel ${action} request.`)
   }
 }
 
@@ -1678,11 +1688,8 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
 
   for (const kind of ['edit', 'override']) {
     await dirty(kind)
-    const { windowId } = await debuggerClient.send('Browser.getWindowForTarget')
-    await debuggerClient.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'minimized' }
-    })
+    await setMainWindowMinimized(electron.pid, true)
+
     await waitForExpression(
       debuggerClient,
       `document.visibilityState === 'hidden'`,
@@ -1697,10 +1704,8 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
     })()`,
       `Minimizing discarded the ${kind}.`
     )
-    await debuggerClient.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'normal' }
-    })
+    await setMainWindowMinimized(electron.pid, false)
+
     await focusNativeApp(electron.pid)
     await closeMainWindow(electron.pid)
     await waitForNoDebuggerTarget(
