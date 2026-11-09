@@ -119,6 +119,8 @@ describe('preview lifetime IPC', () => {
     const h = harness()
     const product = {
       startPreview: vi.fn(async () => undefined),
+      activateProfile: vi.fn(async () => undefined),
+      enableAutomatic: vi.fn(async () => undefined),
       updatePreview: vi.fn(async () => undefined),
       confirmPreview: vi.fn(),
       cancelPreview: vi.fn(async () => undefined)
@@ -127,6 +129,8 @@ describe('preview lifetime IPC', () => {
     const lifetime = h.panels.getPanelLifetime('mini')!
     const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
     const requests = [
+      [productIpcChannels.activateProfile, { profileId: profile.id }],
+      [productIpcChannels.enableAutomatic, {}],
       [productIpcChannels.startPreview, { profile, kind: 'override' }],
       [productIpcChannels.updatePreview, { profileId: profile.id, targets: [] }],
       [productIpcChannels.confirmPreview, { profile, activation: 'preserve' }],
@@ -151,6 +155,23 @@ describe('preview lifetime IPC', () => {
       })
     ).toEqual({ ok: true, value: null })
     expect(product.startPreview).toHaveBeenCalledOnce()
+    expect(
+      await h.invoke(productIpcChannels.activateProfile, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: { profileId: profile.id }
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.activateProfile).toHaveBeenCalledExactlyOnceWith(
+      profile.id,
+      expect.any(Function)
+    )
+    expect(
+      await h.invoke(productIpcChannels.enableAutomatic, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: {}
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.enableAutomatic).toHaveBeenCalledExactlyOnceWith(expect.any(Function))
   })
 
   it('requires validated lifetime envelopes and a trusted sender', async () => {

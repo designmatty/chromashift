@@ -429,6 +429,12 @@ Review regressions cover protocol-v1 write rejection, renderer-independent
 emergency handling after failed negotiation, unconfirmed persisted limits,
 editor and preview baseline changes, disconnected/HDR/unsupported target
 preservation, and effective brightness after mixed-endpoint filtering.
+Round-four regressions retain all three re-review probes. They cover offline
+product/tray/shutdown reachability, recovery only after negotiation, persistent
+compatibility status without incompatible retries, invalid configuration
+retention, stale panel selections across cancellation/close/reopen and main
+activation queues, and a newer navigation remaining actionable after an older
+Update finishes.
 
 Owner manual checks, when desktop and hardware runs resume:
 
@@ -455,6 +461,18 @@ Owner manual checks, when desktop and hardware runs resume:
 6. Verify exact Original settings after cancel and shutdown. Check HDR remains
    restore-only. Exhaustion and read-back faults stay deterministic fake tests
    unless a dedicated hardware fault study is authorized.
+7. In an isolated development install, simulate an unavailable or incompatible
+   helper before launch. Test explicit and tray-start launches. After dismissing
+   the dialog, verify tray navigation, the app, diagnostics, and Exit remain
+   reachable. A mismatch keeps its compatibility status and permits no display
+   writes or recovery loop. Press the emergency shortcut repeatedly, then
+   reinstall matching files and restart to confirm normal negotiation.
+8. Delay mini-panel preview cancellation, choose a profile or Automatic, then
+   close or hand off to the app. Releasing cancellation must not issue a new
+   activation. Reopen and verify fresh selections, tray selections, and shortcuts.
+   In a dirty app-panel navigation dialog, delay Update and send a newer tray
+   destination. After saving, the newer dialog must remain actionable and lead
+   to that destination.
 
 The display-free learned-limits smoke fixture seeds the persisted slice and
 checks the production controls and Reset action. It causes no GDI rejections or

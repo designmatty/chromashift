@@ -127,12 +127,24 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.setDefaultProfile, setDefaultProfileRequestSchema, voidResultSchema, {
       profileId
     }),
-  activateProfile: (profileId) =>
-    invoke(productIpcChannels.activateProfile, profileIdRequestSchema, voidResultSchema, {
-      profileId
-    }),
-  enableAutomatic: () =>
-    invoke(productIpcChannels.enableAutomatic, emptyRequestSchema, voidResultSchema, {}),
+  activateProfile: (profileId, lifetime) =>
+    invokePreview(
+      productIpcChannels.activateProfile,
+      profileIdRequestSchema,
+      voidResultSchema,
+      {
+        profileId
+      },
+      lifetime
+    ),
+  enableAutomatic: (lifetime) =>
+    invokePreview(
+      productIpcChannels.enableAutomatic,
+      emptyRequestSchema,
+      voidResultSchema,
+      {},
+      lifetime
+    ),
   restoreBaseline: () =>
     invoke(productIpcChannels.restoreBaseline, emptyRequestSchema, voidResultSchema, {}),
   controlChromaShift: (action) =>

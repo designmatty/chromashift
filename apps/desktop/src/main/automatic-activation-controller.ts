@@ -269,31 +269,50 @@ export class AutomaticActivationController {
     if (!this.#enabled) throw new Error('Profile activation is not available.')
     if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
     const profile = await this.repository.findById(profileId)
+    context.assertCurrent?.()
     if (profile === null) throw new Error(`Profile ${profileId} does not exist.`)
     if (!profile.enabled) throw new Error(`Profile ${profile.name} is disabled.`)
 
-    this.#mode = manualActivationMode(profile.id)
-    this.logger.write({
-      level: 'information',
-      eventName: 'ManualProfileOverrideEnabled',
-      profileId: profile.id
-    })
-    this.#emitState()
-    return this.#activateCurrentApplication(context)
+    const selectedMode = manualActivationMode(profile.id)
+    const select = (): void => {
+      this.#mode = selectedMode
+      this.logger.write({
+        level: 'information',
+        eventName: 'ManualProfileOverrideEnabled',
+        profileId: profile.id
+      })
+      this.#emitState()
+    }
+    if (context.assertCurrent === undefined) select()
+    return this.#activateCurrentApplication(
+      context,
+      false,
+      selectedMode,
+      context.assertCurrent === undefined ? undefined : select
+    )
   }
 
   public async enableAutomatic(
     context: ActivationContext = { source: 'manual', origin: 'automaticSelection' }
   ): Promise<CompletedActivationOutcome> {
+    context.assertCurrent?.()
     if (!this.#enabled) throw new Error('Automatic activation is not available.')
     if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
-    this.#mode = automaticActivationMode
-    this.logger.write({
-      level: 'information',
-      eventName: 'AutomaticActivationSelected'
-    })
-    this.#emitState()
-    return this.#activateCurrentApplication(context)
+    const select = (): void => {
+      this.#mode = automaticActivationMode
+      this.logger.write({
+        level: 'information',
+        eventName: 'AutomaticActivationSelected'
+      })
+      this.#emitState()
+    }
+    if (context.assertCurrent === undefined) select()
+    return this.#activateCurrentApplication(
+      context,
+      false,
+      automaticActivationMode,
+      context.assertCurrent === undefined ? undefined : select
+    )
   }
 
   public async restoreBaseline(
@@ -376,10 +395,16 @@ export class AutomaticActivationController {
 
   async #activateCurrentApplication(
     context: ActivationContext,
-    recovery = false
+    recovery = false,
+    mode = this.#mode,
+    select?: () => void
   ): Promise<CompletedActivationOutcome> {
-    const outcome = await this.coordinator.activate(this.#currentApplication, this.#mode, {
-      canWrite: () => !this.#writesSuspended && !this.#systemTransitioning && !this.#previewing,
+    const outcome = await this.coordinator.activate(this.#currentApplication, mode, {
+      canWrite: () => {
+        context.assertCurrent?.()
+        select?.()
+        return !this.#writesSuspended && !this.#systemTransitioning && !this.#previewing
+      },
       recovery
     })
     // Stop subsequent foreground writes before publishing an unconfirmed restore.
@@ -449,6 +474,7 @@ export type ActivationOrigin =
 export interface ActivationContext {
   source: ActivationSource
   origin: ActivationOrigin
+  assertCurrent?: () => void
 }
 
 export interface CompletedActivationOutcome extends ActivationOutcome {

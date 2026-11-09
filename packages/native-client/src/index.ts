@@ -1,4 +1,9 @@
-export { NativeClient, NativeServiceError, type NativeClientOptions } from './client.js'
+export {
+  NativeClient,
+  NativeServiceError,
+  NativeServiceCompatibilityError,
+  type NativeClientOptions
+} from './client.js'
 export {
   PROTOCOL_VERSION,
   baselineCaptureResultSchema,

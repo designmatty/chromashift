@@ -24,7 +24,7 @@ import {
   Settings as SettingsIcon,
   X
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   activeColorTargets,
   colorSettingNames,
@@ -59,6 +59,16 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const [picker, setPicker] = useState(false)
   const [error, setError] = useState<ProductError | null>(null)
   const choiceVersion = useRef(0)
+  useLayoutEffect(() => {
+    const invalidate = (): void => {
+      choiceVersion.current += 1
+    }
+    const unsubscribe = window.chromaShift.onPanelClosing(invalidate)
+    return () => {
+      invalidate()
+      unsubscribe()
+    }
+  }, [])
   const activeId =
     product.chromaShift.intendedTarget?.kind === 'profile'
       ? product.chromaShift.intendedTarget.profileId
@@ -133,17 +143,22 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
 
   async function choose(profileId: string | null): Promise<void> {
     const version = ++choiceVersion.current
+    const lifetime = window.chromaShift.getPanelLifetime()
+    if (lifetime === null) return
+    const isCurrent = (): boolean =>
+      lifetime === window.chromaShift.getPanelLifetime() && version === choiceVersion.current
+    if (!isCurrent()) return
     // Also drain local writes whose active-session broadcast has not arrived yet.
-    if (!(await rollbackPreview()) || version !== choiceVersion.current) return
+    if (!(await rollbackPreview()) || !isCurrent()) return
     const result = await run(
       profileId === null
-        ? window.chromaShift.enableAutomatic()
-        : window.chromaShift.activateProfile(profileId),
+        ? window.chromaShift.enableAutomatic(lifetime)
+        : window.chromaShift.activateProfile(profileId, lifetime),
       setError
     )
-    if (result === undefined || version !== choiceVersion.current) return
+    if (result === undefined || !isCurrent()) return
     const state = await run(window.chromaShift.getState(), setError)
-    if (state === undefined || version !== choiceVersion.current) return
+    if (state === undefined || !isCurrent()) return
     setPicker(false)
     resetTo(liveProfile(state))
   }

@@ -186,12 +186,14 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.activateProfile,
-    profileIdRequestSchema,
+    scopedPreviewRequestSchema(profileIdRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async (request) => {
+    async ({ request, lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
       await diagnostics.profileAction('ProfileActivation', { profileId: request.profileId }, () =>
-        controller().activateProfile(request.profileId)
+        controller().activateProfile(request.profileId, assertCurrent)
       )
       return null
     }
@@ -199,11 +201,13 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.enableAutomatic,
-    emptyRequestSchema,
+    scopedPreviewRequestSchema(emptyRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async () => {
-      await controller().enableAutomatic()
+    async ({ lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
+      await controller().enableAutomatic(assertCurrent)
       return null
     }
   )

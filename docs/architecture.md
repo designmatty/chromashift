@@ -91,16 +91,22 @@ through the runtime's `productController`, `shutdownCoordinator`, and
 the shell only through its ports. The DisplayService connection enters through
 a `createClient` factory port typed as the union of the consumer ports the
 runtime feeds, so runtime startup wiring (start-mode selection, the
-health/version handshake, fail-closed lifecycle configuration) is covered by
+health/version handshake, fail-closed display-write gating) is covered by
 fast in-process tests against `testing/fake-native-display.ts`, the one
 shared fake for the native display seam that activation-coordinator and
 preview-session tests also use. Product wiring changes belong in the runtime
 and routers, not in `index.ts`.
-An unsuccessful handshake leaves product writers unavailable and shows a
-compatibility error. The native client also rejects mutating requests until
-negotiation succeeds. The main-owned emergency shortcut logs a skipped restore
-when negotiation failed and no writes were permitted; compatible-helper
-restoration continues through the normal controllers.
+An unsuccessful handshake keeps the product controller, IPC, tray navigation,
+app window, and shutdown coordinator reachable. The native-service gate returns
+offline display reads and rejects display mutations until negotiation succeeds;
+the native client independently rejects mutating requests before negotiation.
+Transient startup failures use bounded recovery. A known incompatible helper
+shows a compatibility dialog and persistent tray status and is not retried in
+that process. Reinstalling matching versions and restarting negotiates afresh.
+Invalid persisted configuration remains untouched and blocks its writers.
+The main-owned emergency shortcut logs a skipped restore when negotiation failed
+and no baseline could be owned; compatible-helper restoration continues through
+the normal controllers.
 
 Electron main composes that domain layer with the native client. It stores
 configuration atomically at `profiles.json` under Electron's user-data directory
@@ -375,6 +381,10 @@ a validated event and captures it when a debounced edit is scheduled. Main
 rejects preview requests from closed or older openings, including requests that
 finish loading a saved profile after close. Closing also tells the renderer to
 invalidate pending synchronization.
+Panel profile and Automatic selections carry the same lifetime. The renderer
+rechecks it after draining preview writes, and main checks it at admission,
+after delayed selection work, and before queued activation. Tray and global
+shortcut selections remain independent of panel lifetimes.
 Closing either panel to the tray silently reverts unsaved changes through main-owned rollback.
 The mini close control uses that path; failure keeps the mini panel
 visible with Safety blocked and Retry. Mini-to-app handoff hides the mini panel

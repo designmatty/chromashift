@@ -372,8 +372,8 @@ export interface ChromaShiftApi {
   deleteProfile(profileId: string): Promise<ProductResult<boolean>>
   reorderProfiles(profileIds: string[], interactionId?: string): Promise<ProductResult<null>>
   setDefaultProfile(profileId: string | null): Promise<ProductResult<null>>
-  activateProfile(profileId: string): Promise<ProductResult<null>>
-  enableAutomatic(): Promise<ProductResult<null>>
+  activateProfile(profileId: string, lifetime?: number): Promise<ProductResult<null>>
+  enableAutomatic(lifetime?: number): Promise<ProductResult<null>>
   restoreBaseline(): Promise<ProductResult<null>>
   controlChromaShift(action: 'pause' | 'resume' | 'retry'): Promise<ProductResult<null>>
   pickApplication(): Promise<ProductResult<ApplicationSelection | null>>

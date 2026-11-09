@@ -393,7 +393,7 @@ it('publishes Preview before the Use button is enabled, then sends exactly one m
   expect(button().props.disabled).toBe(false)
   button().props.onClick()
   await f.settle()
-  expect(window.chromaShift.activateProfile).toHaveBeenCalledExactlyOnceWith(profile.id)
+  expect(window.chromaShift.activateProfile).toHaveBeenCalledExactlyOnceWith(profile.id, 1)
   expect(f.product.preview.state).toBe('inactive')
   expect(f.product.activation.mode).toEqual({ kind: 'manual', profileId: profile.id })
 })
@@ -585,7 +585,7 @@ it('drains a mini override before choosing even when its active broadcast has no
   reply.resolve({ ok: true, value: null })
   await f.settle()
   expect(f.product.preview.state).toBe('inactive')
-  expect(window.chromaShift.activateProfile).toHaveBeenCalledExactlyOnceWith(chosen.id)
+  expect(window.chromaShift.activateProfile).toHaveBeenCalledExactlyOnceWith(chosen.id, 1)
 })
 
 function findWhere<P>(
@@ -627,3 +627,122 @@ function connectDisplay(f: ReturnType<typeof setup>): void {
     ]
   }
 }
+
+it('rereview92: a mini selection must not activate after its panel lifetime ends', async () => {
+  const f = setup(true, MiniPanel)
+  const chosen = addProfile(f, 'chosen')
+  const closing: Array<() => void> = []
+  let lifetime: number | null = 1
+  window.chromaShift.getPanelLifetime = () => lifetime
+  window.chromaShift.onPanelClosing = (listener) => {
+    closing.push(listener)
+    return () => {}
+  }
+  f.render()
+  findWhere<{ 'data-part'?: string; onClick(): void }>(
+    f.tree,
+    (props) => props['data-part'] === 'active-profile'
+  )!.props.onClick()
+  f.render()
+  const reply = delayed<{ ok: true; value: null }>()
+  // The cancellation was admitted while lifetime 1 was still open.
+  vi.mocked(window.chromaShift.cancelPreview).mockImplementationOnce(() => reply.promise)
+  find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
+    value: chosen.id
+  })
+  await f.settle()
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+  expect(window.chromaShift.activateProfile).not.toHaveBeenCalled()
+  lifetime = null
+  for (const listener of closing) listener()
+  reply.resolve({ ok: true, value: null })
+  await f.settle()
+  expect(
+    window.chromaShift.activateProfile,
+    'a closed mini panel must not issue a new activation'
+  ).not.toHaveBeenCalled()
+})
+
+it('rereview92: an older save must not dismiss a newer dirty navigation request', async () => {
+  const f = setup()
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+    return 1
+  })
+  f.render()
+  const detail = find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  detail.onChange({ ...detail.profile, name: 'Changed' })
+  f.render()
+  f.profiles()!.props.onOpenSettings()
+  f.render()
+  const dialog = () =>
+    find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!.props
+  expect(dialog().open).toBe(true)
+  const reply = delayed<Awaited<ReturnType<typeof window.chromaShift.confirmPreview>>>()
+  window.chromaShift.confirmPreview = vi.fn(async () => {
+    const result = await reply.promise
+    if (result.ok)
+      f.product = {
+        ...f.product,
+        preview: { state: 'inactive' },
+        configuration: {
+          ...f.product.configuration,
+          profiles: f.product.configuration.profiles.map((profile) =>
+            profile.id === result.value.id ? result.value : profile
+          )
+        }
+      }
+    return result
+  })
+  dialog().onPrimary()
+  await f.settle()
+  // A second request from the tray can arrive while the first save is in flight.
+  f.navigation.publish('about')
+  f.render()
+  expect(dialog().open).toBe(true)
+  reply.resolve({ ok: true, value: { ...detail.profile, name: 'Changed' } })
+  await f.settle()
+  expect(f.profiles()).toBeDefined()
+  expect(dialog().open, 'the newer About request must remain actionable').toBe(true)
+  dialog().onDiscard!()
+  await f.settle()
+  expect(find(f.tree, AboutPanel)).toBeDefined()
+})
+
+it.each([
+  { nextLifetime: 1, closingEvent: true },
+  { nextLifetime: 2, closingEvent: false }
+])(
+  'invalidates pending mini-panel Automatic choices for %j',
+  async ({ nextLifetime, closingEvent }) => {
+    const f = setup(true, MiniPanel)
+    const listeners: Array<() => void> = []
+    let lifetime = 1
+    window.chromaShift.getPanelLifetime = () => lifetime
+    window.chromaShift.onPanelClosing = (listener) => {
+      listeners.push(listener)
+      return () => {}
+    }
+    window.chromaShift.enableAutomatic = vi.fn<typeof window.chromaShift.enableAutomatic>(
+      async () => ({ ok: true, value: null })
+    )
+    f.render()
+    findWhere<{ 'data-part'?: string; onClick(): void }>(
+      f.tree,
+      (props) => props['data-part'] === 'active-profile'
+    )!.props.onClick()
+    f.render()
+    const reply = delayed<{ ok: true; value: null }>()
+    vi.mocked(window.chromaShift.cancelPreview).mockImplementationOnce(() => reply.promise)
+    find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
+      value: '__automatic__'
+    })
+    await f.settle()
+    expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+    lifetime = nextLifetime
+    if (closingEvent) for (const listener of listeners) listener()
+    reply.resolve({ ok: true, value: null })
+    await f.settle()
+    expect(window.chromaShift.enableAutomatic).not.toHaveBeenCalled()
+  }
+)

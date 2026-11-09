@@ -4,7 +4,7 @@ import {
   JsonProfileRepository,
   type ProfileRepository
 } from '@chromashift/core'
-import { PROTOCOL_VERSION, type ForegroundApplication } from '@chromashift/native-client'
+import type { ForegroundApplication } from '@chromashift/native-client'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import type { UserPreferences } from '@shared/product-api.js'
 import type { ChromaShiftIntent } from '@main/app-settings.js'
@@ -49,6 +49,7 @@ import {
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 import { TrayController, type TrayMenuPort } from '@main/tray-controller.js'
 import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
+import { NativeServiceGate } from '@main/native-service-gate.js'
 
 /**
  * Everything the runtime needs from the DisplayService connection: lifecycle
@@ -138,6 +139,8 @@ export class ProductRuntime {
   #unsubscribeOutcomeRouter: (() => void) | undefined
   #shortcutController: ShortcutController | undefined
   #gammaLimits: LearnedGammaLimits | undefined
+  #nativeGate: NativeServiceGate | undefined
+  #disposed = false
 
   public constructor(private readonly ports: ProductRuntimePorts) {}
 
@@ -154,21 +157,12 @@ export class ProductRuntime {
   }
 
   public async start(): Promise<void> {
-    if (!(await this.#startNativeService())) {
-      this.#registerEmergencyShortcut(() => {
-        this.ports.logger.write({
-          level: 'warning',
-          eventName: 'EmergencyRestoreSkipped',
-          reason: 'NativeServiceNotNegotiated',
-          message: 'DisplayService negotiation failed. No display writes were permitted.'
-        })
-      })
-      return
-    }
+    await this.#startNativeService()
     await this.#configureProductLifecycle()
   }
 
   public dispose(): void {
+    this.#disposed = true
     this.#unsubscribeOutcomeRouter?.()
     this.#unsubscribeOutcomeRouter = undefined
     this.#powerEventAdapter?.dispose()
@@ -178,9 +172,56 @@ export class ProductRuntime {
     this.#trayController?.dispose()
   }
 
-  async #startNativeService(): Promise<boolean> {
+  async #startNativeService(): Promise<void> {
     const { logger, configuration } = this.ports
     const configurationPath = configuration.profileConfigurationPath
+    const nativeClient = this.ports.native.createClient()
+    this.#nativeClient = nativeClient
+    const gate = new NativeServiceGate(nativeClient, logger)
+    this.#nativeGate = gate
+    this.#profileRepository = new JsonProfileRepository(
+      new AppDataProfileConfigurationStorage(configurationPath),
+      {
+        onMigrationNotice: (notice) =>
+          logger.write({
+            level: 'warning',
+            eventName: 'ProfileConfigurationMigrationNotice',
+            message: describeMigrationNotice(notice),
+            ...notice
+          })
+      }
+    )
+    const limits = new LearnedGammaLimits(
+      join(dirname(configurationPath), 'display-limits.json'),
+      logger
+    )
+    const physicalClient = new PhysicalDisplayClient(gate, limits)
+    this.#physicalDisplayClient = physicalClient
+    const coordinator = new ActivationCoordinator(
+      this.#profileRepository,
+      physicalClient,
+      logger,
+      limits
+    )
+    this.#automaticActivation = new AutomaticActivationController(
+      this.#profileRepository,
+      coordinator,
+      logger,
+      (application) => application?.pid === process.pid
+    )
+    nativeClient.on('exit', () => {
+      gate.disconnected()
+      physicalClient.forgetBaselines()
+      void this.#trayController?.refresh()
+    })
+    attachNativeEventRouter(nativeClient, {
+      activation: () => this.#automaticActivation,
+      displayTransitions: () => this.#displayTransitionController,
+      recovery: () => this.#nativeRecoveryController,
+      isExiting: () => this.#shutdownCoordinator?.exiting === true,
+      broadcastProductState: () => this.ports.shell.broadcastProductState(),
+      logger
+    })
     try {
       const migratedFrom = await migrateLegacyProfileConfiguration(
         configurationPath,
@@ -194,29 +235,13 @@ export class ProductRuntime {
           destinationPath: configurationPath
         })
       }
-      const nativeClient = this.ports.native.createClient()
-      this.#nativeClient = nativeClient
-      this.#profileRepository = new JsonProfileRepository(
-        new AppDataProfileConfigurationStorage(configurationPath),
-        {
-          onMigrationNotice: (notice) => {
-            logger.write({
-              level: 'warning',
-              eventName: 'ProfileConfigurationMigrationNotice',
-              message: describeMigrationNotice(notice),
-              ...notice
-            })
-          }
-        }
-      )
-      const limits = new LearnedGammaLimits(
-        join(dirname(configurationPath), 'display-limits.json'),
-        logger
-      )
-      // Validate before creating any automatic writer. An invalid slice is retained.
+      // Validate before starting any automatic writer. An invalid slice is retained.
       try {
         await limits.load()
       } catch (error) {
+        gate.blockConfiguration(
+          'Display limits could not be loaded. Correct display-limits.json, then restart ChromaShift.'
+        )
         logger.write({
           level: 'error',
           eventName: 'DisplayLimitsConfigurationInvalid',
@@ -230,48 +255,7 @@ export class ProductRuntime {
         throw error
       }
       this.#gammaLimits = limits
-      attachNativeEventRouter(nativeClient, {
-        activation: () => this.#automaticActivation,
-        displayTransitions: () => this.#displayTransitionController,
-        recovery: () => this.#nativeRecoveryController,
-        isExiting: () => this.#shutdownCoordinator?.exiting === true,
-        broadcastProductState: () => this.ports.shell.broadcastProductState(),
-        logger
-      })
-      const info = await nativeClient.start()
-      const health = await nativeClient.getServiceHealth()
-      if (
-        info.protocolVersion !== PROTOCOL_VERSION ||
-        health.protocolVersion !== PROTOCOL_VERSION ||
-        info.serviceVersion !== health.serviceVersion ||
-        !health.watchdogArmed
-      ) {
-        throw new Error('DisplayService failed its startup health/version handshake.')
-      }
-      logger.write({
-        level: 'information',
-        eventName: 'NativeServiceHealthVerified',
-        processId: health.processId,
-        serviceVersion: health.serviceVersion,
-        serviceInstanceId: health.serviceInstanceId,
-        baselineOwnerId: health.baselineOwnerId,
-        watchdogArmed: health.watchdogArmed
-      })
-      const physicalClient = new PhysicalDisplayClient(nativeClient, limits)
-      this.#physicalDisplayClient = physicalClient
-      const coordinator = new ActivationCoordinator(
-        this.#profileRepository,
-        physicalClient,
-        logger,
-        limits
-      )
-      this.#automaticActivation = new AutomaticActivationController(
-        this.#profileRepository,
-        coordinator,
-        logger,
-        (application) => application?.pid === process.pid
-      )
-      nativeClient.on('exit', () => physicalClient.forgetBaselines())
+      await gate.start()
       try {
         const identityRewrite = await rewriteProfilesForPhysicalDisplays(
           this.#profileRepository,
@@ -291,9 +275,13 @@ export class ProductRuntime {
           ...describeError(error)
         })
       }
-      this.#startupForegroundApplication = await nativeClient.getForegroundApplication()
-      return true
+      this.#startupForegroundApplication = await gate.getForegroundApplication()
     } catch (error) {
+      if (this.#gammaLimits === undefined && gate.canRecover) {
+        gate.blockConfiguration(
+          'Configuration could not be loaded. Check Diagnostics, then restart ChromaShift.'
+        )
+      }
       logger.write({
         level: 'error',
         eventName: 'NativeServiceStartupFailed',
@@ -302,11 +290,11 @@ export class ProductRuntime {
       if (this.#gammaLimits !== undefined) {
         this.ports.dialogs.showError(
           'DisplayService compatibility check failed',
-          'Display control is unavailable because DisplayService could not complete its health/version handshake. ' +
-            'Reinstall matching ChromaShift and DisplayService versions, then restart ChromaShift.'
+          gate.canRecover
+            ? 'DisplayService could not start. ChromaShift remains available and will attempt recovery. Check Diagnostics for details.'
+            : 'Display control is unavailable. Reinstall matching ChromaShift and DisplayService versions, then restart ChromaShift.'
         )
       }
-      return false
     }
   }
 
@@ -324,11 +312,13 @@ export class ProductRuntime {
     const { logger, settings, shell, dialogs, icons, system, notifications, configuration } =
       this.ports
     const nativeClient = this.#nativeClient
+    const gate = this.#nativeGate
     const physicalDisplayClient = this.#physicalDisplayClient
     const automaticActivation = this.#automaticActivation
     const profileRepository = this.#profileRepository
     if (
       nativeClient === undefined ||
+      gate === undefined ||
       physicalDisplayClient === undefined ||
       automaticActivation === undefined ||
       profileRepository === undefined
@@ -381,8 +371,8 @@ export class ProductRuntime {
     const chromaShiftController = new ChromaShiftController(
       automaticActivation,
       {
-        refreshTopology: () => nativeClient.refreshDisplayTopology(),
-        getForegroundApplication: () => nativeClient.getForegroundApplication()
+        refreshTopology: () => gate.refreshDisplayTopology(),
+        getForegroundApplication: () => gate.getForegroundApplication()
       },
       {
         cancel: () => previewController.cancel(),
@@ -413,10 +403,10 @@ export class ProductRuntime {
       logger
     )
     try {
-      if (settings.chromaShiftIntent.current().chromaShiftStatus === 'active') {
+      if (gate.ready && settings.chromaShiftIntent.current().chromaShiftStatus === 'active') {
         await automaticActivation.start(this.#startupForegroundApplication ?? null)
         await chromaShiftController.syncActiveIntent()
-      } else {
+      } else if (gate.ready) {
         await automaticActivation.startSuspended(
           this.#startupForegroundApplication ?? null,
           settings.chromaShiftIntent.current().intendedActivationMode,
@@ -440,7 +430,8 @@ export class ProductRuntime {
       this.#shutdownCoordinator,
       await shell.createTrayMenu(),
       logger,
-      () => hasUnsavedSession(previewController.state)
+      () => hasUnsavedSession(previewController.state),
+      () => gate.unavailableReason
     )
     this.#trayController = trayController
     const profileNotifications = new ProfileNotificationController(
@@ -457,7 +448,7 @@ export class ProductRuntime {
       logger
     )
     this.#nativeRecoveryController = new NativeServiceRecoveryController(
-      nativeClient,
+      gate,
       {
         handleNativeServiceExit: () => automaticActivation.handleNativeServiceExit(),
         start: (application) => {
@@ -471,16 +462,24 @@ export class ProductRuntime {
               )
         }
       },
-      () => this.#shutdownCoordinator?.exiting === true,
+      () => this.#disposed || this.#shutdownCoordinator?.exiting === true,
       {
         recovered: () => {
+          this.#productController?.invalidateHardwareCache()
           void chromaShiftController.syncActiveIntent()
           shell.broadcastProductState()
           void trayController.refresh()
         },
         terminal: () => {
+          void trayController.refresh()
+          shell.broadcastProductState()
           shell.openWindow()
-          dialogs.showError(nativeRecoveryTerminalTitle, nativeRecoveryTerminalMessage)
+          dialogs.showError(
+            gate.canRecover
+              ? nativeRecoveryTerminalTitle
+              : 'DisplayService compatibility check failed',
+            gate.canRecover ? nativeRecoveryTerminalMessage : gate.unavailableReason!
+          )
         }
       },
       logger
@@ -504,6 +503,15 @@ export class ProductRuntime {
       logger
     )
     this.#registerEmergencyShortcut(() => {
+      if (!gate.ready && gate.potentialBaselineDisplayIds.length === 0) {
+        logger.write({
+          level: 'warning',
+          eventName: 'EmergencyRestoreSkipped',
+          reason: 'NativeServiceNotNegotiated',
+          message: 'DisplayService negotiation failed. No display writes were permitted.'
+        })
+        return
+      }
       void emergencyRestoreController.request().then((restored) => {
         if (!restored) {
           dialogs.showError(
@@ -554,7 +562,7 @@ export class ProductRuntime {
       dialogs.warnShortcutsUnavailable(describeError(error).message)
     }
     this.#displayTransitionController = new DisplayTransitionController(
-      nativeClient,
+      gate,
       automaticActivation,
       previewController,
       logger,
@@ -634,9 +642,11 @@ export class ProductRuntime {
         stateChanged: () => shell.broadcastProductState()
       },
       configuration.appVersion,
-      this.#gammaLimits
+      this.#gammaLimits,
+      () => gate.assertReady()
     )
-    return trayController.start()
+    await trayController.start()
+    if (!gate.ready && gate.canRecover) void this.#nativeRecoveryController.handleExit()
   }
 }
 

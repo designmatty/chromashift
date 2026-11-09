@@ -62,11 +62,16 @@ export interface ChromaShiftActivationPort {
   setSuspendedIntent(mode: ActivationMode, target: ActivationTarget | null): Promise<void>
   selectManualProfile(
     profileId: string,
-    context?: { source: ActivationSource; origin: 'profileSelection' | 'shortcut' }
+    context?: {
+      source: ActivationSource
+      origin: 'profileSelection' | 'shortcut'
+      assertCurrent?: () => void
+    }
   ): Promise<CompletedActivationOutcome>
   enableAutomatic(context?: {
     source: ActivationSource
     origin: 'automaticSelection' | 'shortcut'
+    assertCurrent?: () => void
   }): Promise<CompletedActivationOutcome>
   refreshAfterConfigurationChange(change?: ConfigurationChange): Promise<void>
 }
@@ -243,9 +248,11 @@ export class ChromaShiftController {
    */
   public async selectManualProfile(
     profileId: string,
-    source: ActivationSource = 'manual'
+    source: ActivationSource = 'manual',
+    assertCurrent?: () => void
   ): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) await this.#transition
+    assertCurrent?.()
     if (this.#state.status !== 'active') {
       const target = { kind: 'profile' as const, profileId }
       await this.activation.setSuspendedIntent(manualActivationMode(profileId), target)
@@ -257,9 +264,11 @@ export class ChromaShiftController {
     try {
       outcome = await this.activation.selectManualProfile(profileId, {
         source,
-        origin: source === 'shortcut' ? 'shortcut' : 'profileSelection'
+        origin: source === 'shortcut' ? 'shortcut' : 'profileSelection',
+        assertCurrent
       })
     } catch (error) {
+      assertCurrent?.()
       this.#setIntent(manualActivationMode(profileId), { kind: 'profile', profileId })
       await this.#persistState()
       if (source === 'shortcut') this.#publishOperationalFailure(source, 'shortcut', error)
@@ -272,9 +281,11 @@ export class ChromaShiftController {
 
   /** Selects Automatic mode. While Paused or Safety blocked, only the intent changes. */
   public async enableAutomatic(
-    source: ActivationSource = 'manual'
+    source: ActivationSource = 'manual',
+    assertCurrent?: () => void
   ): Promise<CompletedActivationOutcome> {
     if (this.#transition !== null) await this.#transition
+    assertCurrent?.()
     if (this.#state.status !== 'active') {
       await this.activation.setSuspendedIntent(automaticActivationMode, null)
       this.#setIntent(automaticActivationMode, null)
@@ -285,9 +296,11 @@ export class ChromaShiftController {
     try {
       outcome = await this.activation.enableAutomatic({
         source,
-        origin: source === 'shortcut' ? 'shortcut' : 'automaticSelection'
+        origin: source === 'shortcut' ? 'shortcut' : 'automaticSelection',
+        assertCurrent
       })
     } catch (error) {
+      assertCurrent?.()
       this.#setIntent(automaticActivationMode, this.#state.intendedTarget)
       await this.#persistState()
       if (source === 'shortcut') this.#publishOperationalFailure(source, 'shortcut', error)

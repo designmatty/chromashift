@@ -38,8 +38,12 @@ export interface ProductNativePort {
 export interface ProductActivationPort {
   readonly state: ActivationControllerState
   readonly chromaShiftState: ProductState['chromaShift']
-  selectManualProfile(profileId: string): Promise<ActivationOutcome>
-  enableAutomatic(): Promise<ActivationOutcome>
+  selectManualProfile(
+    profileId: string,
+    source?: 'manual',
+    assertCurrent?: () => void
+  ): Promise<ActivationOutcome>
+  enableAutomatic(source?: 'manual', assertCurrent?: () => void): Promise<ActivationOutcome>
   restoreBaseline(): Promise<ActivationOutcome>
   pause(source: 'manual'): Promise<ActivationOutcome>
   resume(source: 'manual'): Promise<ActivationOutcome>
@@ -85,7 +89,8 @@ export class ProductController {
     private readonly settings: ProductSettingsPort,
     private readonly refresh: ProductRefreshPort,
     private readonly version: string = '0.0.0',
-    private readonly limits?: LearnedGammaLimits
+    private readonly limits?: LearnedGammaLimits,
+    private readonly assertDisplayControlAvailable: () => void = () => undefined
   ) {}
 
   public getProfileDiagnosticContext(): Record<string, unknown> {
@@ -317,8 +322,15 @@ export class ProductController {
     await this.#configurationChanged()
   }
 
-  public async activateProfile(profileId: string): Promise<void> {
-    assertSuccessfulOutcome(await this.activation.selectManualProfile(profileId))
+  public async activateProfile(
+    profileId: string,
+    assertCurrent: () => void = () => undefined
+  ): Promise<void> {
+    this.assertDisplayControlAvailable()
+    assertCurrent()
+    assertSuccessfulOutcome(
+      await this.activation.selectManualProfile(profileId, 'manual', assertCurrent)
+    )
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
@@ -339,19 +351,23 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
-  public async enableAutomatic(): Promise<void> {
-    assertSuccessfulOutcome(await this.activation.enableAutomatic())
+  public async enableAutomatic(assertCurrent: () => void = () => undefined): Promise<void> {
+    this.assertDisplayControlAvailable()
+    assertCurrent()
+    assertSuccessfulOutcome(await this.activation.enableAutomatic('manual', assertCurrent))
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
 
   public async restoreBaseline(): Promise<void> {
+    this.assertDisplayControlAvailable()
     assertSuccessfulOutcome(await this.activation.restoreBaseline())
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
 
   public async controlChromaShift(action: 'pause' | 'resume' | 'retry'): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (action === 'pause') await this.activation.pause('manual')
     else if (action === 'resume') await this.activation.resume('manual')
     else await this.activation.retrySafetyCheck('manual')
@@ -383,6 +399,7 @@ export class ProductController {
     kind: 'preview' | 'edit' | 'override',
     assertCurrent: () => void = () => undefined
   ): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before starting a display preview.')
     }
@@ -398,6 +415,7 @@ export class ProductController {
     targets: DisplayColorTarget[],
     draft?: ColorProfile
   ): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before changing display colors.')
     }

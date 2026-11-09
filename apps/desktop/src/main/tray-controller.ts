@@ -17,6 +17,7 @@ export interface TrayProfileItem {
 }
 
 export interface TrayReadModel {
+  displayServiceError?: string
   chromaShiftStatusLabel: 'Active' | 'Paused' | 'Safety blocked' | 'Auto-switching on hold'
   currentProfileLabel: string
   automaticEnabled: boolean
@@ -125,7 +126,8 @@ export class TrayController {
     private readonly shutdown: ShutdownRequestPort,
     private readonly menu: TrayMenuPort,
     private readonly logger: StructuredLogger,
-    private readonly unsavedChanges: () => boolean = () => false
+    private readonly unsavedChanges: () => boolean = () => false,
+    private readonly unavailableReason: () => string | null = () => null
   ) {}
 
   public async start(): Promise<void> {
@@ -141,18 +143,31 @@ export class TrayController {
     try {
       const profiles = await this.repository.list()
       if (this.#disposed || generation !== this.#refreshGeneration) return
-      this.menu.update(
-        createTrayReadModel(
-          profiles,
-          this.activation.state,
-          this.activation.chromaShiftState,
-          this.unsavedChanges()
-        ),
-        this.#commands()
-      )
+      this.#updateMenu(profiles)
     } catch (error) {
+      if (this.#disposed || generation !== this.#refreshGeneration) return
+      // Invalid profile data must not remove navigation or Exit from the tray.
+      this.#updateMenu([])
       this.#reportError('Tray menu could not be refreshed', error)
     }
+  }
+
+  #updateMenu(profiles: readonly ColorProfile[]): void {
+    const reason = this.unavailableReason()
+    const model = createTrayReadModel(
+      profiles,
+      this.activation.state,
+      this.activation.chromaShiftState,
+      this.unsavedChanges()
+    )
+    if (reason !== null) {
+      model.displayServiceError = reason
+      model.automaticEnabled = false
+      model.controlsEnabled = false
+      model.restoreEnabled = false
+      model.profiles = model.profiles.map((profile) => ({ ...profile, enabled: false }))
+    }
+    this.menu.update(model, this.#commands())
   }
 
   public dispose(): void {

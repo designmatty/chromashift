@@ -271,7 +271,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         await rollback()
         if (isCurrentAction()) resetTo(selected)
       }
-      setPendingContinuation(null)
+      setPendingContinuation((current) => (current === next ? null : current))
       if (isCurrentAction()) await next()
     })
   }
@@ -320,12 +320,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     continueAfterChanges(() => openProfile(profile))
   }
   function selectActivation(profileId: string | null): void {
+    const lifetime = window.chromaShift.getPanelLifetime()
+    if (lifetime === null) return
     continueAfterChanges(async () => {
       await rollback()
+      if (!isCurrentAction() || window.chromaShift.getPanelLifetime() !== lifetime) return
       await value(
         profileId === null
-          ? window.chromaShift.enableAutomatic()
-          : window.chromaShift.activateProfile(profileId)
+          ? window.chromaShift.enableAutomatic(lifetime)
+          : window.chromaShift.activateProfile(profileId, lifetime)
       )
       await returnToLive()
     })
@@ -338,15 +341,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       currentProfileId
     )
     if (decision === null) return
-    continueAfterChanges(async () => {
-      await rollback()
-      await value(
-        decision.kind === 'automatic'
-          ? window.chromaShift.enableAutomatic()
-          : window.chromaShift.activateProfile(decision.profileId)
-      )
-      await returnToLive()
-    })
+    selectActivation(decision.kind === 'automatic' ? null : decision.profileId)
   }
   function navigate(nextView: AppPanelView): void {
     if (nextView === view) return
@@ -712,10 +707,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                     toggleProfileEnabled(shownProfile)
                     return
                   }
+                  const lifetime = window.chromaShift.getPanelLifetime()
+                  if (lifetime === null) return
                   perform(async () => {
                     if (dirty) await updateProfile()
                     else await rollback()
-                    await value(window.chromaShift.activateProfile(shownProfile.id))
+                    if (!isCurrentAction() || window.chromaShift.getPanelLifetime() !== lifetime)
+                      return
+                    await value(window.chromaShift.activateProfile(shownProfile.id, lifetime))
                     await returnToLive()
                   })
                 }}

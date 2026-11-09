@@ -88,6 +88,13 @@ export class NativeServiceError extends Error {
   }
 }
 
+export class NativeServiceCompatibilityError extends Error {
+  constructor() {
+    super('DisplayService failed its startup health/version handshake.')
+    this.name = 'NativeServiceCompatibilityError'
+  }
+}
+
 export class NativeClient extends EventEmitter<NativeClientEvents> {
   readonly #options: ResolvedNativeClientOptions
   readonly #pending = new Map<string, PendingRequest>()
@@ -165,8 +172,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   async #negotiate(): Promise<SystemInfo> {
     this.#negotiated = false
     const info = await this.getSystemInfo()
-    if (info.protocolVersion !== PROTOCOL_VERSION)
-      throw new Error('DisplayService failed its startup health/version handshake.')
+    if (info.protocolVersion !== PROTOCOL_VERSION) throw new NativeServiceCompatibilityError()
     await this.sendHeartbeat()
     const health = await this.getServiceHealth()
     if (
@@ -175,7 +181,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       info.serviceVersion !== health.serviceVersion ||
       !health.watchdogArmed
     )
-      throw new Error('DisplayService failed its startup health/version handshake.')
+      throw new NativeServiceCompatibilityError()
     this.#negotiated = true
     return info
   }

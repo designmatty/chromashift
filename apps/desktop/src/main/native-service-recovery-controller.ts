@@ -8,6 +8,7 @@ import {
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 
 export interface RecoverableNativeServicePort {
+  readonly canRecover?: boolean
   readonly potentialBaselineDisplayIds: readonly string[]
   start(): Promise<SystemInfo>
   getServiceHealth(): Promise<ServiceHealth>
@@ -49,7 +50,7 @@ export class NativeServiceRecoveryController {
 
   public async handleExit(): Promise<void> {
     await this.activation.handleNativeServiceExit()
-    if (this.isShuttingDown() || this.#recovering) return
+    if (this.isShuttingDown() || this.#recovering || !this.#canRecover()) return
 
     const owned = this.native.potentialBaselineDisplayIds
     if (owned.length > 0) {
@@ -67,6 +68,7 @@ export class NativeServiceRecoveryController {
         if (this.#attempts.length >= this.delaysMs.length) break
         this.#attempts.push(this.now())
         await this.delay(backoff)
+        if (this.isShuttingDown() || !this.#canRecover()) return
         try {
           const info = await this.native.start()
           const health = await this.native.getServiceHealth()
@@ -90,6 +92,12 @@ export class NativeServiceRecoveryController {
             attempt: this.#attempts.length,
             ...describeError(error)
           })
+          if (!this.#canRecover()) {
+            this.#terminal(
+              'DisplayService is incompatible. Reinstall matching versions, then restart ChromaShift.'
+            )
+            return
+          }
         }
       }
       this.#terminal('DisplayService could not be restarted after bounded recovery attempts.')
@@ -112,6 +120,10 @@ export class NativeServiceRecoveryController {
       throw new Error('A restarted DisplayService unexpectedly reported captured baselines.')
     }
     if (!health.watchdogArmed) throw new Error('DisplayService watchdog is not armed.')
+  }
+
+  #canRecover(): boolean {
+    return this.native.canRecover !== false
   }
 
   #pruneAttempts(): void {

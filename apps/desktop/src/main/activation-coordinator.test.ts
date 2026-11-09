@@ -7,7 +7,7 @@ import {
   type ProfileConfigurationStorage
 } from '@chromashift/core'
 import type { NativeEvent } from '@chromashift/native-client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
@@ -695,6 +695,52 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it('rejects a panel choice that closes while queued and retains the preceding activation mode', async () => {
+    const native = new FakeNativeActivationPort()
+    const repo = repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default'))
+    const logger = new RecordingLogger()
+    const coordinator = new ActivationCoordinator(repo, native, logger)
+    const automatic = new AutomaticActivationController(repo, coordinator, logger)
+    await automatic.start(null)
+    const getDisplays = native.getDisplays.bind(native)
+    let release!: () => void
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(native, 'getDisplays').mockImplementationOnce(async () => {
+      entered()
+      await pending
+      return getDisplays()
+    })
+    const first = coordinator.activate(application('GameA.exe'))
+    await reading
+    let panelOpen = true
+    const assertCurrent = vi.fn(() => {
+      if (!panelOpen) throw new Error('Panel closed')
+    })
+    const choice = automatic.selectManualProfile('game-b', {
+      source: 'manual',
+      origin: 'profileSelection',
+      assertCurrent
+    })
+    const rejected = expect(choice).rejects.toThrow('Panel closed')
+    await vi.waitFor(() => expect(assertCurrent).toHaveBeenCalledOnce())
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    panelOpen = false
+    release()
+    await first
+    await rejected
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    expect(native.calls.filter((call) => call.displayId === 'display:two')).toEqual([])
+    await automatic.handleNativeEvent(foregroundEvent('Browser.exe'))
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    expect(native.calls.filter((call) => call.displayId === 'display:two')).toEqual([])
+  })
+
   it.each(['update', 'discard'] as const)(
     'publishes the latest held switch and applies it after %s',
     async (decision) => {

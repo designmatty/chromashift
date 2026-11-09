@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { NativeClient, NativeServiceError } from './client.js'
+import { NativeClient, NativeServiceError, NativeServiceCompatibilityError } from './client.js'
 
 const fakeServicePath = fileURLToPath(
   new URL('./test-fixtures/fake-display-service.mjs', import.meta.url)
@@ -66,6 +66,7 @@ describe('NativeClient activation command surface', () => {
     const starting = native.start()
     await assertBlocked()
     await expect(starting).rejects.toThrow('health/version handshake')
+    await expect(starting).rejects.toBeInstanceOf(NativeServiceCompatibilityError)
     await assertBlocked()
   })
 
