@@ -329,7 +329,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     continueAfterChanges(async () => {
       if (view === 'profiles' && temporaryOverride === null) await rollback()
       await returnToLive()
-      setView(nextView)
+      // Clean navigation already painted its destination. Replaying it after
+      // queued work can overwrite a newer click, such as Back from About.
+      if (dirty) setView(nextView)
     })
   }
   // Main's buffered navigation and profile requests win over initial selection.

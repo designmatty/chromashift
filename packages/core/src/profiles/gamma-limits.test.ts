@@ -49,6 +49,41 @@ describe('versioned learned gamma limits', () => {
     expect(profile.displays[0]!.color.gamma).toBe(2.5)
   })
 
+  it('preserves the draft object when gamma already fits the effective range', () => {
+    const limits = displayLimitsSchema.parse(fixture('learned-v1'))
+    const profile = {
+      id: 'test',
+      name: 'Unchanged draft',
+      enabled: true,
+      applications: [],
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), gamma: 1.85 } }
+      ]
+    }
+    expect(clampProfileGamma(profile, limits)).toBe(profile)
+    const empty = { ...profile, displays: [] }
+    expect(clampProfileGamma(empty, limits)).toBe(empty)
+  })
+
+  it('retains unchanged targets and becomes referentially stable after clamping', () => {
+    const limits = displayLimitsSchema.parse(fixture('learned-v1'))
+    const profile = {
+      id: 'test',
+      name: 'Unsaved name',
+      enabled: true,
+      applications: [],
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), gamma: 2.5 } },
+        { displayId: 'display:two', color: createNeutralColorSettings() }
+      ]
+    }
+    const result = clampProfileGamma(profile, limits)
+    expect(result).not.toBe(profile)
+    expect(result.displays[0]!.color.gamma).toBe(1.85)
+    expect(result.displays[1]).toBe(profile.displays[1])
+    expect(clampProfileGamma(result, limits)).toBe(result)
+  })
+
   it('rejects corrupt, future and widened envelopes instead of resetting them', () => {
     expect(displayLimitsSchema.safeParse(fixture('invalid-v1')).success).toBe(false)
     expect(displayLimitsSchema.safeParse({ schemaVersion: 2, displays: {} }).success).toBe(false)

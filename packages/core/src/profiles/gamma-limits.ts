@@ -70,23 +70,19 @@ export function clampProfileGamma(
   limits: DisplayLimits,
   brightnessSupport: Record<string, boolean> = {}
 ): ColorProfile {
-  return {
-    ...profile,
-    displays: profile.displays.map((target) => {
-      const range = effectiveGammaRange(
-        limits.displays[target.displayId.toLowerCase()],
-        effectiveGammaBrightness(
-          target.color.brightness,
-          brightnessSupport[target.displayId.toLowerCase()]
-        )
+  let changed = false
+  const displays = profile.displays.map((target) => {
+    const range = effectiveGammaRange(
+      limits.displays[target.displayId.toLowerCase()],
+      effectiveGammaBrightness(
+        target.color.brightness,
+        brightnessSupport[target.displayId.toLowerCase()]
       )
-      return {
-        ...target,
-        color: {
-          ...target.color,
-          gamma: Math.min(range.max, Math.max(range.min, target.color.gamma))
-        }
-      }
-    })
-  }
+    )
+    const gamma = Math.min(range.max, Math.max(range.min, target.color.gamma))
+    if (gamma === target.color.gamma) return target
+    changed = true
+    return { ...target, color: { ...target.color, gamma } }
+  })
+  return changed ? { ...profile, displays } : profile
 }
