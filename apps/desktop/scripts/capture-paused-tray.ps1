@@ -1,7 +1,7 @@
 param([Parameter(Mandatory = $true)][string]$CapturePath)
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing,System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase,System.Drawing,System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -65,8 +65,20 @@ try {
     throw 'The emergency restore tray icon did not say ChromaShift: Paused.'
   }
   $iconBounds = $icon.Current.BoundingRectangle
-  [void][ChromaShiftTrayCapture]::SetCursorPos(
+  $iconPoint = [System.Windows.Point]::new(
     [int]($iconBounds.X + $iconBounds.Width / 2), [int]($iconBounds.Y + $iconBounds.Height / 2))
+  # A notification toast from any app can cover the tray icon, and the click would
+  # then open the toast's menu. Wait until the icon itself is under the point.
+  $unobstructedDeadline = (Get-Date).AddSeconds(10)
+  while ($true) {
+    $hit = [System.Windows.Automation.AutomationElement]::FromPoint($iconPoint)
+    if ($null -ne $hit -and $hit.Current.Name.Trim() -like 'ChromaShift:*') { break }
+    if ((Get-Date) -ge $unobstructedDeadline) {
+      throw "The ChromaShift tray icon stayed covered by '$($hit.Current.Name)' [$($hit.Current.ClassName)]."
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  [void][ChromaShiftTrayCapture]::SetCursorPos([int]$iconPoint.X, [int]$iconPoint.Y)
   [ChromaShiftTrayCapture]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
   [ChromaShiftTrayCapture]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 300
