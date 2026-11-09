@@ -1790,6 +1790,10 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
     if (action === 'close control') {
       await evaluate(`document.querySelector('[aria-label="Close mini panel"]')?.click()`)
     } else {
+      // The mini panel opens without activation. A user clicks into it before
+      // pressing Escape; give it keyboard focus the same way.
+      await debuggerClient.send('Page.bringToFront')
+      await evaluate(`document.querySelector('[data-part="color-control"] [role="slider"]')?.focus()`)
       await debuggerClient.send('Input.dispatchKeyEvent', {
         type: 'keyDown',
         key: 'Escape',
