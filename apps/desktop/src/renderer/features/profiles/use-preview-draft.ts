@@ -60,14 +60,18 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const syncRef = useRef<PreviewSyncSession | null>(null)
   if (syncRef.current === null) {
     const port: PreviewSyncPort = {
-      startPreview: (profile, sessionKind) => window.chromaShift.startPreview(profile, sessionKind),
-      updatePreview: (profileId, targets, draft) =>
-        window.chromaShift.updatePreview(profileId, targets, draft),
-      cancelPreview: () => window.chromaShift.cancelPreview()
+      getPanelLifetime: () => window.chromaShift.getPanelLifetime(),
+      startPreview: (profile, sessionKind, lifetime) =>
+        window.chromaShift.startPreview(profile, sessionKind, lifetime),
+      updatePreview: (profileId, targets, draft, lifetime) =>
+        window.chromaShift.updatePreview(profileId, targets, draft, lifetime),
+      cancelPreview: (lifetime) => window.chromaShift.cancelPreview(lifetime)
     }
     syncRef.current = new PreviewSyncSession(port, kind, onError)
   }
   const sync = syncRef.current
+
+  useLayoutEffect(() => window.chromaShift.onPanelClosing(() => sync.invalidate()), [sync])
 
   useEffect(() => {
     if (localRevision === 0) return

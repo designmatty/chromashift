@@ -358,12 +358,14 @@ export class ProductController {
 
   public async startPreview(
     profile: ColorProfile,
-    kind: 'preview' | 'edit' | 'override'
+    kind: 'preview' | 'edit' | 'override',
+    assertCurrent: () => void = () => undefined
   ): Promise<void> {
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before starting a display preview.')
     }
     const saved = await this.repository.findById(profile.id)
+    assertCurrent()
     if (saved === null) throw new ProductNotFoundError(`Profile ${profile.id} does not exist.`)
     await this.preview.start(profile, kind, saved)
     this.refresh.stateChanged()
@@ -383,9 +385,11 @@ export class ProductController {
 
   public async confirmPreview(
     profile: ColorProfile,
-    activation: 'manual' | 'preserve'
+    activation: 'manual' | 'preserve',
+    assertCurrent: () => void = () => undefined
   ): Promise<ColorProfile> {
     const saved = await this.saveProfile(profile)
+    assertCurrent()
     // Saving is independent of display recovery. Keep the session for Retry.
     if (this.activation.chromaShiftState.status === 'safetyBlocked') {
       this.refresh.stateChanged()

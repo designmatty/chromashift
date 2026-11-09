@@ -327,9 +327,15 @@ native restore rather than treating an ended session as proof of restoration.
 The close dialog is modal to its app window and offers `Try again` or
 `Keep the window open`; shutdown keeps its existing `Keep ChromaShift running`
 wording. The shared shell adapter is `restore-retry-dialog.ts`. Concurrent close
-drains, including an old and recovered renderer's windows, share the preview queue
-without invalidating one another's checkpoint. New session commands still force
-another drain before renderer release.
+drains, including an old and recovered renderer's windows, share the preview queue.
+Each drain owns only sessions admitted before its close began. Restoration of
+those sessions must finish before a newly reopened editor can apply; the old
+drain cannot cancel the new editor or release its renderer.
+Each panel opening has a main-owned lifetime token. Preload receives it through
+a validated event and captures it when a debounced edit is scheduled. Main
+rejects preview requests from closed or older openings, including requests that
+finish loading a saved profile after close. Closing also tells the renderer to
+invalidate pending synchronization.
 Closing either panel to the tray silently reverts unsaved changes through main-owned rollback.
 The mini close control uses that path; failure keeps the mini panel
 visible with Safety blocked and Retry. Mini-to-app handoff hides the mini panel

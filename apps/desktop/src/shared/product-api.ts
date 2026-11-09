@@ -36,6 +36,7 @@ export const productIpcChannels = {
   recordProfileReorder: 'product:record-profile-reorder',
   updateSettings: 'product:update-settings',
   startPreview: 'product:start-preview',
+  panelLifetimeChanged: 'application:panel-lifetime-changed',
   updatePreview: 'product:update-preview',
   confirmPreview: 'product:confirm-preview',
   cancelPreview: 'product:cancel-preview',
@@ -192,6 +193,13 @@ export function productResultSchema<T extends z.ZodType>(valueSchema: T) {
 }
 
 export const emptyRequestSchema = z.object({}).strict()
+export const panelLifetimeSchema = z.number().int().positive()
+export const panelLifetimeEventSchema = z
+  .object({ lifetime: panelLifetimeSchema.nullable() })
+  .strict()
+export function scopedPreviewRequestSchema<T extends z.ZodType>(request: T) {
+  return z.object({ lifetime: panelLifetimeSchema, request }).strict()
+}
 export const appPanelViewSchema = z.enum([
   'profiles',
   'displays',
@@ -369,18 +377,22 @@ export interface ChromaShiftApi {
   updateSettings(settings: UserPreferences): Promise<ProductResult<UserPreferences>>
   startPreview(
     profile: ColorProfile,
-    kind: 'preview' | 'edit' | 'override'
+    kind: 'preview' | 'edit' | 'override',
+    lifetime?: number
   ): Promise<ProductResult<null>>
   updatePreview(
     profileId: string,
     targets: PreviewTarget[],
-    draft?: ColorProfile
+    draft?: ColorProfile,
+    lifetime?: number
   ): Promise<ProductResult<null>>
   confirmPreview(
     profile: ColorProfile,
     activation: 'manual' | 'preserve'
   ): Promise<ProductResult<ColorProfile>>
-  cancelPreview(): Promise<ProductResult<null>>
+  cancelPreview(lifetime?: number): Promise<ProductResult<null>>
+  getPanelLifetime(): number | null
+  onPanelClosing(listener: () => void): () => void
   requestExit(): Promise<ProductResult<boolean>>
   openAppPanel(view?: AppPanelView): Promise<ProductResult<null>>
   hideMiniPanel(): Promise<ProductResult<null>>

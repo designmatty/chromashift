@@ -315,6 +315,19 @@ Retry must confirm restoration before the prior target resumes. A real driver
 failure remains a separate hardware check. Close during a pending preview write
 must wait and restore the exact prior target, without a late draft write.
 
+The #91 deterministic regressions cover a first mini slider change closed before
+the 120 ms debounce, stale requests after reopening the retained mini renderer,
+and a new dirty Edit opened during app handoff or mini-close restoration. They
+also cover repeated closes, a second close or handoff after reopening during
+rollback, delayed saved-profile lookup, and restoration failure with a new Edit
+queued. Main lifetime checks are exercised without renderer timer cancellation.
+For owner retesting, close immediately after the first mini slider movement and
+reopen within five seconds. Confirm no late override appears. Reopen the app and
+start a dirty Edit while handoff or mini-close restoration is pending; the new
+draft must remain active after the old restore completes. Repeated close and
+handoff actions must still honor their latest explicit action. These hardware
+and native-window checks remain separate from deterministic verification.
+
 After a build, `node apps/desktop/scripts/smoke.mjs --updates-only` runs the
 About update flow against the public Cloudflare release feed, verifies that navigation
 retains the last successful check, and captures the visible native window before

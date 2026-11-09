@@ -162,6 +162,27 @@ function capabilityReport(supported: boolean): DisplayCapabilityReport {
 }
 
 describe('ProductController settings ownership', () => {
+  it('rejects a start whose panel closes while the saved profile lookup is pending', async () => {
+    const { product, repository } = controller()
+    const saved = await product.createProfile('Game')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(repository, 'findById').mockImplementationOnce(async () => {
+      await gate
+      return saved
+    })
+    let open = true
+    const assertCurrent = (): void => {
+      if (!open) throw new ProductConflictError('Closed panel')
+    }
+    const starting = product.startPreview(saved, 'edit', assertCurrent)
+    open = false
+    release()
+    await expect(starting).rejects.toThrow('Closed panel')
+    expect((await product.getState()).preview).toEqual({ state: 'inactive' })
+  })
   it('numbers new profiles and clones at the main boundary', async () => {
     const { product } = controller()
     const first = await product.createProfile('New profile')

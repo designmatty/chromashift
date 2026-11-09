@@ -309,7 +309,8 @@ async function createHarness(
         fetch: async () => Response.json([])
       }),
       requestExit: async () => true
-    })
+    }),
+    { get: () => 1, assert: () => undefined }
   )
   return {
     runtime,
@@ -836,8 +837,11 @@ describe('unconfirmed preview restoration', () => {
       requestShutdown: () => {
         throw new Error('Unexpected shutdown')
       },
-      cancelForPanelHide: (reason, done) =>
-        h.runtime.previewController!.cancelForPanelHide(reason, done),
+      getPanelHideScope: () => h.runtime.previewController!.panelHideScope,
+      getPanelOpenVersion: () => panels.getPanelOpenVersion('app'),
+      beginPanelHide: () => panels.endPanelLifetime('app'),
+      cancelForPanelHide: (reason, done, scope) =>
+        h.runtime.previewController!.cancelForPanelHide(reason, done, scope),
       notifyClosed: () => undefined,
       waitForHandoffResponse: async () => undefined,
       notifyMinimized: () => undefined,
@@ -869,8 +873,62 @@ describe('unconfirmed preview restoration', () => {
       'app',
       h.runtime.previewController!
     )
-    return { ...h, dirty, close, panels, handoff: () => handoff, miniVisible: () => miniVisible }
+    return {
+      ...h,
+      dirty,
+      close,
+      panels,
+      handoff: () => handoff,
+      miniVisible: () => miniVisible,
+      appDestroyed: () => appDestroyed
+    }
   }
+
+  it.each([false, true])('serializes close behind HDR restoration, failure=%s', async (fail) => {
+    const h = await panelHarness('manual', 'edit')
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const restore = h.client.restoreDisplay.bind(h.client)
+    vi.spyOn(h.client, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
+      enter()
+      await gate
+      return restore(displayId)
+    })
+    try {
+      h.client.hdrDisplayIds.add(id)
+      if (fail) h.client.failRestoreDisplayIds.add(id)
+      vi.useFakeTimers()
+      h.displayEvent('displayMetricsChanged')
+      const transition = vi.advanceTimersByTimeAsync(750)
+      await entered
+      const closing = h.close.handleClose({ preventDefault: () => undefined })
+      expect(h.appDestroyed()).toBe(false)
+      release()
+      await Promise.all([transition, closing])
+      expect(
+        h.client.calls.filter((call) => call.operation === 'apply' || call.operation === 'capture')
+      ).toEqual([])
+      expect(h.client.maxConcurrentCalls).toBe(1)
+      if (fail) {
+        expect(h.appDestroyed()).toBe(false)
+        expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+        expect((await h.product.getState()).preview).toEqual(pending)
+        h.client.failRestoreDisplayIds.clear()
+        await h.close.handleClose({ preventDefault: () => undefined })
+      }
+      expect(h.appDestroyed()).toBe(true)
+      expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+    } finally {
+      release()
+      h.runtime.dispose()
+    }
+  })
 
   it.each(['manual', 'automatic'] as const)(
     'panel close restores the exact prior %s target for dirty Edit and override',
@@ -1041,8 +1099,10 @@ describe('unconfirmed preview restoration', () => {
         isVisible: () => true,
         flushWindowState: () => undefined,
         requestShutdown: () => undefined,
-        cancelForPanelHide: (reason, done) =>
-          h.runtime.previewController!.cancelForPanelHide(reason, done),
+        getPanelHideScope: () => h.runtime.previewController!.panelHideScope,
+        getPanelOpenVersion: () => 0,
+        cancelForPanelHide: (reason, done, scope) =>
+          h.runtime.previewController!.cancelForPanelHide(reason, done, scope),
         notifyClosed: () => undefined,
         waitForHandoffResponse: async () => undefined,
         notifyMinimized: () => undefined,

@@ -15,6 +15,8 @@ import {
   diagnosticLogEntriesResultSchema,
   profileReorderDiagnosticSchema,
   emptyRequestSchema,
+  panelLifetimeEventSchema,
+  scopedPreviewRequestSchema,
   openAppPanelRequestSchema,
   commitSessionRequestSchema,
   startSessionRequestSchema,
@@ -54,7 +56,11 @@ export function registerProductIpcHandlers(
   setMiniPanelView: (view: MiniPanelView, showColorTemperature: boolean) => void,
   getDiagnostics: () => DiagnosticLogEntry[],
   diagnostics: DiagnosticsService,
-  updates: AppUpdateService
+  updates: AppUpdateService,
+  previewLifetime: {
+    get(event: IpcMainInvokeEvent): number | null
+    assert(event: IpcMainInvokeEvent, lifetime: number): void
+  }
 ): void {
   register(
     ipc,
@@ -92,7 +98,13 @@ export function registerProductIpcHandlers(
     emptyRequestSchema,
     productStateResultSchema,
     assertTrustedRenderer,
-    async () => controller().getState()
+    async (_request, event) => {
+      event.sender.send(
+        productIpcChannels.panelLifetimeChanged,
+        panelLifetimeEventSchema.parse({ lifetime: previewLifetime.get(event) })
+      )
+      return controller().getState()
+    }
   )
   register(
     ipc,
@@ -272,14 +284,16 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.startPreview,
-    startSessionRequestSchema,
+    scopedPreviewRequestSchema(startSessionRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async (request) => {
+    async ({ request, lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
       await diagnostics.profileAction(
         'ProfilePreview',
         { profileId: request.profile.id, kind: request.kind },
-        () => controller().startPreview(request.profile, request.kind)
+        () => controller().startPreview(request.profile, request.kind, assertCurrent)
       )
       return null
     }
@@ -287,10 +301,11 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.updatePreview,
-    previewUpdateRequestSchema,
+    scopedPreviewRequestSchema(previewUpdateRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async (request) => {
+    async ({ request, lifetime }, event) => {
+      previewLifetime.assert(event, lifetime)
       await controller().updatePreview(request.profileId, request.targets, request.draft)
       return null
     }
@@ -298,18 +313,23 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.confirmPreview,
-    commitSessionRequestSchema,
+    scopedPreviewRequestSchema(commitSessionRequestSchema),
     profileResultSchema,
     assertTrustedRenderer,
-    async (request) => controller().confirmPreview(request.profile, request.activation)
+    async ({ request, lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
+      return controller().confirmPreview(request.profile, request.activation, assertCurrent)
+    }
   )
   register(
     ipc,
     productIpcChannels.cancelPreview,
-    emptyRequestSchema,
+    scopedPreviewRequestSchema(emptyRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async () => {
+    async ({ lifetime }, event) => {
+      previewLifetime.assert(event, lifetime)
       await diagnostics.profileAction('ProfilePreviewCancel', {}, () =>
         controller().cancelPreview()
       )
@@ -338,10 +358,11 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.hideMiniPanel,
-    emptyRequestSchema,
+    scopedPreviewRequestSchema(emptyRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async () => {
+    async ({ lifetime }, event) => {
+      previewLifetime.assert(event, lifetime)
       await hideMiniPanel()
       return null
     }

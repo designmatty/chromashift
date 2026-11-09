@@ -61,8 +61,12 @@ function setup() {
     isVisible: window.isVisible,
     flushWindowState: vi.fn(),
     requestShutdown: vi.fn(),
-    cancelForPanelHide: vi.fn((reason: 'close' | 'handoff', onCancelled: () => void) =>
-      preview.cancelForPanelHide(reason, onCancelled)
+    getPanelHideScope: () => preview.panelHideScope,
+    getPanelOpenVersion: () => panels.getPanelOpenVersion('app'),
+    beginPanelHide: () => panels.endPanelLifetime('app'),
+    cancelForPanelHide: vi.fn(
+      (reason: 'close' | 'handoff', onCancelled: () => void, scope: number) =>
+        preview.cancelForPanelHide(reason, onCancelled, scope)
     ),
     notifyClosed: vi.fn(),
     waitForHandoffResponse: vi.fn(async () => undefined),
@@ -109,7 +113,123 @@ function setup() {
   }
 }
 
+function holdRestore(native: FakeNativeDisplayPort): { entered: Promise<void>; release(): void } {
+  let enter!: () => void
+  let release!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const restore = native.restoreDisplay.bind(native)
+  vi.spyOn(native, 'restoreDisplay').mockImplementationOnce(async (id) => {
+    enter()
+    await gate
+    return restore(id)
+  })
+  return { entered, release }
+}
+
 describe('AppPanelCloseController', () => {
+  it('preserves the new Edit and window reopened during caption-close restoration', async () => {
+    const h = setup()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    const closing = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const editing = h.start('edit')
+    gate.release()
+    await Promise.all([closing, editing])
+    expect(h.preview.state).toMatchObject({ state: 'active', kind: 'edit' })
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.window.destroy).not.toHaveBeenCalled()
+  })
+
+  it('closes a reopened editor when a second explicit close arrives during the older rollback', async () => {
+    const h = setup()
+    await h.start('edit')
+    h.panels.openMiniPanel()
+    const gate = holdRestore(h.native)
+    const handoff = h.controller.handleClose(h.event, 'handoff')
+    await gate.entered
+    h.panels.openAppPanel()
+    const editing = h.start('edit')
+    const closing = h.controller.handleClose(h.event)
+    expect(closing).toBe(handoff)
+    gate.release()
+    await Promise.all([handoff, editing, closing])
+    expect(h.preview.state).toEqual({ state: 'inactive' })
+    expect(h.native.restored).toEqual(['display:one', 'display:one'])
+    expect(h.window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('honors a second close after reopening even if no new preview has started', async () => {
+    const h = setup()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    const first = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const second = h.controller.handleClose(h.event)
+    gate.release()
+    await Promise.all([first, second])
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('reverts a reopened Edit on a second app-to-mini handoff during the first rollback', async () => {
+    const h = setup()
+    await h.start('edit')
+    h.panels.openMiniPanel()
+    const gate = holdRestore(h.native)
+    const first = h.controller.handleClose(h.event, 'handoff')
+    await gate.entered
+    h.panels.openAppPanel()
+    const editing = h.start('edit')
+    h.panels.openMiniPanel()
+    const second = h.controller.handleClose(h.event, 'handoff')
+    gate.release()
+    await Promise.all([first, second, editing])
+    expect(h.preview.state).toEqual({ state: 'inactive' })
+    expect(h.native.restored).toEqual(['display:one', 'display:one'])
+    expect(h.ports.waitForHandoffResponse).toHaveBeenCalledTimes(2)
+    expect(h.window.destroy).toHaveBeenCalledOnce()
+    expect(h.isMiniVisible()).toBe(true)
+  })
+
+  it('coalesces two closes during restoration without another restore or release', async () => {
+    const h = setup()
+    await h.start('override')
+    const gate = holdRestore(h.native)
+    const first = h.controller.handleClose(h.event)
+    await gate.entered
+    const second = h.controller.handleClose(h.event)
+    expect(first).toBe(second)
+    gate.release()
+    await Promise.all([first, second])
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('keeps failed restoration owned when a reopened Edit queues behind close', async () => {
+    const h = setup()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.native.failRestoreDisplayIds.add('display:one')
+    const closing = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const editing = expect(h.start('edit')).rejects.toThrow('pending displays')
+    const calls = h.native.calls.length
+    gate.release()
+    await Promise.all([closing, editing])
+    expect(h.preview.state).toEqual({ state: 'restorePending', displayIds: ['display:one'] })
+    expect(h.native.calls.slice(calls).filter((call) => call.operation === 'apply')).toEqual([])
+    expect(h.window.destroy).not.toHaveBeenCalled()
+    expect(h.ports.errors.showError).toHaveBeenCalledOnce()
+  })
   it('prevents close while rollback is pending and releases only after it succeeds', async () => {
     const { controller, ports, window, event } = setup()
     let finish!: () => void
@@ -140,7 +260,7 @@ describe('AppPanelCloseController', () => {
     })
   })
 
-  it('restores a preview queued during close before releasing the renderer', async () => {
+  it('restores a preview admitted before close before releasing the renderer', async () => {
     const { controller, ports, native, event, start, preview, window } = setup()
     await start()
     let releaseRestore!: () => void
@@ -172,9 +292,11 @@ describe('AppPanelCloseController', () => {
       return apply(displayId, color)
     })
 
-    const closing = controller.handleClose(event)
-    await restoring
+    // A replacement start first restores the existing session, then applies.
+    // Closing must drain that already admitted start before renderer release.
     const starting = start('preview')
+    await restoring
+    const closing = controller.handleClose(event)
     releaseRestore()
     await applying
     expect(window.destroy).not.toHaveBeenCalled()
@@ -225,10 +347,10 @@ describe('AppPanelCloseController', () => {
     expect(ports.notifyClosed).toHaveBeenCalledOnce()
   })
 
-  it('drains a start queued immediately after close with no active session', async () => {
+  it('drains a start queued immediately before close with no active session', async () => {
     const { controller, event, start, preview, native, window } = setup()
-    const closing = controller.handleClose(event)
     const starting = start()
+    const closing = controller.handleClose(event)
 
     await starting
     await closing

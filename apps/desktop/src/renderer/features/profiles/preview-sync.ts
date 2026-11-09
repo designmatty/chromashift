@@ -7,13 +7,19 @@ export const PREVIEW_SYNC_DEBOUNCE_MS = 120
 export type PreviewSyncKind = 'edit' | 'override'
 
 export interface PreviewSyncPort {
-  startPreview(profile: ColorProfile, kind: PreviewSyncKind): Promise<ProductResult<null>>
+  getPanelLifetime?(): number | null
+  startPreview(
+    profile: ColorProfile,
+    kind: PreviewSyncKind,
+    lifetime?: number
+  ): Promise<ProductResult<null>>
   updatePreview(
     profileId: string,
     targets: ReturnType<typeof activeColorTargets>,
-    draft?: ColorProfile
+    draft?: ColorProfile,
+    lifetime?: number
   ): Promise<ProductResult<null>>
-  cancelPreview(): Promise<ProductResult<null>>
+  cancelPreview(lifetime?: number): Promise<ProductResult<null>>
 }
 
 /**
@@ -44,6 +50,11 @@ export class PreviewSyncSession {
   public schedule(draft: ColorProfile, session: PreviewState): void {
     this.cancelScheduled()
     const generation = this.#generation
+    // Capture admission when the user edits, before the debounce can outlive
+    // this panel opening. Main checks it again when the request arrives.
+    const lifetime = this.port.getPanelLifetime?.()
+    if (lifetime === null) return
+    const scope: [] | [number] = lifetime === undefined ? [] : [lifetime]
     this.#scheduledSend = () => {
       this.#timer = undefined
       this.#scheduledSend = undefined
@@ -64,7 +75,7 @@ export class PreviewSyncSession {
         ) {
           if (this.#promotedProfileId !== draft.id) {
             const promoted = await run(
-              this.port.startPreview({ ...draft, displays: session.targets }, 'edit'),
+              this.port.startPreview({ ...draft, displays: session.targets }, 'edit', ...scope),
               this.onError
             )
             if (promoted === undefined || generation !== this.#generation) return
@@ -72,7 +83,7 @@ export class PreviewSyncSession {
           }
           this.#needsStart = false
           const updated = await run(
-            this.port.updatePreview(draft.id, activeColorTargets(draft), draft),
+            this.port.updatePreview(draft.id, activeColorTargets(draft), draft, ...scope),
             this.onError
           )
           if (updated !== undefined) this.onError(null)
@@ -84,8 +95,8 @@ export class PreviewSyncSession {
           session.kind === this.kind &&
           session.profileId === draft.id
         const request = joinsCurrentSession
-          ? this.port.updatePreview(draft.id, activeColorTargets(draft), draft)
-          : this.port.startPreview(draft, this.kind)
+          ? this.port.updatePreview(draft.id, activeColorTargets(draft), draft, ...scope)
+          : this.port.startPreview(draft, this.kind, ...scope)
         const result = await run(request, this.onError)
         if (result !== undefined && generation === this.#generation) {
           this.#needsStart = false
@@ -130,14 +141,19 @@ export class PreviewSyncSession {
     this.#promotedProfileId = null
     const pending = [...this.#pending]
     const previousRollback = this.#rollback
+    const lifetime = this.port.getPanelLifetime?.()
     const rollback = (async () => {
       await previousRollback
       await Promise.allSettled(pending)
+      if (lifetime === null) return true
       let failure: ProductError | null = null
-      const result = await run(this.port.cancelPreview(), (error) => {
-        failure = error
-        this.onError(error)
-      })
+      const result = await run(
+        lifetime === undefined ? this.port.cancelPreview() : this.port.cancelPreview(lifetime),
+        (error) => {
+          failure = error
+          this.onError(error)
+        }
+      )
       if (failure !== null && throwOnError) throw failure
       if (result !== undefined) this.onError(null)
       return result !== undefined

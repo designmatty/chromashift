@@ -6,6 +6,8 @@ import { UpdateChecker } from '@main/update-checker.js'
 import { AppUpdateService } from '@main/app-update-service.js'
 import { productIpcChannels } from '@shared/product-api.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
+import { PanelController } from '@main/panel-controller.js'
+import type { ProductController } from '@main/product-controller.js'
 
 function harness() {
   const handlers = new Map<
@@ -20,12 +22,22 @@ function harness() {
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json([]))
   const installUpdate = vi.fn(async () => true)
   const hideMiniPanel = vi.fn(async () => undefined)
+  const getController = vi.fn<() => ProductController | undefined>(() => undefined)
+  const panels = new PanelController(
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined
+  )
+  panels.openMiniPanel()
   registerProductIpcHandlers(
     {
       handle: (name: string, handler: typeof handlers extends Map<string, infer T> ? T : never) =>
         handlers.set(name, handler)
     } as unknown as IpcMain,
-    () => undefined,
+    getController,
     trusted,
     async () => true,
     () => {},
@@ -45,12 +57,92 @@ function harness() {
     new AppUpdateService({
       checker: new UpdateChecker({ currentVersion: '0.1.0-preview.8', fetch }),
       requestExit: installUpdate
-    })
+    }),
+    {
+      get: () => panels.getPanelLifetime('mini'),
+      assert: (_event, lifetime) => panels.assertPanelLifetime('mini', lifetime)
+    }
   )
   const invoke = (name: string, input: unknown = {}) =>
     handlers.get(name)!({} as IpcMainInvokeEvent, input)
-  return { copy, download, clear, write, trusted, invoke, fetch, installUpdate, hideMiniPanel }
+  return {
+    copy,
+    download,
+    clear,
+    write,
+    trusted,
+    invoke,
+    fetch,
+    installUpdate,
+    hideMiniPanel,
+    panels,
+    getController
+  }
 }
+
+describe('preview lifetime IPC', () => {
+  it('rejects stale starts, updates, commits and cancels after close and after reopening', async () => {
+    const h = harness()
+    const product = {
+      startPreview: vi.fn(async () => undefined),
+      updatePreview: vi.fn(async () => undefined),
+      confirmPreview: vi.fn(),
+      cancelPreview: vi.fn(async () => undefined)
+    }
+    h.getController.mockReturnValue(product as unknown as ProductController)
+    const lifetime = h.panels.getPanelLifetime('mini')!
+    const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
+    const requests = [
+      [productIpcChannels.startPreview, { profile, kind: 'override' }],
+      [productIpcChannels.updatePreview, { profileId: profile.id, targets: [] }],
+      [productIpcChannels.confirmPreview, { profile, activation: 'preserve' }],
+      [productIpcChannels.cancelPreview, {}],
+      [productIpcChannels.hideMiniPanel, {}]
+    ] as const
+    h.panels.endPanelLifetime('mini')
+    for (const reopen of [false, true]) {
+      if (reopen) h.panels.openMiniPanel()
+      for (const [channel, request] of requests) {
+        expect(await h.invoke(channel, { lifetime, request })).toMatchObject({
+          ok: false,
+          error: { code: 'CONFLICT' }
+        })
+      }
+    }
+    for (const method of Object.values(product)) expect(method).not.toHaveBeenCalled()
+    expect(
+      await h.invoke(productIpcChannels.startPreview, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: { profile, kind: 'override' }
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.startPreview).toHaveBeenCalledOnce()
+  })
+
+  it('requires validated lifetime envelopes and a trusted sender', async () => {
+    const h = harness()
+    for (const input of [
+      {},
+      { lifetime: -1, request: {} },
+      { lifetime: 1, request: {}, extra: true }
+    ]) {
+      expect(await h.invoke(productIpcChannels.cancelPreview, input)).toMatchObject({
+        ok: false,
+        error: { code: 'INVALID_REQUEST' }
+      })
+    }
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    await expect(
+      h.invoke(productIpcChannels.cancelPreview, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: {}
+      })
+    ).rejects.toThrow('Untrusted renderer')
+    expect(h.getController).not.toHaveBeenCalled()
+  })
+})
 
 describe('mini-panel close IPC', () => {
   it('waits for rollback and returns restoration failure instead of silent success', async () => {
@@ -63,10 +155,15 @@ describe('mini-panel close IPC', () => {
         })
     )
     const settled = vi.fn()
-    const closing = h.invoke(productIpcChannels.hideMiniPanel).then((result) => {
-      settled()
-      return result
-    })
+    const closing = h
+      .invoke(productIpcChannels.hideMiniPanel, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: {}
+      })
+      .then((result) => {
+        settled()
+        return result
+      })
     await Promise.resolve()
     expect(h.hideMiniPanel).toHaveBeenCalledOnce()
     expect(settled).not.toHaveBeenCalled()
