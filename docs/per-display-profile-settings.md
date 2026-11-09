@@ -284,6 +284,21 @@ Promotion from
 Override to Edit reuses matching targets without restoring, recapturing, or writing
 to displays. The separate inverted override banner is removed.
 
+Closing the app panel to the tray silently reverts an unsaved Edit or Temporary
+override through the existing serialized rollback. The mini panel's close
+control and Escape also revert its Temporary override. Rollback waits for
+in-flight writes and restores the prior automatic or manual target; it never
+saves the draft. A failed restoration retains pending tracking and Safety
+blocked with Retry. The app's existing close-failure dialog stays open for retry;
+the mini panel remains visible with its Retry control.
+
+Switching panels is a handoff. Mini-to-app carries a Temporary override into the
+editable draft, including through Open settings. App-to-mini carries a Temporary
+override and keeps it applied, but rolls back an Edit because the mini panel
+cannot edit or save it. Minimizing the app keeps unsaved edits and overrides.
+Windows outside clicks do not close the mini panel. A close configured to quit
+uses the normal unsaved-quit dialog described below.
+
 The mini panel edits one explicitly selected display at a time and shows the same
 icons and per-control neutral reset actions. `Update profile` saves the complete
 temporary draft across touched displays; `Discard changes` rolls the session back.

@@ -345,13 +345,13 @@ try {
   })
 }
 
-async function verifyNativeQuitPrompt(debuggerClient) {
+async function verifyNativeQuitPrompt(debuggerClient, kind = 'edit') {
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const state = await window.chromaShift.getState()
       const profile = state.value.configuration.profiles.find((item) => item.id !== 'default')
       const draft = { ...profile, name: profile.name + ' quit check' }
-      const result = await window.chromaShift.startPreview(draft, 'edit')
+      const result = await window.chromaShift.startPreview(draft, ${JSON.stringify(kind)})
       if (!result.ok) throw new Error(result.error.message)
       history.replaceState({}, '', location.pathname)
     })()`,
@@ -371,7 +371,7 @@ async function verifyNativeQuitPrompt(debuggerClient) {
   const exitRequested = debuggerClient.send('Runtime.evaluate', {
     expression: 'void window.chromaShift.requestExit()'
   }).then(() => null, (error) => error)
-  const path = join(screenshotDirectory, 'unsaved-quit-prompt-native.png')
+  const path = join(screenshotDirectory, `unsaved-quit-${kind}-prompt-native.png`)
   const command = `
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type -TypeDefinition @'
@@ -1527,6 +1527,289 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
       return deleted.ok
     })()`,
     'Could not return to the Smoke profile preview and remove the preview-switch fixture.'
+  )
+}
+
+// Exercise real panel lifecycles. Reloading a renderer cannot test close reasons.
+async function verifyPanelCloseLifecycle() {
+  const evaluate = async (expression) => {
+    const result = await debuggerClient.send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
+    return result.result.value
+  }
+  const saved = await evaluate(`(async () => {
+    const cancelled = await window.chromaShift.cancelPreview()
+    if (!cancelled.ok) throw new Error(cancelled.error.message)
+    const state = await window.chromaShift.getState()
+    return state.value.configuration.profiles.find(profile => profile.name === 'Smoke profile')
+  })()`)
+  if (!saved) throw new Error('Panel-close checks require the saved Smoke profile.')
+  const prior = new Map()
+  for (const display of guardedDisplays) {
+    prior.set(
+      display.id,
+      displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
+    )
+  }
+  const attach = async (mini) => {
+    const target = await waitForDebuggerTarget(
+      debuggingPort,
+      (candidate) => candidate.url.includes('panel=mini') === mini
+    )
+    const previous = debuggerClient
+    debuggerClient = await connectToDebugger(target.webSocketDebuggerUrl)
+    for (const domain of ['Runtime', 'Page', 'Log']) await debuggerClient.send(`${domain}.enable`)
+    debuggerClient.events.push(...previous.events)
+    previous.close()
+    await waitForExpression(
+      debuggerClient,
+      `document.visibilityState === 'visible' && document.querySelector('[data-part="${mini ? 'mini-panel' : 'main-panel'}"]') !== null`,
+      `The ${mini ? 'mini' : 'app'} panel did not become visible.`
+    )
+  }
+  const reopenApp = async () => {
+    const reopen = spawn(electronPath, [`--user-data-dir=${userDataDirectory}`, '.'], {
+      cwd: desktopDirectory,
+      env: environment,
+      stdio: 'ignore',
+      windowsHide: true
+    })
+    await waitForExit(reopen)
+    await attach(false)
+  }
+  const dirty = async (kind) => {
+    await evaluate(`(async () => {
+      const draft = structuredClone(${JSON.stringify(saved)})
+      draft.displays.find(target => target.displayId === ${JSON.stringify(guardedProductDisplayId)}).color.brightness = 56
+      const result = await window.chromaShift.startPreview(draft, ${JSON.stringify(kind)})
+      if (!result.ok) throw new Error(result.error.message)
+    })()`)
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'active' &&
+        result.value.preview.kind === ${JSON.stringify(kind)} && result.value.preview.unsavedChanges &&
+        document.querySelector('[data-part="unsaved-changes-actions"]') !== null
+    })()`,
+      `The dirty ${kind} did not hydrate before panel lifecycle coverage.`
+    )
+  }
+  const assertPrior = async (action) => {
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const result = await window.chromaShift.getState()
+      return result.ok && result.value.preview.state === 'inactive' &&
+        result.value.chromaShift.status === 'active' &&
+        result.value.activation.mode.kind === 'manual' &&
+        result.value.activation.mode.profileId === ${JSON.stringify(saved.id)} &&
+        JSON.stringify(result.value.configuration.profiles.find(profile => profile.id === ${JSON.stringify(saved.id)})) === ${JSON.stringify(JSON.stringify(saved))}
+    })()`,
+      `${action} did not revert the draft to the prior manual target.`
+    )
+    for (const display of guardedDisplays) {
+      const restored = await waitForRestoredDisplayState(
+        restorationGuard,
+        display.id,
+        prior.get(display.id)
+      )
+      if (displayStateFingerprint(restored) !== prior.get(display.id)) {
+        throw new Error(`${action} did not restore exact native state for ${display.id}.`)
+      }
+    }
+  }
+  const toMini = async () => {
+    // Use the main-owned command used by the tray and the mini shortcut.
+    await evaluate('void window.chromaShift.showMiniPanel()')
+    await waitForNoDebuggerTarget(
+      debuggingPort,
+      (candidate) => !candidate.url.includes('panel=mini')
+    )
+    await attach(true)
+  }
+  const toApp = async (label = 'App view') => {
+    await evaluate(`document.querySelector('[aria-label="${label}"]')?.click()`)
+    await attach(false)
+  }
+  const clickOutside = async () => {
+    // Click only a window owned by this fixture, then restore the cursor.
+    await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftOutsideClick {
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+}
+'@
+$form = [System.Windows.Forms.Form]::new()
+$form.Text = 'ChromaShift smoke outside-click fixture'
+$form.Size = [System.Drawing.Size]::new(260, 120)
+$form.StartPosition = 'CenterScreen'
+$form.TopMost = $true
+$cursor = [System.Windows.Forms.Cursor]::Position
+$timer = [System.Windows.Forms.Timer]::new()
+$timer.Interval = 400
+$timer.Add_Tick({ $timer.Stop(); $form.Close() })
+$form.Add_Shown({
+  [System.Windows.Forms.Cursor]::Position = $form.PointToScreen([System.Drawing.Point]::new(100, 50))
+  [ChromaShiftOutsideClick]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+  [ChromaShiftOutsideClick]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+  $timer.Start()
+})
+try { [void]$form.ShowDialog() }
+finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $form.Dispose() }
+`
+      ],
+      { windowsHide: true, timeout: timeoutMilliseconds }
+    )
+  }
+
+  for (const kind of ['edit', 'override']) {
+    await dirty(kind)
+    const { windowId } = await debuggerClient.send('Browser.getWindowForTarget')
+    await debuggerClient.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { windowState: 'minimized' }
+    })
+    await waitForExpression(
+      debuggerClient,
+      `document.visibilityState === 'hidden'`,
+      'The app did not minimize.'
+    )
+    await delay(400)
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' && state.value.preview.unsavedChanges
+    })()`,
+      `Minimizing discarded the ${kind}.`
+    )
+    await debuggerClient.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { windowState: 'normal' }
+    })
+    await focusNativeApp(electron.pid)
+    await closeMainWindow(electron.pid)
+    await waitForNoDebuggerTarget(
+      debuggingPort,
+      (candidate) => !candidate.url.includes('panel=mini')
+    )
+    await reopenApp()
+    await assertPrior(`App caption close with ${kind}`)
+  }
+
+  await dirty('edit')
+  await toMini()
+  await assertPrior('App to mini with Edit')
+  await toApp()
+
+  await dirty('override')
+  const applied = new Map()
+  for (const display of guardedDisplays) {
+    applied.set(
+      display.id,
+      displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
+    )
+  }
+  for (const label of ['App view', 'Open settings']) {
+    await toMini()
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' &&
+        state.value.preview.kind === 'override' && state.value.preview.unsavedChanges &&
+        document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-valuenow') === '56'
+    })()`,
+      'App to mini did not carry the temporary override.'
+    )
+    await clickOutside()
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return document.visibilityState === 'visible' && state.ok &&
+        state.value.preview.state === 'active' && state.value.preview.unsavedChanges
+    })()`,
+      'An outside click closed the Windows mini panel or discarded the override.'
+    )
+    await toApp(label)
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' &&
+        state.value.preview.kind === 'override' && state.value.preview.unsavedChanges &&
+        document.querySelector('[data-part="unsaved-changes-actions"]') !== null
+    })()`,
+      `Mini ${label} did not carry the override into the app draft.`
+    )
+    for (const display of guardedDisplays) {
+      if (
+        displayStateFingerprint(await restorationGuard.getDisplayState(display.id)) !==
+        applied.get(display.id)
+      ) {
+        throw new Error(`Panel handoff changed the override on ${display.id}.`)
+      }
+    }
+  }
+  await evaluate('window.chromaShift.cancelPreview()')
+  await assertPrior('Discard after handoffs')
+
+  for (const action of ['close control', 'Escape']) {
+    await toMini()
+    await evaluate(`(async () => {
+      const draft = structuredClone(${JSON.stringify(saved)})
+      draft.displays.find(target => target.displayId === ${JSON.stringify(guardedProductDisplayId)}).color.brightness = 56
+      const result = await window.chromaShift.startPreview(draft, 'override')
+      if (!result.ok) throw new Error(result.error.message)
+    })()`)
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[data-part="color-control"] [role="slider"]')?.getAttribute('aria-valuenow') === '56'`,
+      `The mini ${action} fixture did not hydrate.`
+    )
+    if (action === 'close control') {
+      await evaluate(`document.querySelector('[aria-label="Close mini panel"]')?.click()`)
+    } else {
+      await debuggerClient.send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27
+      })
+      await debuggerClient.send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27
+      })
+    }
+    await waitForExpression(
+      debuggerClient,
+      `document.visibilityState === 'hidden'`,
+      `Mini ${action} did not hide the panel.`
+    )
+    await assertPrior(`Mini ${action}`)
+    await evaluate(`window.chromaShift.openAppPanel('profiles')`)
+    await attach(false)
+    await assertPrior(`Reopen after mini ${action}`)
+  }
+  globalThis.console.log(
+    'Panel close reverted Edit and overrides; handoffs, dirty minimize, and exact native restoration passed.'
   )
 }
 
@@ -3330,6 +3613,8 @@ async function runSmoke() {
     throw new Error('Could not prepare a manual profile for mini-panel smoke coverage.')
   }
 
+  await verifyPanelCloseLifecycle()
+
   await waitForExpression(
     debuggerClient,
     `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
@@ -4322,7 +4607,7 @@ async function runSmoke() {
     throw new Error('The production mini panel exposed its development debugger button.')
   }
 
-  await verifyNativeQuitPrompt(debuggerClient)
+  for (const kind of ['edit', 'override']) await verifyNativeQuitPrompt(debuggerClient, kind)
 
   const failures = debuggerClient.events.filter(
     (event) =>

@@ -61,8 +61,12 @@ function setup() {
     isVisible: window.isVisible,
     flushWindowState: vi.fn(),
     requestShutdown: vi.fn(),
-    cancelNonOverride: vi.fn((onCancelled: () => void) => preview.cancelNonOverride(onCancelled)),
+    cancelForPanelHide: vi.fn((reason: 'close' | 'handoff', onCancelled: () => void) =>
+      preview.cancelForPanelHide(reason, onCancelled)
+    ),
     notifyClosed: vi.fn(),
+    waitForHandoffResponse: vi.fn(async () => undefined),
+    notifyMinimized: vi.fn(),
     releaseToTray: vi.fn((event) => windowController.handleClose(event, window)),
     errors: {
       show: vi.fn(() => panels.openAppPanel()),
@@ -109,8 +113,8 @@ describe('AppPanelCloseController', () => {
   it('prevents close while rollback is pending and releases only after it succeeds', async () => {
     const { controller, ports, window, event } = setup()
     let finish!: () => void
-    ports.cancelNonOverride.mockImplementationOnce(
-      (onCancelled) =>
+    ports.cancelForPanelHide.mockImplementationOnce(
+      (_reason, onCancelled) =>
         new Promise<void>((resolve) => {
           finish = () => {
             onCancelled()
@@ -320,7 +324,7 @@ describe('AppPanelCloseController', () => {
 
     await controller.handleClose(event)
 
-    expect(ports.cancelNonOverride).toHaveBeenCalledTimes(2)
+    expect(ports.cancelForPanelHide).toHaveBeenCalledTimes(2)
     expect(native.restored).toEqual(['display:one'])
     expect(window.destroy).toHaveBeenCalledOnce()
   })
@@ -335,10 +339,8 @@ describe('AppPanelCloseController', () => {
 
       expect(window.destroy).toHaveBeenCalledOnce()
       expect(ports.errors.showError).not.toHaveBeenCalled()
-      expect(native.restored).toEqual(kind === 'edit' || kind === 'preview' ? ['display:one'] : [])
-      expect(preview.state).toMatchObject(
-        kind === 'override' ? { state: 'active', kind: 'override' } : { state: 'inactive' }
-      )
+      expect(native.restored).toEqual(kind !== 'inactive' ? ['display:one'] : [])
+      expect(preview.state).toMatchObject({ state: 'inactive' })
     }
   )
 
@@ -380,7 +382,7 @@ describe('AppPanelCloseController', () => {
     })
 
     // The hidden window's delayed close has fired, but rollback is not done.
-    const closing = controller.handleClose(event)
+    const closing = controller.handleClose(event, 'handoff')
     await restoring
     panels.openAppPanel()
     releaseRestore()
@@ -414,7 +416,7 @@ describe('AppPanelCloseController', () => {
 
   it('coalesces repeated close attempts while guidance is open', async () => {
     const { controller, ports, event, window } = setup()
-    ports.cancelNonOverride.mockRejectedValue(new PreviewRestoreError(['display:one: failed']))
+    ports.cancelForPanelHide.mockRejectedValue(new PreviewRestoreError(['display:one: failed']))
     let dismiss!: () => void
     const opened = new Promise<void>((resolve) => {
       ports.errors.showError.mockImplementationOnce(() => {
@@ -429,7 +431,7 @@ describe('AppPanelCloseController', () => {
     const second = controller.handleClose(event)
     expect(first).toBe(second)
     expect(ports.errors.showError).toHaveBeenCalledOnce()
-    expect(ports.cancelNonOverride).toHaveBeenCalledOnce()
+    expect(ports.cancelForPanelHide).toHaveBeenCalledOnce()
     dismiss()
     await first
     expect(window.destroy).not.toHaveBeenCalled()
@@ -440,7 +442,7 @@ describe('AppPanelCloseController', () => {
     'does not release or show guidance if %s during rollback',
     async (state) => {
       const { controller, ports, event, window, setExiting } = setup()
-      ports.cancelNonOverride.mockImplementationOnce(async () => {
+      ports.cancelForPanelHide.mockImplementationOnce(async () => {
         if (state === 'exiting') setExiting()
         else window.destroy()
         throw new PreviewRestoreError(['display:one: failed'])
@@ -462,9 +464,64 @@ describe('AppPanelCloseController', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(ports.flushWindowState).toHaveBeenCalledOnce()
     expect(ports.requestShutdown).toHaveBeenCalledOnce()
-    expect(ports.cancelNonOverride).not.toHaveBeenCalled()
+    expect(ports.cancelForPanelHide).not.toHaveBeenCalled()
     expect(window.destroy).not.toHaveBeenCalled()
     expect(ports.notifyClosed).not.toHaveBeenCalled()
+  })
+
+  it('carries an override through an explicit handoff even when caption close means shutdown', async () => {
+    const { controller, ports, event, start, preview, native, setShutdown, panels } = setup()
+    await start('override')
+    setShutdown()
+    panels.openMiniPanel()
+
+    await controller.handleClose(event, 'handoff')
+
+    expect(ports.requestShutdown).not.toHaveBeenCalled()
+    expect(ports.releaseToTray).toHaveBeenCalledOnce()
+    expect(preview.state).toMatchObject({ state: 'active', kind: 'override' })
+    expect(native.restored).toEqual([])
+  })
+
+  it('reverts Edit before the handoff grace period and keeps a newly reopened editor', async () => {
+    const { controller, ports, event, start, preview, native, panels, window } = setup()
+    await start('edit')
+    panels.openMiniPanel()
+    let entered!: () => void
+    const prepared = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    ports.waitForHandoffResponse.mockImplementationOnce(async () => {
+      entered()
+      await gate
+    })
+    const closing = controller.handleClose(event, 'handoff')
+    await prepared
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(native.restored).toEqual(['display:one'])
+    expect(window.destroy).not.toHaveBeenCalled()
+    panels.openAppPanel()
+    await start('edit')
+    release()
+    await closing
+    expect(preview.state).toMatchObject({ state: 'active', kind: 'edit' })
+    expect(native.restored).toEqual(['display:one'])
+    expect(window.destroy).not.toHaveBeenCalled()
+  })
+
+  it('honors a caption close arriving during a pending override handoff', async () => {
+    const { controller, ports, event, start, preview, native } = setup()
+    await start('override')
+    const handoff = controller.handleClose(event, 'handoff')
+    const closing = controller.handleClose(event)
+    await Promise.all([handoff, closing])
+    expect(preview.state).toEqual({ state: 'inactive' })
+    expect(native.restored).toEqual(['display:one'])
+    expect(ports.releaseToTray).toHaveBeenCalledOnce()
   })
 
   it('allows the native close during coordinated exit while flushing geometry', async () => {
@@ -475,8 +532,23 @@ describe('AppPanelCloseController', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(ports.flushWindowState).toHaveBeenCalledOnce()
-    expect(ports.cancelNonOverride).not.toHaveBeenCalled()
+    expect(ports.cancelForPanelHide).not.toHaveBeenCalled()
     expect(ports.releaseToTray).not.toHaveBeenCalled()
     expect(ports.logger.write).not.toHaveBeenCalled()
+  })
+
+  it.each(['edit', 'override'] as const)('keeps %s applied on minimize', async (kind) => {
+    const { controller, ports, start, preview, native } = setup()
+    await start(kind)
+    const state = preview.state
+    const calls = [...native.calls]
+
+    controller.handleMinimize()
+    await preview.waitForIdle()
+
+    expect(ports.notifyMinimized).toHaveBeenCalledOnce()
+    expect(preview.state).toEqual(state)
+    expect(native.calls).toEqual(calls)
+    expect(ports.releaseToTray).not.toHaveBeenCalled()
   })
 })

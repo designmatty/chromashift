@@ -5,6 +5,7 @@ import { DiagnosticsService } from '@main/diagnostics-service.js'
 import { UpdateChecker } from '@main/update-checker.js'
 import { AppUpdateService } from '@main/app-update-service.js'
 import { productIpcChannels } from '@shared/product-api.js'
+import { PreviewRestoreError } from '@main/preview-session-controller.js'
 
 function harness() {
   const handlers = new Map<
@@ -18,6 +19,7 @@ function harness() {
   const trusted = vi.fn()
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json([]))
   const installUpdate = vi.fn(async () => true)
+  const hideMiniPanel = vi.fn(async () => undefined)
   registerProductIpcHandlers(
     {
       handle: (name: string, handler: typeof handlers extends Map<string, infer T> ? T : never) =>
@@ -27,7 +29,7 @@ function harness() {
     trusted,
     async () => true,
     () => {},
-    () => {},
+    hideMiniPanel,
     () => {},
     () => {},
     () => {},
@@ -47,8 +49,47 @@ function harness() {
   )
   const invoke = (name: string, input: unknown = {}) =>
     handlers.get(name)!({} as IpcMainInvokeEvent, input)
-  return { copy, download, clear, write, trusted, invoke, fetch, installUpdate }
+  return { copy, download, clear, write, trusted, invoke, fetch, installUpdate, hideMiniPanel }
 }
+
+describe('mini-panel close IPC', () => {
+  it('waits for rollback and returns restoration failure instead of silent success', async () => {
+    const h = harness()
+    let reject!: (error: Error) => void
+    h.hideMiniPanel.mockImplementationOnce(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail
+        })
+    )
+    const settled = vi.fn()
+    const closing = h.invoke(productIpcChannels.hideMiniPanel).then((result) => {
+      settled()
+      return result
+    })
+    await Promise.resolve()
+    expect(h.hideMiniPanel).toHaveBeenCalledOnce()
+    expect(settled).not.toHaveBeenCalled()
+    reject(new PreviewRestoreError(['display:one: restore failed']))
+    expect(await closing).toMatchObject({
+      ok: false,
+      error: { code: 'OPERATION_FAILED', details: ['display:one: restore failed'] }
+    })
+  })
+
+  it('rejects untrusted and invalid close requests before rollback', async () => {
+    const h = harness()
+    expect(await h.invoke(productIpcChannels.hideMiniPanel, { reason: 'handoff' })).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_REQUEST' }
+    })
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    await expect(h.invoke(productIpcChannels.hideMiniPanel)).rejects.toThrow('Untrusted renderer')
+    expect(h.hideMiniPanel).not.toHaveBeenCalled()
+  })
+})
 
 describe('update IPC security', () => {
   it('validates senders before reading status, requesting releases, or opening the installer', async () => {

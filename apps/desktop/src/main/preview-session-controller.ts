@@ -15,6 +15,7 @@ import type {
 import type { PreviewState } from '@shared/product-api.js'
 import { profilesDiffer } from '@shared/unsaved-changes.js'
 import { describeError } from '@main/structured-logger.js'
+import type { PanelHideReason } from '@main/panel-controller.js'
 
 export interface PreviewNativePort {
   getDisplays(): Promise<Display[]>
@@ -381,15 +382,20 @@ export class PreviewSessionController {
     })
   }
 
-  /** Release the app renderer only when all preview work queued during close has drained. */
-  public async cancelNonOverride(onCancelled?: () => void): Promise<void> {
+  /** Drain preview writes before close; only a handoff may keep an override. */
+  public async cancelForPanelHide(
+    reason: PanelHideReason,
+    onCancelled?: () => void
+  ): Promise<void> {
     let ready = false
     while (!ready) {
       const version = this.#operationVersion
       ready = await this.#enqueue(async () => {
         if (
           this.#active !== null &&
-          (this.#recovery?.kind === 'teardown' || this.#active.kind !== 'override')
+          (reason === 'close' ||
+            this.#recovery?.kind === 'teardown' ||
+            this.#active.kind !== 'override')
         ) {
           const rollback = await this.#teardown()
           if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)

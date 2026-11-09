@@ -48,7 +48,7 @@ export function registerProductIpcHandlers(
   assertTrustedRenderer: (event: IpcMainInvokeEvent) => void,
   requestExit: () => Promise<boolean>,
   openAppPanel: (view?: AppPanelView) => void,
-  hideMiniPanel: () => void,
+  hideMiniPanel: () => void | Promise<void>,
   showMiniPanel: () => void,
   openMiniPanelDevTools: (event: IpcMainInvokeEvent) => void | Promise<void>,
   setMiniPanelView: (view: MiniPanelView, showColorTemperature: boolean) => void,
@@ -342,7 +342,7 @@ export function registerProductIpcHandlers(
     voidResultSchema,
     assertTrustedRenderer,
     async () => {
-      hideMiniPanel()
+      await hideMiniPanel()
       return null
     }
   )

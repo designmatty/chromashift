@@ -117,9 +117,10 @@ unchanged session to Edit without restore or recapture. Update profile saves whi
 preserving mode; a non-live profile keeps previewing its saved values. Discard
 reverts a non-live session to saved values in place; otherwise it rolls back.
 End preview, navigation away, close, or failure waits for pending writes and
-restores the prior automatic or manual target. Minimizing ends only a clean
-preview; unsaved edits stay applied. Ordinary mini-panel overrides survive app
-panel close. Focus loss does not end Preview.
+restores the prior automatic or manual target. Closing either panel to the tray silently
+reverts unsaved changes, including a temporary override. Panel handoffs carry
+over an override; app-to-mini handoff reverts an Edit. Minimizing ends only a clean
+preview; unsaved edits and overrides stay applied. Focus loss does not end Preview.
 If connected-display restoration cannot be confirmed, retain pending-restore
 tracking and enter Safety blocked. Retry, End preview, Discard, close, and shutdown
 must re-attempt restoration before releasing ownership. Disconnected retention

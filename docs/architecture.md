@@ -253,8 +253,9 @@ pointer-oriented, non-activating Electron surface: opening or interacting with i
 does not make ChromaShift the foreground application. The panel has an explicit
 close button, closes when the full app opens, and can be dragged by its header. A user
 position is persisted and clamped to a connected display; without one, the panel
-opens next to the tray. Quick color changes remain temporary while the panel is
-hidden and expose `Update profile` and `Discard changes`; profile selection discards
+opens next to the tray. Quick color changes expose `Update profile` and
+`Discard changes`. The close control and Escape silently roll back the override;
+opening the app carries it over as an unsaved draft. Profile selection discards
 temporary changes without a dialog and establishes
 a manual override until the user returns to Auto switch. Mini-panel footer actions
 open the corresponding Profiles, Displays, or Settings view in the
@@ -314,9 +315,12 @@ manual profile overrides, returns to automatic mode, restores original settings,
 and pauses, resumes, or retries display control. It exposes separate app- and
 mini-panel commands while preserving last-used-panel left-click behavior.
 Closing the window either releases its renderer to the tray or requests shutdown
-according to settings. `app-panel-close-controller.ts` waits for pending non-override
-preview/edit teardown before notifying the renderer or releasing it through the
-window controller. A genuine restore failure keeps the app panel open and visible
+according to settings. `app-panel-close-controller.ts` passes an explicit `close`
+or `handoff` reason to `PreviewSessionController.cancelForPanelHide`, which drains
+the existing serialized rollback before notifying the renderer or releasing it
+through the window controller. Close rolls back Preview, Edit, and Temporary
+override; app-to-mini handoff rolls back Edit and keeps a Temporary override.
+A genuine restore failure keeps the app panel open and visible
 and enters Safety blocked with pending display tracking. It uses the same
 retry/cancel guidance as shutdown; a later close or `Try again` re-attempts the
 native restore rather than treating an ended session as proof of restoration.
@@ -326,8 +330,16 @@ wording. The shared shell adapter is `restore-retry-dialog.ts`. Concurrent close
 drains, including an old and recovered renderer's windows, share the preview queue
 without invalidating one another's checkpoint. New session commands still force
 another drain before renderer release.
-Override sessions stay active when the app panel closes. An override already
-pending restoration is retried on close. Opening the app recreates the renderer from main-owned
+Closing either panel to the tray silently reverts unsaved changes through main-owned rollback.
+The mini close control and Escape share that path; failure keeps the mini panel
+visible with Safety blocked and Retry. Mini-to-app handoff hides the mini panel
+without ending its override. App-to-mini handoff releases the app renderer with
+an explicit handoff reason, including when caption close is configured to quit.
+Edit rollback starts immediately; only renderer release waits for the handoff
+response. Reopening the app during that grace period keeps the reopened renderer.
+Minimize keeps dirty edits and overrides; Windows outside clicks keep the mini
+panel open. An override already pending restoration is retried on close.
+Opening the app recreates the renderer from main-owned
 product state. ChromaShift holds a single-instance lock, so launching it again
 signals the existing tray process to recreate and focus the app panel instead
 of starting a second DisplayService owner. A hidden mini-panel renderer is
