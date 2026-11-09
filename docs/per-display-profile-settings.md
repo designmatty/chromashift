@@ -286,7 +286,8 @@ to displays. The separate inverted override banner is removed.
 
 Closing the app panel to the tray silently reverts an unsaved Edit or Temporary
 override through the existing serialized rollback. The mini panel's close
-control and Escape also revert its Temporary override. Rollback waits for
+control also reverts its Temporary override. On Windows the mini panel is not
+focusable, so the close control is the only way to close it. Rollback waits for
 in-flight writes and restores the prior automatic or manual target; it never
 saves the draft. A failed restoration retains pending tracking and Safety
 blocked with Retry. The app's existing close-failure dialog stays open for retry;

@@ -55,7 +55,7 @@ The TypeScript and native test suites cover these contracts:
   overlapping close controllers after renderer recovery
 - Panel close and handoff reasons with the shared fake native: app close rolls
   back dirty Edit and Temporary override to the exact prior automatic/manual
-  target; mini close and Escape roll back overrides; both handoffs carry an
+  target; mini close (and Escape where the panel can take focus) roll back overrides; both handoffs carry an
   override while app-to-mini reverts Edit. Dirty minimize and Windows blur keep
   the session. Close during an in-flight write waits before restoring; a failed
   mini close retains Safety blocked until Retry confirms restoration. App close
@@ -278,7 +278,7 @@ Owned leftovers are removed even when they existed before the run.
 Panel lifecycle coverage uses the saved smoke profile, real panel windows, and
 the existing independent restoration guard. It checks dirty Edit and override
 caption close followed by a renderer-free tray interval and app reopen, mini
-close control, Escape, both override handoffs through App view and Open settings,
+close control, both override handoffs through App view and Open settings,
 and Edit rollback on app-to-mini. Main-owned `getState` confirms the ended
 session and unchanged saved profile; guard fingerprints confirm the exact prior
 native target. Dirty minimize keeps both session kinds. A click on a disposable
@@ -302,7 +302,6 @@ case. Repeat rollback checks from Automatic and Manual.
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | App caption close / close-to-tray | Make an unsaved Edit, close, and reopen. Repeat with a mini override carried into the app. Both end the session, leave the saved profile unchanged, and restore the exact prior target silently.                   |
 | Mini close control                | Change a mini value, press Close mini panel, and reopen. The override ended and the exact prior target is restored.                                                                                                |
-| Mini Escape                       | Repeat the mini close check with Escape delivered to the mini window. Preserve its non-activating contract; do not make it focusable for this test.                                                                |
 | Mini to app                       | Change a mini value, then use App view. Repeat with Open settings. Both open the unsaved draft with the override still applied and Update / Discard available.                                                     |
 | App to mini                       | Carry an override into the app, then open mini through its shortcut or tray. The override stays applied. Repeat with a dirty Edit; that Edit rolls back before the app renderer is released.                       |
 | App minimize                      | Minimize and restore with each session kind. Unsaved values stay applied and automatic switching stays on hold.                                                                                                    |

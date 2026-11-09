@@ -254,7 +254,7 @@ does not make ChromaShift the foreground application. The panel has an explicit
 close button, closes when the full app opens, and can be dragged by its header. A user
 position is persisted and clamped to a connected display; without one, the panel
 opens next to the tray. Quick color changes expose `Update profile` and
-`Discard changes`. The close control and Escape silently roll back the override;
+`Discard changes`. The close control silently rolls back the override;
 opening the app carries it over as an unsaved draft. Profile selection discards
 temporary changes without a dialog and establishes
 a manual override until the user returns to Auto switch. Mini-panel footer actions
@@ -331,7 +331,7 @@ drains, including an old and recovered renderer's windows, share the preview que
 without invalidating one another's checkpoint. New session commands still force
 another drain before renderer release.
 Closing either panel to the tray silently reverts unsaved changes through main-owned rollback.
-The mini close control and Escape share that path; failure keeps the mini panel
+The mini close control uses that path; failure keeps the mini panel
 visible with Safety blocked and Retry. Mini-to-app handoff hides the mini panel
 without ending its override. App-to-mini handoff releases the app renderer with
 an explicit handoff reason, including when caption close is configured to quit.
