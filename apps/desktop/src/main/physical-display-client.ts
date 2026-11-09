@@ -119,6 +119,31 @@ export class PhysicalDisplayClient {
 
   public async getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
+    return this.#capabilityReport(displayId, endpoints)
+  }
+
+  // One fresh enumeration for the entire scan, with no per-panel re-enumeration.
+  public async getGammaLimitSupport(): Promise<Map<string, boolean>> {
+    const endpoints = await this.endpoint.getDisplays()
+    const support = new Map<string, boolean>()
+    for (const display of this.#groupDisplays(endpoints)) {
+      if (display.hdr) continue
+      const report = await this.#capabilityReport(
+        display.id,
+        endpoints.filter(
+          (endpoint) => physicalId(endpoint).toLowerCase() === display.id.toLowerCase()
+        )
+      )
+      if (report.capabilities.gamma.supported)
+        support.set(display.id.toLowerCase(), report.capabilities.brightness.supported)
+    }
+    return support
+  }
+
+  async #capabilityReport(
+    displayId: string,
+    endpoints: readonly Display[]
+  ): Promise<DisplayCapabilityReport> {
     const reports = await Promise.all(
       endpoints.map((display) => this.endpoint.getDisplayCapabilityReport(display.id))
     )
@@ -151,7 +176,14 @@ export class PhysicalDisplayClient {
       this.#baselineHashes.set(displayId.toLowerCase(), hash)
       await this.limits?.observeBaseline(displayId, hash)
     }
-    await this.limits?.refreshApplicability()
+    if (this.limits !== undefined) {
+      const report = await this.#capabilityReport(displayId, endpoints)
+      this.limits.observeCapabilities(
+        displayId,
+        endpoints.some((display) => display.hdr),
+        report.capabilities
+      )
+    }
     return {
       ...results[0]!,
       displayId,
@@ -185,7 +217,11 @@ export class PhysicalDisplayClient {
       )
     ) as DisplaySettings
     // Clamp after projection so learning and lookup use native's effective brightness.
-    await this.limits?.refreshApplicability()
+    this.limits?.observeCapabilities(
+      displayId,
+      endpoints.some((display) => display.hdr),
+      commonCapabilities
+    )
     const clamped = this.limits?.clampSettings(displayId, projected)
     if (clamped?.gamma !== undefined) projected.gamma = clamped.gamma
 

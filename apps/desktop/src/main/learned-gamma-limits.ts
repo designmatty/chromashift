@@ -19,6 +19,7 @@ import type { StructuredLogger } from '@main/structured-logger.js'
 interface GammaLimitDisplaySource {
   getDisplays(): Promise<Display[]>
   getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport>
+  getGammaLimitSupport?(): Promise<Map<string, boolean>>
 }
 
 /** Product data only. The native owner supplies hashes of immutable captured ramps. */
@@ -64,6 +65,10 @@ export class LearnedGammaLimits {
   public async refreshApplicability(): Promise<void> {
     this.#brightnessSupport.clear()
     if (this.#displaySource === undefined) return
+    if (this.#displaySource.getGammaLimitSupport !== undefined) {
+      this.#brightnessSupport = await this.#displaySource.getGammaLimitSupport()
+      return
+    }
     const displays = await this.#displaySource.getDisplays()
     const support = new Map<string, boolean>()
     for (const display of displays) {
@@ -73,6 +78,17 @@ export class LearnedGammaLimits {
         support.set(display.id.toLowerCase(), report.capabilities.brightness.supported)
     }
     this.#brightnessSupport = support
+  }
+
+  /** Reuse the current endpoint reports already read for capture or apply. */
+  public observeCapabilities(
+    displayId: string,
+    hdr: boolean,
+    capabilities: DisplayCapabilityReport['capabilities']
+  ): void {
+    const key = displayId.toLowerCase()
+    if (hdr || !capabilities.gamma.supported) this.#brightnessSupport.delete(key)
+    else this.#brightnessSupport.set(key, capabilities.brightness.supported)
   }
 
   public forgetBaseline(displayId: string): void {

@@ -6,7 +6,7 @@ import {
   JsonProfileRepository,
   type ColorProfile
 } from '@chromashift/core'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import { PhysicalDisplayClient } from '@main/physical-display-client.js'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
@@ -65,6 +65,36 @@ async function learnMax(s: Awaited<ReturnType<typeof setup>>) {
   await s.physical.applyDisplaySettings('display:one', target().color)
   s.native.gammaRanges.delete('display:one')
 }
+
+it('uses one endpoint snapshot per applicability scan and reuses apply capability reads', async () => {
+  const s = await setup()
+  const displays = vi.spyOn(s.native, 'getDisplays')
+  const capabilities = vi.spyOn(s.native, 'getDisplayCapabilityReport')
+  const counts: Record<string, { displays: number; capabilities: number }> = {}
+  const measure = (operation: string) => {
+    counts[operation] = {
+      displays: displays.mock.calls.length,
+      capabilities: capabilities.mock.calls.length
+    }
+    displays.mockClear()
+    capabilities.mockClear()
+  }
+  await s.limits.refreshApplicability()
+  measure('refresh')
+  await s.physical.captureBaseline('display:one')
+  measure('capture')
+  await s.physical.applyDisplaySettings('display:one', { brightness: 51, gamma: 1.1 })
+  measure('apply')
+  await s.physical.restoreDisplay('display:one')
+  measure('restore')
+  expect(counts).toEqual({
+    refresh: { displays: 1, capabilities: 1 },
+    capture: { displays: 1, capabilities: 1 },
+    apply: { displays: 1, capabilities: 1 },
+    restore: { displays: 1, capabilities: 0 }
+  })
+  expect(s.native.calls.map((call) => call.operation)).toEqual(['capture', 'apply', 'restore'])
+})
 
 it('does not permanently clamp an unopened profile against a previous-session baseline', async () => {
   const s = await setup()

@@ -13,6 +13,7 @@ import { verifyShortcuts } from './shortcuts-smoke.mjs'
 import { verifyCloseRetryGuidance } from './close-retry-smoke.mjs'
 import { verifyLearnedGammaLimits } from './learned-gamma-limits-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
+import { clickAppButton as clickReadyAppButton } from './smoke-app-actions.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
@@ -724,10 +725,7 @@ async function openProfileFromSidebar(debuggerClient, profileName) {
 }
 
 async function clickAppButton(debuggerClient, label, scope = '') {
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll(${JSON.stringify(`${scope} button`.trim())})]
-      .find((item) => item.textContent?.trim() === ${JSON.stringify(label)})?.click()`
-  })
+  await clickReadyAppButton(debuggerClient, label, scope, waitForExpression)
 }
 
 async function answerUnsavedChanges(debuggerClient, label) {
