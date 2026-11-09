@@ -17,6 +17,7 @@ export interface AppPanelClosePorts {
   getPanelHideScope(): number
   getPanelOpenVersion(): number
   beginPanelHide?(): void
+  renewPanelLifetime?(openVersion: number): void
   cancelForPanelHide(reason: PanelHideReason, onCancelled: () => void, scope: number): Promise<void>
   waitForHandoffResponse(): Promise<void>
   notifyClosed(): void
@@ -115,12 +116,13 @@ export class AppPanelCloseController {
           ...(error instanceof PreviewRestoreError ? { failures: error.failures } : {}),
           ...describeError(error)
         })
-        if (
-          !(error instanceof PreviewRestoreError) ||
-          this.ports.isDestroyed() ||
-          this.ports.isExiting()
-        )
+        if (this.ports.isDestroyed() || this.ports.isExiting()) return
+        if (!(error instanceof PreviewRestoreError)) {
+          // Rollback can succeed before resuming activation fails. The current
+          // visible opening still needs admission for subsequent preview edits.
+          if (this.ports.isVisible()) this.ports.renewPanelLifetime?.(openVersion)
           return
+        }
         if ((await showRestoreFailureGuidance(this.ports.errors)) === 'retry') {
           // The guidance itself raises the app. Retry still owns the original
           // restoration scope; it must not acquire a newer session.

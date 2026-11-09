@@ -401,9 +401,9 @@ export class PreviewSessionController {
     await this.#enqueue(async () => {
       // A reopened panel owns any newer session. Its start is serialized
       // behind the restoration owed by the closing panel.
-      if (this.#active !== null && this.#active.version > scope) return
       if (
         this.#active !== null &&
+        this.#active.version <= scope &&
         (reason === 'close' ||
           this.#recovery?.kind === 'teardown' ||
           this.#active.kind !== 'override')
@@ -411,6 +411,8 @@ export class PreviewSessionController {
         const rollback = await this.#teardown()
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
       }
+      // Completion belongs to the closing window even when a newer session
+      // now owns preview. The caller guards release against a newer opening.
       onCancelled?.()
     })
   }

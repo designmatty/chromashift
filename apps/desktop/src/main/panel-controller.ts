@@ -88,6 +88,10 @@ export class PanelController {
     return this.#opened[panel]
   }
 
+  public renewPanelLifetime(panel: PanelKind, openVersion: number): void {
+    if (this.#opened[panel] === openVersion) this.#openLifetime(panel)
+  }
+
   public assertPanelLifetime(panel: PanelKind, lifetime: number): void {
     if (this.#lifetimes[panel] !== lifetime) {
       throw new ProductConflictError('This preview request belongs to an earlier panel opening.')

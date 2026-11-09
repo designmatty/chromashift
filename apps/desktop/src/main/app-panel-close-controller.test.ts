@@ -64,6 +64,9 @@ function setup() {
     getPanelHideScope: () => preview.panelHideScope,
     getPanelOpenVersion: () => panels.getPanelOpenVersion('app'),
     beginPanelHide: () => panels.endPanelLifetime('app'),
+    renewPanelLifetime: vi.fn((openVersion: number) =>
+      panels.renewPanelLifetime('app', openVersion)
+    ),
     cancelForPanelHide: vi.fn(
       (reason: 'close' | 'handoff', onCancelled: () => void, scope: number) =>
         preview.cancelForPanelHide(reason, onCancelled, scope)
@@ -435,6 +438,82 @@ describe('AppPanelCloseController', () => {
     expect(window.destroy).toHaveBeenCalledOnce()
   })
 
+  it('renews admission after an aborted close without accepting the closed opening token', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    const closedLifetime = h.panels.getPanelLifetime('app')!
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.activation.cancelPreview.mockRejectedValueOnce(new Error('Activation target is unavailable.'))
+
+    const closing = h.controller.handleClose(h.event)
+    await gate.entered
+    expect(h.panels.getPanelLifetime('app')).toBeNull()
+    gate.release()
+    await closing
+
+    const renewedLifetime = h.panels.getPanelLifetime('app')!
+    expect(renewedLifetime).not.toBeNull()
+    expect(renewedLifetime).not.toBe(closedLifetime)
+    expect(() => h.panels.assertPanelLifetime('app', closedLifetime)).toThrow(
+      'earlier panel opening'
+    )
+    expect(() => h.panels.assertPanelLifetime('app', renewedLifetime)).not.toThrow()
+    expect(h.ports.renewPanelLifetime).toHaveBeenCalledExactlyOnceWith(closedLifetime)
+    await h.start('edit')
+    expect(h.preview.state).toMatchObject({ state: 'active', kind: 'edit' })
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.window.destroy).not.toHaveBeenCalled()
+  })
+
+  it('preserves newer app admission when an older close fails to resume activation', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    const oldLifetime = h.panels.getPanelLifetime('app')!
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.activation.cancelPreview.mockRejectedValueOnce(new Error('Activation target is unavailable.'))
+
+    const closing = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const newLifetime = h.panels.getPanelLifetime('app')!
+    const editing = h.start('edit')
+    gate.release()
+    await Promise.all([closing, editing])
+
+    expect(newLifetime).not.toBe(oldLifetime)
+    expect(h.panels.getPanelLifetime('app')).toBe(newLifetime)
+    expect(() => h.panels.assertPanelLifetime('app', newLifetime)).not.toThrow()
+    expect(h.preview.state).toMatchObject({ state: 'active', kind: 'edit' })
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.window.destroy).not.toHaveBeenCalled()
+  })
+
+  it.each(['hidden', 'destroyed', 'exiting'] as const)(
+    'does not renew app admission after a non-restoration close error when %s',
+    async (state) => {
+      const h = setup()
+      h.panels.openAppPanel()
+      await h.start('edit')
+      const gate = holdRestore(h.native)
+      h.activation.cancelPreview.mockRejectedValueOnce(
+        new Error('Activation target is unavailable.')
+      )
+
+      const closing = h.controller.handleClose(h.event)
+      await gate.entered
+      if (state === 'hidden') h.panels.openMiniPanel()
+      else if (state === 'destroyed') h.window.destroy()
+      else h.setExiting()
+      gate.release()
+      await closing
+
+      expect(h.panels.getPanelLifetime('app')).toBeNull()
+      expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+    }
+  )
+
   it('supports Try again from the shared guidance', async () => {
     const { controller, ports, native, event, start, window } = setup()
     await start()
@@ -673,4 +752,45 @@ describe('AppPanelCloseController', () => {
     expect(native.calls).toEqual(calls)
     expect(ports.releaseToTray).not.toHaveBeenCalled()
   })
+})
+it('releases the hidden app after a new mini override starts during handoff grace', async () => {
+  const h = setup()
+  h.panels.openAppPanel()
+  await h.start('edit')
+  h.panels.openMiniPanel()
+  let entered!: () => void
+  let release!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  h.ports.waitForHandoffResponse.mockImplementationOnce(async () => {
+    entered()
+    await gate
+  })
+  const closing = h.controller.handleClose(h.event, 'handoff')
+  await waiting
+  expect(h.preview.state).toEqual({ state: 'inactive' })
+  await h.start('override')
+  release()
+  await closing
+  expect(h.preview.state).toMatchObject({ state: 'active', kind: 'override' })
+  expect(h.isMiniVisible()).toBe(true)
+  expect(h.window.isVisible()).toBe(false)
+  expect(h.native.restored).toEqual(['display:one'])
+  expect(h.window.destroy).toHaveBeenCalledOnce()
+})
+
+it('keeps a visible app usable after a non-restoration close error', async () => {
+  const h = setup()
+  h.panels.openAppPanel()
+  await h.start('edit')
+  h.activation.cancelPreview.mockRejectedValueOnce(new Error('Activation target is unavailable.'))
+  await h.controller.handleClose(h.event)
+  expect(h.window.destroy).not.toHaveBeenCalled()
+  expect(h.window.isVisible()).toBe(true)
+  expect(h.preview.state).toEqual({ state: 'inactive' })
+  expect(h.panels.getPanelLifetime('app')).not.toBeNull()
 })

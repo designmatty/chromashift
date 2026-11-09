@@ -840,6 +840,7 @@ describe('unconfirmed preview restoration', () => {
       getPanelHideScope: () => h.runtime.previewController!.panelHideScope,
       getPanelOpenVersion: () => panels.getPanelOpenVersion('app'),
       beginPanelHide: () => panels.endPanelLifetime('app'),
+      renewPanelLifetime: (openVersion) => panels.renewPanelLifetime('app', openVersion),
       cancelForPanelHide: (reason, done, scope) =>
         h.runtime.previewController!.cancelForPanelHide(reason, done, scope),
       notifyClosed: () => undefined,

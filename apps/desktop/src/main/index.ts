@@ -403,6 +403,7 @@ function createWindow(): BrowserWindow {
     getPanelHideScope: () => runtime.previewController?.panelHideScope ?? 0,
     getPanelOpenVersion: () => panelController.getPanelOpenVersion('app'),
     beginPanelHide: () => panelController.endPanelLifetime('app'),
+    renewPanelLifetime: (openVersion) => panelController.renewPanelLifetime('app', openVersion),
     cancelForPanelHide: (reason, onCancelled, scope) =>
       runtime.previewController?.cancelForPanelHide(reason, onCancelled, scope) ??
       Promise.resolve().then(onCancelled),
