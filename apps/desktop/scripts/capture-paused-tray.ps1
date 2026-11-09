@@ -68,13 +68,22 @@ try {
   $iconPoint = [System.Windows.Point]::new(
     [int]($iconBounds.X + $iconBounds.Width / 2), [int]($iconBounds.Y + $iconBounds.Height / 2))
   # A notification toast from any app can cover the tray icon, and the click would
-  # then open the toast's menu. Wait until the icon itself is under the point.
+  # then open the toast's menu. Wait until a taskbar or overflow window owns the
+  # point. FromPoint can return the overflow window itself rather than the icon.
   $unobstructedDeadline = (Get-Date).AddSeconds(10)
+  $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+  $rootElement = [System.Windows.Automation.AutomationElement]::RootElement
   while ($true) {
     $hit = [System.Windows.Automation.AutomationElement]::FromPoint($iconPoint)
-    if ($null -ne $hit -and $hit.Current.Name.Trim() -like 'ChromaShift:*') { break }
+    $topLevel = $hit
+    while ($null -ne $topLevel) {
+      $parent = $walker.GetParent($topLevel)
+      if ($null -eq $parent -or $parent -eq $rootElement) { break }
+      $topLevel = $parent
+    }
+    if ($null -ne $topLevel -and $shellClasses -contains $topLevel.Current.ClassName) { break }
     if ((Get-Date) -ge $unobstructedDeadline) {
-      throw "The ChromaShift tray icon stayed covered by '$($hit.Current.Name)' [$($hit.Current.ClassName)]."
+      throw "The ChromaShift tray icon stayed covered by '$($topLevel.Current.Name)' [$($topLevel.Current.ClassName)]."
     }
     Start-Sleep -Milliseconds 500
   }
