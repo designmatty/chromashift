@@ -82,10 +82,14 @@ from Original settings. During app-panel Preview or Edit, displays without a tar
 at Original settings; ending the session reapplies the prior activation target.
 Its kind is Preview (started by clicking an app-panel profile),
 Edit (the first change promotes Preview in place; changes remain unsaved until
-Update profile), or Temporary override
-(mini-panel quick changes, exists exactly while applied values diverge from
-the saved profile).
+Update profile), or Temporary override.
 _Avoid_: Live mode, draft mode
+
+**Temporary override**:
+Unsaved mini-panel changes that remain applied across panel handoffs and app
+minimization. Closing either panel to the tray ends the override and restores the prior
+automatic or manual target.
+_Avoid_: Saved profile, manual profile selection
 
 **Draft**:
 The unsaved copy of a profile whose changes a Preview session applies. A dirty

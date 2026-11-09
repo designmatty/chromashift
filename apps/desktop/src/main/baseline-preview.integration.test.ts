@@ -467,7 +467,7 @@ describe('true baseline preview with activation rollback', () => {
     }
   )
 
-  it.each(['cancel', 'cancelNonOverride', 'dispose'] as const)(
+  it.each(['cancel', 'close', 'handoff', 'dispose'] as const)(
     'surfaces held-baseline restore failures during %s',
     async (end) => {
       const { native, preview } = await fixture()
@@ -476,11 +476,15 @@ describe('true baseline preview with activation rollback', () => {
       native.disconnectedDisplayIds.delete(two)
       native.failRestoreDisplayIds.add(two)
       native.calls.length = 0
-      await expect(preview[end]()).rejects.toBeInstanceOf(PreviewRestoreError)
+      await expect(
+        end === 'close' || end === 'handoff' ? preview.cancelForPanelHide(end) : preview[end]()
+      ).rejects.toBeInstanceOf(PreviewRestoreError)
       expect(preview.state).toEqual({ state: 'restorePending', displayIds: [two] })
       expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([])
       native.failRestoreDisplayIds.clear()
-      await preview[end]()
+      await (end === 'close' || end === 'handoff'
+        ? preview.cancelForPanelHide(end)
+        : preview[end]())
       expect(preview.state).toEqual({ state: 'inactive' })
       expectLive(native)
       expectOriginalCaptures(native)

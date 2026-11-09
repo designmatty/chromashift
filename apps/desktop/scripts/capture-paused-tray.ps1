@@ -1,7 +1,7 @@
 param([Parameter(Mandatory = $true)][string]$CapturePath)
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing,System.Windows.Forms
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase,System.Drawing,System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -65,8 +65,29 @@ try {
     throw 'The emergency restore tray icon did not say ChromaShift: Paused.'
   }
   $iconBounds = $icon.Current.BoundingRectangle
-  [void][ChromaShiftTrayCapture]::SetCursorPos(
+  $iconPoint = [System.Windows.Point]::new(
     [int]($iconBounds.X + $iconBounds.Width / 2), [int]($iconBounds.Y + $iconBounds.Height / 2))
+  # A notification toast from any app can cover the tray icon, and the click would
+  # then open the toast's menu. Wait until a taskbar or overflow window owns the
+  # point. FromPoint can return the overflow window itself rather than the icon.
+  $unobstructedDeadline = (Get-Date).AddSeconds(10)
+  $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+  $rootElement = [System.Windows.Automation.AutomationElement]::RootElement
+  while ($true) {
+    $hit = [System.Windows.Automation.AutomationElement]::FromPoint($iconPoint)
+    $topLevel = $hit
+    while ($null -ne $topLevel) {
+      $parent = $walker.GetParent($topLevel)
+      if ($null -eq $parent -or $parent -eq $rootElement) { break }
+      $topLevel = $parent
+    }
+    if ($null -ne $topLevel -and $shellClasses -contains $topLevel.Current.ClassName) { break }
+    if ((Get-Date) -ge $unobstructedDeadline) {
+      throw "The ChromaShift tray icon stayed covered by '$($topLevel.Current.Name)' [$($topLevel.Current.ClassName)]."
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  [void][ChromaShiftTrayCapture]::SetCursorPos([int]$iconPoint.X, [int]$iconPoint.Y)
   [ChromaShiftTrayCapture]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
   [ChromaShiftTrayCapture]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 300
@@ -76,15 +97,18 @@ try {
     [System.Windows.Automation.PropertyCondition]::new(
       [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
       [System.Windows.Automation.ControlType]::MenuItem))
-  # The native popup menu is a small top-level window. Searching only small
-  # top-level windows keeps the lookup away from the app's own Resume button and
-  # from slow, large app windows.
+  # The native popup menu is a small top-level window: a Win32 menu (#32768) owned
+  # by Electron. Search only those windows. Other apps' small windows can take
+  # many seconds to walk; Steam's Friends List took about 16 s. Requiring a small
+  # window also keeps the lookup away from the app's own Resume button.
   $resume = $null
   $popups = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
     [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) |
     Where-Object {
       $rect = $_.Current.BoundingRectangle
-      $rect.Width -gt 0 -and $rect.Width -lt 800 -and $rect.Height -gt 0 -and $rect.Height -lt 1000
+      $owner = Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue
+      $rect.Width -gt 0 -and $rect.Width -lt 800 -and $rect.Height -gt 0 -and $rect.Height -lt 1000 -and
+        ($_.Current.ClassName -eq '#32768' -or $owner.ProcessName -in @('electron', 'ChromaShift'))
     }
   foreach ($popup in $popups) {
     $resume = $popup.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $resumeCondition)

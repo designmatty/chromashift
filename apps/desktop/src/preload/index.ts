@@ -15,6 +15,8 @@ import {
   diagnosticLogEntriesResultSchema,
   profileReorderDiagnosticSchema,
   emptyRequestSchema,
+  panelLifetimeEventSchema,
+  scopedPreviewRequestSchema,
   openAppPanelRequestSchema,
   setMiniPanelViewRequestSchema,
   commitSessionRequestSchema,
@@ -40,6 +42,11 @@ import { LatestEventRelay } from '@shared/latest-event-relay.js'
 // Listen from preload time and keep the latest request until the app subscribes.
 const appPanelNavigation = new LatestEventRelay<AppPanelView>()
 const appPanelProfileSelection = new LatestEventRelay<string>()
+let panelLifetime: number | null = null
+ipcRenderer.on(productIpcChannels.panelLifetimeChanged, (_event, input: unknown) => {
+  const event = panelLifetimeEventSchema.safeParse(input)
+  if (event.success) panelLifetime = event.data.lifetime
+})
 
 ipcRenderer.on(productIpcChannels.navigateAppPanel, (_event, input: unknown) => {
   const view = appPanelViewSchema.safeParse(input)
@@ -65,6 +72,15 @@ async function invoke<TRequest, TResult>(
 }
 
 const api: ChromaShiftApi = {
+  getPanelLifetime: () => panelLifetime,
+  onPanelClosing: (listener) => {
+    const receive = (_event: unknown, input: unknown): void => {
+      const event = panelLifetimeEventSchema.safeParse(input)
+      if (event.success && event.data.lifetime === null) listener()
+    }
+    ipcRenderer.on(productIpcChannels.panelLifetimeChanged, receive)
+    return () => ipcRenderer.removeListener(productIpcChannels.panelLifetimeChanged, receive)
+  },
   getState: () =>
     invoke(productIpcChannels.getState, emptyRequestSchema, productStateResultSchema, {}),
   getUpdateStatus: () =>
@@ -157,30 +173,53 @@ const api: ChromaShiftApi = {
         settings
       }
     ),
-  startPreview: (profile, kind) =>
-    invoke(productIpcChannels.startPreview, startSessionRequestSchema, voidResultSchema, {
-      profile,
-      kind
-    }),
-  updatePreview: (profileId, targets, draft) =>
-    invoke(productIpcChannels.updatePreview, previewUpdateRequestSchema, voidResultSchema, {
-      profileId,
-      targets,
-      ...(draft === undefined ? {} : { draft })
-    }),
+  startPreview: (profile, kind, lifetime) =>
+    invokePreview(
+      productIpcChannels.startPreview,
+      startSessionRequestSchema,
+      voidResultSchema,
+      {
+        profile,
+        kind
+      },
+      lifetime
+    ),
+  updatePreview: (profileId, targets, draft, lifetime) =>
+    invokePreview(
+      productIpcChannels.updatePreview,
+      previewUpdateRequestSchema,
+      voidResultSchema,
+      {
+        profileId,
+        targets,
+        ...(draft === undefined ? {} : { draft })
+      },
+      lifetime
+    ),
   confirmPreview: (profile, activation) =>
-    invoke(productIpcChannels.confirmPreview, commitSessionRequestSchema, profileResultSchema, {
-      profile,
-      activation
-    }),
-  cancelPreview: () =>
-    invoke(productIpcChannels.cancelPreview, emptyRequestSchema, voidResultSchema, {}),
+    invokePreview(
+      productIpcChannels.confirmPreview,
+      commitSessionRequestSchema,
+      profileResultSchema,
+      {
+        profile,
+        activation
+      }
+    ),
+  cancelPreview: (lifetime) =>
+    invokePreview(
+      productIpcChannels.cancelPreview,
+      emptyRequestSchema,
+      voidResultSchema,
+      {},
+      lifetime
+    ),
   requestExit: () =>
     invoke(productIpcChannels.requestExit, emptyRequestSchema, booleanResultSchema, {}),
   openAppPanel: (view) =>
     invoke(productIpcChannels.openAppPanel, openAppPanelRequestSchema, voidResultSchema, { view }),
   hideMiniPanel: () =>
-    invoke(productIpcChannels.hideMiniPanel, emptyRequestSchema, voidResultSchema, {}),
+    invokePreview(productIpcChannels.hideMiniPanel, emptyRequestSchema, voidResultSchema, {}),
   showMiniPanel: () =>
     invoke(productIpcChannels.showMiniPanel, emptyRequestSchema, voidResultSchema, {}),
   openMiniPanelDevTools: () =>
@@ -231,5 +270,27 @@ const api: ChromaShiftApi = {
 }
 
 contextBridge.exposeInMainWorld('chromaShift', api)
+
+async function invokePreview<TRequest, TValue>(
+  channel: string,
+  requestSchema: z.ZodType<TRequest>,
+  resultSchema: z.ZodType<import('@shared/product-api.js').ProductResult<TValue>>,
+  request: TRequest,
+  lifetime?: number
+): Promise<import('@shared/product-api.js').ProductResult<TValue>> {
+  if (lifetime === undefined) {
+    if (panelLifetime === null) {
+      return {
+        ok: false,
+        error: { code: 'CONFLICT', message: 'This panel has closed. Reopen it to preview changes.' }
+      }
+    }
+    lifetime = panelLifetime
+  }
+  return invoke(channel, scopedPreviewRequestSchema(requestSchema), resultSchema, {
+    lifetime,
+    request
+  })
+}
 
 export type { ChromaShiftApi, ColorProfile }

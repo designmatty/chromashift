@@ -33,6 +33,7 @@ import type { TrayCommands } from '@main/tray-controller.js'
 import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { AppPanelCloseController } from '@main/app-panel-close-controller.js'
+import { PanelController } from '@main/panel-controller.js'
 
 class RecordingLogger implements StructuredLogger {
   public readonly events: StructuredLogEvent[] = []
@@ -308,7 +309,8 @@ async function createHarness(
         fetch: async () => Response.json([])
       }),
       requestExit: async () => true
-    })
+    }),
+    { get: () => 1, assert: () => undefined }
   )
   return {
     runtime,
@@ -348,6 +350,51 @@ describe('product runtime startup wiring', () => {
     expect(harness.logger.has('ApplicationExiting')).toBe(true)
     await harness.runtime.dispose()
   })
+
+  it.each(['update', 'discard', 'cancel'] as const)(
+    'keeps the existing %s quit decision for dirty Edit and override with fake native restoration',
+    async (decision) => {
+      for (const kind of ['edit', 'override'] as const) {
+        const decide = vi.fn(async () => decision)
+        const h = await createHarness({}, { confirmUnsavedQuit: decide })
+        await h.runtime.start()
+        const product = h.runtime.productController!
+        const saved = (await product.getState()).configuration.profiles[0]!
+        const draft = {
+          ...saved,
+          name: 'Unsaved quit check',
+          displays: [
+            { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 40 } }
+          ]
+        }
+        try {
+          await product.startPreview(draft, kind)
+          const stop = vi.spyOn(h.client, 'stop').mockImplementation(async () => {
+            await h.client.restoreAllBaselines()
+          })
+          expect(await h.runtime.shutdownCoordinator!.request('tray')).toBe(decision !== 'cancel')
+          expect(decide).toHaveBeenCalledWith(draft.name)
+          expect((await product.getState()).configuration.profiles[0]).toEqual(
+            decision === 'update' ? draft : saved
+          )
+          if (decision === 'cancel') {
+            expect(stop).not.toHaveBeenCalled()
+            expect((await product.getState()).preview).toMatchObject({
+              state: 'active',
+              kind,
+              draft
+            })
+            expect(h.client.currentSettings.get('display:one')?.brightness).toBe(40)
+          } else {
+            expect(stop).toHaveBeenCalledOnce()
+            expect(h.client.currentSettings.get('display:one')).toEqual({})
+          }
+        } finally {
+          h.runtime.dispose()
+        }
+      }
+    }
+  )
 
   it('keeps a failed reconnect preview and surfaces it through the product error dialog', async () => {
     const empty: ColorProfile = {
@@ -769,6 +816,278 @@ describe('unconfirmed preview restoration', () => {
     }
   )
 
+  async function panelHarness(mode: 'manual' | 'automatic', kind: 'edit' | 'override') {
+    const h = await previewHarness(mode, kind)
+    const dirty = {
+      ...h.draft,
+      displays: [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 40 } }]
+    }
+    await h.product.updatePreview(dirty.id, dirty.displays, dirty)
+    h.client.calls.length = 0
+    let appVisible = true
+    let appDestroyed = false
+    let miniVisible = false
+    let handoff = Promise.resolve()
+    const close = new AppPanelCloseController({
+      isExiting: () => false,
+      closeBehavior: () => 'tray',
+      isDestroyed: () => appDestroyed,
+      isVisible: () => appVisible,
+      flushWindowState: () => undefined,
+      requestShutdown: () => {
+        throw new Error('Unexpected shutdown')
+      },
+      getPanelHideScope: () => h.runtime.previewController!.panelHideScope,
+      getPanelOpenVersion: () => panels.getPanelOpenVersion('app'),
+      beginPanelHide: () => panels.endPanelLifetime('app'),
+      renewPanelLifetime: (openVersion) => panels.renewPanelLifetime('app', openVersion),
+      cancelForPanelHide: (reason, done, scope) =>
+        h.runtime.previewController!.cancelForPanelHide(reason, done, scope),
+      notifyClosed: () => undefined,
+      waitForHandoffResponse: async () => undefined,
+      notifyMinimized: () => undefined,
+      releaseToTray: () => {
+        appVisible = false
+        appDestroyed = true
+      },
+      errors: { show: () => panels.openAppPanel(), showError: async () => 'cancel' as const },
+      logger: h.logger
+    })
+    const panels = new PanelController(
+      () => ({ isDestroyed: () => appDestroyed, isVisible: () => appVisible }),
+      () => ({ isDestroyed: () => false, isVisible: () => miniVisible }),
+      () => {
+        appVisible = true
+        appDestroyed = false
+      },
+      (reason) => {
+        if (appDestroyed) return
+        appVisible = false
+        handoff = close.handleClose({ preventDefault: () => undefined }, reason)
+      },
+      () => {
+        miniVisible = true
+      },
+      () => {
+        miniVisible = false
+      },
+      'app',
+      h.runtime.previewController!
+    )
+    return {
+      ...h,
+      dirty,
+      close,
+      panels,
+      handoff: () => handoff,
+      miniVisible: () => miniVisible,
+      appDestroyed: () => appDestroyed
+    }
+  }
+
+  it.each([false, true])('serializes close behind HDR restoration, failure=%s', async (fail) => {
+    const h = await panelHarness('manual', 'edit')
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const restore = h.client.restoreDisplay.bind(h.client)
+    vi.spyOn(h.client, 'restoreDisplay').mockImplementationOnce(async (displayId) => {
+      enter()
+      await gate
+      return restore(displayId)
+    })
+    try {
+      h.client.hdrDisplayIds.add(id)
+      if (fail) h.client.failRestoreDisplayIds.add(id)
+      vi.useFakeTimers()
+      h.displayEvent('displayMetricsChanged')
+      const transition = vi.advanceTimersByTimeAsync(750)
+      await entered
+      const closing = h.close.handleClose({ preventDefault: () => undefined })
+      expect(h.appDestroyed()).toBe(false)
+      release()
+      await Promise.all([transition, closing])
+      expect(
+        h.client.calls.filter((call) => call.operation === 'apply' || call.operation === 'capture')
+      ).toEqual([])
+      expect(h.client.maxConcurrentCalls).toBe(1)
+      if (fail) {
+        expect(h.appDestroyed()).toBe(false)
+        expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+        expect((await h.product.getState()).preview).toEqual(pending)
+        h.client.failRestoreDisplayIds.clear()
+        await h.close.handleClose({ preventDefault: () => undefined })
+      }
+      expect(h.appDestroyed()).toBe(true)
+      expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+    } finally {
+      release()
+      h.runtime.dispose()
+    }
+  })
+
+  it.each(['manual', 'automatic'] as const)(
+    'panel close restores the exact prior %s target for dirty Edit and override',
+    async (mode) => {
+      for (const kind of ['edit', 'override'] as const) {
+        const h = await panelHarness(mode, kind)
+        try {
+          const notifications = [...h.notifications]
+          await h.close.handleClose({ preventDefault: () => undefined })
+          expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+          expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
+          expect((await h.product.getState()).activation.mode).toEqual(
+            mode === 'manual' ? { kind: 'manual', profileId: 'live' } : { kind: 'automatic' }
+          )
+          expect(h.client.calls.filter((call) => call.operation === 'restore')).toHaveLength(1)
+          expect(h.client.maxConcurrentCalls).toBe(1)
+          expect(h.notifications).toEqual(notifications)
+        } finally {
+          h.runtime.dispose()
+        }
+      }
+    }
+  )
+
+  it.each(['control', 'Escape'] as const)(
+    'mini %s rolls back through main without a renderer',
+    async (action) => {
+      const h = await panelHarness('manual', 'override')
+      try {
+        h.panels.openMiniPanel()
+        await h.handoff()
+        h.client.calls.length = 0
+        const event = { preventDefault: vi.fn() }
+        if (action === 'control') await h.panels.closeMiniPanel()
+        else await h.panels.handleMiniPanelInput(event, { type: 'keyDown', key: 'Escape' })
+        expect(event.preventDefault).toHaveBeenCalledTimes(action === 'Escape' ? 1 : 0)
+        expect(h.miniVisible()).toBe(false)
+        expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+        expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
+        expect(h.client.calls.filter((call) => call.operation === 'restore')).toHaveLength(1)
+      } finally {
+        h.runtime.dispose()
+      }
+    }
+  )
+
+  it.each(['edit', 'override'] as const)(
+    'app to mini handoff handles %s explicitly',
+    async (kind) => {
+      const h = await panelHarness('manual', kind)
+      try {
+        h.panels.openMiniPanel()
+        await h.handoff()
+        expect(h.miniVisible()).toBe(true)
+        if (kind === 'edit') {
+          expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+          expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
+        } else {
+          expect((await h.product.getState()).preview).toMatchObject({
+            state: 'active',
+            kind,
+            draft: h.dirty
+          })
+          expect(h.client.calls).toEqual([])
+          h.panels.handleMiniPanelBlur('win32')
+          await h.runtime.previewController!.waitForIdle()
+          expect(h.miniVisible()).toBe(true)
+          expect((await h.product.getState()).preview).toMatchObject({
+            state: 'active',
+            kind,
+            draft: h.dirty
+          })
+          expect(h.client.calls).toEqual([])
+          h.panels.openAppPanel()
+          expect(h.miniVisible()).toBe(false)
+          expect((await h.product.getState()).preview).toMatchObject({
+            state: 'active',
+            kind,
+            draft: h.dirty
+          })
+          expect(h.client.calls).toEqual([])
+        }
+      } finally {
+        h.runtime.dispose()
+      }
+    }
+  )
+
+  it('mini close failure keeps Safety blocked and Retry restores the prior target', async () => {
+    const h = await panelHarness('manual', 'override')
+    try {
+      h.panels.openMiniPanel()
+      await h.handoff()
+      h.client.failRestoreDisplayIds.add(id)
+      await expect(h.panels.closeMiniPanel()).rejects.toBeInstanceOf(PreviewRestoreError)
+      expect(h.miniVisible()).toBe(true)
+      expect((await h.product.getState()).preview).toEqual(pending)
+      expect((await h.product.getState()).chromaShift).toMatchObject({
+        status: 'safetyBlocked',
+        pendingOperation: 'previewRestore'
+      })
+      h.client.failRestoreDisplayIds.clear()
+      await h.product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+      expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
+      await h.panels.closeMiniPanel()
+      expect(h.miniVisible()).toBe(false)
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it.each(['manual', 'automatic'] as const)(
+    'close waits for an in-flight write before restoring the exact %s target',
+    async (mode) => {
+      const h = await panelHarness(mode, 'override')
+      try {
+        let entered!: () => void
+        const writing = new Promise<void>((resolve) => {
+          entered = resolve
+        })
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        const apply = h.client.applyDisplaySettings.bind(h.client)
+        vi.spyOn(h.client, 'applyDisplaySettings').mockImplementationOnce(
+          async (displayId, color) => {
+            entered()
+            await gate
+            return apply(displayId, color)
+          }
+        )
+        const targets = [
+          { displayId: id, color: { ...createNeutralColorSettings(), brightness: 45 } }
+        ]
+        const update = h.product.updatePreview(h.dirty.id, targets)
+        await writing
+        const close = h.close.handleClose({ preventDefault: () => undefined })
+        await Promise.resolve()
+        expect(h.client.calls).toEqual([])
+        release()
+        await Promise.all([update, close])
+        expect(
+          h.client.calls
+            .filter((call) => call.operation !== 'capture')
+            .map((call) => call.operation)
+        ).toEqual(['apply', 'restore', 'apply'])
+        expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
+        expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
+        expect(h.client.maxConcurrentCalls).toBe(1)
+      } finally {
+        h.runtime.dispose()
+      }
+    }
+  )
+
   it('close Try again restores the tracked display before releasing the renderer', async () => {
     const h = await previewHarness()
     const release = vi.fn()
@@ -781,8 +1100,13 @@ describe('unconfirmed preview restoration', () => {
         isVisible: () => true,
         flushWindowState: () => undefined,
         requestShutdown: () => undefined,
-        cancelNonOverride: (done) => h.runtime.previewController!.cancelNonOverride(done),
+        getPanelHideScope: () => h.runtime.previewController!.panelHideScope,
+        getPanelOpenVersion: () => 0,
+        cancelForPanelHide: (reason, done, scope) =>
+          h.runtime.previewController!.cancelForPanelHide(reason, done, scope),
         notifyClosed: () => undefined,
+        waitForHandoffResponse: async () => undefined,
+        notifyMinimized: () => undefined,
         releaseToTray: release,
         errors: {
           show: () => undefined,

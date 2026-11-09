@@ -59,6 +59,7 @@ if (process.platform === 'win32') {
 
 let mainWindow: BrowserWindow | undefined
 let miniWindow: BrowserWindow | undefined
+const appPanelCloseControllers = new WeakMap<BrowserWindow, AppPanelCloseController>()
 let productStateBroadcastPending = false
 const TITLE_BAR_HEIGHT = 37
 const hasUserDataOverride = app.commandLine.hasSwitch('user-data-dir')
@@ -116,18 +117,30 @@ const panelController = new PanelController(
   () => mainWindow,
   () => miniWindow,
   () => windowController.open(),
-  () => {
+  (reason) => {
     const window = mainWindow
     if (window === undefined || window.isDestroyed()) return
     window.hide()
-    // Let the renderer receive the successful handoff response, then release
-    // it through the same close lifecycle used by close-to-tray.
-    setTimeout(() => {
-      if (mainWindow === window && !window.isDestroyed() && !window.isVisible()) window.close()
-    }, 250)
+    void appPanelCloseControllers
+      .get(window)
+      ?.handleClose({ preventDefault: () => undefined }, reason)
+      .catch((error: unknown) => {
+        logger.write({ level: 'error', eventName: 'AppPanelCloseFailed', ...describeError(error) })
+      })
   },
   (bounds) => miniPanelController.show(bounds),
-  () => miniPanelController.hide()
+  () => miniPanelController.hide(),
+  'mini',
+  {
+    cancelForPanelHide: (reason, done) =>
+      runtime.previewController?.cancelForPanelHide(reason, done) ?? Promise.resolve().then(done)
+  },
+  (panel, lifetime) => {
+    const window = panel === 'app' ? mainWindow : miniWindow
+    if (window !== undefined && !window.isDestroyed()) {
+      window.webContents.send(productIpcChannels.panelLifetimeChanged, { lifetime })
+    }
+  }
 )
 const runtime = createProductRuntime({
   logger,
@@ -331,6 +344,7 @@ function handleRendererExit(
 ): void {
   if (runtime.shutdownCoordinator?.exiting === true) return
   const wasVisible = window.isVisible()
+  panelController.endPanelLifetime(surface === 'appPanel' ? 'app' : 'mini')
   if (!window.isDestroyed()) window.destroy()
   if (!wasVisible) return
   rendererRecoveryController.handle(surface, reason, recreate, (message) => {
@@ -386,9 +400,16 @@ function createWindow(): BrowserWindow {
     requestShutdown: () => {
       void runtime.shutdownCoordinator?.request('application')
     },
-    cancelNonOverride: (onCancelled) =>
-      runtime.previewController?.cancelNonOverride(onCancelled) ?? Promise.resolve().then(onCancelled),
+    getPanelHideScope: () => runtime.previewController?.panelHideScope ?? 0,
+    getPanelOpenVersion: () => panelController.getPanelOpenVersion('app'),
+    beginPanelHide: () => panelController.endPanelLifetime('app'),
+    renewPanelLifetime: (openVersion) => panelController.renewPanelLifetime('app', openVersion),
+    cancelForPanelHide: (reason, onCancelled, scope) =>
+      runtime.previewController?.cancelForPanelHide(reason, onCancelled, scope) ??
+      Promise.resolve().then(onCancelled),
+    waitForHandoffResponse: () => new Promise((resolve) => setTimeout(resolve, 250)),
     notifyClosed: () => window.webContents.send(productIpcChannels.appPanelClosed),
+    notifyMinimized: () => window.webContents.send(productIpcChannels.appPanelMinimized, {}),
     releaseToTray: (event) => windowController.handleClose(event, window),
     errors: {
       show: () => panelController.openAppPanel(),
@@ -396,6 +417,7 @@ function createWindow(): BrowserWindow {
     },
     logger
   })
+  appPanelCloseControllers.set(window, closeController)
   window.on('close', (event) => {
     void closeController.handleClose(event).catch((error: unknown) => {
       logger.write({ level: 'error', eventName: 'AppPanelCloseFailed', ...describeError(error) })
@@ -405,7 +427,7 @@ function createWindow(): BrowserWindow {
     if (mainWindow === window) mainWindow = undefined
   })
   window.on('minimize', () => {
-    window.webContents.send(productIpcChannels.appPanelMinimized, {})
+    closeController.handleMinimize()
   })
   if (settingsStores.windowState.current.windowMaximized === true) window.maximize()
   window.on('resize', () => appWindowStateController.schedule(window))
@@ -448,7 +470,7 @@ function createMiniWindow(): BrowserWindow {
     }
   })
   miniWindow = panel
-  if (process.platform !== 'win32') panel.on('blur', () => miniPanelController.hide())
+  panel.on('blur', () => panelController.handleMiniPanelBlur(process.platform))
   let userMovedPanel = false
   panel.on('will-move', () => {
     userMovedPanel = true
@@ -462,10 +484,9 @@ function createMiniWindow(): BrowserWindow {
     if (miniWindow === panel) miniWindow = undefined
   })
   panel.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'Escape') {
-      event.preventDefault()
-      miniPanelController.hide()
-    }
+    void panelController.handleMiniPanelInput(event, input).catch((error: unknown) => {
+      logger.write({ level: 'error', eventName: 'MiniPanelCloseFailed', ...describeError(error) })
+    })
   })
   panel.webContents.on('preload-error', (_event, preloadPath, error) => {
     logger.write({
@@ -477,7 +498,7 @@ function createMiniWindow(): BrowserWindow {
   })
   panel.webContents.on('render-process-gone', (_event, details) => {
     handleRendererExit('miniPanel', panel, details.reason as RendererExitReason, () =>
-      miniPanelController.show()
+      panelController.openMiniPanel()
     )
   })
   panel.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -590,7 +611,7 @@ registerProductIpcHandlers(
   assertTrustedRenderer,
   () => runtime.shutdownCoordinator?.request('application') ?? Promise.resolve(false),
   openWindow,
-  () => miniPanelController.hide(),
+  () => panelController.closeMiniPanel(),
   () => panelController.openMiniPanel(),
   async (event) => {
     const contents = event.sender
@@ -644,7 +665,16 @@ registerProductIpcHandlers(
     context: () => runtime.productController?.getProfileDiagnosticContext() ?? {},
     logger
   }),
-  updates
+  updates,
+  {
+    get: (event) =>
+      panelController.getPanelLifetime(event.sender === miniWindow?.webContents ? 'mini' : 'app'),
+    assert: (event, lifetime) =>
+      panelController.assertPanelLifetime(
+        event.sender === miniWindow?.webContents ? 'mini' : 'app',
+        lifetime
+      )
+  }
 )
 
 void app.whenReady().then(async () => {

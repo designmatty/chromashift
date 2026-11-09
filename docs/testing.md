@@ -53,6 +53,13 @@ The TypeScript and native test suites cover these contracts:
   close-time restoration before renderer release, visible failure guidance and
   retries, disconnected baseline retention and confirmed HDR restoration, and
   overlapping close controllers after renderer recovery
+- Panel close and handoff reasons with the shared fake native: app close rolls
+  back dirty Edit and Temporary override to the exact prior automatic/manual
+  target; mini close (and Escape where the panel can take focus) roll back overrides; both handoffs carry an
+  override while app-to-mini reverts Edit. Dirty minimize and Windows blur keep
+  the session. Close during an in-flight write waits before restoring; a failed
+  mini close retains Safety blocked until Retry confirms restoration. App close
+  keeps its retry dialog, and a caption close supersedes a pending handoff.
 - Unconfirmed preview restoration retained across End preview, Discard, close
   Try again, and persistent failures; Safety blocked prevents automatic/manual
   writes until Retry confirms restoration and serialized activation reasserts
@@ -267,6 +274,59 @@ smoke, and development performance runner also clean it up after their child exi
 Cleanup checks the shortcut's target, arguments,
 and application ID; packaged-app shortcuts and other Electron apps are preserved.
 Owned leftovers are removed even when they existed before the run.
+
+Panel lifecycle coverage uses the saved smoke profile, real panel windows, and
+the existing independent restoration guard. It checks dirty Edit and override
+caption close followed by a renderer-free tray interval and app reopen, mini
+close control, both override handoffs through App view and Open settings,
+and Edit rollback on app-to-mini. Main-owned `getState` confirms the ended
+session and unchanged saved profile; guard fingerprints confirm the exact prior
+native target. Dirty minimize keeps both session kinds. A click on a disposable
+smoke-owned window checks Windows outside-click behavior. The native quit
+warning checks Update / Discard / Cancel and cancels for both session kinds.
+The close-retry presentation fixture still fakes restoration failure; it does
+not establish hardware failure recovery.
+
+### Owner checks for panel close and handoff
+
+For #87, the implementation agent updates and syntax-checks the smoke script
+without running smoke, native integration, or driving the desktop. The owner
+runs `npm run smoke:desktop` on interactive hardware with its restoration guard.
+Automated verification and these pending owner checks are separate evidence.
+
+Use mild changes on a supporting SDR display and keep a restoration guard.
+Record the saved profile, activation mode, and exact native target before each
+case. Repeat rollback checks from Automatic and Manual.
+
+| Action                            | Owner steps and expected result                                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| App caption close / close-to-tray | Make an unsaved Edit, close, and reopen. Repeat with a mini override carried into the app. Both end the session, leave the saved profile unchanged, and restore the exact prior target silently.                   |
+| Mini close control                | Change a mini value, press Close mini panel, and reopen. The override ended and the exact prior target is restored.                                                                                                |
+| Mini to app                       | Change a mini value, then use App view. Repeat with Open settings. Both open the unsaved draft with the override still applied and Update / Discard available.                                                     |
+| App to mini                       | Carry an override into the app, then open mini through its shortcut or tray. The override stays applied. Repeat with a dirty Edit; that Edit rolls back before the app renderer is released.                       |
+| App minimize                      | Minimize and restore with each session kind. Unsaved values stay applied and automatic switching stays on hold.                                                                                                    |
+| Quit / tray Exit                  | For each session kind, verify Update / Discard / Cancel. Cancel keeps the session, Update saves before restore-safe shutdown, and Discard shuts down without saving. Repeat caption close when configured to quit. |
+| Windows outside click             | With a mini override applied, click outside the panel. It stays visible and applied.                                                                                                                               |
+
+Also verify Update profile and Discard changes while each panel is open. For a
+restoration failure, use a controlled failure fixture first: app close keeps the
+existing retry dialog; mini close stays visible with Safety blocked and Retry.
+Retry must confirm restoration before the prior target resumes. A real driver
+failure remains a separate hardware check. Close during a pending preview write
+must wait and restore the exact prior target, without a late draft write.
+
+The #91 deterministic regressions cover a first mini slider change closed before
+the 120 ms debounce, stale requests after reopening the retained mini renderer,
+and a new dirty Edit opened during app handoff or mini-close restoration. They
+also cover repeated closes, a second close or handoff after reopening during
+rollback, delayed saved-profile lookup, and restoration failure with a new Edit
+queued. Main lifetime checks are exercised without renderer timer cancellation.
+For owner retesting, close immediately after the first mini slider movement and
+reopen within five seconds. Confirm no late override appears. Reopen the app and
+start a dirty Edit while handoff or mini-close restoration is pending; the new
+draft must remain active after the old restore completes. Repeated close and
+handoff actions must still honor their latest explicit action. These hardware
+and native-window checks remain separate from deterministic verification.
 
 After a build, `node apps/desktop/scripts/smoke.mjs --updates-only` runs the
 About update flow against the public Cloudflare release feed, verifies that navigation

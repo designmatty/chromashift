@@ -87,11 +87,17 @@ it('keeps a mini override unchanged on app hydration and only syncs subsequent u
     return { ok: true, value: null }
   })
   let flush = async () => undefined as void
+  let closing = () => undefined as void
   vi.stubGlobal('window', {
     chromaShift: {
       startPreview,
       updatePreview,
       cancelPreview,
+      getPanelLifetime: () => 1,
+      onPanelClosing: (callback: typeof closing) => {
+        closing = callback
+        return () => undefined
+      },
       onFlushPreviewDraft: (callback: typeof flush) => {
         flush = callback
         return () => undefined
@@ -156,4 +162,14 @@ it('keeps a mini override unchanged on app hydration and only syncs subsequent u
   expect(updatePreview).toHaveBeenCalledTimes(1)
   expect(cancelPreview).toHaveBeenCalledTimes(0)
   expect(native.calls.slice(before.length).map((call) => call.operation)).toEqual(['apply'])
+  const beforeClose = native.calls.slice()
+  const pending = structuredClone(edited)
+  pending.displays[0]!.color.brightness = 62
+  render(appSlots, 'edit').updateDraft(pending)
+  render(appSlots, 'edit')
+  closing()
+  await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+  expect(native.calls).toEqual(beforeClose)
+  expect(startPreview).toHaveBeenCalledTimes(2)
+  expect(updatePreview).toHaveBeenCalledTimes(1)
 })

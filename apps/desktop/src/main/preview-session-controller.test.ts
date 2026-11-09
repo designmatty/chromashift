@@ -433,7 +433,7 @@ describe('PreviewSessionController', () => {
 
     const starting = controller.start(profile(), 'edit')
     await native.applyStartedPromise
-    const closing = controller.cancelNonOverride()
+    const closing = controller.cancelForPanelHide('close')
 
     native.releaseApply()
     await starting
@@ -443,18 +443,18 @@ describe('PreviewSessionController', () => {
     expect(activation.calls).toEqual(['begin', 'cancel'])
   })
 
-  it('keeps a mini-panel override when the app panel closes', async () => {
+  it('keeps a mini-panel override when the app hands off to the mini panel', async () => {
     const activation = new FakeActivation()
     const controller = new PreviewSessionController(new FakeNative(), activation, () => undefined)
 
     await controller.start(profile(), 'override')
-    await controller.cancelNonOverride()
+    await controller.cancelForPanelHide('handoff')
 
     expect(controller.state).toMatchObject({ state: 'active', kind: 'override' })
     expect(activation.calls).toEqual(['begin'])
   })
 
-  it.each(['edit', 'preview'] as const)(
+  it.each(['edit', 'preview', 'override'] as const)(
     'reports close-time restore failures and keeps the %s session retryable',
     async (kind) => {
       const native = new FakeNative()
@@ -469,8 +469,10 @@ describe('PreviewSessionController', () => {
       )
       native.failRestoreDisplayIds.add(display.id)
 
-      await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
-      await expect(controller.cancelNonOverride()).rejects.toMatchObject({
+      await expect(controller.cancelForPanelHide('close')).rejects.toBeInstanceOf(
+        PreviewRestoreError
+      )
+      await expect(controller.cancelForPanelHide('close')).rejects.toMatchObject({
         failures: [expect.stringContaining(display.id)]
       })
       expect(native.restored).toEqual([secondDisplay.id])
@@ -478,7 +480,7 @@ describe('PreviewSessionController', () => {
       expect(activation.calls).toEqual(['begin'])
 
       native.failRestoreDisplayIds.clear()
-      await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
+      await expect(controller.cancelForPanelHide('close')).resolves.toBeUndefined()
       expect(native.restored).toContain(display.id)
       expect(controller.state).toEqual({ state: 'inactive' })
       expect(activation.calls).toEqual(['begin', 'cancel'])
@@ -498,7 +500,7 @@ describe('PreviewSessionController', () => {
     native.failRestoreDisplayIds.add(display.id)
     onStateChanged.mockClear()
 
-    await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
+    await expect(controller.cancelForPanelHide('close')).rejects.toBeInstanceOf(PreviewRestoreError)
 
     expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
     expect(onStateChanged).toHaveBeenCalledExactlyOnceWith(controller.state)
@@ -509,7 +511,7 @@ describe('PreviewSessionController', () => {
     await expect(controller.start(draft, 'edit')).rejects.toThrow('pending displays')
     expect(native.calls).toEqual([])
     native.failRestoreDisplayIds.clear()
-    await controller.cancelNonOverride()
+    await controller.cancelForPanelHide('close')
     expect(native.restored).toEqual([secondDisplay.id, display.id])
   })
 
@@ -523,7 +525,7 @@ describe('PreviewSessionController', () => {
       if (reason === 'disconnected') native.disconnectedDisplayIds.add(display.id)
       else native.hdrDisplayIds.add(display.id)
 
-      await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
+      await expect(controller.cancelForPanelHide('close')).resolves.toBeUndefined()
 
       expect(native.restored).toEqual(reason === 'hdr' ? [display.id] : [])
       expect(controller.state).toEqual({ state: 'inactive' })
@@ -544,10 +546,10 @@ describe('PreviewSessionController', () => {
       error: 'Read-back did not match.'
     })
 
-    await expect(controller.cancelNonOverride()).rejects.toMatchObject({
+    await expect(controller.cancelForPanelHide('close')).rejects.toMatchObject({
       failures: [`${display.id}: Read-back did not match.`]
     })
-    await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
+    await expect(controller.cancelForPanelHide('close')).resolves.toBeUndefined()
 
     expect(native.captured).toEqual([display.id])
     expect(native.restored).toEqual([display.id])
@@ -567,7 +569,7 @@ describe('PreviewSessionController', () => {
         ...result
       })
 
-      await expect(controller.cancelNonOverride()).resolves.toBeUndefined()
+      await expect(controller.cancelForPanelHide('close')).resolves.toBeUndefined()
 
       expect(controller.state).toEqual({ state: 'inactive' })
       expect(activation.retainedDisplayIds).toEqual([
@@ -596,7 +598,9 @@ describe('PreviewSessionController', () => {
         restored: false,
         ...result
       })
-      await expect(controller.cancelNonOverride()).rejects.toBeInstanceOf(PreviewRestoreError)
+      await expect(controller.cancelForPanelHide('close')).rejects.toBeInstanceOf(
+        PreviewRestoreError
+      )
       expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
       expect(failed).toHaveBeenCalledOnce()
     }
@@ -663,7 +667,7 @@ describe('PreviewSessionController', () => {
     const activation = new FakeActivation()
     const controller = new PreviewSessionController(native, activation, () => undefined)
 
-    await controller.cancelNonOverride()
+    await controller.cancelForPanelHide('close')
 
     expect(native.calls).toEqual([])
     expect(activation.calls).toEqual([])

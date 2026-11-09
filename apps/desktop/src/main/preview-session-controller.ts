@@ -15,6 +15,7 @@ import type {
 import type { PreviewState } from '@shared/product-api.js'
 import { profilesDiffer } from '@shared/unsaved-changes.js'
 import { describeError } from '@main/structured-logger.js'
+import type { PanelHideReason } from '@main/panel-controller.js'
 
 export interface PreviewNativePort {
   getDisplays(): Promise<Display[]>
@@ -57,6 +58,7 @@ export class PreviewRestoreError extends Error {
 }
 
 interface ActivePreview {
+  version: number
   draft: ColorProfile
   saved: ColorProfile
   profileId: string
@@ -96,7 +98,7 @@ export class PreviewSessionController {
   // Teardown supersedes continuation, including the displays Retry must restore.
   #recovery: PreviewRecovery | null = null
   #operationTail: Promise<void> = Promise.resolve()
-  #operationVersion = 0
+  #startVersion = 0
 
   public constructor(
     private readonly native: PreviewNativePort,
@@ -154,13 +156,15 @@ export class PreviewSessionController {
     kind: 'preview' | 'edit' | 'override',
     saved = profile
   ): Promise<void> {
-    return this.#enqueue(() => this.#start(profile, kind, saved))
+    const version = ++this.#startVersion
+    return this.#enqueue(() => this.#start(profile, kind, saved, version))
   }
 
   async #start(
     profile: ColorProfile,
     kind: 'preview' | 'edit' | 'override',
-    saved: ColorProfile
+    saved: ColorProfile,
+    version: number
   ): Promise<void> {
     if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
@@ -168,6 +172,7 @@ export class PreviewSessionController {
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
       const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
+      this.#active.version = version
       this.#active.draft = structuredClone(profile)
       if (this.#active.kind !== 'edit' && kind === 'edit') {
         this.#active.kind = 'edit'
@@ -224,6 +229,7 @@ export class PreviewSessionController {
     } catch (error) {
       // Even a partially started session owns the displays it may have changed.
       this.#active = {
+        version,
         profileId: profile.id,
         kind,
         draft: structuredClone(profile),
@@ -246,6 +252,7 @@ export class PreviewSessionController {
     }
 
     this.#active = {
+      version,
       profileId: profile.id,
       kind,
       draft: structuredClone(profile),
@@ -381,26 +388,33 @@ export class PreviewSessionController {
     })
   }
 
-  /** Release the app renderer only when all preview work queued during close has drained. */
-  public async cancelNonOverride(onCancelled?: () => void): Promise<void> {
-    let ready = false
-    while (!ready) {
-      const version = this.#operationVersion
-      ready = await this.#enqueue(async () => {
-        if (
-          this.#active !== null &&
-          (this.#recovery?.kind === 'teardown' || this.#active.kind !== 'override')
-        ) {
-          const rollback = await this.#teardown()
-          if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
-        }
-        // A start or update may have arrived during restoration. Cancel it in
-        // queue order before releasing, even if it has not published state yet.
-        if (onCancelled !== undefined && version !== this.#operationVersion) return false
-        onCancelled?.()
-        return true
-      }, false)
-    }
+  public get panelHideScope(): number {
+    return this.#startVersion
+  }
+
+  /** Drain only sessions admitted before this close, including pending starts. */
+  public async cancelForPanelHide(
+    reason: PanelHideReason,
+    onCancelled?: () => void,
+    scope = this.panelHideScope
+  ): Promise<void> {
+    await this.#enqueue(async () => {
+      // A reopened panel owns any newer session. Its start is serialized
+      // behind the restoration owed by the closing panel.
+      if (
+        this.#active !== null &&
+        this.#active.version <= scope &&
+        (reason === 'close' ||
+          this.#recovery?.kind === 'teardown' ||
+          this.#active.kind !== 'override')
+      ) {
+        const rollback = await this.#teardown()
+        if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      }
+      // Completion belongs to the closing window even when a newer session
+      // now owns preview. The caller guards release against a newer opening.
+      onCancelled?.()
+    })
   }
 
   public async dispose(): Promise<void> {
@@ -647,10 +661,7 @@ export class PreviewSessionController {
     return { failures, retainedDisplayIds }
   }
 
-  #enqueue<T>(operation: () => Promise<T>, changesSession = true): Promise<T> {
-    // Concurrent close drains must not invalidate one another's queue checkpoint.
-    // Starts, edits, and other session commands still force another drain pass.
-    if (changesSession) this.#operationVersion += 1
+  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#operationTail.then(operation)
     this.#operationTail = result.then(
       () => undefined,

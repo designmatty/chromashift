@@ -29,6 +29,19 @@ function setup(appVisible = false, miniVisible = false, initialPanel: 'app' | 'm
 }
 
 describe('PanelController', () => {
+  it('retires a hidden panel token and does not reuse it when that renderer reopens', async () => {
+    const { controller } = setup()
+    controller.openMiniPanel()
+    const first = controller.getPanelLifetime('mini')!
+    controller.openAppPanel()
+    expect(() => controller.assertPanelLifetime('mini', first)).toThrow('earlier panel opening')
+    controller.openMiniPanel()
+    const second = controller.getPanelLifetime('mini')!
+    expect(second).not.toBe(first)
+    expect(() => controller.assertPanelLifetime('mini', first)).toThrow('earlier panel opening')
+    expect(() => controller.assertPanelLifetime('mini', second)).not.toThrow()
+    expect(() => controller.assertPanelLifetime('app', second)).toThrow('earlier panel opening')
+  })
   it('focuses the visible app panel and closes a stray mini panel on tray click', () => {
     const { calls, controller } = setup(true, true)
 

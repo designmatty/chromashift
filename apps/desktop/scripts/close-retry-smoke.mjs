@@ -38,8 +38,10 @@ app.whenReady().then(async () => {
   const controller = new AppPanelCloseController({
     isExiting: () => false, closeBehavior: () => 'tray', isDestroyed: () => window.isDestroyed(),
     isVisible: () => window.isVisible(), flushWindowState: () => {}, requestShutdown: () => { throw Error('Unexpected quit') },
-    cancelNonOverride: async (done) => { if (failed) throw new PreviewRestoreError(['fake display restore failure']); done() },
-    notifyClosed: () => {}, releaseToTray: () => { released = true; window.destroy() },
+    getPanelHideScope: () => 0,
+    getPanelOpenVersion: () => 0,
+    cancelForPanelHide: async (_reason, done) => { if (failed) throw new PreviewRestoreError(['fake display restore failure']); done() },
+    waitForHandoffResponse: async () => {}, notifyClosed: () => {}, notifyMinimized: () => {}, releaseToTray: () => { released = true; window.destroy() },
     errors: { show: () => window.show(), showError: (title, message) => confirmRestoreRetry(dialog, title, message, window) },
     logger: { write: (event) => console.log(JSON.stringify(event)) }
   })
