@@ -283,13 +283,7 @@ export class AutomaticActivationController {
       })
       this.#emitState()
     }
-    if (context.assertCurrent === undefined) select()
-    return this.#activateCurrentApplication(
-      context,
-      false,
-      selectedMode,
-      context.assertCurrent === undefined ? undefined : select
-    )
+    return this.#activateCurrentApplication(context, false, select)
   }
 
   public async enableAutomatic(
@@ -306,13 +300,7 @@ export class AutomaticActivationController {
       })
       this.#emitState()
     }
-    if (context.assertCurrent === undefined) select()
-    return this.#activateCurrentApplication(
-      context,
-      false,
-      automaticActivationMode,
-      context.assertCurrent === undefined ? undefined : select
-    )
+    return this.#activateCurrentApplication(context, false, select)
   }
 
   public async restoreBaseline(
@@ -396,10 +384,11 @@ export class AutomaticActivationController {
   async #activateCurrentApplication(
     context: ActivationContext,
     recovery = false,
-    mode = this.#mode,
     select?: () => void
   ): Promise<CompletedActivationOutcome> {
-    const outcome = await this.coordinator.activate(this.#currentApplication, mode, {
+    // Resolve mode in the same queue entry that validates and commits a selection.
+    // Later foreground entries then observe that selection, not the preceding mode.
+    const outcome = await this.coordinator.activate(this.#currentApplication, () => this.#mode, {
       canWrite: () => {
         context.assertCurrent?.()
         select?.()

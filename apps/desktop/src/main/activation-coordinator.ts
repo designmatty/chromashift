@@ -83,7 +83,7 @@ export class ActivationCoordinator {
 
   public activate(
     foregroundApplication: ForegroundApplication | null,
-    mode: ActivationMode = automaticActivationMode,
+    mode: ActivationMode | (() => ActivationMode) = automaticActivationMode,
     options: { canWrite?: () => boolean; recovery?: boolean } = {}
   ): Promise<ActivationOutcome> {
     return this.#enqueue(async () => {
@@ -116,7 +116,10 @@ export class ActivationCoordinator {
         if (hasRestoreFailure(restoration)) return { ...restoration, resolution: null }
         this.#resolver.reset()
       }
-      const outcome = await this.#transition(foregroundApplication, mode)
+      const outcome = await this.#transition(
+        foregroundApplication,
+        typeof mode === 'function' ? mode() : mode
+      )
       if (hasRestoreFailure(outcome)) this.#restorationBlocked = true
       else if (options.recovery && outcome.failures.length === 0) this.#restorationBlocked = false
       return outcome
