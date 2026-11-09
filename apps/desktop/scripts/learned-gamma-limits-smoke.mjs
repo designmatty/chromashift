@@ -172,6 +172,12 @@ app.whenReady().then(async () => {
       debuggerClient.send('Runtime.evaluate', {
         expression: `document.querySelector(${JSON.stringify(selector)})?.click()`
       })
+    // The debugger target exists before React renders; clicks before then are lost.
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[data-fixture-theme="light"]') !== null && document.querySelector('[data-fixture-surface] [data-control="gamma"]') !== null`,
+      'The learned-limits fixture did not render'
+    )
     for (const surface of ['app', 'mini']) {
       await click(`[data-fixture-view="${surface}"]`)
       const palette = `(() => {
