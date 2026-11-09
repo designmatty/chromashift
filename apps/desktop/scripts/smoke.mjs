@@ -1056,7 +1056,7 @@ $processId`
 await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
   environment: Object.fromEntries(Object.entries(globalThis.process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
-  reservePort, waitForDebuggerTarget, connectToDebugger, waitForExpression, hoverElement, captureNativeWindow
+  reservePort, waitForDebuggerTarget, connectToDebugger, waitForExpression, hoverElement
 })
 
 const debuggingPort = await reservePort()

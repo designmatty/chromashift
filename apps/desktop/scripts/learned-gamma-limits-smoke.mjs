@@ -14,8 +14,7 @@ export async function verifyLearnedGammaLimits({
   waitForDebuggerTarget,
   connectToDebugger,
   waitForExpression,
-  hoverElement,
-  captureNativeWindow
+  hoverElement
 }) {
   const parent = resolve(desktopDirectory, 'out')
   await mkdir(parent, { recursive: true })
@@ -187,9 +186,12 @@ app.whenReady().then(async () => {
           `document.querySelector('[role="tooltip"]')?.textContent.includes('Windows rejected a stronger gamma curve on this display.')`,
           'Learned limit tooltip did not open'
         )
-        await captureNativeWindow(
-          child.pid,
-          join(screenshotDirectory, `gamma-learned-${surface}-${theme}-native.png`)
+        // Renderer capture: this helper-free fixture checks the production controls,
+        // not native window chrome, so it does not depend on window enumeration.
+        const screenshot = await debuggerClient.send('Page.captureScreenshot', { format: 'png' })
+        await writeFile(
+          join(screenshotDirectory, `gamma-learned-${surface}-${theme}.png`),
+          globalThis.Buffer.from(screenshot.data, 'base64')
         )
         await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
       }
