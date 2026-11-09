@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { createInterface, type Interface } from 'node:readline'
 import {
+  PROTOCOL_VERSION,
   nativeMessageSchema,
   nativeResponseSchema,
   baselineCaptureResultSchema,
@@ -95,6 +96,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   #diagnostics?: Interface
   #readyAnnounced = false
   #startupError?: Error
+  #negotiated = false
   #heartbeatTimer?: NodeJS.Timeout
   readonly #potentialBaselineDisplayIds = new Set<string>()
 
@@ -120,7 +122,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
   async start(): Promise<SystemInfo> {
     if (this.running) {
-      return this.getSystemInfo()
+      return this.#negotiate()
     }
 
     const child = spawn(this.#options.executablePath, [...this.#options.executableArguments], {
@@ -149,8 +151,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
 
     try {
       await this.#waitForReady()
-      const info = await this.getSystemInfo()
-      await this.sendHeartbeat()
+      const info = await this.#negotiate()
       this.#startHeartbeat()
       return info
     } catch (error) {
@@ -159,6 +160,24 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
       this.#fail(startupError)
       throw startupError
     }
+  }
+
+  async #negotiate(): Promise<SystemInfo> {
+    this.#negotiated = false
+    const info = await this.getSystemInfo()
+    if (info.protocolVersion !== PROTOCOL_VERSION)
+      throw new Error('DisplayService failed its startup health/version handshake.')
+    await this.sendHeartbeat()
+    const health = await this.getServiceHealth()
+    if (
+      info.protocolVersion !== PROTOCOL_VERSION ||
+      health.protocolVersion !== PROTOCOL_VERSION ||
+      info.serviceVersion !== health.serviceVersion ||
+      !health.watchdogArmed
+    )
+      throw new Error('DisplayService failed its startup health/version handshake.')
+    this.#negotiated = true
+    return info
   }
 
   async getSystemInfo(): Promise<SystemInfo> {
@@ -240,6 +259,22 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   }
 
   async request(command: string, params?: Record<string, unknown>): Promise<unknown> {
+    if (
+      !this.#negotiated &&
+      [
+        'baseline.capture',
+        'display.apply',
+        'display.restore',
+        'baseline.restore',
+        'baseline.restoreAll',
+        'display.topology.refresh',
+        'service.shutdown'
+      ].includes(command)
+    ) {
+      throw new Error(
+        'DisplayService health/version handshake has not succeeded. Display writes are blocked.'
+      )
+    }
     if (!this.running || this.#process === undefined) {
       throw new Error('DisplayService is not running')
     }
@@ -401,6 +436,7 @@ export class NativeClient extends EventEmitter<NativeClientEvents> {
   }
 
   #fail(error: Error): void {
+    this.#negotiated = false
     this.#stopHeartbeat()
     for (const request of this.#pending.values()) {
       clearTimeout(request.timeout)

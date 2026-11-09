@@ -120,6 +120,73 @@ async function setup() {
 }
 
 describe('learned gamma limits through the native seam', () => {
+  for (const kind of ['preview', 'edit', 'override'] as const) {
+    it(`keeps the starting gamma through editor open and ${kind} until a changed baseline is captured`, async () => {
+      const { physical, native, product, repository, limits, preview } = await setup()
+      await physical.captureBaseline('display:one')
+      await physical.applyDisplaySettings('display:one', profile().displays[0]!.color)
+      await physical.restoreDisplay('display:one')
+      native.baselineHashes.set('display:one', 'new-calibration')
+      native.gammaRanges.clear()
+      native.calls.length = 0
+
+      const opened = await product.openProfile('game')
+      expect(opened.displays[0]!.color.gamma).toBe(2.5)
+      expect((await product.getState()).gammaLimits!.displays).toEqual({})
+      expect(native.calls).toEqual([])
+      await preview.start(opened, kind, opened)
+      expect(preview.state).toMatchObject({
+        state: 'active',
+        draft: { displays: [{ color: { gamma: 2.5 } }] }
+      })
+      expect((await repository.findById('game'))!.displays[0]!.color.gamma).toBe(2.5)
+      expect(limits.current.displays['display:one']!.sdr!.brightness).toEqual({})
+      expect(native.calls.filter((call) => call.operation === 'capture')).toHaveLength(1)
+    })
+  }
+
+  it('requires session confirmation even when the persisted baseline hash still matches', async () => {
+    const { physical, native, path, repository } = await setup()
+    await physical.captureBaseline('display:one')
+    await physical.applyDisplaySettings('display:one', profile().displays[0]!.color)
+    await physical.restoreDisplay('display:one')
+    const reloaded = new LearnedGammaLimits(path, logger)
+    await reloaded.load()
+    const freshClient = new PhysicalDisplayClient(native, reloaded)
+    native.calls.length = 0
+    expect((await reloaded.clampSavedProfile(repository, 'game'))!.displays[0]!.color.gamma).toBe(
+      2.5
+    )
+    expect(reloaded.applicable.displays).toEqual({})
+    expect(reloaded.clampProfile(profile()).displays[0]!.color.gamma).toBe(2.5)
+    expect(native.calls).toEqual([])
+    await freshClient.captureBaseline('display:one')
+    expect((await reloaded.clampSavedProfile(repository, 'game'))!.displays[0]!.color.gamma).toBe(
+      1.85
+    )
+    expect(reloaded.applicable.displays['display:one']).toBeDefined()
+    await freshClient.restoreAllBaselines()
+    expect(reloaded.applicable.displays).toEqual({})
+    expect(reloaded.current.displays['display:one']!.sdr!.brightness['50']).toEqual({ max: 1.85 })
+  })
+
+  for (const unavailable of ['disconnected', 'hdr', 'unsupported'] as const) {
+    it(`keeps saved intent and hides limits when an opened target is ${unavailable}`, async () => {
+      const { physical, native, product, repository } = await setup()
+      await physical.captureBaseline('display:one')
+      await physical.applyDisplaySettings('display:one', profile().displays[0]!.color)
+      if (unavailable === 'disconnected') native.disconnectedDisplayIds.add('display:one')
+      if (unavailable === 'hdr') native.hdrDisplayIds.add('display:one')
+      if (unavailable === 'unsupported')
+        native.reports.get('display:one')!.capabilities.gamma.supported = false
+      native.calls.length = 0
+      expect((await product.openProfile('game')).displays[0]!.color.gamma).toBe(2.5)
+      expect((await repository.findById('game'))!.displays[0]!.color.gamma).toBe(2.5)
+      expect((await product.getState()).gammaLimits!.displays).toEqual({})
+      expect(native.calls).toEqual([])
+    })
+  }
+
   it('learns after a concurrent Reset using the captured baseline without recapture', async () => {
     const { physical, limits, native } = await setup()
     await physical.captureBaseline('display:one')

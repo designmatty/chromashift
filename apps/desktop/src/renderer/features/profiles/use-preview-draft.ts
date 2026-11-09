@@ -5,7 +5,7 @@ import {
   type PreviewSyncKind,
   type PreviewSyncPort
 } from '@/features/profiles/preview-sync.js'
-import type { PreviewState, ProductError } from '@shared/product-api.js'
+import type { PreviewState, ProductError, ProductState } from '@shared/product-api.js'
 import { hasUnsavedSession, profilesDiffer } from '@shared/unsaved-changes.js'
 
 export interface UsePreviewDraftOptions {
@@ -23,6 +23,7 @@ export interface UsePreviewDraftOptions {
   /** Saved content for the app editor, including metadata-only changes. */
   savedProfile?: ColorProfile | null
   gammaLimits?: DisplayLimits
+  capabilityReports?: ProductState['capabilityReports']
 }
 
 export interface PreviewDraft {
@@ -46,13 +47,19 @@ export interface PreviewDraft {
 
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const { kind, session, enabled, onError } = options
+  const brightnessSupport = Object.fromEntries(
+    Object.entries(options.capabilityReports ?? {}).map(([id, report]) => [
+      id.toLowerCase(),
+      report.capabilities.brightness.supported
+    ])
+  )
   const [localDraft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
   // A native acceptance can narrow gamma while local edits are still buffered.
   // Derive only gamma from the limits; metadata and every other draft field stay local.
   const draft =
     localDraft === null || options.gammaLimits === undefined
       ? localDraft
-      : clampProfileGamma(localDraft, options.gammaLimits)
+      : clampProfileGamma(localDraft, options.gammaLimits, brightnessSupport)
   const [markedDirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
   // Hydration can be dirty without representing a new local edit. Only user
   // changes schedule writes; main's session broadcasts must not echo them back.
@@ -81,9 +88,9 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   useEffect(() => {
     if (options.gammaLimits === undefined) return
     setDraft((current) =>
-      current === null ? null : clampProfileGamma(current, options.gammaLimits!)
+      current === null ? null : clampProfileGamma(current, options.gammaLimits!, brightnessSupport)
     )
-  }, [JSON.stringify(options.gammaLimits)])
+  }, [JSON.stringify(options.gammaLimits), JSON.stringify(brightnessSupport)])
 
   useLayoutEffect(() => window.chromaShift.onPanelClosing(() => sync.invalidate()), [sync])
 

@@ -425,6 +425,10 @@ convergence, quiet profile updates, baseline invalidation, Reset, and invalid
 stored data retention. Core fixtures validate the new schema-v1 slice; native
 protocol tests validate protocol-v2 results. The website retains the starting
 envelope because its demo has no real display identity or captured baseline.
+Review regressions cover protocol-v1 write rejection, renderer-independent
+emergency handling after failed negotiation, unconfirmed persisted limits,
+editor and preview baseline changes, disconnected/HDR/unsupported target
+preservation, and effective brightness after mixed-endpoint filtering.
 
 Owner manual checks, when desktop and hardware runs resume:
 
@@ -437,8 +441,10 @@ Owner manual checks, when desktop and hardware runs resume:
    notification, and that other unsaved edits survive. Diagnostic logs must
    identify the request, display, accepted bound, and captured baseline.
 3. Restart after confirmed restoration. Apply and open a previously saved
-   out-of-range profile, including an imported profile. Verify quiet permanent
-   clamping. Confirm Preview, Edit, and mini-panel overrides obey the range.
+   out-of-range profile, including an imported profile. Before normal capture
+   confirms the baseline, verify the starting range, no learned note, and no
+   permanent clamp. After matching capture, verify quiet permanent clamping.
+   Confirm Preview, Edit, and mini-panel overrides obey the range.
 4. In Settings → Displays, reset one display. Its range returns to the starting
    envelope and the note disappears, with no display write. Other displays and
    previously clamped saved profile values remain intact.
@@ -452,7 +458,9 @@ Owner manual checks, when desktop and hardware runs resume:
 
 The display-free learned-limits smoke fixture seeds the persisted slice and
 checks the production controls and Reset action. It causes no GDI rejections or
-display writes. Smoke remains an owner-run gate; automated verification does
+display writes. Theme changes call production `applyColorScheme`, wait for a
+computed-color change, and assert different dark and light colors before capture.
+Smoke remains an owner-run gate; automated verification does
 not establish hardware acceptance. AMD remains hardware-unverified.
 
 The current reference host is Windows 11 with an NVIDIA RTX 5090 driving two

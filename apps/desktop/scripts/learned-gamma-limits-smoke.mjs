@@ -56,6 +56,7 @@ import { Button, Flex, Stack, Text } from '@chakra-ui/react'
 import { Provider } from ${source('renderer/components/ui/provider.tsx')}
 import { ColorControls } from ${source('renderer/features/profiles/color-controls.tsx')}
 import { DisplaysView } from ${source('renderer/features/settings/displays-view.tsx')}
+import { applyColorScheme } from ${source('renderer/lib/color-scheme.ts')}
 const display = { id: 'display:fixture', name: 'Seeded display', hdr: false, primary: true,
   adapter: { name: 'Fixture adapter', vendor: 'nvidia' }, connection: 'Fixture', refreshRate: 60 }
 const available = { supported: true, provider: 'windows' }
@@ -67,9 +68,9 @@ function Fixture() {
   React.useEffect(() => { window.chromaShift.getFixtureLimits().then(setLimits) }, [])
   React.useEffect(() => window.chromaShift.onFixtureLimits(setLimits), [])
   const product = { displays: [display], capabilityReports: { [display.id]: { capabilities } }, gammaLimits: limits, chromaShift: { status: 'active' } }
-  return <Stack p="4" gap="4" color="fg" bg="bg" minH="100vh">
+  return <Stack data-fixture-root p="4" gap="4" color="fg" bg="bg" minH="100vh">
     <Flex gap="2">{['app','mini','displays'].map((item) => <Button key={item} data-fixture-view={item} onClick={() => setView(item)}>{item}</Button>)}</Flex>
-    <Flex gap="2">{['dark','light'].map((theme) => <Button key={theme} data-fixture-theme={theme} onClick={() => { document.documentElement.className = theme }}>{theme}</Button>)}</Flex>
+    <Flex gap="2">{['dark','light'].map((theme) => <Button key={theme} data-fixture-theme={theme} onClick={() => applyColorScheme(document.documentElement, theme)}>{theme}</Button>)}</Flex>
     <Text>Seeded learned limits. No display writes.</Text>
     <div data-fixture-surface={view} style={{maxWidth: view === 'mini' ? 310 : 800}}>
       {limits !== null && (view === 'displays'
@@ -173,8 +174,32 @@ app.whenReady().then(async () => {
       })
     for (const surface of ['app', 'mini']) {
       await click(`[data-fixture-view="${surface}"]`)
+      const palette = `(() => {
+        const root = document.querySelector('[data-fixture-root]')
+        if (!root) return null
+        const style = getComputedStyle(root)
+        return JSON.stringify({ color: style.color, background: style.backgroundColor })
+      })()`
+      await click('[data-fixture-theme="light"]')
+      await waitForExpression(
+        debuggerClient,
+        `document.documentElement.style.colorScheme === 'light' && ${palette} !== null`,
+        'Fixture did not initialize its production light theme'
+      )
+      let previousPalette = (await debuggerClient.send('Runtime.evaluate', { expression: palette }))
+        .result.value
+      const palettes = {}
       for (const theme of ['dark', 'light']) {
         await click(`[data-fixture-theme="${theme}"]`)
+        await waitForExpression(
+          debuggerClient,
+          `document.documentElement.style.colorScheme === '${theme}' && ${palette} !== ${JSON.stringify(previousPalette)}`,
+          `Fixture ${theme} theme did not change computed colors`
+        )
+        palettes[theme] = (
+          await debuggerClient.send('Runtime.evaluate', { expression: palette })
+        ).result.value
+        previousPalette = palettes[theme]
         await waitForExpression(
           debuggerClient,
           `document.querySelector('[data-fixture-surface="${surface}"] [data-part="gamma-limit-note"]')?.textContent.includes('Limited to 1.85 on this display') && document.querySelector('[data-control="gamma"]')?.dataset.gammaMax === '1.85'`,
@@ -195,6 +220,8 @@ app.whenReady().then(async () => {
         )
         await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
       }
+      if (palettes.dark === palettes.light)
+        throw new Error('Dark and light captures have identical computed colors.')
     }
     await click('[data-fixture-view="displays"]')
     await waitForExpression(

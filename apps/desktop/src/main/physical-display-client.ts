@@ -95,7 +95,9 @@ export class PhysicalDisplayClient {
   public constructor(
     private readonly endpoint: EndpointDisplayPort,
     private readonly limits?: LearnedGammaLimits
-  ) {}
+  ) {
+    limits?.setDisplaySource(this)
+  }
 
   public async getDisplays(): Promise<Display[]> {
     return this.#groupDisplays(await this.endpoint.getDisplays())
@@ -107,6 +109,12 @@ export class PhysicalDisplayClient {
 
   public getVisibleApplications(): Promise<ForegroundApplication[]> {
     return this.endpoint.getVisibleApplications()
+  }
+
+  public forgetBaselines(): void {
+    this.#baselineHashes.clear()
+    this.#endpointBaselineHashes.clear()
+    this.limits?.forgetAllBaselines()
   }
 
   public async getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
@@ -128,6 +136,8 @@ export class PhysicalDisplayClient {
   }
 
   public async captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
+    this.limits?.forgetBaseline(displayId)
+    this.#baselineHashes.delete(displayId.toLowerCase())
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
     const results = [] as BaselineCaptureResult[]
     for (const display of endpoints) results.push(await this.endpoint.captureBaseline(display.id))
@@ -141,6 +151,7 @@ export class PhysicalDisplayClient {
       this.#baselineHashes.set(displayId.toLowerCase(), hash)
       await this.limits?.observeBaseline(displayId, hash)
     }
+    await this.limits?.refreshApplicability()
     return {
       ...results[0]!,
       displayId,
@@ -157,7 +168,6 @@ export class PhysicalDisplayClient {
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
     const baselineHash = this.#baselineHashes.get(displayId.toLowerCase())
     if (baselineHash !== undefined) await this.limits?.observeBaseline(displayId, baselineHash)
-    settings = this.limits?.clampSettings(displayId, settings) ?? settings
     const reports = await Promise.all(
       endpoints.map((display) => this.endpoint.getDisplayCapabilityReport(display.id))
     )
@@ -174,6 +184,10 @@ export class PhysicalDisplayClient {
           : []
       )
     ) as DisplaySettings
+    // Clamp after projection so learning and lookup use native's effective brightness.
+    await this.limits?.refreshApplicability()
+    const clamped = this.limits?.clampSettings(displayId, projected)
+    if (clamped?.gamma !== undefined) projected.gamma = clamped.gamma
 
     const windowsGammaProviders = (['brightness', 'contrast', 'gamma'] as const).every(
       (name) => commonCapabilities[name].provider === 'windows'
@@ -240,6 +254,8 @@ export class PhysicalDisplayClient {
       (result) => !result.restored && result.reason !== 'baselineNotCaptured'
     )
     if (failure !== undefined) return { ...failure, displayId }
+    this.#baselineHashes.delete(displayId.toLowerCase())
+    this.limits?.forgetBaseline(displayId)
     const restored = results.find((result) => result.restored)
     return restored === undefined
       ? { displayId, restored: false, reason: 'baselineNotCaptured' }
@@ -261,6 +277,8 @@ export class PhysicalDisplayClient {
           (result) => !result.restored && result.reason !== 'baselineNotCaptured'
         )
         if (failure !== undefined) return { ...failure, displayId }
+        this.#baselineHashes.delete(displayId.toLowerCase())
+        this.limits?.forgetBaseline(displayId)
         const restored = results.find((entry) => entry.restored)
         return restored === undefined
           ? { displayId, restored: false as const, reason: 'baselineNotCaptured' }

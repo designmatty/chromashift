@@ -48,6 +48,10 @@ export type DisplayGammaLimits = z.infer<typeof displayGammaLimitsSchema>
 export type LearnedGammaRange = z.infer<typeof learnedGammaRangeSchema>
 export const emptyDisplayLimits: DisplayLimits = { schemaVersion: 1, displays: {} }
 
+export function effectiveGammaBrightness(brightness: number | undefined, supported = true): number {
+  return supported ? (brightness ?? 50) : 50
+}
+
 export function effectiveGammaRange(
   limits: DisplayGammaLimits | undefined,
   brightness: number,
@@ -61,13 +65,20 @@ export function effectiveGammaRange(
   }
 }
 
-export function clampProfileGamma(profile: ColorProfile, limits: DisplayLimits): ColorProfile {
+export function clampProfileGamma(
+  profile: ColorProfile,
+  limits: DisplayLimits,
+  brightnessSupport: Record<string, boolean> = {}
+): ColorProfile {
   return {
     ...profile,
     displays: profile.displays.map((target) => {
       const range = effectiveGammaRange(
         limits.displays[target.displayId.toLowerCase()],
-        target.color.brightness
+        effectiveGammaBrightness(
+          target.color.brightness,
+          brightnessSupport[target.displayId.toLowerCase()]
+        )
       )
       return {
         ...target,

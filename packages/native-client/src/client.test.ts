@@ -25,6 +25,50 @@ afterEach(async () => {
 })
 
 describe('NativeClient activation command surface', () => {
+  it('arms the watchdog before completing health negotiation', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--watchdog-needs-heartbeat'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000
+    })
+    await expect(client.start()).resolves.toMatchObject({ protocolVersion: 2 })
+    await expect(client.getServiceHealth()).resolves.toMatchObject({ watchdogArmed: true })
+    await expect(client.captureBaseline('display:test')).resolves.toMatchObject({
+      state: 'captured'
+    })
+  })
+
+  it('blocks every mutating command before negotiation and after a version mismatch', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--protocol-v1'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000
+    })
+    const native = client
+    const assertBlocked = async () => {
+      for (const command of [
+        'baseline.capture',
+        'display.apply',
+        'display.restore',
+        'baseline.restore',
+        'baseline.restoreAll',
+        'display.topology.refresh',
+        'service.shutdown'
+      ])
+        await expect(native.request(command, { displayId: 'display:test' })).rejects.toThrow(
+          'handshake has not succeeded'
+        )
+      expect(native.potentialBaselineDisplayIds).toEqual([])
+    }
+    await assertBlocked()
+    const starting = native.start()
+    await assertBlocked()
+    await expect(starting).rejects.toThrow('health/version handshake')
+    await assertBlocked()
+  })
+
   it('sends validated state, capture, apply, and restore requests', async () => {
     const native = createClient()
     await native.start()

@@ -498,18 +498,15 @@ describe('product runtime startup wiring', () => {
     expect(harness.logger.has('NativeServiceHealthVerified')).toBe(false)
   })
 
-  it('logs a native start failure while lifecycle configuration still proceeds', async () => {
+  it('blocks lifecycle writers when native startup fails', async () => {
     const harness = await createHarness()
     harness.client.startFailure = new Error('spawn failed')
     await harness.runtime.start()
 
     expect(harness.logger.has('NativeServiceStartupFailed')).toBe(true)
-    // A start failure does not gate the product lifecycle: the controllers are
-    // wired anyway, startup activation is attempted against the client (whose
-    // operations fail in production), and native-service recovery owns getting
-    // back to a healthy helper.
-    expect(harness.runtime.productController).toBeDefined()
-    expect(harness.trayMenusCreated()).toBe(1)
+    expect(harness.runtime.productController).toBeUndefined()
+    expect(harness.trayMenusCreated()).toBe(0)
+    expect(harness.client.calls).toEqual([])
     expect(() => harness.runtime.dispose()).not.toThrow()
   })
 })
@@ -2235,5 +2232,41 @@ it('rereview90: End preview must recover after a failed continuation Retry', asy
   } finally {
     h.client.failRestoreDisplayIds.clear()
     await h.runtime.dispose()
+  }
+})
+it('review92: incompatible protocol v1 helper cannot receive display writes', async () => {
+  const h = await createHarness()
+  const start = h.client.start.bind(h.client)
+  const health = h.client.getServiceHealth.bind(h.client)
+  h.client.start = async () => ({ ...(await start()), protocolVersion: 1 })
+  h.client.getServiceHealth = async () => ({ ...(await health()), protocolVersion: 1 })
+  await h.runtime.start()
+  try {
+    expect(h.logger.has('NativeServiceStartupFailed')).toBe(true)
+    expect(h.logger.has('NativeServiceHealthVerified')).toBe(false)
+    expect(h.client.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    expect(h.client.calls).toEqual([])
+    expect(h.runtime.productController).toBeUndefined()
+    expect(h.errors).toContainEqual({
+      title: 'DisplayService compatibility check failed',
+      message: expect.stringContaining('matching ChromaShift and DisplayService versions')
+    })
+    expect(() => h.emergencyRestore()).not.toThrow()
+    expect(() => h.emergencyRestore()).not.toThrow()
+    expect(h.logger.has('EmergencyRestoreSkipped')).toBe(true)
+    await expect(h.invokeRestore()).resolves.toMatchObject({ ok: false })
+    await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+    await expect(h.invokeAutomatic()).resolves.toMatchObject({ ok: false })
+    h.displayEvent('displayAdded')
+    h.client.emitForegroundApplication({
+      pid: 7,
+      executable: 'game.exe',
+      path: 'C:\\game.exe',
+      title: 'Game',
+      monitorDeviceName: null
+    })
+    expect(h.client.calls).toEqual([])
+  } finally {
+    h.runtime.dispose()
   }
 })

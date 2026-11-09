@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline'
 
 const displayId = 'display:test'
+const protocolVersion = process.argv.includes('--protocol-v1') ? 1 : 2
 const serviceInstanceId = '11111111-1111-4111-8111-111111111111'
 const baselineOwnerId = '22222222-2222-4222-8222-222222222222'
 const channel = Array.from({ length: 256 }, (_, index) => index * 257)
@@ -32,7 +33,7 @@ lines.on('line', (line) => {
   switch (request.command) {
     case 'system.info':
       succeed(request.id, {
-        protocolVersion: 2,
+        protocolVersion,
         serviceVersion: 'test',
         operatingSystem: 'test',
         processId: process.pid,
@@ -51,13 +52,13 @@ lines.on('line', (line) => {
     case 'service.health':
       succeed(request.id, {
         status: 'healthy',
-        protocolVersion: 2,
+        protocolVersion,
         serviceVersion: 'test',
         processId: process.pid,
         serviceInstanceId,
         baselineOwnerId,
         baselineCount: 0,
-        watchdogArmed: true
+        watchdogArmed: !process.argv.includes('--watchdog-needs-heartbeat') || heartbeatCount > 0
       })
       break
     case 'service.heartbeat':

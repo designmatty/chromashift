@@ -54,11 +54,17 @@ documents fail startup validation and remain untouched. Fixtures live under
 `fixtures/display-limits`. Existing profile and settings schemas stay unchanged.
 
 `PhysicalDisplayClient` associates captured endpoint hashes with a stable panel,
-invalidates limits after a changed captured baseline, clamps before applying,
+invalidates limits after a changed captured baseline, clamps after capability projection,
 and converges simultaneous endpoints to their common accepted gamma. It never
 uses current modified output as a baseline. Main's `LearnedGammaLimits` merges
 learned ends with the unchanged starting envelope. The serialized profile writer
 quietly clamps saved gamma on apply or editor opening, without a notification.
+Persisted limits remain inactive until normal capture-before-mutation confirms
+their baseline hash in the current session. Restoration that releases a baseline
+or a helper exit revokes that confirmation. Quiet updates and renderer feedback
+use limits only for connected SDR displays that support gamma. Learning, lookup,
+clamping, and feedback use brightness 50 when capabilities omit brightness from
+the native request, while the saved brightness intent remains unchanged.
 Session references and drafts change only their gamma fields, retaining other
 unsaved changes. Both renderers receive validated read-only limits and can
 request a sender-checked per-display reset through preload. Reset changes the
@@ -85,11 +91,16 @@ through the runtime's `productController`, `shutdownCoordinator`, and
 the shell only through its ports. The DisplayService connection enters through
 a `createClient` factory port typed as the union of the consumer ports the
 runtime feeds, so runtime startup wiring (start-mode selection, the
-health/version handshake, fail-open lifecycle configuration) is covered by
+health/version handshake, fail-closed lifecycle configuration) is covered by
 fast in-process tests against `testing/fake-native-display.ts`, the one
 shared fake for the native display seam that activation-coordinator and
 preview-session tests also use. Product wiring changes belong in the runtime
 and routers, not in `index.ts`.
+An unsuccessful handshake leaves product writers unavailable and shows a
+compatibility error. The native client also rejects mutating requests until
+negotiation succeeds. The main-owned emergency shortcut logs a skipped restore
+when negotiation failed and no writes were permitted; compatible-helper
+restoration continues through the normal controllers.
 
 Electron main composes that domain layer with the native client. It stores
 configuration atomically at `profiles.json` under Electron's user-data directory

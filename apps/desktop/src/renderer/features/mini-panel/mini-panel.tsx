@@ -87,7 +87,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     onError: setError,
     initialDraft: () => (appliedProfile === undefined ? null : structuredClone(appliedProfile)),
     initialDirty: () => override !== null,
-    gammaLimits: product.gammaLimits
+    gammaLimits: product.gammaLimits,
+    capabilityReports: product.capabilityReports
   })
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(() =>
     chooseInitialDisplay(product, appliedProfile)

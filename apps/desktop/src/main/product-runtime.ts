@@ -154,7 +154,17 @@ export class ProductRuntime {
   }
 
   public async start(): Promise<void> {
-    await this.#startNativeService()
+    if (!(await this.#startNativeService())) {
+      this.#registerEmergencyShortcut(() => {
+        this.ports.logger.write({
+          level: 'warning',
+          eventName: 'EmergencyRestoreSkipped',
+          reason: 'NativeServiceNotNegotiated',
+          message: 'DisplayService negotiation failed. No display writes were permitted.'
+        })
+      })
+      return
+    }
     await this.#configureProductLifecycle()
   }
 
@@ -168,7 +178,7 @@ export class ProductRuntime {
     this.#trayController?.dispose()
   }
 
-  async #startNativeService(): Promise<void> {
+  async #startNativeService(): Promise<boolean> {
     const { logger, configuration } = this.ports
     const configurationPath = configuration.profileConfigurationPath
     try {
@@ -220,20 +230,6 @@ export class ProductRuntime {
         throw error
       }
       this.#gammaLimits = limits
-      const physicalClient = new PhysicalDisplayClient(nativeClient, limits)
-      this.#physicalDisplayClient = physicalClient
-      const coordinator = new ActivationCoordinator(
-        this.#profileRepository,
-        physicalClient,
-        logger,
-        limits
-      )
-      this.#automaticActivation = new AutomaticActivationController(
-        this.#profileRepository,
-        coordinator,
-        logger,
-        (application) => application?.pid === process.pid
-      )
       attachNativeEventRouter(nativeClient, {
         activation: () => this.#automaticActivation,
         displayTransitions: () => this.#displayTransitionController,
@@ -261,6 +257,21 @@ export class ProductRuntime {
         baselineOwnerId: health.baselineOwnerId,
         watchdogArmed: health.watchdogArmed
       })
+      const physicalClient = new PhysicalDisplayClient(nativeClient, limits)
+      this.#physicalDisplayClient = physicalClient
+      const coordinator = new ActivationCoordinator(
+        this.#profileRepository,
+        physicalClient,
+        logger,
+        limits
+      )
+      this.#automaticActivation = new AutomaticActivationController(
+        this.#profileRepository,
+        coordinator,
+        logger,
+        (application) => application?.pid === process.pid
+      )
+      nativeClient.on('exit', () => physicalClient.forgetBaselines())
       try {
         const identityRewrite = await rewriteProfilesForPhysicalDisplays(
           this.#profileRepository,
@@ -281,11 +292,30 @@ export class ProductRuntime {
         })
       }
       this.#startupForegroundApplication = await nativeClient.getForegroundApplication()
+      return true
     } catch (error) {
       logger.write({
         level: 'error',
         eventName: 'NativeServiceStartupFailed',
         ...describeError(error)
+      })
+      if (this.#gammaLimits !== undefined) {
+        this.ports.dialogs.showError(
+          'DisplayService compatibility check failed',
+          'Display control is unavailable because DisplayService could not complete its health/version handshake. ' +
+            'Reinstall matching ChromaShift and DisplayService versions, then restart ChromaShift.'
+        )
+      }
+      return false
+    }
+  }
+
+  #registerEmergencyShortcut(handler: () => void): void {
+    if (!this.ports.system.registerEmergencyRestoreShortcut(handler)) {
+      this.ports.logger.write({
+        level: 'warning',
+        eventName: 'EmergencyRestoreShortcutUnavailable',
+        shortcut: EMERGENCY_RESTORE_ACCELERATOR
       })
     }
   }
@@ -473,25 +503,17 @@ export class ProductRuntime {
       },
       logger
     )
-    if (
-      !system.registerEmergencyRestoreShortcut(() => {
-        void emergencyRestoreController.request().then((restored) => {
-          if (!restored) {
-            dialogs.showError(
-              'Emergency restore failed',
-              'ChromaShift could not confirm that every captured display baseline was restored.'
-            )
-          }
-          shell.broadcastProductState()
-        })
+    this.#registerEmergencyShortcut(() => {
+      void emergencyRestoreController.request().then((restored) => {
+        if (!restored) {
+          dialogs.showError(
+            'Emergency restore failed',
+            'ChromaShift could not confirm that every captured display baseline was restored.'
+          )
+        }
+        shell.broadcastProductState()
       })
-    ) {
-      logger.write({
-        level: 'warning',
-        eventName: 'EmergencyRestoreShortcutUnavailable',
-        shortcut: EMERGENCY_RESTORE_ACCELERATOR
-      })
-    }
+    })
     const shortcutController = new ShortcutController(
       system.shortcutRegistrations,
       profileRepository,

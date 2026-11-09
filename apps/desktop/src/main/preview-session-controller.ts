@@ -173,6 +173,7 @@ export class PreviewSessionController {
     if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
     }
+    await this.limits?.refreshApplicability()
     profile = this.limits?.clampProfile(profile) ?? profile
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {

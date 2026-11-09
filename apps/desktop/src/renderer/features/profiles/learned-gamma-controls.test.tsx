@@ -43,6 +43,32 @@ function state(): ProductState {
 }
 
 describe('learned gamma feedback', () => {
+  for (const compact of [false, true]) {
+    it(`uses native brightness 50 for unsupported brightness intent 37, compact=${compact}`, () => {
+      const product = state()
+      product.capabilityReports['display:one']!.capabilities.brightness = {
+        supported: false,
+        provider: 'unknown'
+      }
+      const color = { ...createNeutralColorSettings(), brightness: 37, gamma: 1.85 }
+      const html = renderToStaticMarkup(
+        <ChakraProvider value={system}>
+          <ColorControls
+            displayId="display:one"
+            product={product}
+            color={color}
+            editable
+            compact={compact}
+            onChange={() => undefined}
+          />
+        </ChakraProvider>
+      )
+      expect(html).toContain('Limited to 1.85 on this display')
+      expect(html).toContain('data-gamma-min="0.3" data-gamma-max="1.85"')
+      expect(html).toContain('at brightness 50%')
+      expect(color.brightness).toBe(37)
+    })
+  }
   for (const compact of [false, true])
     for (const theme of ['dark', 'light']) {
       it(`shows the limit, explanation and narrowed bounds in ${theme}, compact=${compact}`, () => {
@@ -73,45 +99,59 @@ describe('learned gamma feedback', () => {
       })
     }
 
-  it('rebases only gamma in a dirty renderer draft and retains its other unsaved content', () => {
-    const product = state()
-    const saved = {
-      id: 'game',
-      name: 'Saved',
-      enabled: true,
-      applications: [],
-      displays: [
-        { displayId: 'display:one', color: { ...createNeutralColorSettings(), gamma: 1.85 } }
-      ]
+  it.each([true, false])(
+    'rebases only gamma in a dirty renderer draft, brightness supported=%s',
+    (brightnessSupported) => {
+      const product = state()
+      product.capabilityReports['display:one']!.capabilities.brightness = {
+        supported: brightnessSupported,
+        provider: 'windows'
+      }
+      const saved = {
+        id: 'game',
+        name: 'Saved',
+        enabled: true,
+        applications: [],
+        displays: [
+          { displayId: 'display:one', color: { ...createNeutralColorSettings(), gamma: 1.85 } }
+        ]
+      }
+      const changed = {
+        ...saved,
+        name: 'Unsaved name',
+        displays: [
+          {
+            displayId: 'display:one',
+            color: {
+              ...createNeutralColorSettings(),
+              brightness: brightnessSupported ? 50 : 37,
+              gamma: 2.5,
+              hue: 45
+            }
+          }
+        ]
+      }
+      function Draft(): React.JSX.Element {
+        const state = usePreviewDraft({
+          kind: 'edit',
+          session: { state: 'inactive' },
+          enabled: false,
+          initialDraft: () => changed,
+          initialDirty: () => true,
+          savedProfile: saved,
+          gammaLimits: product.gammaLimits,
+          capabilityReports: product.capabilityReports,
+          onError: () => undefined
+        })
+        return <div>{JSON.stringify({ draft: state.draft, dirty: state.dirty })}</div>
+      }
+      const html = renderToStaticMarkup(<Draft />)
+      expect(html).toContain('Unsaved name')
+      expect(html).toContain('&quot;gamma&quot;:1.85')
+      expect(html).toContain('&quot;hue&quot;:45')
+      expect(html).toContain(`&quot;brightness&quot;:${brightnessSupported ? 50 : 37}`)
+      expect(html).toContain('&quot;dirty&quot;:true')
+      expect(changed.displays[0]!.color.gamma).toBe(2.5)
     }
-    const changed = {
-      ...saved,
-      name: 'Unsaved name',
-      displays: [
-        {
-          displayId: 'display:one',
-          color: { ...createNeutralColorSettings(), gamma: 2.5, hue: 45 }
-        }
-      ]
-    }
-    function Draft(): React.JSX.Element {
-      const state = usePreviewDraft({
-        kind: 'edit',
-        session: { state: 'inactive' },
-        enabled: false,
-        initialDraft: () => changed,
-        initialDirty: () => true,
-        savedProfile: saved,
-        gammaLimits: product.gammaLimits,
-        onError: () => undefined
-      })
-      return <div>{JSON.stringify({ draft: state.draft, dirty: state.dirty })}</div>
-    }
-    const html = renderToStaticMarkup(<Draft />)
-    expect(html).toContain('Unsaved name')
-    expect(html).toContain('&quot;gamma&quot;:1.85')
-    expect(html).toContain('&quot;hue&quot;:45')
-    expect(html).toContain('&quot;dirty&quot;:true')
-    expect(changed.displays[0]!.color.gamma).toBe(2.5)
-  })
+  )
 })

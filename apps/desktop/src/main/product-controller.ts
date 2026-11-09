@@ -123,6 +123,7 @@ export class ProductController {
     displays: Display[],
     capabilityReports: Record<string, DisplayCapabilityReport>
   ): Promise<ProductState> {
+    await this.limits?.refreshApplicability()
     const configuration = await this.#configurationWithApplicationIcons()
     return {
       version: this.version,
@@ -134,7 +135,7 @@ export class ProductController {
       foregroundApplication: await this.native.getForegroundApplication(),
       preview: this.preview.state,
       settings: await this.settings.get(),
-      gammaLimits: this.limits?.current
+      gammaLimits: this.limits?.applicable
     }
   }
 
@@ -193,6 +194,7 @@ export class ProductController {
   }
 
   public async saveProfile(profile: ColorProfile, removeShortcut = false): Promise<ColorProfile> {
+    await this.limits?.refreshApplicability()
     profile = this.limits?.clampProfile(profile) ?? profile
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
     const normalized = isDefault

@@ -90,7 +90,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     initialDirty: () => hasUnsavedSession(product.preview),
     savedProfile:
       product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null,
-    gammaLimits: product.gammaLimits
+    gammaLimits: product.gammaLimits,
+    capabilityReports: product.capabilityReports
   })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??

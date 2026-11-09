@@ -26,7 +26,12 @@ background reader so a blocked redirected-console read cannot prevent the main
 lifecycle loop from observing parent exit or watchdog expiration.
 
 Before enabling automation, Electron requires `system.info` and `service.health`
-to agree on protocol and service versions, and requires an armed watchdog. A
+to agree on protocol and service versions, and requires an armed watchdog. The
+client sends its first heartbeat to arm the watchdog before checking health.
+Until negotiation succeeds, capture, apply, restore, restore-all, topology refresh,
+and shutdown requests are blocked. A failed handshake disables product writers
+and shows a compatibility error; the renderer-independent emergency shortcut
+logs that no restoration is needed because no writes were permitted. A
 restarted helper is accepted only when it reports no captured baselines; Electron
 refreshes topology before requesting foreground state or resuming activation.
 If the old helper may still own modified output, automatic restart fails closed

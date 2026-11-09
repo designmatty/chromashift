@@ -95,6 +95,7 @@ export {
   displayGammaLimitsSchema,
   emptyDisplayLimits,
   effectiveGammaRange,
+  effectiveGammaBrightness,
   clampProfileGamma,
   type DisplayLimits,
   type DisplayGammaLimits,

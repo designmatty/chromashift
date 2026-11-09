@@ -2,6 +2,7 @@ import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
 import { Palette, Thermometer } from 'lucide-react'
 import {
   effectiveGammaRange,
+  effectiveGammaBrightness,
   createNeutralColorSettings,
   type ColorSettings,
   type CompleteColorSettings
@@ -175,13 +176,18 @@ export function ColorControls({
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
-  const limits = display?.hdr ? undefined : product.gammaLimits?.displays[displayId.toLowerCase()]
+  const limits =
+    display?.hdr || !report?.capabilities.gamma?.supported
+      ? undefined
+      : product.gammaLimits?.displays[displayId.toLowerCase()]
   const completeColor: CompleteColorSettings = { ...createNeutralColorSettings(), ...color }
+  const gammaBrightness = (brightness: number) =>
+    effectiveGammaBrightness(brightness, report?.capabilities.brightness?.supported)
 
   function change(key: ColorControlKey, nextValue: number): void {
     const next = { ...completeColor, [key]: nextValue }
     if (key === 'brightness' || key === 'gamma') {
-      const range = effectiveGammaRange(limits, next.brightness)
+      const range = effectiveGammaRange(limits, gammaBrightness(next.brightness))
       next.gamma = Math.min(range.max, Math.max(range.min, next.gamma))
     }
     onChange(next)
@@ -205,8 +211,8 @@ export function ColorControls({
           const support = controlSupport(control.key, display, report)
           const value = completeColor[control.key]
           const overridden = value !== control.neutral
-          const gammaRange = effectiveGammaRange(limits, completeColor.brightness)
-          const learned = limits?.sdr?.brightness[String(completeColor.brightness)]
+          const gammaRange = effectiveGammaRange(limits, gammaBrightness(completeColor.brightness))
+          const learned = limits?.sdr?.brightness[String(gammaBrightness(completeColor.brightness))]
           const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
           const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
           const row = (
@@ -283,7 +289,7 @@ export function ColorControls({
                 }
                 limitLabel={
                   control.key === 'gamma'
-                    ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)} at brightness ${completeColor.brightness}%`
+                    ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)} at brightness ${gammaBrightness(completeColor.brightness)}%`
                     : undefined
                 }
                 disabled={!editable || !support.available}
