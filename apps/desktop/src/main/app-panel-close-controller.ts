@@ -118,12 +118,22 @@ export class AppPanelCloseController {
         })
         if (this.ports.isDestroyed() || this.ports.isExiting()) return
         if (!(error instanceof PreviewRestoreError)) {
+          // A failed older operation must still drain the latest explicit close.
+          if (reason !== this.#reason || scope !== this.#scope || openVersion !== this.#openVersion)
+            continue
           // Rollback can succeed before resuming activation fails. The current
           // visible opening still needs admission for subsequent preview edits.
-          if (this.ports.isVisible()) this.ports.renewPanelLifetime?.(openVersion)
+          if (this.ports.isVisible() && openVersion === this.ports.getPanelOpenVersion())
+            this.ports.renewPanelLifetime?.(openVersion)
           return
         }
-        if ((await showRestoreFailureGuidance(this.ports.errors)) === 'retry') {
+        const response = await showRestoreFailureGuidance(this.ports.errors)
+        if (this.ports.isDestroyed() || this.ports.isExiting()) return
+        // Guidance must still report failed restoration. Its response cannot
+        // abandon a newer close or retarget that close to a later opening.
+        if (reason !== this.#reason || scope !== this.#scope || openVersion !== this.#openVersion)
+          continue
+        if (response === 'retry') {
           // The guidance itself raises the app. Retry still owns the original
           // restoration scope; it must not acquire a newer session.
           this.#openVersion = this.ports.getPanelOpenVersion()

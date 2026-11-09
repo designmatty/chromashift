@@ -488,6 +488,92 @@ describe('AppPanelCloseController', () => {
     expect(h.preview.state).toMatchObject({ state: 'active', kind: 'edit' })
     expect(h.native.restored).toEqual(['display:one'])
     expect(h.window.destroy).not.toHaveBeenCalled()
+    expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+  })
+
+  it('renews only the latest opening if both superseded and current closes fail activation', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.activation.cancelPreview.mockRejectedValue(new Error('Activation target is unavailable.'))
+
+    const first = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const currentVersion = h.panels.getPanelOpenVersion('app')
+    const editing = h.start('edit')
+    const second = h.controller.handleClose(h.event)
+    gate.release()
+    await Promise.all([first, editing, second])
+
+    expect(h.native.restored).toEqual(['display:one', 'display:one'])
+    expect(h.preview.state).toEqual({ state: 'inactive' })
+    expect(h.ports.cancelForPanelHide).toHaveBeenCalledTimes(2)
+    expect(h.ports.renewPanelLifetime).toHaveBeenCalledExactlyOnceWith(currentVersion)
+    const lifetime = h.panels.getPanelLifetime('app')!
+    expect(lifetime).not.toBeNull()
+    expect(lifetime).not.toBe(currentVersion)
+    expect(() => h.panels.assertPanelLifetime('app', lifetime)).not.toThrow()
+    expect(h.window.destroy).not.toHaveBeenCalled()
+    expect(h.ports.errors.showError).not.toHaveBeenCalled()
+  })
+
+  it('drains a caption close superseding a failed handoff without reopening', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.activation.cancelPreview.mockRejectedValueOnce(new Error('Activation target is unavailable.'))
+
+    const handoff = h.controller.handleClose(h.event, 'handoff')
+    await gate.entered
+    const closing = h.controller.handleClose(h.event)
+    expect(closing).toBe(handoff)
+    gate.release()
+    await closing
+
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.ports.cancelForPanelHide.mock.calls.map(([reason]) => reason)).toEqual([
+      'handoff',
+      'close'
+    ])
+    expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+    expect(h.window.destroy).toHaveBeenCalledOnce()
+  })
+
+  it('drains a newer close when the older handoff response fails', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    await h.start('edit')
+    h.panels.openMiniPanel()
+    let enter!: () => void
+    let fail!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const response = new Promise<void>((_resolve, reject) => {
+      fail = () => reject(new Error('Handoff response failed.'))
+    })
+    h.ports.waitForHandoffResponse.mockImplementationOnce(async () => {
+      enter()
+      await response
+      return undefined
+    })
+
+    const handoff = h.controller.handleClose(h.event, 'handoff')
+    await entered
+    h.panels.openAppPanel()
+    await h.start('edit')
+    const closing = h.controller.handleClose(h.event)
+    expect(closing).toBe(handoff)
+    fail()
+    await closing
+
+    expect(h.native.restored).toEqual(['display:one', 'display:one'])
+    expect(h.preview.state).toEqual({ state: 'inactive' })
+    expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+    expect(h.window.destroy).toHaveBeenCalledOnce()
   })
 
   it.each(['hidden', 'destroyed', 'exiting'] as const)(
@@ -638,6 +724,119 @@ describe('AppPanelCloseController', () => {
     expect(window.destroy).not.toHaveBeenCalled()
     expect(ports.flushWindowState).toHaveBeenCalledTimes(2)
   })
+
+  it.each([
+    { response: 'cancel', reopen: false },
+    { response: 'retry', reopen: false },
+    { response: 'cancel', reopen: true },
+    { response: 'retry', reopen: true }
+  ] as const)(
+    'drains the newer close after restore guidance returns $response, reopen $reopen',
+    async ({ response, reopen }) => {
+      const h = setup()
+      h.panels.openAppPanel()
+      await h.start('edit')
+      h.native.failRestoreDisplayIds.add('display:one')
+      let enter!: () => void
+      let dismiss!: () => void
+      const opened = new Promise<void>((resolve) => {
+        enter = resolve
+      })
+      h.ports.errors.showError.mockImplementationOnce(() => {
+        enter()
+        return new Promise<'cancel' | 'retry'>((resolve) => {
+          dismiss = () => resolve(response)
+        })
+      })
+
+      const first = h.controller.handleClose(h.event)
+      await opened
+      expect(h.preview.state).toEqual({ state: 'restorePending', displayIds: ['display:one'] })
+      const currentVersion = h.panels.getPanelOpenVersion('app')
+      const second = h.controller.handleClose(h.event)
+      expect(second).toBe(first)
+      expect(h.panels.getPanelLifetime('app')).toBeNull()
+      // Opening again after this explicit close must not let the old Retry
+      // answer adopt and release the new editor's renderer.
+      if (reopen) h.panels.openAppPanel()
+      const newLifetime = h.panels.getPanelLifetime('app')
+      if (reopen) expect(newLifetime).not.toBe(currentVersion)
+      h.native.failRestoreDisplayIds.clear()
+      dismiss()
+      await second
+
+      expect(h.native.calls.filter((call) => call.operation === 'restore')).toHaveLength(2)
+      expect(h.native.restored).toEqual(['display:one'])
+      expect(h.preview.state).toEqual({ state: 'inactive' })
+      expect(h.ports.cancelForPanelHide).toHaveBeenCalledTimes(2)
+      expect(h.ports.errors.showError).toHaveBeenCalledOnce()
+      expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+      expect(h.panels.getPanelLifetime('app')).toBe(newLifetime)
+      if (reopen) expect(h.window.destroy).not.toHaveBeenCalled()
+      else expect(h.window.destroy).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('keeps restoration failure guidance when a newer close was already pending', async () => {
+    const h = setup()
+    h.panels.openAppPanel()
+    await h.start('edit')
+    const gate = holdRestore(h.native)
+    h.native.failRestoreDisplayIds.add('display:one')
+    h.ports.errors.showError.mockImplementationOnce(async () => {
+      h.native.failRestoreDisplayIds.clear()
+      return 'cancel'
+    })
+
+    const first = h.controller.handleClose(h.event)
+    await gate.entered
+    h.panels.openAppPanel()
+    const second = h.controller.handleClose(h.event)
+    gate.release()
+    await Promise.all([first, second])
+
+    expect(h.native.calls.filter((call) => call.operation === 'restore')).toHaveLength(2)
+    expect(h.native.restored).toEqual(['display:one'])
+    expect(h.preview.state).toEqual({ state: 'inactive' })
+    expect(h.ports.errors.showError).toHaveBeenCalledOnce()
+    expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+    expect(h.window.destroy).not.toHaveBeenCalled()
+    expect(h.panels.getPanelLifetime('app')).not.toBeNull()
+  })
+
+  it.each(['exiting', 'destroyed'] as const)(
+    'does not drain a newer close if %s while restore guidance is open',
+    async (state) => {
+      const h = setup()
+      h.panels.openAppPanel()
+      await h.start('edit')
+      h.native.failRestoreDisplayIds.add('display:one')
+      let enter!: () => void
+      let dismiss!: () => void
+      const opened = new Promise<void>((resolve) => {
+        enter = resolve
+      })
+      h.ports.errors.showError.mockImplementationOnce(() => {
+        enter()
+        return new Promise<'retry'>((resolve) => {
+          dismiss = () => resolve('retry')
+        })
+      })
+
+      const first = h.controller.handleClose(h.event)
+      await opened
+      const second = h.controller.handleClose(h.event)
+      if (state === 'exiting') h.setExiting()
+      else h.window.destroy()
+      dismiss()
+      await Promise.all([first, second])
+
+      expect(h.preview.state).toEqual({ state: 'restorePending', displayIds: ['display:one'] })
+      expect(h.ports.cancelForPanelHide).toHaveBeenCalledOnce()
+      expect(h.ports.releaseToTray).not.toHaveBeenCalled()
+      expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+    }
+  )
 
   it.each(['exiting', 'destroyed'] as const)(
     'does not release or show guidance if %s during rollback',
@@ -793,4 +992,28 @@ it('keeps a visible app usable after a non-restoration close error', async () =>
   expect(h.window.isVisible()).toBe(true)
   expect(h.preview.state).toEqual({ state: 'inactive' })
   expect(h.panels.getPanelLifetime('app')).not.toBeNull()
+})
+
+it('review91: second close must not leave the newer visible opening without admission', async () => {
+  const h = setup()
+  h.panels.openAppPanel()
+  await h.start('edit')
+  const gate = holdRestore(h.native)
+  h.activation.cancelPreview.mockRejectedValueOnce(new Error('Activation target is unavailable.'))
+  const first = h.controller.handleClose(h.event)
+  await gate.entered
+  h.panels.openAppPanel()
+  const secondLifetime = h.panels.getPanelLifetime('app')!
+  const second = h.controller.handleClose(h.event)
+  expect(second).toBe(first)
+  expect(h.panels.getPanelLifetime('app')).toBeNull()
+  gate.release()
+  await Promise.all([first, second])
+  expect(h.native.restored).toEqual(['display:one'])
+  // A successful newer close needs no renewal of the obsolete first opening.
+  expect(h.ports.getPanelOpenVersion()).toBe(secondLifetime)
+  expect(h.ports.cancelForPanelHide).toHaveBeenCalledTimes(2)
+  expect(h.window.destroy).toHaveBeenCalledOnce()
+  expect(h.ports.renewPanelLifetime).not.toHaveBeenCalled()
+  expect(h.window.isDestroyed() || h.panels.getPanelLifetime('app') !== null).toBe(true)
 })
