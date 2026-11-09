@@ -2,14 +2,14 @@
 
 Electron launches `ChromaShift.DisplayService.exe` as a child process. Requests and responses
 are UTF-8 newline-delimited JSON over stdin/stdout. Structured diagnostic logs use
-stderr and cannot corrupt the protocol stream. Protocol version: `1`.
+stderr and cannot corrupt the protocol stream. Protocol version: `2`.
 
 ## Lifecycle
 
 The service first emits:
 
 ```json
-{ "event": "service.ready", "data": { "protocolVersion": 1 } }
+{ "event": "service.ready", "data": { "protocolVersion": 2 } }
 ```
 
 Electron waits for readiness, detects process errors/exits, rejects outstanding
@@ -76,6 +76,33 @@ contrast, saturation, hue, and color temperature use normalized product values
 brightness-dependent safety envelope in `docs/core-domain.md`. Both the
 TypeScript client and native helper validate that envelope. Providers query and
 map native ranges rather than persisting vendor values.
+
+Protocol v2 changes gamma application semantics and adds the following validated
+result fields. `settings.gamma` and `applied.gamma`, when present, are the gamma
+actually accepted. A successful GDI retry also returns `learnedGammaLimit`:
+
+```json
+{
+  "displayId": "display:abc",
+  "settings": { "brightness": 50, "gamma": 1.85 },
+  "applied": { "gamma": 1.85, "gammaRampHash": "accepted-ramp-hash" },
+  "learnedGammaLimit": {
+    "end": "max",
+    "value": 1.85,
+    "brightness": 50,
+    "colorMode": "sdr",
+    "baselineHash": "captured-ramp-hash"
+  }
+}
+```
+
+`end` is `min` or `max`; limits must include neutral 1.0 and remain inside the
+starting envelope. Only explicit `SetDeviceGammaRamp` rejection retries, with
+0.05 steps toward neutral and no intervening restore. Every accepted ramp is
+read back. Exhaustion includes neutral before whole-display restoration and the
+existing rejection diagnostics. Read-back and other failures do not retry. HDR
+and AMD write behavior are unchanged. TypeScript owns persistence and effective
+envelope clamping; no native persistence or new request fields are introduced.
 
 Native commands always accept the endpoint `id`; `physicalId` is identity
 metadata for Electron grouping. The native baseline table is never keyed by a

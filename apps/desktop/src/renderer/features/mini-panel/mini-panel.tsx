@@ -86,7 +86,8 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     enabled: active !== undefined && product.chromaShift.status === 'active',
     onError: setError,
     initialDraft: () => (appliedProfile === undefined ? null : structuredClone(appliedProfile)),
-    initialDirty: () => override !== null
+    initialDirty: () => override !== null,
+    gammaLimits: product.gammaLimits
   })
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(() =>
     chooseInitialDisplay(product, appliedProfile)

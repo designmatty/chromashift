@@ -13,7 +13,7 @@ import {
 import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
 
 const info: SystemInfo = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   serviceVersion: '1.0.0',
   operatingSystem: 'Windows',
   processId: 10,
@@ -28,7 +28,7 @@ const info: SystemInfo = {
 }
 const health: ServiceHealth = {
   status: 'healthy',
-  protocolVersion: 1,
+  protocolVersion: 2,
   serviceVersion: '1.0.0',
   processId: 10,
   serviceInstanceId: '11111111-1111-4111-8111-111111111111',

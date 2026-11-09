@@ -81,6 +81,40 @@ function harness() {
 }
 
 describe('preview lifetime IPC', () => {
+  it('sender-checks and validates editor-open and per-display learned-limit reset', async () => {
+    const h = harness()
+    const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
+    const product = {
+      openProfile: vi.fn(async () => profile),
+      resetLearnedLimits: vi.fn(async () => undefined)
+    }
+    h.getController.mockReturnValue(product as unknown as ProductController)
+    expect(await h.invoke(productIpcChannels.openProfile, { profileId: 'game' })).toEqual({
+      ok: true,
+      value: profile
+    })
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'display:one' })
+    ).toEqual({ ok: true, value: null })
+    expect(h.trusted).toHaveBeenCalledTimes(2)
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'not-a-stable-id' })
+    ).toMatchObject({ ok: false })
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, {
+        displayId: 'display:one',
+        path: 'profiles.json'
+      })
+    ).toMatchObject({ ok: false })
+    expect(product.resetLearnedLimits).toHaveBeenCalledTimes(1)
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    await expect(
+      h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'display:one' })
+    ).rejects.toThrow('Untrusted renderer')
+    expect(product.resetLearnedLimits).toHaveBeenCalledTimes(1)
+  })
   it('rejects stale starts, updates, commits and cancels after close and after reopening', async () => {
     const h = harness()
     const product = {

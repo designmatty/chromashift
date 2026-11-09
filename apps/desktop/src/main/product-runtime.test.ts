@@ -140,6 +140,7 @@ async function createHarness(
     foregroundApplication?: ForegroundApplication
     confirmUnsavedQuit?: ProductRuntimePorts['dialogs']['confirmUnsavedQuit']
     preferences?: Partial<UserPreferences>
+    displayLimits?: unknown
   } = {}
 ): Promise<{
   runtime: ProductRuntime
@@ -159,6 +160,8 @@ async function createHarness(
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-runtime-'))
   directories.push(directory)
+  if (options.displayLimits !== undefined)
+    await writeFile(join(directory, 'display-limits.json'), JSON.stringify(options.displayLimits))
   await writeFile(
     join(directory, 'profiles.json'),
     JSON.stringify({
@@ -332,6 +335,22 @@ async function createHarness(
     pressShortcut: (accelerator) => shortcutHandlers.get(accelerator)!()
   }
 }
+
+it('reports invalid learned-limit configuration before any automatic display writer starts', async () => {
+  const h = await createHarness({}, { displayLimits: { schemaVersion: 999, displays: {} } })
+  try {
+    await h.runtime.start()
+    expect(h.client.calls).toEqual([])
+    expect(h.runtime.productController).toBeUndefined()
+    expect(h.logger.has('DisplayLimitsConfigurationInvalid')).toBe(true)
+    expect(h.errors).toContainEqual({
+      title: 'Display limits could not be loaded',
+      message: expect.stringContaining('display-limits.json was left unchanged')
+    })
+  } finally {
+    h.runtime.dispose()
+  }
+})
 
 describe('product runtime startup wiring', () => {
   it('saves the main-owned override draft before restore-safe quit without a renderer', async () => {

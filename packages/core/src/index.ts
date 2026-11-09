@@ -90,3 +90,13 @@ export {
   type ActivationSelection,
   type ActivationTarget
 } from './activation/activation-resolver.js'
+export {
+  displayLimitsSchema,
+  displayGammaLimitsSchema,
+  emptyDisplayLimits,
+  effectiveGammaRange,
+  clampProfileGamma,
+  type DisplayLimits,
+  type DisplayGammaLimits,
+  type LearnedGammaRange
+} from './profiles/gamma-limits.js'

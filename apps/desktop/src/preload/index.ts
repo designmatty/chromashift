@@ -27,6 +27,7 @@ import {
   productStateResultSchema,
   productStateSchema,
   profileIdRequestSchema,
+  displayLimitsResetRequestSchema,
   profileResultSchema,
   reorderProfilesRequestSchema,
   saveProfileRequestSchema,
@@ -83,6 +84,17 @@ const api: ChromaShiftApi = {
   },
   getState: () =>
     invoke(productIpcChannels.getState, emptyRequestSchema, productStateResultSchema, {}),
+  openProfile: (profileId) =>
+    invoke(productIpcChannels.openProfile, profileIdRequestSchema, profileResultSchema, {
+      profileId
+    }),
+  resetLearnedLimits: (displayId) =>
+    invoke(
+      productIpcChannels.resetLearnedLimits,
+      displayLimitsResetRequestSchema,
+      voidResultSchema,
+      { displayId }
+    ),
   getUpdateStatus: () =>
     invoke(productIpcChannels.getUpdateStatus, emptyRequestSchema, updateStatusResultSchema, {}),
   checkForUpdates: () =>

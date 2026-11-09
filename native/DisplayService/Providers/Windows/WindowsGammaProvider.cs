@@ -4,6 +4,10 @@ using ChromaShift.DisplayService.Core;
 
 namespace ChromaShift.DisplayService.Providers.Windows;
 
+// Only a rejected SetDeviceGammaRamp is safe to retry without restoration.
+// Context creation, reads and failed read-back retain the normal failure path.
+internal sealed class GammaRampRejectedException(int error, string message) : Win32Exception(error, message);
+
 internal interface IWindowsGammaProvider
 {
     bool IsSupported(string windowsDisplayName);
@@ -71,7 +75,7 @@ internal sealed class WindowsGammaProvider : IWindowsGammaProvider
         {
             if (!SetDeviceGammaRamp(context.Handle, pinned.AddrOfPinnedObject()))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), $"SetDeviceGammaRamp failed for {windowsDisplayName}.");
+                throw new GammaRampRejectedException(Marshal.GetLastWin32Error(), $"SetDeviceGammaRamp failed for {windowsDisplayName}.");
             }
         }
         finally

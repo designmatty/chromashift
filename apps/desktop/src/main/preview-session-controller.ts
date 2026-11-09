@@ -16,6 +16,8 @@ import type { PreviewState } from '@shared/product-api.js'
 import { profilesDiffer } from '@shared/unsaved-changes.js'
 import { describeError } from '@main/structured-logger.js'
 import type { PanelHideReason } from '@main/panel-controller.js'
+import type { ProfileRepository } from '@chromashift/core'
+import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 
 export interface PreviewNativePort {
   getDisplays(): Promise<Display[]>
@@ -107,7 +109,9 @@ export class PreviewSessionController {
     private readonly recovery: PreviewRecoveryPort = {
       restoreFailed: async () => undefined,
       restored: async () => undefined
-    }
+    },
+    private readonly limits?: LearnedGammaLimits,
+    private readonly repository?: ProfileRepository
   ) {}
 
   public get state(): PreviewState {
@@ -169,6 +173,7 @@ export class PreviewSessionController {
     if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
     }
+    profile = this.limits?.clampProfile(profile) ?? profile
     const targets = activeColorTargets(profile)
     if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
       const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
@@ -226,6 +231,7 @@ export class PreviewSessionController {
         }
         applied.set(key, target)
       }
+      saved = await this.#clampSaved(saved)
     } catch (error) {
       // Even a partially started session owns the displays it may have changed.
       this.#active = {
@@ -255,7 +261,7 @@ export class PreviewSessionController {
       version,
       profileId: profile.id,
       kind,
-      draft: structuredClone(profile),
+      draft: structuredClone({ ...profile, displays: targets }),
       saved: structuredClone(saved),
       applied,
       touched,
@@ -275,7 +281,11 @@ export class PreviewSessionController {
       try {
         await this.#update(profileId, targets)
         const active = this.#requireActive(profileId)
-        active.draft = structuredClone({ ...(draft ?? active.draft), displays: targets })
+        active.draft = structuredClone({
+          ...(draft ?? active.draft),
+          displays: [...active.applied.values()]
+        })
+        active.saved = await this.#clampSaved(active.saved)
         this.onStateChanged(this.state)
       } catch (error) {
         if (error instanceof PreviewRestoreError) {
@@ -532,6 +542,11 @@ export class PreviewSessionController {
         active.disconnected.add(key)
       }
     }
+    active.draft = {
+      ...active.draft,
+      displays: [...active.applied.values()].map((target) => structuredClone(target))
+    }
+    active.saved = await this.#clampSaved(active.saved)
     this.onStateChanged(this.state)
     return true
   }
@@ -744,7 +759,9 @@ export class PreviewSessionController {
 
   async #applyTarget(target: DisplayColorTarget): Promise<void> {
     try {
-      await this.native.applyDisplaySettings(target.displayId, target.color)
+      const result = await this.native.applyDisplaySettings(target.displayId, target.color)
+      if (result.applied.gamma !== undefined)
+        target.color = { ...target.color, gamma: result.applied.gamma }
     } catch (error) {
       const details = describeError(error)
       if (details.code === 'BASELINE_RESTORE_FAILED') {
@@ -755,6 +772,13 @@ export class PreviewSessionController {
       }
       throw error
     }
+  }
+
+  async #clampSaved(saved: ColorProfile): Promise<ColorProfile> {
+    if (this.limits === undefined || this.repository === undefined) return structuredClone(saved)
+    await this.limits.clampSavedProfile(this.repository, saved.id)
+    // Rebase only gamma in the session reference. Never replace unsaved content.
+    return this.limits.clampProfile(saved)
   }
 
   #requireActive(profileId: string): ActivePreview {

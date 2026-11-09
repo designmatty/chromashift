@@ -35,6 +35,34 @@ topology changes. Every write is validated and read back. The baseline manager
 captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
+
+For an explicit GDI `SetDeviceGammaRamp` rejection, the native apply walks gamma
+in 0.05 steps toward neutral, including 1.0, rebuilding each ramp from the
+immutable baseline. Rejected writes leave output unchanged, so the walk has no
+intermediate restore. Accepted writes still require exact read-back. Exhaustion,
+read-back errors, and other partial failures retain whole-display restoration.
+HDR remains restore-only. Protocol v2 reports the accepted gamma and an optional
+learned end, value, brightness, SDR mode, and captured ramp hash in `display.apply`.
+Native persists no limits. See `native-protocol.md` for the result schema.
+
+Main owns `display-limits.json`, a separate schema-v1 settings slice written
+atomically through `SettingsSliceStore`. `displayLimitsSchema` in core validates
+`{ schemaVersion: 1, displays: { [stableId]: { sdr?: { baselineHash, brightness:
+{ [brightness]: { min?, max? } } }, hdr?: { baselineHash, brightness } } } }`.
+Only SDR learning is active. Missing files start empty; invalid or unsupported
+documents fail startup validation and remain untouched. Fixtures live under
+`fixtures/display-limits`. Existing profile and settings schemas stay unchanged.
+
+`PhysicalDisplayClient` associates captured endpoint hashes with a stable panel,
+invalidates limits after a changed captured baseline, clamps before applying,
+and converges simultaneous endpoints to their common accepted gamma. It never
+uses current modified output as a baseline. Main's `LearnedGammaLimits` merges
+learned ends with the unchanged starting envelope. The serialized profile writer
+quietly clamps saved gamma on apply or editor opening, without a notification.
+Session references and drafts change only their gamma fields, retaining other
+unsaved changes. Both renderers receive validated read-only limits and can
+request a sender-checked per-display reset through preload. Reset changes the
+limits slice without a display write or undoing earlier saved profile clamps.
 `ServiceLifecycle` owns the production input, parent-exit and watchdog loop and
 its final restore-all acknowledgement. Unit tests drive those routes with fake
 providers without launching a helper or touching Windows displays.

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import type {
   BaselineCaptureResult,
   Capability,
@@ -87,8 +89,13 @@ function aggregateCapability(capabilities: readonly Capability[]): Capability {
 export class PhysicalDisplayClient {
   readonly #physicalToEndpoints = new Map<string, Set<string>>()
   readonly #endpointToPhysical = new Map<string, string>()
+  readonly #baselineHashes = new Map<string, string>()
+  readonly #endpointBaselineHashes = new Map<string, string>()
 
-  public constructor(private readonly endpoint: EndpointDisplayPort) {}
+  public constructor(
+    private readonly endpoint: EndpointDisplayPort,
+    private readonly limits?: LearnedGammaLimits
+  ) {}
 
   public async getDisplays(): Promise<Display[]> {
     return this.#groupDisplays(await this.endpoint.getDisplays())
@@ -124,6 +131,16 @@ export class PhysicalDisplayClient {
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
     const results = [] as BaselineCaptureResult[]
     for (const display of endpoints) results.push(await this.endpoint.captureBaseline(display.id))
+    for (const result of results) {
+      const hash = result.gammaRampHash ?? result.amdGammaRampHash
+      if (hash !== undefined) this.#endpointBaselineHashes.set(result.displayId, hash)
+    }
+    const hashes = results.map((result) => result.gammaRampHash ?? result.amdGammaRampHash)
+    if (hashes.every((hash) => hash !== undefined)) {
+      const hash = createHash('sha256').update(JSON.stringify(hashes)).digest('hex')
+      this.#baselineHashes.set(displayId.toLowerCase(), hash)
+      await this.limits?.observeBaseline(displayId, hash)
+    }
     return {
       ...results[0]!,
       displayId,
@@ -138,6 +155,9 @@ export class PhysicalDisplayClient {
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     const endpoints = await this.#resolveCurrentEndpoints(displayId)
+    const baselineHash = this.#baselineHashes.get(displayId.toLowerCase())
+    if (baselineHash !== undefined) await this.limits?.observeBaseline(displayId, baselineHash)
+    settings = this.limits?.clampSettings(displayId, settings) ?? settings
     const reports = await Promise.all(
       endpoints.map((display) => this.endpoint.getDisplayCapabilityReport(display.id))
     )
@@ -169,11 +189,39 @@ export class PhysicalDisplayClient {
       delete projected.gamma
     }
 
-    const results = [] as DisplayApplyResult[]
-    for (const display of endpoints) {
-      results.push(await this.endpoint.applyDisplaySettings(display.id, projected))
+    // A panel can have several endpoints. If a later endpoint learns a tighter
+    // limit, bring earlier endpoints to the same accepted value before returning.
+    let result: DisplayApplyResult | undefined
+    for (let pass = 0; pass < 52; pass++) {
+      let changed = false
+      for (const display of endpoints) {
+        result = await this.endpoint.applyDisplaySettings(display.id, projected)
+        if (result.learnedGammaLimit !== undefined) {
+          if (
+            this.limits !== undefined &&
+            result.learnedGammaLimit.baselineHash !== this.#endpointBaselineHashes.get(display.id)
+          )
+            throw new Error('The learned gamma limit does not match the captured baseline.')
+          if (this.limits !== undefined) {
+            if (baselineHash === undefined)
+              throw new Error('Gamma learning requires a confirmed captured baseline.')
+            await this.limits.learn(displayId, result.learnedGammaLimit, baselineHash)
+          }
+        }
+        if (result.applied.gamma !== undefined && projected.gamma !== result.applied.gamma) {
+          projected.gamma = result.applied.gamma
+          changed = true
+        }
+      }
+      if (!changed || endpoints.length === 1)
+        return {
+          ...result!,
+          displayId,
+          settings: { ...projected },
+          applied: { ...result!.applied, gamma: projected.gamma }
+        }
     }
-    return { ...results[0]!, displayId, settings: projected }
+    throw new Error('Gamma limits did not converge across display connections.')
   }
 
   public async restoreDisplay(displayId: string): Promise<DisplayRestoreResult> {

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ColorProfile } from '@chromashift/core'
+import { clampProfileGamma, type ColorProfile, type DisplayLimits } from '@chromashift/core'
 import {
   PreviewSyncSession,
   type PreviewSyncKind,
@@ -22,6 +22,7 @@ export interface UsePreviewDraftOptions {
   initialDirty?: () => boolean
   /** Saved content for the app editor, including metadata-only changes. */
   savedProfile?: ColorProfile | null
+  gammaLimits?: DisplayLimits
 }
 
 export interface PreviewDraft {
@@ -45,7 +46,13 @@ export interface PreviewDraft {
 
 export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   const { kind, session, enabled, onError } = options
-  const [draft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
+  const [localDraft, setDraft] = useState<ColorProfile | null>(options.initialDraft ?? null)
+  // A native acceptance can narrow gamma while local edits are still buffered.
+  // Derive only gamma from the limits; metadata and every other draft field stay local.
+  const draft =
+    localDraft === null || options.gammaLimits === undefined
+      ? localDraft
+      : clampProfileGamma(localDraft, options.gammaLimits)
   const [markedDirty, setDirty] = useState<boolean>(options.initialDirty ?? false)
   // Hydration can be dirty without representing a new local edit. Only user
   // changes schedule writes; main's session broadcasts must not echo them back.
@@ -70,6 +77,13 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     syncRef.current = new PreviewSyncSession(port, kind, onError)
   }
   const sync = syncRef.current
+
+  useEffect(() => {
+    if (options.gammaLimits === undefined) return
+    setDraft((current) =>
+      current === null ? null : clampProfileGamma(current, options.gammaLimits!)
+    )
+  }, [JSON.stringify(options.gammaLimits)])
 
   useLayoutEffect(() => window.chromaShift.onPanelClosing(() => sync.invalidate()), [sync])
 

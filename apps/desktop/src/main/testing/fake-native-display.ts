@@ -96,6 +96,9 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public maxConcurrentCalls = 0
   public displays: Display[]
   public reports = new Map<string, DisplayCapabilityReport>()
+  public readonly gammaRanges = new Map<string, { min: number; max: number }>()
+  public readonly baselineHashes = new Map<string, string>()
+  readonly #capturedHashes = new Map<string, string>()
   readonly #capturedDisplayIds = new Set<string>()
   readonly #baselineSettings = new Map<string, DisplaySettings>()
   #activeCalls = 0
@@ -138,6 +141,10 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       }
       const alreadyCaptured = this.#capturedDisplayIds.has(displayId)
       if (!alreadyCaptured) {
+        this.#capturedHashes.set(
+          displayId,
+          this.baselineHashes.get(displayId) ?? `baseline:${displayId}`
+        )
         this.#baselineSettings.set(displayId, { ...this.currentSettings.get(displayId) })
         this.baselineCaptures.push({
           displayId,
@@ -146,7 +153,11 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       }
       this.#capturedDisplayIds.add(displayId)
       this.captured.push(displayId)
-      return { displayId, state: alreadyCaptured ? 'alreadyCaptured' : 'captured' }
+      return {
+        displayId,
+        state: alreadyCaptured ? 'alreadyCaptured' : 'captured',
+        gammaRampHash: this.#capturedHashes.get(displayId)!
+      }
     })
   }
 
@@ -175,9 +186,26 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
           'test-request'
         )
       }
+      const range = this.gammaRanges.get(displayId)
+      const requestedGamma = settings.gamma
+      const acceptedGamma =
+        requestedGamma === undefined || range === undefined
+          ? requestedGamma
+          : Math.max(range.min, Math.min(range.max, requestedGamma))
+      const learnedGammaLimit =
+        acceptedGamma !== requestedGamma
+          ? {
+              end: requestedGamma! > 1 ? ('max' as const) : ('min' as const),
+              value: acceptedGamma!,
+              brightness: settings.brightness ?? 50,
+              colorMode: 'sdr' as const,
+              baselineHash: this.#capturedHashes.get(displayId)!
+            }
+          : undefined
+      settings = acceptedGamma === undefined ? settings : { ...settings, gamma: acceptedGamma }
       this.applied.push({ displayId, settings })
       this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId), ...settings })
-      return { displayId, settings, applied: {} }
+      return { displayId, settings, applied: { gamma: acceptedGamma }, learnedGammaLimit }
     })
   }
 
@@ -244,7 +272,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   }
 
   async #call<T>(call: NativeCall, operation: () => Promise<T>): Promise<T> {
-    this.calls.push(call)
+    this.calls.push(structuredClone(call))
     this.#activeCalls += 1
     this.maxConcurrentCalls = Math.max(this.maxConcurrentCalls, this.#activeCalls)
     try {

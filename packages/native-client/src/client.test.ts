@@ -31,7 +31,7 @@ describe('NativeClient activation command surface', () => {
 
     await expect(native.getServiceHealth()).resolves.toMatchObject({
       status: 'healthy',
-      protocolVersion: 1,
+      protocolVersion: 2,
       baselineCount: 0,
       watchdogArmed: true
     })
@@ -136,7 +136,7 @@ describe('NativeClient activation command surface', () => {
     await expect(native.request('test.timeout')).rejects.toThrow(
       'DisplayService request timed out: test.timeout'
     )
-    await expect(native.getSystemInfo()).resolves.toMatchObject({ protocolVersion: 1 })
+    await expect(native.getSystemInfo()).resolves.toMatchObject({ protocolVersion: 2 })
   })
 
   it('cleans up the child process after a startup timeout', async () => {

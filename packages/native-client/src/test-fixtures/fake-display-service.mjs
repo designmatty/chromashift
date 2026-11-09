@@ -22,7 +22,7 @@ function fail(id, code, message) {
 }
 
 if (!process.argv.includes('--no-ready')) {
-  write({ event: 'service.ready', data: { protocolVersion: 1 } })
+  write({ event: 'service.ready', data: { protocolVersion: 2 } })
 }
 
 const lines = createInterface({ input: process.stdin })
@@ -32,7 +32,7 @@ lines.on('line', (line) => {
   switch (request.command) {
     case 'system.info':
       succeed(request.id, {
-        protocolVersion: 1,
+        protocolVersion: 2,
         serviceVersion: 'test',
         operatingSystem: 'test',
         processId: process.pid,
@@ -51,7 +51,7 @@ lines.on('line', (line) => {
     case 'service.health':
       succeed(request.id, {
         status: 'healthy',
-        protocolVersion: 1,
+        protocolVersion: 2,
         serviceVersion: 'test',
         processId: process.pid,
         serviceInstanceId,

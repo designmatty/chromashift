@@ -24,6 +24,7 @@ import {
   productIpcChannels,
   productStateResultSchema,
   profileIdRequestSchema,
+  displayLimitsResetRequestSchema,
   profileResultSchema,
   reorderProfilesRequestSchema,
   saveProfileRequestSchema,
@@ -91,6 +92,26 @@ export function registerProductIpcHandlers(
     if (value === undefined) throw new ProductControllerUnavailableError()
     return value
   }
+
+  register(
+    ipc,
+    productIpcChannels.openProfile,
+    profileIdRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    (request) => controller().openProfile(request.profileId)
+  )
+  register(
+    ipc,
+    productIpcChannels.resetLearnedLimits,
+    displayLimitsResetRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      await controller().resetLearnedLimits(request.displayId)
+      return null
+    }
+  )
 
   register(
     ipc,

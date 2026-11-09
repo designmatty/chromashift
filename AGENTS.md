@@ -60,6 +60,9 @@ not the Default profile.
 - Validate and clamp values in TypeScript, IPC schemas, native commands, and the
   provider before a write.
 - Read back native writes. On a partial apply failure, restore the whole display.
+  A rejected GDI gamma ramp may retry toward neutral in 0.05 steps without
+  intervening restoration. Each accepted step requires read-back; exhaustion
+  through neutral or any other failure follows whole-display restoration.
 - Treat HDR as a capability change. Block baseline capture and profile, preview,
   and override apply while HDR is active. Allow only restore writes of captured
   original settings, with read-back; restore immediately on an HDR-on transition.
@@ -181,6 +184,8 @@ Production data lives under `%APPDATA%\ChromaShift`:
 - `preferences.json` holds renderer-editable preferences and shortcuts.
 - `window-state.json` holds Electron-owned geometry and mini-panel position.
 - `chroma-shift.json` holds runtime-owned display-control state and intent.
+- `display-limits.json` holds runtime-owned, schema-versioned learned gamma limits
+  per stable display ID, color mode, brightness, and captured baseline.
 - `logs/main.jsonl` holds rotated diagnostics.
 
 Development data is worktree-specific under

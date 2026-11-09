@@ -92,6 +92,14 @@ export function DisplaysView({
                 </Flex>
               ))}
           </SimpleGrid>
+          <Button
+            size="xs"
+            variant="outline"
+            aria-label={`Reset learned limits for ${display.name}`}
+            onClick={() => void run(window.chromaShift.resetLearnedLimits(display.id), onError)}
+          >
+            Reset learned limits
+          </Button>
         </Box>
       ))}
     </Stack>

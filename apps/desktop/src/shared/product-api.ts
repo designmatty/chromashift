@@ -2,6 +2,7 @@ import {
   colorSettingsSchema,
   colorProfileSchema,
   profileConfigurationSchema,
+  displayLimitsSchema,
   type ColorProfile
 } from '@chromashift/core'
 import {
@@ -18,6 +19,8 @@ export const productIpcChannels = {
   checkForUpdates: 'application:check-for-updates',
   installUpdate: 'application:install-update',
   createProfile: 'product:create-profile',
+  openProfile: 'product:open-profile',
+  resetLearnedLimits: 'product:reset-learned-limits',
   saveProfile: 'product:save-profile',
   duplicateProfile: 'product:duplicate-profile',
   deleteProfile: 'product:delete-profile',
@@ -56,6 +59,9 @@ export const productIpcChannels = {
 } as const
 
 export const previewDraftFlushSchema = z.object({ requestId: z.uuid() }).strict()
+export const displayLimitsResetRequestSchema = z
+  .object({ displayId: z.string().startsWith('display:') })
+  .strict()
 
 export const activationModeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('automatic') }),
@@ -146,6 +152,7 @@ export const userPreferencesSchema = z
   .strict()
 
 export const productStateSchema = z.object({
+  gammaLimits: displayLimitsSchema.optional(),
   version: z.string().min(1),
   configuration: profileConfigurationSchema,
   displays: z.array(displaySchema),
@@ -353,6 +360,8 @@ export type MiniPanelView = z.infer<typeof miniPanelViewSchema>
 export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: ProductError }
 
 export interface ChromaShiftApi {
+  openProfile(profileId: string): Promise<ProductResult<ColorProfile>>
+  resetLearnedLimits(displayId: string): Promise<ProductResult<null>>
   getState(): Promise<ProductResult<ProductState>>
   getUpdateStatus(): Promise<ProductResult<AppUpdateStatus>>
   checkForUpdates(): Promise<ProductResult<AppUpdateStatus>>

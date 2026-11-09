@@ -89,7 +89,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     initialDraft: () => appSessionDraft(product),
     initialDirty: () => hasUnsavedSession(product.preview),
     savedProfile:
-      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
+      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null,
+    gammaLimits: product.gammaLimits
   })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
@@ -98,6 +99,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
   const currentProfileId = liveProfile(product)?.id ?? null
   const inSettings = view !== 'profiles'
+  useEffect(() => {
+    if (view === 'profiles' && selected?.id !== undefined)
+      void run(window.chromaShift.openProfile(selected.id), setError)
+  }, [view, selected?.id])
   useProductTheme(product.settings.theme)
   useEffect(() => {
     localStorage.setItem(LAST_VIEW_KEY, view)
@@ -258,6 +263,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         before.preview.profileId === profile.id
       if (before.chromaShift.status !== 'active') await settlePreview()
       else if (!keepingOverride) await rollback()
+      await value(window.chromaShift.openProfile(profile.id))
       const state = await value(window.chromaShift.getState())
       const current = state.configuration.profiles.find((item) => item.id === profile.id)
       if (current === undefined) {

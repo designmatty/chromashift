@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 export const displayIdSchema = z.string().startsWith('display:')
 
@@ -281,18 +281,48 @@ export const baselineCaptureResultSchema = z.object({
   amdGammaRampHash: z.string().min(1).optional()
 })
 
-export const displayApplyResultSchema = z.object({
-  displayId: displayIdSchema,
-  settings: displaySettingsSchema,
-  applied: z.object({
-    gammaRampHash: z.string().min(1).optional(),
-    brightness: z.number().int().optional(),
-    contrast: z.number().int().optional(),
-    saturation: z.number().int().optional(),
-    hue: z.number().int().optional(),
-    colorTemperature: z.number().int().optional()
+export const displayApplyResultSchema = z
+  .object({
+    displayId: displayIdSchema,
+    settings: displaySettingsSchema,
+    learnedGammaLimit: z
+      .object({
+        end: z.enum(['min', 'max']),
+        value: z.number().finite().min(0.3).max(2.8),
+        brightness: normalizedColorValueSchema,
+        colorMode: z.literal('sdr'),
+        baselineHash: z.string().min(1)
+      })
+      .strict()
+      .superRefine((limit, context) => {
+        if ((limit.end === 'min' && limit.value > 1) || (limit.end === 'max' && limit.value < 1))
+          context.addIssue({ code: 'custom', message: 'A learned limit must include neutral.' })
+      })
+      .optional(),
+    applied: z.object({
+      gammaRampHash: z.string().min(1).optional(),
+      gamma: z.number().finite().min(0.3).max(2.8).optional(),
+      brightness: z.number().int().optional(),
+      contrast: z.number().int().optional(),
+      saturation: z.number().int().optional(),
+      hue: z.number().int().optional(),
+      colorTemperature: z.number().int().optional()
+    })
   })
-})
+  .superRefine((result, context) => {
+    const limit = result.learnedGammaLimit
+    if (limit === undefined) return
+    if (
+      result.applied.gamma !== limit.value ||
+      result.settings.gamma !== limit.value ||
+      (result.settings.brightness ?? 50) !== limit.brightness ||
+      !displaySettingsSchema.safeParse({ brightness: limit.brightness, gamma: limit.value }).success
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'A learned limit must describe the accepted gamma and brightness.'
+      })
+  })
 
 const restoredDisplayResultSchema = z.object({
   displayId: displayIdSchema,

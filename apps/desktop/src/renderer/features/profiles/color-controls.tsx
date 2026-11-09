@@ -1,9 +1,8 @@
 import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
 import { Palette, Thermometer } from 'lucide-react'
 import {
-  clampGammaForBrightness,
+  effectiveGammaRange,
   createNeutralColorSettings,
-  gammaRangeForBrightness,
   type ColorSettings,
   type CompleteColorSettings
 } from '@chromashift/core'
@@ -176,12 +175,14 @@ export function ColorControls({
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
+  const limits = display?.hdr ? undefined : product.gammaLimits?.displays[displayId.toLowerCase()]
   const completeColor: CompleteColorSettings = { ...createNeutralColorSettings(), ...color }
 
   function change(key: ColorControlKey, nextValue: number): void {
     const next = { ...completeColor, [key]: nextValue }
-    if (key === 'brightness') {
-      next.gamma = clampGammaForBrightness(next.gamma, next.brightness)
+    if (key === 'brightness' || key === 'gamma') {
+      const range = effectiveGammaRange(limits, next.brightness)
+      next.gamma = Math.min(range.max, Math.max(range.min, next.gamma))
     }
     onChange(next)
   }
@@ -204,13 +205,16 @@ export function ColorControls({
           const support = controlSupport(control.key, display, report)
           const value = completeColor[control.key]
           const overridden = value !== control.neutral
-          const gammaRange = gammaRangeForBrightness(completeColor.brightness)
+          const gammaRange = effectiveGammaRange(limits, completeColor.brightness)
+          const learned = limits?.sdr?.brightness[String(completeColor.brightness)]
           const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
           const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
           const row = (
             <Box
               data-part="color-control"
               data-control={control.key}
+              data-gamma-min={control.key === 'gamma' ? allowedMin : undefined}
+              data-gamma-max={control.key === 'gamma' ? allowedMax : undefined}
               display="flex"
               alignItems="center"
               gap={2}
@@ -292,15 +296,38 @@ export function ColorControls({
               />
             </Box>
           )
+          const note =
+            control.key === 'gamma' && learned !== undefined ? (
+              <Tooltip content="Windows rejected a stronger gamma curve on this display.">
+                <Text
+                  data-part="gamma-limit-note"
+                  tabIndex={compact ? undefined : 0}
+                  fontSize="xs"
+                  color="fg.muted"
+                >
+                  Limited to{' '}
+                  {learned.min !== undefined && learned.max !== undefined
+                    ? `${allowedMin.toFixed(2)}–${allowedMax.toFixed(2)}`
+                    : (learned.max ?? learned.min)!.toFixed(2)}{' '}
+                  on this display
+                </Text>
+              </Tooltip>
+            ) : null
           return support.available ? (
-            <Box key={control.key}>{row}</Box>
+            <Box key={control.key}>
+              {row}
+              {note}
+            </Box>
           ) : (
             <Tooltip
               key={control.key}
               content={support.reason}
               positioning={{ placement: 'top-start' }}
             >
-              {row}
+              <Box>
+                {row}
+                {note}
+              </Box>
             </Tooltip>
           )
         })}

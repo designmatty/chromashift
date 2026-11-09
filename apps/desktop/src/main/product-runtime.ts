@@ -1,4 +1,4 @@
-import { basename, extname } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import {
   describeMigrationNotice,
   JsonProfileRepository,
@@ -48,6 +48,7 @@ import {
 } from '@main/shutdown-coordinator.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 import { TrayController, type TrayMenuPort } from '@main/tray-controller.js'
+import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 
 /**
  * Everything the runtime needs from the DisplayService connection: lifecycle
@@ -136,6 +137,7 @@ export class ProductRuntime {
   #nativeRecoveryController: NativeServiceRecoveryController | undefined
   #unsubscribeOutcomeRouter: (() => void) | undefined
   #shortcutController: ShortcutController | undefined
+  #gammaLimits: LearnedGammaLimits | undefined
 
   public constructor(private readonly ports: ProductRuntimePorts) {}
 
@@ -197,9 +199,35 @@ export class ProductRuntime {
           }
         }
       )
-      const physicalClient = new PhysicalDisplayClient(nativeClient)
+      const limits = new LearnedGammaLimits(
+        join(dirname(configurationPath), 'display-limits.json'),
+        logger
+      )
+      // Validate before creating any automatic writer. An invalid slice is retained.
+      try {
+        await limits.load()
+      } catch (error) {
+        logger.write({
+          level: 'error',
+          eventName: 'DisplayLimitsConfigurationInvalid',
+          ...describeError(error)
+        })
+        this.ports.dialogs.showError(
+          'Display limits could not be loaded',
+          'Display control is unavailable. display-limits.json was left unchanged. ' +
+            'Correct the invalid configuration before restarting ChromaShift.'
+        )
+        throw error
+      }
+      this.#gammaLimits = limits
+      const physicalClient = new PhysicalDisplayClient(nativeClient, limits)
       this.#physicalDisplayClient = physicalClient
-      const coordinator = new ActivationCoordinator(this.#profileRepository, physicalClient, logger)
+      const coordinator = new ActivationCoordinator(
+        this.#profileRepository,
+        physicalClient,
+        logger,
+        limits
+      )
       this.#automaticActivation = new AutomaticActivationController(
         this.#profileRepository,
         coordinator,
@@ -315,7 +343,9 @@ export class ProductRuntime {
       {
         restoreFailed: () => chromaShiftController.previewRestoreFailed(),
         restored: () => chromaShiftController.previewRestored()
-      }
+      },
+      this.#gammaLimits,
+      profileRepository
     )
     this.#previewController = previewController
     const chromaShiftController = new ChromaShiftController(
@@ -581,7 +611,8 @@ export class ProductRuntime {
         refreshTray: () => trayController.refresh(),
         stateChanged: () => shell.broadcastProductState()
       },
-      configuration.appVersion
+      configuration.appVersion,
+      this.#gammaLimits
     )
     return trayController.start()
   }

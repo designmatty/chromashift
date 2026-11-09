@@ -107,6 +107,8 @@ internal sealed class BaselineManager(
                 int? brightness = null;
                 int? contrast = null;
                 int? colorTemperature = null;
+                double? appliedGamma = settings.Gamma;
+                JsonObject? learnedGammaLimit = null;
                 if (display.Adapter.Vendor == "amd")
                 {
                     if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
@@ -124,12 +126,68 @@ internal sealed class BaselineManager(
                     {
                         throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Windows gamma controls are unavailable for this display.");
                     }
-                    var requested = GammaRampTransform.Apply(
-                        baseline.GammaRamp,
-                        new GammaSettings(settings.Brightness, settings.Contrast, settings.Gamma));
                     try
                     {
-                        WriteAndVerify(display, requested);
+                        var candidate = settings.Gamma ?? 1;
+                        var rejected = false;
+                        while (true)
+                        {
+                            var requested = GammaRampTransform.Apply(
+                                baseline.GammaRamp,
+                                new GammaSettings(settings.Brightness, settings.Contrast, candidate));
+                            try
+                            {
+                                WriteAndVerify(display, requested);
+                                gammaHash = requested.GetHash();
+                                appliedGamma = settings.Gamma is null && !rejected ? null : candidate;
+                                if (rejected)
+                                {
+                                    learnedGammaLimit = new JsonObject
+                                    {
+                                        ["end"] = (settings.Gamma ?? 1) > 1 ? "max" : "min",
+                                        ["value"] = candidate,
+                                        ["brightness"] = settings.Brightness ?? 50,
+                                        ["colorMode"] = "sdr",
+                                        ["baselineHash"] = baseline.GammaRamp.GetHash()
+                                    };
+                                    NativeLog.Write(new JsonObject
+                                    {
+                                        ["level"] = "information",
+                                        ["eventName"] = "GammaLimitLearned",
+                                        ["displayId"] = display.Id,
+                                        ["requestedGamma"] = settings.Gamma ?? 1,
+                                        ["limit"] = learnedGammaLimit.DeepClone()
+                                    });
+                                }
+                                break;
+                            }
+                            catch (DisplayOperationException exception) when (
+                                exception.Code == "GAMMA_WRITE_FAILED" &&
+                                exception.InnerException is GammaRampRejectedException && candidate != 1)
+                            {
+                                rejected = true;
+                                NativeLog.Write(new JsonObject
+                                {
+                                    ["level"] = "warning",
+                                    ["eventName"] = "GammaSettingsRejected",
+                                    ["displayId"] = display.Id,
+                                    ["displayName"] = display.Name,
+                                    ["adapterName"] = display.Adapter.Name,
+                                    ["adapterDeviceId"] = display.Adapter.DeviceId,
+                                    ["provider"] = "windows",
+                                    ["code"] = exception.Code,
+                                    ["nativeMessage"] = exception.Message,
+                                    ["brightness"] = settings.Brightness ?? 50,
+                                    ["contrast"] = settings.Contrast ?? 50,
+                                    ["gamma"] = candidate,
+                                    ["baselineHash"] = baseline.GammaRamp.GetHash(),
+                                    ["retryingTowardNeutral"] = true
+                                });
+                                candidate = candidate > 1
+                                    ? Math.Max(1, Math.Round(candidate - 0.05, 10))
+                                    : Math.Min(1, Math.Round(candidate + 0.05, 10));
+                            }
+                        }
                     }
                     catch (DisplayOperationException exception) when (
                         exception.Code is "GAMMA_WRITE_FAILED" or "GAMMA_VERIFY_FAILED")
@@ -157,7 +215,6 @@ internal sealed class BaselineManager(
                             FormattableString.Invariant($"This display rejected gamma {settings.Gamma ?? 1:0.00} at brightness {settings.Brightness ?? 50:0.##}% ({display.Name})."),
                             exception);
                     }
-                    gammaHash = requested.GetHash();
                 }
 
                 int? saturation = null;
@@ -198,10 +255,12 @@ internal sealed class BaselineManager(
                 return new JsonObject
                 {
                     ["displayId"] = displayId,
-                    ["settings"] = NativeJson.ToNode(settings),
+                    ["settings"] = NativeJson.ToNode(settings with { Gamma = appliedGamma }),
+                    ["learnedGammaLimit"] = learnedGammaLimit,
                     ["applied"] = new JsonObject
                     {
                         ["gammaRampHash"] = gammaHash,
+                        ["gamma"] = appliedGamma,
                         ["brightness"] = brightness,
                         ["contrast"] = contrast,
                         ["saturation"] = saturation,
