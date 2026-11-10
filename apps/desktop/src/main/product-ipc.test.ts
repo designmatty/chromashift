@@ -81,10 +81,46 @@ function harness() {
 }
 
 describe('preview lifetime IPC', () => {
+  it('sender-checks and validates editor-open and per-display learned-limit reset', async () => {
+    const h = harness()
+    const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
+    const product = {
+      openProfile: vi.fn(async () => profile),
+      resetLearnedLimits: vi.fn(async () => undefined)
+    }
+    h.getController.mockReturnValue(product as unknown as ProductController)
+    expect(await h.invoke(productIpcChannels.openProfile, { profileId: 'game' })).toEqual({
+      ok: true,
+      value: profile
+    })
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'display:one' })
+    ).toEqual({ ok: true, value: null })
+    expect(h.trusted).toHaveBeenCalledTimes(2)
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'not-a-stable-id' })
+    ).toMatchObject({ ok: false })
+    expect(
+      await h.invoke(productIpcChannels.resetLearnedLimits, {
+        displayId: 'display:one',
+        path: 'profiles.json'
+      })
+    ).toMatchObject({ ok: false })
+    expect(product.resetLearnedLimits).toHaveBeenCalledTimes(1)
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    await expect(
+      h.invoke(productIpcChannels.resetLearnedLimits, { displayId: 'display:one' })
+    ).rejects.toThrow('Untrusted renderer')
+    expect(product.resetLearnedLimits).toHaveBeenCalledTimes(1)
+  })
   it('rejects stale starts, updates, commits and cancels after close and after reopening', async () => {
     const h = harness()
     const product = {
       startPreview: vi.fn(async () => undefined),
+      activateProfile: vi.fn(async () => undefined),
+      enableAutomatic: vi.fn(async () => undefined),
       updatePreview: vi.fn(async () => undefined),
       confirmPreview: vi.fn(),
       cancelPreview: vi.fn(async () => undefined)
@@ -93,6 +129,8 @@ describe('preview lifetime IPC', () => {
     const lifetime = h.panels.getPanelLifetime('mini')!
     const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
     const requests = [
+      [productIpcChannels.activateProfile, { profileId: profile.id }],
+      [productIpcChannels.enableAutomatic, {}],
       [productIpcChannels.startPreview, { profile, kind: 'override' }],
       [productIpcChannels.updatePreview, { profileId: profile.id, targets: [] }],
       [productIpcChannels.confirmPreview, { profile, activation: 'preserve' }],
@@ -117,6 +155,23 @@ describe('preview lifetime IPC', () => {
       })
     ).toEqual({ ok: true, value: null })
     expect(product.startPreview).toHaveBeenCalledOnce()
+    expect(
+      await h.invoke(productIpcChannels.activateProfile, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: { profileId: profile.id }
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.activateProfile).toHaveBeenCalledExactlyOnceWith(
+      profile.id,
+      expect.any(Function)
+    )
+    expect(
+      await h.invoke(productIpcChannels.enableAutomatic, {
+        lifetime: h.panels.getPanelLifetime('mini'),
+        request: {}
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.enableAutomatic).toHaveBeenCalledExactlyOnceWith(expect.any(Function))
   })
 
   it('requires validated lifetime envelopes and a trusted sender', async () => {

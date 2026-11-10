@@ -71,6 +71,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     accelerator: string
   } | null>(null)
   const taskTail = useRef(Promise.resolve())
+  const actionVersion = useRef(0)
+  const runningVersion = useRef(0)
+  const queuedTasks = useRef(0)
   const followingLive = useRef(true)
   const locallyEdited = useRef(false)
   const {
@@ -89,7 +92,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     initialDraft: () => appSessionDraft(product),
     initialDirty: () => hasUnsavedSession(product.preview),
     savedProfile:
-      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
+      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null,
+    gammaLimits: product.gammaLimits,
+    capabilityReports: product.capabilityReports
   })
   const selected =
     product.configuration.profiles.find((profile) => profile.id === selectedId) ??
@@ -98,6 +103,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
   const currentProfileId = liveProfile(product)?.id ?? null
   const inSettings = view !== 'profiles'
+  useEffect(() => {
+    if (view === 'profiles' && selected?.id !== undefined)
+      void run(window.chromaShift.openProfile(selected.id), setError)
+  }, [view, selected?.id])
   useProductTheme(product.settings.theme)
   useEffect(() => {
     localStorage.setItem(LAST_VIEW_KEY, view)
@@ -140,8 +149,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   // Serialize buffered main requests and clicks arriving before the busy paint.
   function perform(work: () => Promise<void>): void {
+    const version = ++actionVersion.current
+    queuedTasks.current += 1
+    setBusy(true)
     taskTail.current = taskTail.current.then(async () => {
-      setBusy(true)
+      runningVersion.current = version
       setError(null)
       try {
         await work()
@@ -155,9 +167,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               }
         )
       } finally {
-        setBusy(false)
+        queuedTasks.current -= 1
+        setBusy(queuedTasks.current > 0)
       }
     })
+  }
+  function isCurrentAction(): boolean {
+    // Queued product commands still finish in order. Their older UI decisions
+    // must not overwrite a selection or destination accepted while they waited.
+    return runningVersion.current === actionVersion.current
   }
   async function action<T>(
     request: Promise<ProductResult<T>>,
@@ -169,6 +187,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   async function returnToLive(): Promise<void> {
     const profile = liveProfile(await value(window.chromaShift.getState()))
+    if (!isCurrentAction()) return
     setPendingPreviewId(null)
     followingLive.current = true
     setSelectedId(profile?.id ?? null)
@@ -182,7 +201,8 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   async function updateProfile(profile = draft): Promise<void> {
     if (profile === null) return
-    resetTo(await commitAppPreview(profile, settlePreview, window.chromaShift))
+    const saved = await commitAppPreview(profile, settlePreview, window.chromaShift)
+    if (isCurrentAction()) resetTo(saved)
   }
   // Header Update stays on the shown profile. Only the live profile commits and
   // ends its session; any other profile saves while its preview keeps running.
@@ -195,6 +215,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       return
     }
     const saved = await saveAppPreview(draft, settlePreview, window.chromaShift)
+    if (!isCurrentAction()) return
     followingLive.current = false
     setSelectedId(saved.id)
     resetTo(saved)
@@ -206,6 +227,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     if (profileId === undefined) return
     await settlePreview()
     const state = await value(window.chromaShift.getState())
+    if (!isCurrentAction()) return
     const saved = state.configuration.profiles.find((item) => item.id === profileId)
     const plan = discardPlan(state, saved)
     if (plan === 'returnToLive' || saved === undefined) {
@@ -217,13 +239,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     setSelectedId(saved.id)
     if (plan === 'revertSession') {
       await revertAppPreview(saved, settlePreview, window.chromaShift)
-      resetTo(saved)
+      if (isCurrentAction()) resetTo(saved)
       return
     }
     const previews = shouldPreviewProfile(state, saved)
     if (previews) setPendingPreviewId(saved.id)
     try {
       await rollback()
+      if (!isCurrentAction()) return
       resetTo(saved)
       if (previews) await value(window.chromaShift.startPreview(saved, 'preview'))
     } catch (cause) {
@@ -232,8 +255,12 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     }
   }
   function continueAfterChanges(work: () => Promise<void>): void {
-    if (dirty) requestAnimationFrame(() => setPendingContinuation(() => work))
-    else perform(work)
+    if (dirty) {
+      const version = ++actionVersion.current
+      requestAnimationFrame(() => {
+        if (version === actionVersion.current) setPendingContinuation(() => work)
+      })
+    } else perform(work)
   }
   function resolveChanges(update: boolean): void {
     const next = pendingContinuation
@@ -242,14 +269,16 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       if (update) await updateProfile()
       else {
         await rollback()
-        resetTo(selected)
+        if (isCurrentAction()) resetTo(selected)
       }
-      setPendingContinuation(null)
-      await next()
+      setPendingContinuation((current) => (current === next ? null : current))
+      if (isCurrentAction()) await next()
     })
   }
   async function openProfile(profile: ColorProfile): Promise<void> {
+    if (!isCurrentAction()) return
     const before = await value(window.chromaShift.getState())
+    if (!isCurrentAction()) return
     if (keepsPreviewBannerWhileSwitching(before, profile)) setPendingPreviewId(profile.id)
     try {
       const keepingOverride =
@@ -258,7 +287,10 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
         before.preview.profileId === profile.id
       if (before.chromaShift.status !== 'active') await settlePreview()
       else if (!keepingOverride) await rollback()
+      if (!isCurrentAction()) return
+      await value(window.chromaShift.openProfile(profile.id))
       const state = await value(window.chromaShift.getState())
+      if (!isCurrentAction()) return
       const current = state.configuration.profiles.find((item) => item.id === profile.id)
       if (current === undefined) {
         setPendingPreviewId(null)
@@ -288,12 +320,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     continueAfterChanges(() => openProfile(profile))
   }
   function selectActivation(profileId: string | null): void {
+    const lifetime = window.chromaShift.getPanelLifetime()
+    if (lifetime === null) return
     continueAfterChanges(async () => {
       await rollback()
+      if (!isCurrentAction() || window.chromaShift.getPanelLifetime() !== lifetime) return
       await value(
         profileId === null
-          ? window.chromaShift.enableAutomatic()
-          : window.chromaShift.activateProfile(profileId)
+          ? window.chromaShift.enableAutomatic(lifetime)
+          : window.chromaShift.activateProfile(profileId, lifetime)
       )
       await returnToLive()
     })
@@ -306,15 +341,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       currentProfileId
     )
     if (decision === null) return
-    continueAfterChanges(async () => {
-      await rollback()
-      await value(
-        decision.kind === 'automatic'
-          ? window.chromaShift.enableAutomatic()
-          : window.chromaShift.activateProfile(decision.profileId)
-      )
-      await returnToLive()
-    })
+    selectActivation(decision.kind === 'automatic' ? null : decision.profileId)
   }
   function navigate(nextView: AppPanelView): void {
     if (nextView === view) return
@@ -322,7 +349,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     continueAfterChanges(async () => {
       if (view === 'profiles' && temporaryOverride === null) await rollback()
       await returnToLive()
-      setView(nextView)
+      // Clean navigation already painted its destination. Replaying it after
+      // queued work can overwrite a newer click, such as Back from About.
+      if (dirty && isCurrentAction()) setView(nextView)
     })
   }
   // Main's buffered navigation and profile requests win over initial selection.
@@ -382,18 +411,20 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           item.action.kind === 'profile' &&
           item.action.profileId.toLowerCase() === current.id.toLowerCase()
       )
-      if (current.enabled && binding !== undefined)
-        requestAnimationFrame(() =>
+      if (current.enabled && binding !== undefined) {
+        const version = runningVersion.current
+        requestAnimationFrame(() => {
+          if (version !== actionVersion.current) return
           setPendingDisable({
             profile: current,
             accelerator: formatShortcutAccelerator(binding.accelerator)
           })
-        )
-      else {
+        })
+      } else {
         const saved = await value(
           window.chromaShift.saveProfile({ ...current, enabled: !current.enabled })
         )
-        if (saved.id === selectedId) resetTo(saved)
+        if (isCurrentAction() && saved.id === selectedId) resetTo(saved)
       }
     })
   }
@@ -405,8 +436,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
           ? window.chromaShift.createProfile('New profile')
           : window.chromaShift.duplicateProfile(copy.id)
       )
+      if (!isCurrentAction()) return
       await openProfile(profile)
-      if (copy === undefined) setNamingProfileId(profile.id)
+      if (copy === undefined && isCurrentAction()) setNamingProfileId(profile.id)
     })
   }
   const savedProfile = draft ?? selected
@@ -675,10 +707,14 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                     toggleProfileEnabled(shownProfile)
                     return
                   }
+                  const lifetime = window.chromaShift.getPanelLifetime()
+                  if (lifetime === null) return
                   perform(async () => {
                     if (dirty) await updateProfile()
                     else await rollback()
-                    await value(window.chromaShift.activateProfile(shownProfile.id))
+                    if (!isCurrentAction() || window.chromaShift.getPanelLifetime() !== lifetime)
+                      return
+                    await value(window.chromaShift.activateProfile(shownProfile.id, lifetime))
                     await returnToLive()
                   })
                 }}

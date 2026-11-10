@@ -58,9 +58,33 @@ it('captures validated panel lifetimes and preserves an explicit old token acros
     error: { code: 'CONFLICT' }
   })
   expect(bridge.invoke).not.toHaveBeenCalled()
+  expect(await bridge.api!.activateProfile('game')).toMatchObject({
+    ok: false,
+    error: { code: 'CONFLICT' }
+  })
+  expect(await bridge.api!.enableAutomatic()).toMatchObject({
+    ok: false,
+    error: { code: 'CONFLICT' }
+  })
+  expect(bridge.invoke).not.toHaveBeenCalled()
   deliver({}, { lifetime: 22 })
   bridge.invoke.mockResolvedValue({ ok: true, value: null })
   const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
+  await bridge.api!.activateProfile(profile.id, captured)
+  expect(bridge.invoke).toHaveBeenLastCalledWith(productIpcChannels.activateProfile, {
+    lifetime: 21,
+    request: { profileId: profile.id }
+  })
+  await bridge.api!.enableAutomatic(captured)
+  expect(bridge.invoke).toHaveBeenLastCalledWith(productIpcChannels.enableAutomatic, {
+    lifetime: 21,
+    request: {}
+  })
+  await bridge.api!.activateProfile(profile.id)
+  expect(bridge.invoke).toHaveBeenLastCalledWith(productIpcChannels.activateProfile, {
+    lifetime: 22,
+    request: { profileId: profile.id }
+  })
   await bridge.api!.startPreview(profile, 'edit', captured)
   expect(bridge.invoke).toHaveBeenLastCalledWith(productIpcChannels.startPreview, {
     lifetime: 21,

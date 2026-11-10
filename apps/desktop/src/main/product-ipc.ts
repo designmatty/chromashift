@@ -24,6 +24,7 @@ import {
   productIpcChannels,
   productStateResultSchema,
   profileIdRequestSchema,
+  displayLimitsResetRequestSchema,
   profileResultSchema,
   reorderProfilesRequestSchema,
   saveProfileRequestSchema,
@@ -91,6 +92,26 @@ export function registerProductIpcHandlers(
     if (value === undefined) throw new ProductControllerUnavailableError()
     return value
   }
+
+  register(
+    ipc,
+    productIpcChannels.openProfile,
+    profileIdRequestSchema,
+    profileResultSchema,
+    assertTrustedRenderer,
+    (request) => controller().openProfile(request.profileId)
+  )
+  register(
+    ipc,
+    productIpcChannels.resetLearnedLimits,
+    displayLimitsResetRequestSchema,
+    voidResultSchema,
+    assertTrustedRenderer,
+    async (request) => {
+      await controller().resetLearnedLimits(request.displayId)
+      return null
+    }
+  )
 
   register(
     ipc,
@@ -165,12 +186,14 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.activateProfile,
-    profileIdRequestSchema,
+    scopedPreviewRequestSchema(profileIdRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async (request) => {
+    async ({ request, lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
       await diagnostics.profileAction('ProfileActivation', { profileId: request.profileId }, () =>
-        controller().activateProfile(request.profileId)
+        controller().activateProfile(request.profileId, assertCurrent)
       )
       return null
     }
@@ -178,11 +201,13 @@ export function registerProductIpcHandlers(
   register(
     ipc,
     productIpcChannels.enableAutomatic,
-    emptyRequestSchema,
+    scopedPreviewRequestSchema(emptyRequestSchema),
     voidResultSchema,
     assertTrustedRenderer,
-    async () => {
-      await controller().enableAutomatic()
+    async ({ lifetime }, event) => {
+      const assertCurrent = (): void => previewLifetime.assert(event, lifetime)
+      assertCurrent()
+      await controller().enableAutomatic(assertCurrent)
       return null
     }
   )

@@ -7,7 +7,7 @@ import {
   type ProfileConfigurationStorage
 } from '@chromashift/core'
 import type { NativeEvent } from '@chromashift/native-client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
@@ -695,6 +695,174 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it.each([
+    { kind: 'manual', surface: 'panel' },
+    { kind: 'automatic', surface: 'panel' },
+    { kind: 'manual', surface: 'tray' },
+    { kind: 'automatic', surface: 'tray' },
+    { kind: 'manual', surface: 'shortcut' },
+    { kind: 'automatic', surface: 'shortcut' }
+  ] as const)(
+    'queued $surface $kind selection governs foreground events received after it',
+    async ({ kind, surface }) => {
+      const native = new FakeNativeActivationPort()
+      const repo = repository(
+        configuration([defaultProfile, gameAProfile, gameBProfile], 'default')
+      )
+      const logger = new RecordingLogger()
+      const coordinator = new ActivationCoordinator(repo, native, logger)
+      const automatic = new AutomaticActivationController(repo, coordinator, logger)
+      await automatic.start(application('Browser.exe'))
+      if (kind === 'automatic') await automatic.selectManualProfile('game-b')
+      let release!: () => void
+      let entered!: () => void
+      const reading = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const pending = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const getDisplays = native.getDisplays.bind(native)
+      vi.spyOn(native, 'getDisplays').mockImplementationOnce(async () => {
+        entered()
+        await pending
+        return getDisplays()
+      })
+      // A native transition is still draining when the user selects a mode.
+      const first =
+        kind === 'manual'
+          ? automatic.handleNativeEvent(foregroundEvent('GameA.exe'))
+          : automatic.refreshAfterConfigurationChange()
+      await reading
+      const queuedActivations = vi.spyOn(coordinator, 'activate')
+      const assertCurrent = vi.fn(() => undefined)
+      const context = {
+        source: surface === 'shortcut' ? ('shortcut' as const) : ('manual' as const),
+        ...(surface === 'panel' ? { assertCurrent } : {})
+      }
+      const selecting =
+        kind === 'manual'
+          ? automatic.selectManualProfile('game-b', {
+              ...context,
+              origin: 'profileSelection'
+            })
+          : automatic.enableAutomatic({
+              ...context,
+              origin: 'automaticSelection'
+            })
+      await vi.waitFor(() => expect(queuedActivations).toHaveBeenCalledOnce())
+      // The panel remains open. A genuine later foreground change must use the selected mode.
+      const foreground = automatic.handleNativeEvent(foregroundEvent('Browser.exe'))
+      release()
+      await Promise.all([first, selecting, foreground])
+      expect(automatic.state.mode).toEqual(
+        kind === 'manual' ? manualActivationMode('game-b') : { kind: 'automatic' }
+      )
+      expect({
+        currentTarget: automatic.state.currentTarget,
+        lastAppliedDisplay: native.applied.at(-1)?.displayId
+      }).toEqual({
+        currentTarget: { kind: 'profile', profileId: kind === 'manual' ? 'game-b' : 'default' },
+        lastAppliedDisplay: kind === 'manual' ? 'display:two' : 'display:one'
+      })
+    }
+  )
+
+  it('rejects a panel choice that closes while queued and retains the preceding activation mode', async () => {
+    const native = new FakeNativeActivationPort()
+    const repo = repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default'))
+    const logger = new RecordingLogger()
+    const coordinator = new ActivationCoordinator(repo, native, logger)
+    const automatic = new AutomaticActivationController(repo, coordinator, logger)
+    await automatic.start(null)
+    const getDisplays = native.getDisplays.bind(native)
+    let release!: () => void
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(native, 'getDisplays').mockImplementationOnce(async () => {
+      entered()
+      await pending
+      return getDisplays()
+    })
+    const first = coordinator.activate(application('GameA.exe'))
+    await reading
+    let panelOpen = true
+    const assertCurrent = vi.fn(() => {
+      if (!panelOpen) throw new Error('Panel closed')
+    })
+    const choice = automatic.selectManualProfile('game-b', {
+      source: 'manual',
+      origin: 'profileSelection',
+      assertCurrent
+    })
+    const rejected = expect(choice).rejects.toThrow('Panel closed')
+    await vi.waitFor(() => expect(assertCurrent).toHaveBeenCalledOnce())
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    panelOpen = false
+    release()
+    await first
+    await rejected
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    expect(native.calls.filter((call) => call.displayId === 'display:two')).toEqual([])
+    await automatic.handleNativeEvent(foregroundEvent('Browser.exe'))
+    expect(automatic.state.mode).toEqual({ kind: 'automatic' })
+    expect(native.calls.filter((call) => call.displayId === 'display:two')).toEqual([])
+  })
+
+  it('rejects a queued Automatic choice from a closed panel before leaving Manual', async () => {
+    const native = new FakeNativeActivationPort()
+    const repo = repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default'))
+    const logger = new RecordingLogger()
+    const coordinator = new ActivationCoordinator(repo, native, logger)
+    const automatic = new AutomaticActivationController(repo, coordinator, logger)
+    await automatic.start(application('Browser.exe'))
+    await automatic.selectManualProfile('game-b')
+    let release!: () => void
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const getDisplays = native.getDisplays.bind(native)
+    vi.spyOn(native, 'getDisplays').mockImplementationOnce(async () => {
+      entered()
+      await pending
+      return getDisplays()
+    })
+    const first = automatic.refreshAfterConfigurationChange()
+    await reading
+    let panelOpen = true
+    const assertCurrent = vi.fn(() => {
+      if (!panelOpen) throw new Error('Panel closed')
+    })
+    const choice = automatic.enableAutomatic({
+      source: 'manual',
+      origin: 'automaticSelection',
+      assertCurrent
+    })
+    const rejected = expect(choice).rejects.toThrow('Panel closed')
+    await vi.waitFor(() => expect(assertCurrent).toHaveBeenCalledOnce())
+    expect(automatic.state.mode).toEqual(manualActivationMode('game-b'))
+    const foreground = automatic.handleNativeEvent(foregroundEvent('Browser.exe'))
+    panelOpen = false
+    release()
+    await Promise.all([first, rejected, foreground])
+    expect(automatic.state.mode).toEqual(manualActivationMode('game-b'))
+    expect(automatic.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-b' })
+    expect(native.applied.map(({ displayId }) => displayId)).toEqual([
+      'display:one',
+      'display:two',
+      'display:two'
+    ])
+  })
+
   it.each(['update', 'discard'] as const)(
     'publishes the latest held switch and applies it after %s',
     async (decision) => {

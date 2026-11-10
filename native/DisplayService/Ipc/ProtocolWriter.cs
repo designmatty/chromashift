@@ -4,7 +4,7 @@ namespace ChromaShift.DisplayService.Ipc;
 
 internal sealed class ProtocolWriter(TextWriter output)
 {
-    internal const int ProtocolVersion = 1;
+    internal const int ProtocolVersion = 2;
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 

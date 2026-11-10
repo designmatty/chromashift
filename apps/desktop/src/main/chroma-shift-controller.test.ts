@@ -124,6 +124,41 @@ function create(
 }
 
 describe('ChromaShiftController pause safety', () => {
+  it.each(['manual', 'automatic'] as const)(
+    'rejects a closed panel %s selection after a pending transition',
+    async (selection) => {
+      const h = create()
+      let finish!: (result: CompletedActivationOutcome) => void
+      vi.spyOn(h.activation, 'restoreBaseline').mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      const pausing = h.controller.pause('manual')
+      await vi.waitFor(() => expect(finish).toBeDefined())
+      let panelOpen = true
+      const assertCurrent = (): void => {
+        if (!panelOpen) throw new Error('Panel closed')
+      }
+      const selecting =
+        selection === 'manual'
+          ? h.controller.selectManualProfile('other', 'manual', assertCurrent)
+          : h.controller.enableAutomatic('manual', assertCurrent)
+      const rejected = expect(selecting).rejects.toThrow('Panel closed')
+      panelOpen = false
+      finish(outcome({ kind: 'baseline' }))
+      await pausing
+      await rejected
+      expect(
+        h.activation.calls.filter(
+          (call) => call.startsWith('intent:') || call.startsWith('select:') || call === 'automatic'
+        )
+      ).toEqual([])
+      expect(h.controller.chromaShiftState.intendedMode).toEqual(manualActivationMode('gaming'))
+    }
+  )
+
   it('enters Paused only after preview teardown, queued work, and full restoration', async () => {
     const { activation, controller, persisted, cancelPreview } = create()
 

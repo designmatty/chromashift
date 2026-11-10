@@ -22,7 +22,10 @@ export function trayMenuLabel(text: string, maxLength = TRAY_MENU_NAME_MAX_LENGT
   const shortened =
     characters.length <= maxLength
       ? text
-      : `${characters.slice(0, maxLength - 1).join('').trimEnd()}…`
+      : `${characters
+          .slice(0, maxLength - 1)
+          .join('')
+          .trimEnd()}…`
   return shortened.replaceAll('&', '&&')
 }
 
@@ -53,7 +56,9 @@ export class ElectronTrayMenu implements TrayMenuPort {
   }
 
   public update(model: TrayReadModel, commands: TrayCommands): void {
-    this.#tray.setToolTip(`ChromaShift: ${model.chromaShiftStatusLabel}`)
+    this.#tray.setToolTip(
+      `ChromaShift: ${model.displayServiceError ?? model.chromaShiftStatusLabel}`
+    )
     const profileItems: MenuItemConstructorOptions[] =
       model.profiles.length === 0
         ? [{ label: 'No profiles configured', enabled: false }]
@@ -68,6 +73,9 @@ export class ElectronTrayMenu implements TrayMenuPort {
     this.#tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: `ChromaShift: ${model.chromaShiftStatusLabel}`, enabled: false },
+        ...(model.displayServiceError === undefined
+          ? []
+          : [{ label: model.displayServiceError, enabled: false }]),
         { label: `Current: ${trayMenuLabel(model.currentProfileLabel)}`, enabled: false },
         createAutomaticMenuItem(model, commands),
         { label: 'Profiles', submenu: profileItems },

@@ -3,6 +3,7 @@ import { displaySettingsSchema } from './protocol.js'
 import { describe, expect, it } from 'vitest'
 import {
   displayApplyRequestSchema,
+  displayApplyResultSchema,
   displaySchema,
   displayRestoreResultSchema,
   displayStateSchema,
@@ -15,6 +16,37 @@ import {
 } from './protocol.js'
 
 describe('native protocol', () => {
+  it('validates accepted gamma and a baseline-bound learned limit in protocol v2', () => {
+    const result = {
+      displayId: 'display:one',
+      settings: { brightness: 50, gamma: 1.85 },
+      applied: { gamma: 1.85, gammaRampHash: 'accepted' },
+      learnedGammaLimit: {
+        end: 'max',
+        value: 1.85,
+        brightness: 50,
+        colorMode: 'sdr',
+        baselineHash: 'original'
+      }
+    }
+    expect(displayApplyResultSchema.parse(result)).toEqual(result)
+    expect(displayApplyResultSchema.safeParse({ ...result, applied: { gamma: 2 } }).success).toBe(
+      false
+    )
+    for (const change of [
+      { end: 'min' },
+      { value: 2.9 },
+      { brightness: -1 },
+      { colorMode: 'hdr' },
+      { baselineHash: '' }
+    ])
+      expect(
+        displayApplyResultSchema.safeParse({
+          ...result,
+          learnedGammaLimit: { ...result.learnedGammaLimit, ...change }
+        }).success
+      ).toBe(false)
+  })
   it('keeps endpoint and physical display identities distinct', () => {
     expect(
       displaySchema.parse({
@@ -53,7 +85,7 @@ describe('native protocol', () => {
 
   it('accepts unavailable AMD diagnostics with omitted version fields', () => {
     const info = systemInfoSchema.parse({
-      protocolVersion: 1,
+      protocolVersion: 2,
       serviceVersion: '1.0.0',
       operatingSystem: 'Windows',
       processId: 42,

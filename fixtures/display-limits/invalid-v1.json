@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "displays": {
+    "display:one": {
+      "sdr": {
+        "baselineHash": "captured-baseline-hash",
+        "brightness": { "100": { "max": 2.8 } }
+      }
+    }
+  }
+}

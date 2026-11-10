@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
@@ -29,7 +29,7 @@ import {
   type ProductRuntimePorts
 } from '@main/product-runtime.js'
 import type { StructuredLogEvent, StructuredLogger } from '@main/structured-logger.js'
-import type { TrayCommands } from '@main/tray-controller.js'
+import type { TrayCommands, TrayReadModel } from '@main/tray-controller.js'
 import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
 import { PreviewRestoreError } from '@main/preview-session-controller.js'
 import { AppPanelCloseController } from '@main/app-panel-close-controller.js'
@@ -55,6 +55,7 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
   public readonly running = true
 
   private eventHandler: ((event: NativeEvent) => void) | undefined
+  private readonly exitHandlers: Array<() => void> = []
 
   public on(
     name: string,
@@ -64,11 +65,16 @@ class FakeRuntimeNativeClient extends FakeNativeDisplayPort {
       | ((code: number | null, signal: NodeJS.Signals | null) => void)
   ): this {
     if (name === 'event') this.eventHandler = handler as (event: NativeEvent) => void
+    if (name === 'exit') this.exitHandlers.push(handler as () => void)
     return this
   }
 
   public emitForegroundApplication(application: ForegroundApplication): void {
     this.eventHandler!({ event: 'foregroundApplicationChanged', data: { application } })
+  }
+
+  public emitExit(): void {
+    for (const handler of this.exitHandlers) handler()
   }
 
   public async start(): Promise<SystemInfo> {
@@ -140,6 +146,8 @@ async function createHarness(
     foregroundApplication?: ForegroundApplication
     confirmUnsavedQuit?: ProductRuntimePorts['dialogs']['confirmUnsavedQuit']
     preferences?: Partial<UserPreferences>
+    displayLimits?: unknown
+    profilesDocument?: unknown
   } = {}
 ): Promise<{
   runtime: ProductRuntime
@@ -151,6 +159,9 @@ async function createHarness(
   displayEvent: (event: 'displayAdded' | 'displayRemoved' | 'displayMetricsChanged') => void
   emergencyRestore: () => void
   trayCommands: () => TrayCommands
+  trayModel: () => TrayReadModel
+  openAppPanel: ReturnType<typeof vi.fn>
+  configurationPath: string
   notifications: Array<ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }>
   invokeRestore: () => Promise<unknown>
   invokeActivate: (profileId: string) => Promise<unknown>
@@ -159,22 +170,26 @@ async function createHarness(
 }> {
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-runtime-'))
   directories.push(directory)
+  if (options.displayLimits !== undefined)
+    await writeFile(join(directory, 'display-limits.json'), JSON.stringify(options.displayLimits))
   await writeFile(
     join(directory, 'profiles.json'),
-    JSON.stringify({
-      schemaVersion: 2,
-      profiles: [
-        {
-          id: 'default',
-          name: 'Default',
-          enabled: true,
-          applications: [],
-          displays: [{ displayId: 'display:one', color: { brightness: 60 } }]
-        },
-        ...(options.profiles ?? [])
-      ],
-      settings: { defaultProfileId: 'default' }
-    })
+    JSON.stringify(
+      options.profilesDocument ?? {
+        schemaVersion: 2,
+        profiles: [
+          {
+            id: 'default',
+            name: 'Default',
+            enabled: true,
+            applications: [],
+            displays: [{ displayId: 'display:one', color: { brightness: 60 } }]
+          },
+          ...(options.profiles ?? [])
+        ],
+        settings: { defaultProfileId: 'default' }
+      }
+    )
   )
 
   const client = new FakeRuntimeNativeClient()
@@ -192,6 +207,8 @@ async function createHarness(
     undefined
   let emergencyHandler: (() => void) | undefined
   let trayCommands: TrayCommands | undefined
+  let trayModel: TrayReadModel | undefined
+  const openAppPanel = vi.fn()
   const shortcutHandlers = new Map<string, () => void>()
   const notifications: Array<
     ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }
@@ -225,12 +242,13 @@ async function createHarness(
     shell: {
       openWindow: () => undefined,
       openProfile: () => undefined,
-      openAppPanel: () => undefined,
+      openAppPanel,
       openMiniPanel: () => undefined,
       createTrayMenu: () => {
         trayMenus += 1
         return Promise.resolve({
-          update: (_model, commands) => {
+          update: (model, commands) => {
+            trayModel = model
             trayCommands = commands
           },
           showError: () => undefined,
@@ -322,16 +340,41 @@ async function createHarness(
     displayEvent: (event) => displayEventListener(event),
     emergencyRestore: () => emergencyHandler!(),
     trayCommands: () => trayCommands!,
+    trayModel: () => trayModel!,
+    openAppPanel,
+    configurationPath: join(directory, 'profiles.json'),
     notifications,
     invokeRestore: () =>
       handlers.get(productIpcChannels.restoreBaseline)!({} as IpcMainInvokeEvent, {}),
     invokeActivate: (profileId) =>
-      handlers.get(productIpcChannels.activateProfile)!({} as IpcMainInvokeEvent, { profileId }),
+      handlers.get(productIpcChannels.activateProfile)!({} as IpcMainInvokeEvent, {
+        lifetime: 1,
+        request: { profileId }
+      }),
     invokeAutomatic: () =>
-      handlers.get(productIpcChannels.enableAutomatic)!({} as IpcMainInvokeEvent, {}),
+      handlers.get(productIpcChannels.enableAutomatic)!({} as IpcMainInvokeEvent, {
+        lifetime: 1,
+        request: {}
+      }),
     pressShortcut: (accelerator) => shortcutHandlers.get(accelerator)!()
   }
 }
+
+it('reports invalid learned-limit configuration before any automatic display writer starts', async () => {
+  const h = await createHarness({}, { displayLimits: { schemaVersion: 999, displays: {} } })
+  try {
+    await h.runtime.start()
+    expect(h.client.calls).toEqual([])
+    expect(h.runtime.productController).toBeDefined()
+    expect(h.logger.has('DisplayLimitsConfigurationInvalid')).toBe(true)
+    expect(h.errors).toContainEqual({
+      title: 'Display limits could not be loaded',
+      message: expect.stringContaining('display-limits.json was left unchanged')
+    })
+  } finally {
+    h.runtime.dispose()
+  }
+})
 
 describe('product runtime startup wiring', () => {
   it('saves the main-owned override draft before restore-safe quit without a renderer', async () => {
@@ -479,18 +522,15 @@ describe('product runtime startup wiring', () => {
     expect(harness.logger.has('NativeServiceHealthVerified')).toBe(false)
   })
 
-  it('logs a native start failure while lifecycle configuration still proceeds', async () => {
+  it('blocks lifecycle writers when native startup fails', async () => {
     const harness = await createHarness()
     harness.client.startFailure = new Error('spawn failed')
     await harness.runtime.start()
 
     expect(harness.logger.has('NativeServiceStartupFailed')).toBe(true)
-    // A start failure does not gate the product lifecycle: the controllers are
-    // wired anyway, startup activation is attempted against the client (whose
-    // operations fail in production), and native-service recovery owns getting
-    // back to a healthy helper.
     expect(harness.runtime.productController).toBeDefined()
     expect(harness.trayMenusCreated()).toBe(1)
+    expect(harness.client.calls).toEqual([])
     expect(() => harness.runtime.dispose()).not.toThrow()
   })
 })
@@ -2217,4 +2257,207 @@ it('rereview90: End preview must recover after a failed continuation Retry', asy
     h.client.failRestoreDisplayIds.clear()
     await h.runtime.dispose()
   }
+})
+it('review92: incompatible protocol v1 helper cannot receive display writes', async () => {
+  const h = await createHarness()
+  const start = h.client.start.bind(h.client)
+  const health = h.client.getServiceHealth.bind(h.client)
+  h.client.start = async () => ({ ...(await start()), protocolVersion: 1 })
+  h.client.getServiceHealth = async () => ({ ...(await health()), protocolVersion: 1 })
+  await h.runtime.start()
+  try {
+    expect(h.logger.has('NativeServiceStartupFailed')).toBe(true)
+    expect(h.logger.has('NativeServiceHealthVerified')).toBe(false)
+    expect(h.client.calls.filter((call) => call.operation === 'apply')).toEqual([])
+    expect(h.client.calls).toEqual([])
+    expect(h.runtime.productController).toBeDefined()
+    expect(h.errors).toContainEqual({
+      title: 'DisplayService compatibility check failed',
+      message: expect.stringContaining('matching ChromaShift and DisplayService versions')
+    })
+    expect(() => h.emergencyRestore()).not.toThrow()
+    expect(() => h.emergencyRestore()).not.toThrow()
+    expect(h.logger.has('EmergencyRestoreSkipped')).toBe(true)
+    await expect(h.invokeRestore()).resolves.toMatchObject({ ok: false })
+    await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+    await expect(h.invokeAutomatic()).resolves.toMatchObject({ ok: false })
+    h.displayEvent('displayAdded')
+    h.client.emitForegroundApplication({
+      pid: 7,
+      executable: 'game.exe',
+      path: 'C:\\game.exe',
+      title: 'Game',
+      monitorDeviceName: null
+    })
+    expect(h.client.calls).toEqual([])
+  } finally {
+    h.runtime.dispose()
+  }
+})
+
+it('rereview92: a transient helper startup failure must leave product UI reachable', async () => {
+  const h = await createHarness()
+  h.client.startFailure = new Error('spawn failed')
+  await h.runtime.start()
+  try {
+    expect(h.client.calls).toEqual([])
+    expect(h.errors).toContainEqual(
+      expect.objectContaining({ title: 'DisplayService compatibility check failed' })
+    )
+    h.emergencyRestore()
+    expect(h.logger.has('EmergencyRestoreSkipped')).toBe(true)
+    expect({
+      tray: h.trayMenusCreated(),
+      product: !!h.runtime.productController,
+      shutdown: !!h.runtime.shutdownCoordinator
+    }).toEqual({ tray: 1, product: true, shutdown: true })
+  } finally {
+    h.runtime.dispose()
+  }
+})
+
+describe('offline product lifecycle', () => {
+  it('serves product state and tray navigation while offline, then recovers only after negotiation', async () => {
+    const h = await createHarness()
+    vi.useFakeTimers()
+    const start = vi.spyOn(h.client, 'start')
+    h.client.startFailure = new Error('spawn failed')
+    await h.runtime.start()
+    try {
+      expect(start).toHaveBeenCalledTimes(1)
+      const state = await h.runtime.productController!.getState()
+      expect(state.configuration.profiles).toHaveLength(1)
+      expect(state.displays).toEqual([])
+      expect(state.activation.enabled).toBe(false)
+      expect(h.trayModel()).toMatchObject({
+        displayServiceError: expect.stringContaining('DisplayService unavailable'),
+        controlsEnabled: false,
+        automaticEnabled: false,
+        restoreEnabled: false
+      })
+      h.trayCommands().openAppPanel()
+      expect(h.openAppPanel).toHaveBeenCalledOnce()
+      await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+      await expect(
+        h.runtime.productController!.startPreview(state.configuration.profiles[0]!, 'preview')
+      ).rejects.toThrow('DisplayService unavailable')
+      expect(h.client.calls).toEqual([])
+      h.client.startFailure = undefined
+      await vi.advanceTimersByTimeAsync(250)
+      await vi.waitFor(() => expect(h.logger.has('NativeServiceRecovered')).toBe(true))
+      expect(start).toHaveBeenCalledTimes(2)
+      expect(h.logger.has('NativeServiceHealthVerified')).toBe(true)
+      expect(h.client.calls.some((call) => call.operation === 'apply')).toBe(true)
+      await vi.waitFor(() => expect(h.trayModel().displayServiceError).toBeUndefined())
+      expect((await h.runtime.productController!.getState()).activation.enabled).toBe(true)
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('keeps a persistent compatibility status without retrying an incompatible helper, including after exit', async () => {
+    const h = await createHarness()
+    vi.useFakeTimers()
+    const compatibleStart = h.client.start.bind(h.client)
+    const start = vi.spyOn(h.client, 'start').mockImplementation(async () => ({
+      ...(await compatibleStart()),
+      protocolVersion: 1
+    }))
+    await h.runtime.start()
+    try {
+      expect(h.trayMenusCreated()).toBe(1)
+      expect(h.trayModel().displayServiceError).toContain('DisplayService incompatible')
+      expect(h.runtime.shutdownCoordinator).toBeDefined()
+      expect((await h.runtime.productController!.getState()).configuration.profiles).toHaveLength(1)
+      h.trayCommands().openAppPanel()
+      h.emergencyRestore()
+      h.emergencyRestore()
+      h.client.emitExit()
+      h.displayEvent('displayAdded')
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(start).toHaveBeenCalledTimes(1)
+      expect(h.client.calls).toEqual([])
+      expect(h.trayModel().displayServiceError).toContain('Reinstall matching versions')
+      await expect(h.invokeAutomatic()).resolves.toMatchObject({ ok: false })
+      await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+      expect(h.openAppPanel).toHaveBeenCalledOnce()
+    } finally {
+      h.runtime.dispose()
+    }
+    // A fresh process after reinstall negotiates normally; incompatibility is session-local.
+    const restarted = await createHarness()
+    try {
+      await restarted.runtime.start()
+      expect(restarted.client.calls.some((call) => call.operation === 'apply')).toBe(true)
+      expect(restarted.trayModel().displayServiceError).toBeUndefined()
+    } finally {
+      restarted.runtime.dispose()
+    }
+  })
+
+  it('stops startup recovery as soon as a retry discovers an incompatible helper', async () => {
+    const h = await createHarness()
+    vi.useFakeTimers()
+    const compatibleStart = h.client.start.bind(h.client)
+    const start = vi
+      .spyOn(h.client, 'start')
+      .mockRejectedValueOnce(new Error('transient spawn failure'))
+      .mockImplementation(async () => ({ ...(await compatibleStart()), protocolVersion: 1 }))
+    await h.runtime.start()
+    try {
+      await vi.advanceTimersByTimeAsync(250)
+      await vi.waitFor(() => expect(h.logger.has('NativeServiceRecoveryTerminated')).toBe(true))
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(start).toHaveBeenCalledTimes(2)
+      expect(h.client.calls).toEqual([])
+      // Refresh is asynchronous, just as it is for a helper-exit broadcast.
+      h.trayCommands().openAppPanel()
+      await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('retains invalid limits and still provides state, navigation and shutdown without starting native', async () => {
+    const invalid = { schemaVersion: 999, displays: {} }
+    const h = await createHarness({}, { displayLimits: invalid })
+    const start = vi.spyOn(h.client, 'start')
+    await h.runtime.start()
+    try {
+      expect(start).not.toHaveBeenCalled()
+      expect(h.trayModel().displayServiceError).toContain('display-limits.json')
+      expect((await h.runtime.productController!.getState()).displays).toEqual([])
+      h.trayCommands().openAppPanel()
+      expect(h.openAppPanel).toHaveBeenCalledOnce()
+      await expect(h.invokeActivate('default')).resolves.toMatchObject({ ok: false })
+      expect(h.client.calls).toEqual([])
+      expect(
+        JSON.parse(await readFile(join(h.configurationPath, '..', 'display-limits.json'), 'utf8'))
+      ).toEqual(invalid)
+      await expect(h.runtime.shutdownCoordinator!.request('tray')).resolves.toBe(true)
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('retains invalid profiles while keeping tray navigation and restore-safe shutdown reachable', async () => {
+    const invalid = { schemaVersion: 999, profiles: [] }
+    const h = await createHarness({}, { profilesDocument: invalid })
+    await h.runtime.start()
+    try {
+      expect(h.runtime.productController).toBeDefined()
+      expect(h.trayMenusCreated()).toBe(1)
+      expect(h.trayModel().profiles).toEqual([])
+      h.trayCommands().openAppPanel()
+      expect(h.openAppPanel).toHaveBeenCalledOnce()
+      await expect(h.runtime.productController!.getState()).rejects.toThrow()
+      expect(
+        h.client.calls.filter((call) => call.operation === 'capture' || call.operation === 'apply')
+      ).toEqual([])
+      expect(JSON.parse(await readFile(h.configurationPath, 'utf8'))).toEqual(invalid)
+      await expect(h.runtime.shutdownCoordinator!.request('tray')).resolves.toBe(true)
+    } finally {
+      h.runtime.dispose()
+    }
+  })
 })

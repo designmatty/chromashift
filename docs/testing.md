@@ -415,6 +415,72 @@ CPU, and package footprint. The current budgets and measurements live in
 
 ## Current hardware evidence
 
+### Learned gamma limits, issue #82
+
+Deterministic coverage includes both retry directions, fractional values and
+neutral termination, accepted read-back, no restore between rejected attempts,
+final restoration and diagnostics, and unchanged HDR gating. Fake-native tests
+cover persistence, activation, Preview/Edit/Temporary override, multi-endpoint
+convergence, quiet profile updates, baseline invalidation, Reset, and invalid
+stored data retention. Core fixtures validate the new schema-v1 slice; native
+protocol tests validate protocol-v2 results. The website retains the starting
+envelope because its demo has no real display identity or captured baseline.
+Review regressions cover protocol-v1 write rejection, renderer-independent
+emergency handling after failed negotiation, unconfirmed persisted limits,
+editor and preview baseline changes, disconnected/HDR/unsupported target
+preservation, and effective brightness after mixed-endpoint filtering.
+Round-four regressions retain all three re-review probes. They cover offline
+product/tray/shutdown reachability, recovery only after negotiation, persistent
+compatibility status without incompatible retries, invalid configuration
+retention, stale panel selections across cancellation/close/reopen and main
+activation queues, and a newer navigation remaining actionable after an older
+Update finishes.
+
+Owner manual checks, when desktop and hardware runs resume:
+
+1. Use an isolated development data directory and a restoration guard. Record
+   display model, stable ID, GPU, driver, SDR mode, baseline hash, and mild
+   starting values. Do not force extreme gamma to manufacture a rejection.
+2. If normal editing encounters a real rejection, verify 0.05 steps toward
+   neutral, the first accepted value in the slider, hatched limits, and the
+   note's explanation on hover. Check both panels and both themes. Confirm no
+   notification, and that other unsaved edits survive. Diagnostic logs must
+   identify the request, display, accepted bound, and captured baseline.
+3. Restart after confirmed restoration. Apply and open a previously saved
+   out-of-range profile, including an imported profile. Before normal capture
+   confirms the baseline, verify the starting range, no learned note, and no
+   permanent clamp. After matching capture, verify quiet permanent clamping.
+   Confirm Preview, Edit, and mini-panel overrides obey the range.
+4. In Settings → Displays, reset one display. Its range returns to the starting
+   envelope and the note disappears, with no display write. Other displays and
+   previously clamped saved profile values remain intact.
+5. After confirmed exit, change the display's calibration externally. Start a
+   new session and capture before applying mild settings. Confirm changed
+   captured hashes invalidate the old limits, without recapturing modified
+   output during a session. Check separate brightness levels.
+6. Verify exact Original settings after cancel and shutdown. Check HDR remains
+   restore-only. Exhaustion and read-back faults stay deterministic fake tests
+   unless a dedicated hardware fault study is authorized.
+7. In an isolated development install, simulate an unavailable or incompatible
+   helper before launch. Test explicit and tray-start launches. After dismissing
+   the dialog, verify tray navigation, the app, diagnostics, and Exit remain
+   reachable. A mismatch keeps its compatibility status and permits no display
+   writes or recovery loop. Press the emergency shortcut repeatedly, then
+   reinstall matching files and restart to confirm normal negotiation.
+8. Delay mini-panel preview cancellation, choose a profile or Automatic, then
+   close or hand off to the app. Releasing cancellation must not issue a new
+   activation. Reopen and verify fresh selections, tray selections, and shortcuts.
+   In a dirty app-panel navigation dialog, delay Update and send a newer tray
+   destination. After saving, the newer dialog must remain actionable and lead
+   to that destination.
+
+The display-free learned-limits smoke fixture seeds the persisted slice and
+checks the production controls and Reset action. It causes no GDI rejections or
+display writes. Theme changes call production `applyColorScheme`, wait for a
+computed-color change, and assert different dark and light colors before capture.
+Smoke remains an owner-run gate; automated verification does
+not establish hardware acceptance. AMD remains hardware-unverified.
+
 The current reference host is Windows 11 with an NVIDIA RTX 5090 driving two
 display endpoints. An AMD integrated GPU and ADLX runtime are present, but no
 display is attached to the AMD adapter.

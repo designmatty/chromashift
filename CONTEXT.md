@@ -57,6 +57,12 @@ They are product values, not captured Original settings, provider defaults, or
 the Default profile.
 _Avoid_: Default values, Original settings, provider defaults
 
+**Learned limits**:
+The gamma bounds a display has accepted after rejecting stronger curves, for a
+given brightness, color mode, and captured Original settings. They narrow the
+Color safety envelope until reset or invalidated by changed Original settings.
+_Avoid_: Calibration, hardware guarantee
+
 **Complete color vector**:
 The six vendor-neutral color values owned by an assigned profile display target.
 Every value is present even when the display cannot currently apply it.

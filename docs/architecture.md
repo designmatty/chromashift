@@ -35,6 +35,40 @@ topology changes. Every write is validated and read back. The baseline manager
 captures all supported state before the first mutation, applies transforms from
 that immutable baseline, restores the whole display after partial failure, and
 restores all displays during shutdown or parent-pipe EOF.
+
+For an explicit GDI `SetDeviceGammaRamp` rejection, the native apply walks gamma
+in 0.05 steps toward neutral, including 1.0, rebuilding each ramp from the
+immutable baseline. Rejected writes leave output unchanged, so the walk has no
+intermediate restore. Accepted writes still require exact read-back. Exhaustion,
+read-back errors, and other partial failures retain whole-display restoration.
+HDR remains restore-only. Protocol v2 reports the accepted gamma and an optional
+learned end, value, brightness, SDR mode, and captured ramp hash in `display.apply`.
+Native persists no limits. See `native-protocol.md` for the result schema.
+
+Main owns `display-limits.json`, a separate schema-v1 settings slice written
+atomically through `SettingsSliceStore`. `displayLimitsSchema` in core validates
+`{ schemaVersion: 1, displays: { [stableId]: { sdr?: { baselineHash, brightness:
+{ [brightness]: { min?, max? } } }, hdr?: { baselineHash, brightness } } } }`.
+Only SDR learning is active. Missing files start empty; invalid or unsupported
+documents fail startup validation and remain untouched. Fixtures live under
+`fixtures/display-limits`. Existing profile and settings schemas stay unchanged.
+
+`PhysicalDisplayClient` associates captured endpoint hashes with a stable panel,
+invalidates limits after a changed captured baseline, clamps after capability projection,
+and converges simultaneous endpoints to their common accepted gamma. It never
+uses current modified output as a baseline. Main's `LearnedGammaLimits` merges
+learned ends with the unchanged starting envelope. The serialized profile writer
+quietly clamps saved gamma on apply or editor opening, without a notification.
+Persisted limits remain inactive until normal capture-before-mutation confirms
+their baseline hash in the current session. Restoration that releases a baseline
+or a helper exit revokes that confirmation. Quiet updates and renderer feedback
+use limits only for connected SDR displays that support gamma. Learning, lookup,
+clamping, and feedback use brightness 50 when capabilities omit brightness from
+the native request, while the saved brightness intent remains unchanged.
+Session references and drafts change only their gamma fields, retaining other
+unsaved changes. Both renderers receive validated read-only limits and can
+request a sender-checked per-display reset through preload. Reset changes the
+limits slice without a display write or undoing earlier saved profile clamps.
 `ServiceLifecycle` owns the production input, parent-exit and watchdog loop and
 its final restore-all acknowledgement. Unit tests drive those routes with fake
 providers without launching a helper or touching Windows displays.
@@ -57,11 +91,22 @@ through the runtime's `productController`, `shutdownCoordinator`, and
 the shell only through its ports. The DisplayService connection enters through
 a `createClient` factory port typed as the union of the consumer ports the
 runtime feeds, so runtime startup wiring (start-mode selection, the
-health/version handshake, fail-open lifecycle configuration) is covered by
+health/version handshake, fail-closed display-write gating) is covered by
 fast in-process tests against `testing/fake-native-display.ts`, the one
 shared fake for the native display seam that activation-coordinator and
 preview-session tests also use. Product wiring changes belong in the runtime
 and routers, not in `index.ts`.
+An unsuccessful handshake keeps the product controller, IPC, tray navigation,
+app window, and shutdown coordinator reachable. The native-service gate returns
+offline display reads and rejects display mutations until negotiation succeeds;
+the native client independently rejects mutating requests before negotiation.
+Transient startup failures use bounded recovery. A known incompatible helper
+shows a compatibility dialog and persistent tray status and is not retried in
+that process. Reinstalling matching versions and restarting negotiates afresh.
+Invalid persisted configuration remains untouched and blocks its writers.
+The main-owned emergency shortcut logs a skipped restore when negotiation failed
+and no baseline could be owned; compatible-helper restoration continues through
+the normal controllers.
 
 Electron main composes that domain layer with the native client. It stores
 configuration atomically at `profiles.json` under Electron's user-data directory
@@ -336,6 +381,10 @@ a validated event and captures it when a debounced edit is scheduled. Main
 rejects preview requests from closed or older openings, including requests that
 finish loading a saved profile after close. Closing also tells the renderer to
 invalidate pending synchronization.
+Panel profile and Automatic selections carry the same lifetime. The renderer
+rechecks it after draining preview writes, and main checks it at admission,
+after delayed selection work, and before queued activation. Tray and global
+shortcut selections remain independent of panel lifetimes.
 Closing either panel to the tray silently reverts unsaved changes through main-owned rollback.
 The mini close control uses that path; failure keeps the mini panel
 visible with Safety blocked and Retry. Mini-to-app handoff hides the mini panel

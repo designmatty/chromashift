@@ -1,9 +1,9 @@
 import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
-import { Palette, Thermometer } from 'lucide-react'
+import { Palette, ShieldAlert, Thermometer } from 'lucide-react'
 import {
-  clampGammaForBrightness,
+  effectiveGammaRange,
+  effectiveGammaBrightness,
   createNeutralColorSettings,
-  gammaRangeForBrightness,
   type ColorSettings,
   type CompleteColorSettings
 } from '@chromashift/core'
@@ -176,12 +176,19 @@ export function ColorControls({
 }): React.JSX.Element {
   const display = product.displays.find((item) => item.id === displayId)
   const report = product.capabilityReports[displayId]
+  const limits =
+    display?.hdr || !report?.capabilities.gamma?.supported
+      ? undefined
+      : product.gammaLimits?.displays[displayId.toLowerCase()]
   const completeColor: CompleteColorSettings = { ...createNeutralColorSettings(), ...color }
+  const gammaBrightness = (brightness: number) =>
+    effectiveGammaBrightness(brightness, report?.capabilities.brightness?.supported)
 
   function change(key: ColorControlKey, nextValue: number): void {
     const next = { ...completeColor, [key]: nextValue }
-    if (key === 'brightness') {
-      next.gamma = clampGammaForBrightness(next.gamma, next.brightness)
+    if (key === 'brightness' || key === 'gamma') {
+      const range = effectiveGammaRange(limits, gammaBrightness(next.brightness))
+      next.gamma = Math.min(range.max, Math.max(range.min, next.gamma))
     }
     onChange(next)
   }
@@ -204,13 +211,28 @@ export function ColorControls({
           const support = controlSupport(control.key, display, report)
           const value = completeColor[control.key]
           const overridden = value !== control.neutral
-          const gammaRange = gammaRangeForBrightness(completeColor.brightness)
+          const gammaRange = effectiveGammaRange(limits, gammaBrightness(completeColor.brightness))
           const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
           const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
+          // Shown whenever the current brightness narrows gamma, through the starting
+          // envelope or a limit learned at this brightness.
+          const gammaLimited =
+            control.key === 'gamma' && (allowedMin > control.min || allowedMax < control.max)
+          // The brightness suffix matters only when this display's brightness changes the limit.
+          const gammaLimitLabel =
+            control.key === 'gamma'
+              ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)}${
+                  report?.capabilities.brightness?.supported
+                    ? ` at brightness ${gammaBrightness(completeColor.brightness)}%`
+                    : ''
+                }`
+              : undefined
           const row = (
             <Box
               data-part="color-control"
               data-control={control.key}
+              data-gamma-min={control.key === 'gamma' ? allowedMin : undefined}
+              data-gamma-max={control.key === 'gamma' ? allowedMax : undefined}
               display="flex"
               alignItems="center"
               gap={2}
@@ -234,6 +256,21 @@ export function ColorControls({
                 >
                   {control.label}
                 </Text>
+                {gammaLimited && (
+                  <Tooltip content={gammaLimitLabel}>
+                    <Box
+                      as="span"
+                      data-part="gamma-limit-note"
+                      role="img"
+                      aria-label={gammaLimitLabel}
+                      tabIndex={compact ? undefined : 0}
+                      display="inline-flex"
+                      color="fg.warning"
+                    >
+                      <ShieldAlert size={16} aria-hidden="true" />
+                    </Box>
+                  </Tooltip>
+                )}
                 <Box flex="1" minW="0" display="flex" alignItems="center">
                   {editable && overridden && (
                     <Tooltip content="Reset to neutral">
@@ -277,11 +314,7 @@ export function ColorControls({
                       ? 'saturation'
                       : undefined
                 }
-                limitLabel={
-                  control.key === 'gamma'
-                    ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)} at brightness ${completeColor.brightness}%`
-                    : undefined
-                }
+                limitLabel={gammaLimitLabel}
                 disabled={!editable || !support.available}
                 aria-label={`${control.label} for ${display?.name ?? displayId}`}
                 aria-valuetext={formatValue(control.key, value)}
@@ -300,7 +333,7 @@ export function ColorControls({
               content={support.reason}
               positioning={{ placement: 'top-start' }}
             >
-              {row}
+              <Box>{row}</Box>
             </Tooltip>
           )
         })}

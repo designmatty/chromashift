@@ -27,6 +27,7 @@ import {
   productStateResultSchema,
   productStateSchema,
   profileIdRequestSchema,
+  displayLimitsResetRequestSchema,
   profileResultSchema,
   reorderProfilesRequestSchema,
   saveProfileRequestSchema,
@@ -83,6 +84,17 @@ const api: ChromaShiftApi = {
   },
   getState: () =>
     invoke(productIpcChannels.getState, emptyRequestSchema, productStateResultSchema, {}),
+  openProfile: (profileId) =>
+    invoke(productIpcChannels.openProfile, profileIdRequestSchema, profileResultSchema, {
+      profileId
+    }),
+  resetLearnedLimits: (displayId) =>
+    invoke(
+      productIpcChannels.resetLearnedLimits,
+      displayLimitsResetRequestSchema,
+      voidResultSchema,
+      { displayId }
+    ),
   getUpdateStatus: () =>
     invoke(productIpcChannels.getUpdateStatus, emptyRequestSchema, updateStatusResultSchema, {}),
   checkForUpdates: () =>
@@ -115,12 +127,24 @@ const api: ChromaShiftApi = {
     invoke(productIpcChannels.setDefaultProfile, setDefaultProfileRequestSchema, voidResultSchema, {
       profileId
     }),
-  activateProfile: (profileId) =>
-    invoke(productIpcChannels.activateProfile, profileIdRequestSchema, voidResultSchema, {
-      profileId
-    }),
-  enableAutomatic: () =>
-    invoke(productIpcChannels.enableAutomatic, emptyRequestSchema, voidResultSchema, {}),
+  activateProfile: (profileId, lifetime) =>
+    invokePreview(
+      productIpcChannels.activateProfile,
+      profileIdRequestSchema,
+      voidResultSchema,
+      {
+        profileId
+      },
+      lifetime
+    ),
+  enableAutomatic: (lifetime) =>
+    invokePreview(
+      productIpcChannels.enableAutomatic,
+      emptyRequestSchema,
+      voidResultSchema,
+      {},
+      lifetime
+    ),
   restoreBaseline: () =>
     invoke(productIpcChannels.restoreBaseline, emptyRequestSchema, voidResultSchema, {}),
   controlChromaShift: (action) =>

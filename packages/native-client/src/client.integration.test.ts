@@ -25,13 +25,13 @@ describe('DisplayService lifecycle', () => {
 
     const info = await client.start()
 
-    expect(info.protocolVersion).toBe(1)
+    expect(info.protocolVersion).toBe(2)
     expect(info.processId).toBeGreaterThan(0)
     expect(info.operatingSystem).toContain('Windows')
     const health = await client.getServiceHealth()
     expect(health).toMatchObject({
       status: 'healthy',
-      protocolVersion: 1,
+      protocolVersion: 2,
       baselineCount: 0,
       watchdogArmed: true
     })

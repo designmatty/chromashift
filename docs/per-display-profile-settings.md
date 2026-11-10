@@ -190,9 +190,26 @@ targets remain persisted and resume when the same physical display returns.
 - Brightness changes clamp gamma immediately. The inline gamma input adopts the
   new bounds. Disallowed slider sections use hatching in both themes. A tooltip
   names the gamma bounds and current brightness and appears briefly when the
-  thumb reaches a constrained limit. The envelope cannot guarantee driver
-  acceptance: a rejected Windows ramp reports the requested gamma, brightness,
-  and display, and the existing whole-display restoration rule still applies.
+  thumb reaches a constrained limit. The initial envelope remains
+  `fixtures/gamma-envelope.json`. Windows may reject values inside it. Native
+  retries in 0.05 steps toward neutral 1.0 and reads back the first accepted
+  value. That value becomes this display's learned minimum or maximum at the
+  current brightness. There is no restore between rejected steps. Exhaustion
+  through neutral, read-back failure, or another partial failure restores the
+  whole display and reports the existing diagnostic error.
+- Both panels move gamma to the accepted value, narrow the allowed range, and
+  show a shield alert icon left of the gamma value. Its tooltip gives the
+  allowed range, `Min … , max …`, followed by `at brightness …%` only when the
+  display supports brightness, because only then does brightness change the
+  limit. Learning produces no notification. Limits
+  persist per stable display, brightness and color mode, bound to captured
+  Original settings. Changed captured baselines invalidate them. SDR is the
+  only active mode; HDR remains restore-only.
+- Applying a saved profile or opening it in the editor quietly saves any gamma
+  clamp required by learned limits. Imported and migrated profiles use the same
+  path. Other unsaved fields remain intact. Settings → Displays offers
+  `Reset learned limits` per display. Reset performs no display writes and does
+  not restore a profile's former gamma value.
 - Profile and settings sidebars share one persisted collapsed state. The collapsed
   rail is 40 pixels wide and uses icon buttons with tooltips; it does not expand
   on hover or change the native window minimum width.

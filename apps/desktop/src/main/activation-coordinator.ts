@@ -19,6 +19,7 @@ import type {
   RestoreAllResult
 } from '@chromashift/native-client'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
+import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 
 export interface NativeActivationPort {
   getDisplays(): Promise<Display[]>
@@ -76,12 +77,13 @@ export class ActivationCoordinator {
   public constructor(
     private readonly repository: ProfileRepository,
     private readonly native: NativeActivationPort,
-    private readonly logger: StructuredLogger
+    private readonly logger: StructuredLogger,
+    private readonly limits?: LearnedGammaLimits
   ) {}
 
   public activate(
     foregroundApplication: ForegroundApplication | null,
-    mode: ActivationMode = automaticActivationMode,
+    mode: ActivationMode | (() => ActivationMode) = automaticActivationMode,
     options: { canWrite?: () => boolean; recovery?: boolean } = {}
   ): Promise<ActivationOutcome> {
     return this.#enqueue(async () => {
@@ -114,7 +116,10 @@ export class ActivationCoordinator {
         if (hasRestoreFailure(restoration)) return { ...restoration, resolution: null }
         this.#resolver.reset()
       }
-      const outcome = await this.#transition(foregroundApplication, mode)
+      const outcome = await this.#transition(
+        foregroundApplication,
+        typeof mode === 'function' ? mode() : mode
+      )
       if (hasRestoreFailure(outcome)) this.#restorationBlocked = true
       else if (options.recovery && outcome.failures.length === 0) this.#restorationBlocked = false
       return outcome
@@ -379,6 +384,7 @@ export class ActivationCoordinator {
 
       try {
         await this.native.applyDisplaySettings(target.displayId, target.color)
+        await this.limits?.clampSavedProfile(this.repository, profile.id)
       } catch (error) {
         if (this.#isHdrUnsafe(error)) {
           this.#deferDisplay(profile.id, target.displayId, 'apply', 'hdrActive', deferredDisplayIds)

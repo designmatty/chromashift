@@ -34,6 +34,39 @@ function profile(id: string): ColorProfile {
   }
 }
 
+it('serializes a gamma-only update with concurrent user edits and other profile writes', async () => {
+  const storage = new MemoryStorage()
+  const repository = new JsonProfileRepository(storage)
+  await repository.save(profile('game'))
+  let release: () => void = () => undefined
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const originalWrite = storage.write.bind(storage)
+  let writes = 0
+  storage.write = async (contents) => {
+    if (writes++ === 0) await blocked
+    await originalWrite(contents)
+  }
+  const save = repository.save({ ...profile('game'), name: 'User rename' })
+  const clamp = repository.update('game', (current) => ({
+    ...current,
+    displays: current.displays.map((target) => ({
+      ...target,
+      color: { ...target.color, gamma: 1.85 }
+    }))
+  }))
+  const other = repository.save(profile('other'))
+  release()
+  await Promise.all([save, clamp, other])
+  expect(await repository.findById('game')).toMatchObject({
+    name: 'User rename',
+    displays: [{ color: { gamma: 1.85, saturation: 75 } }]
+  })
+  expect(await repository.findById('other')).not.toBeNull()
+  expect(parseProfileConfigurationJson(storage.contents!).profiles).toHaveLength(3)
+})
+
 function versionOneProfile(id: string): VersionOneProfile {
   return {
     id,

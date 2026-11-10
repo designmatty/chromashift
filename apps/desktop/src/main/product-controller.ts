@@ -26,6 +26,7 @@ import type {
 import type { PreviewSessionController } from '@main/preview-session-controller.js'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants.js'
 import { nextProfileName } from '@main/profile-name.js'
+import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 
 export interface ProductNativePort {
   getDisplays(): Promise<Display[]>
@@ -37,8 +38,12 @@ export interface ProductNativePort {
 export interface ProductActivationPort {
   readonly state: ActivationControllerState
   readonly chromaShiftState: ProductState['chromaShift']
-  selectManualProfile(profileId: string): Promise<ActivationOutcome>
-  enableAutomatic(): Promise<ActivationOutcome>
+  selectManualProfile(
+    profileId: string,
+    source?: 'manual',
+    assertCurrent?: () => void
+  ): Promise<ActivationOutcome>
+  enableAutomatic(source?: 'manual', assertCurrent?: () => void): Promise<ActivationOutcome>
   restoreBaseline(): Promise<ActivationOutcome>
   pause(source: 'manual'): Promise<ActivationOutcome>
   resume(source: 'manual'): Promise<ActivationOutcome>
@@ -83,7 +88,9 @@ export class ProductController {
     private readonly applicationPicker: ApplicationPickerPort,
     private readonly settings: ProductSettingsPort,
     private readonly refresh: ProductRefreshPort,
-    private readonly version: string = '0.0.0'
+    private readonly version: string = '0.0.0',
+    private readonly limits?: LearnedGammaLimits,
+    private readonly assertDisplayControlAvailable: () => void = () => undefined
   ) {}
 
   public getProfileDiagnosticContext(): Record<string, unknown> {
@@ -121,6 +128,7 @@ export class ProductController {
     displays: Display[],
     capabilityReports: Record<string, DisplayCapabilityReport>
   ): Promise<ProductState> {
+    await this.limits?.refreshApplicability()
     const configuration = await this.#configurationWithApplicationIcons()
     return {
       version: this.version,
@@ -131,7 +139,8 @@ export class ProductController {
       chromaShift: this.activation.chromaShiftState,
       foregroundApplication: await this.native.getForegroundApplication(),
       preview: this.preview.state,
-      settings: await this.settings.get()
+      settings: await this.settings.get(),
+      gammaLimits: this.limits?.applicable
     }
   }
 
@@ -190,6 +199,8 @@ export class ProductController {
   }
 
   public async saveProfile(profile: ColorProfile, removeShortcut = false): Promise<ColorProfile> {
+    await this.limits?.refreshApplicability()
+    profile = this.limits?.clampProfile(profile) ?? profile
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
     const normalized = isDefault
       ? { ...profile, id: DEFAULT_PROFILE_ID, enabled: true, applications: [] }
@@ -311,25 +322,52 @@ export class ProductController {
     await this.#configurationChanged()
   }
 
-  public async activateProfile(profileId: string): Promise<void> {
-    assertSuccessfulOutcome(await this.activation.selectManualProfile(profileId))
+  public async activateProfile(
+    profileId: string,
+    assertCurrent: () => void = () => undefined
+  ): Promise<void> {
+    this.assertDisplayControlAvailable()
+    assertCurrent()
+    assertSuccessfulOutcome(
+      await this.activation.selectManualProfile(profileId, 'manual', assertCurrent)
+    )
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
 
-  public async enableAutomatic(): Promise<void> {
-    assertSuccessfulOutcome(await this.activation.enableAutomatic())
+  public async openProfile(profileId: string): Promise<ColorProfile> {
+    const before = await this.repository.findById(profileId)
+    const profile =
+      this.limits === undefined
+        ? before
+        : await this.limits.clampSavedProfile(this.repository, profileId)
+    if (profile === null) throw new ProductNotFoundError(`Profile ${profileId} does not exist.`)
+    if (JSON.stringify(before) !== JSON.stringify(profile)) this.refresh.stateChanged()
+    return profile
+  }
+
+  public async resetLearnedLimits(displayId: string): Promise<void> {
+    await this.limits?.reset(displayId)
+    this.refresh.stateChanged()
+  }
+
+  public async enableAutomatic(assertCurrent: () => void = () => undefined): Promise<void> {
+    this.assertDisplayControlAvailable()
+    assertCurrent()
+    assertSuccessfulOutcome(await this.activation.enableAutomatic('manual', assertCurrent))
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
 
   public async restoreBaseline(): Promise<void> {
+    this.assertDisplayControlAvailable()
     assertSuccessfulOutcome(await this.activation.restoreBaseline())
     await this.refresh.refreshTray()
     this.refresh.stateChanged()
   }
 
   public async controlChromaShift(action: 'pause' | 'resume' | 'retry'): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (action === 'pause') await this.activation.pause('manual')
     else if (action === 'resume') await this.activation.resume('manual')
     else await this.activation.retrySafetyCheck('manual')
@@ -361,6 +399,7 @@ export class ProductController {
     kind: 'preview' | 'edit' | 'override',
     assertCurrent: () => void = () => undefined
   ): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before starting a display preview.')
     }
@@ -376,6 +415,7 @@ export class ProductController {
     targets: DisplayColorTarget[],
     draft?: ColorProfile
   ): Promise<void> {
+    this.assertDisplayControlAvailable()
     if (this.activation.chromaShiftState.status !== 'active') {
       throw new ProductConflictError('Resume ChromaShift before changing display colors.')
     }

@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { NativeClient, NativeServiceError } from './client.js'
+import { NativeClient, NativeServiceError, NativeServiceCompatibilityError } from './client.js'
 
 const fakeServicePath = fileURLToPath(
   new URL('./test-fixtures/fake-display-service.mjs', import.meta.url)
@@ -25,13 +25,58 @@ afterEach(async () => {
 })
 
 describe('NativeClient activation command surface', () => {
+  it('arms the watchdog before completing health negotiation', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--watchdog-needs-heartbeat'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000
+    })
+    await expect(client.start()).resolves.toMatchObject({ protocolVersion: 2 })
+    await expect(client.getServiceHealth()).resolves.toMatchObject({ watchdogArmed: true })
+    await expect(client.captureBaseline('display:test')).resolves.toMatchObject({
+      state: 'captured'
+    })
+  })
+
+  it('blocks every mutating command before negotiation and after a version mismatch', async () => {
+    client = new NativeClient({
+      executablePath: process.execPath,
+      executableArguments: [fakeServicePath, '--protocol-v1'],
+      requestTimeoutMs: 500,
+      startupTimeoutMs: 1_000
+    })
+    const native = client
+    const assertBlocked = async () => {
+      for (const command of [
+        'baseline.capture',
+        'display.apply',
+        'display.restore',
+        'baseline.restore',
+        'baseline.restoreAll',
+        'display.topology.refresh',
+        'service.shutdown'
+      ])
+        await expect(native.request(command, { displayId: 'display:test' })).rejects.toThrow(
+          'handshake has not succeeded'
+        )
+      expect(native.potentialBaselineDisplayIds).toEqual([])
+    }
+    await assertBlocked()
+    const starting = native.start()
+    await assertBlocked()
+    await expect(starting).rejects.toThrow('health/version handshake')
+    await expect(starting).rejects.toBeInstanceOf(NativeServiceCompatibilityError)
+    await assertBlocked()
+  })
+
   it('sends validated state, capture, apply, and restore requests', async () => {
     const native = createClient()
     await native.start()
 
     await expect(native.getServiceHealth()).resolves.toMatchObject({
       status: 'healthy',
-      protocolVersion: 1,
+      protocolVersion: 2,
       baselineCount: 0,
       watchdogArmed: true
     })
@@ -136,7 +181,7 @@ describe('NativeClient activation command surface', () => {
     await expect(native.request('test.timeout')).rejects.toThrow(
       'DisplayService request timed out: test.timeout'
     )
-    await expect(native.getSystemInfo()).resolves.toMatchObject({ protocolVersion: 1 })
+    await expect(native.getSystemInfo()).resolves.toMatchObject({ protocolVersion: 2 })
   })
 
   it('cleans up the child process after a startup timeout', async () => {

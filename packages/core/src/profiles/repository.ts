@@ -26,6 +26,10 @@ export interface DuplicateProfileOptions {
 }
 
 export interface ProfileRepository {
+  update?(
+    profileId: string,
+    updater: (profile: ColorProfile) => ColorProfile
+  ): Promise<ColorProfile | null>
   getConfiguration(): Promise<ProfileConfiguration>
   list(): Promise<ColorProfile[]>
   findById(profileId: string): Promise<ColorProfile | null>
@@ -42,6 +46,30 @@ function cloneConfiguration(configuration: ProfileConfiguration): ProfileConfigu
 
 export class JsonProfileRepository implements ProfileRepository {
   private configuration: ProfileConfiguration | null = null
+  private writeTail: Promise<unknown> = Promise.resolve()
+
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.writeTail.then(work)
+    this.writeTail = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
+  }
+
+  public update(
+    profileId: string,
+    updater: (profile: ColorProfile) => ColorProfile
+  ): Promise<ColorProfile | null> {
+    return this.enqueue(async () => {
+      const current = await this.findById(profileId)
+      if (current === null) return null
+      const next = colorProfileSchema.parse(updater(current))
+      if (next.id !== current.id) throw new Error('Profile updates cannot change identity.')
+      if (JSON.stringify(next) === JSON.stringify(current)) return current
+      return this.saveNow(next)
+    })
+  }
 
   public constructor(
     private readonly storage: ProfileConfigurationStorage,
@@ -64,6 +92,10 @@ export class JsonProfileRepository implements ProfileRepository {
   }
 
   public async save(profile: ColorProfile): Promise<ColorProfile> {
+    return this.enqueue(() => this.saveNow(profile))
+  }
+
+  private async saveNow(profile: ColorProfile): Promise<ColorProfile> {
     const validatedProfile = colorProfileSchema.parse(profile)
     const current = await this.load()
     const profiles = current.profiles.map(cloneProfile)
@@ -91,6 +123,10 @@ export class JsonProfileRepository implements ProfileRepository {
   }
 
   public async delete(profileId: string): Promise<boolean> {
+    return this.enqueue(() => this.deleteNow(profileId))
+  }
+
+  private async deleteNow(profileId: string): Promise<boolean> {
     const current = await this.load()
     const profiles = current.profiles.filter(
       (profile) => profile.id.toLowerCase() !== profileId.toLowerCase()
@@ -110,6 +146,10 @@ export class JsonProfileRepository implements ProfileRepository {
   }
 
   public async reorder(profileIds: readonly string[]): Promise<void> {
+    return this.enqueue(() => this.reorderNow(profileIds))
+  }
+
+  private async reorderNow(profileIds: readonly string[]): Promise<void> {
     const current = await this.load()
     const normalized = profileIds.map((profileId) => profileId.toLowerCase())
     const existing = current.profiles.map((profile) => profile.id.toLowerCase())
@@ -128,6 +168,10 @@ export class JsonProfileRepository implements ProfileRepository {
   }
 
   public async setDefaultProfileId(profileId: string | null): Promise<void> {
+    return this.enqueue(() => this.setDefaultNow(profileId))
+  }
+
+  private async setDefaultNow(profileId: string | null): Promise<void> {
     const current = await this.load()
     const canonicalProfileId =
       profileId === null
