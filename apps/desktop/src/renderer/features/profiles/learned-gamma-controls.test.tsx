@@ -63,9 +63,10 @@ describe('learned gamma feedback', () => {
           />
         </ChakraProvider>
       )
-      expect(html).toContain('Limited to 1.85 on this display')
+      expect(html).toContain('data-part="gamma-limit-note"')
+      expect(html).toContain('aria-label="Min 0.30, max 1.85"')
       expect(html).toContain('data-gamma-min="0.3" data-gamma-max="1.85"')
-      expect(html).toContain('at brightness 50%')
+      expect(html).not.toContain('at brightness')
       expect(color.brightness).toBe(37)
     })
   }
@@ -89,8 +90,9 @@ describe('learned gamma feedback', () => {
             </ChakraProvider>
           )
         const html = render()
-        expect(html).toContain('Limited to 1.85 on this display')
-        expect(html).toContain('Windows rejected a stronger gamma curve on this display.')
+        expect(html).toContain('data-part="gamma-limit-note"')
+        expect(html).toContain('data-tooltip="Min 0.30, max 1.85 at brightness 50%"')
+        expect(html).not.toContain('Limited to')
         expect(html).toContain('data-gamma-min="0.3" data-gamma-max="1.85"')
         expect(html).toContain('data-part="slider-disabled-upper"')
         product.gammaLimits!.displays = {}
@@ -98,6 +100,23 @@ describe('learned gamma feedback', () => {
         expect(render()).toContain('data-gamma-min="0.3" data-gamma-max="2.8"')
       })
     }
+
+  it('shows the shield when the brightness envelope alone narrows gamma', () => {
+    const product = state()
+    product.gammaLimits!.displays = {}
+    const html = renderToStaticMarkup(
+      <ChakraProvider value={system}>
+        <ColorControls
+          displayId="display:one"
+          product={product}
+          color={{ ...createNeutralColorSettings(), brightness: 100, gamma: 1 }}
+          editable
+          onChange={() => undefined}
+        />
+      </ChakraProvider>
+    )
+    expect(html).toContain('data-tooltip="Min 0.30, max 2.30 at brightness 100%"')
+  })
 
   it.each([true, false])(
     'rebases only gamma in a dirty renderer draft, brightness supported=%s',

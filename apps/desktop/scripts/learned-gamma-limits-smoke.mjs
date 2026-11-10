@@ -208,13 +208,13 @@ app.whenReady().then(async () => {
         previousPalette = palettes[theme]
         await waitForExpression(
           debuggerClient,
-          `document.querySelector('[data-fixture-surface="${surface}"] [data-part="gamma-limit-note"]')?.textContent.includes('Limited to 1.85 on this display') && document.querySelector('[data-control="gamma"]')?.dataset.gammaMax === '1.85'`,
+          `document.querySelector('[data-fixture-surface="${surface}"] [data-part="gamma-limit-note"]')?.getAttribute('aria-label') === 'Min 0.30, max 1.85 at brightness 50%' && document.querySelector('[data-control="gamma"]')?.dataset.gammaMax === '1.85'`,
           'Seeded gamma limit did not reach the production control'
         )
         await hoverElement(debuggerClient, '[data-part="gamma-limit-note"]')
         await waitForExpression(
           debuggerClient,
-          `document.querySelector('[role="tooltip"]')?.textContent.includes('Windows rejected a stronger gamma curve on this display.')`,
+          `document.querySelector('[role="tooltip"]')?.textContent.includes('Min 0.30, max 1.85 at brightness 50%')`,
           'Learned limit tooltip did not open'
         )
         // Renderer capture: this helper-free fixture checks the production controls,
@@ -240,6 +240,11 @@ app.whenReady().then(async () => {
       debuggerClient,
       `(async () => Object.keys((await window.chromaShift.getFixtureLimits()).displays).length === 0)()`,
       'Reset did not persist'
+    )
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[aria-label="Limits reset for Seeded display"]')?.disabled === true`,
+      'Reset button did not show the reset state'
     )
     await click('[data-fixture-view="app"]')
     await waitForExpression(

@@ -1,5 +1,5 @@
 import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
-import { Palette, Thermometer } from 'lucide-react'
+import { Palette, ShieldAlert, Thermometer } from 'lucide-react'
 import {
   effectiveGammaRange,
   effectiveGammaBrightness,
@@ -212,9 +212,21 @@ export function ColorControls({
           const value = completeColor[control.key]
           const overridden = value !== control.neutral
           const gammaRange = effectiveGammaRange(limits, gammaBrightness(completeColor.brightness))
-          const learned = limits?.sdr?.brightness[String(gammaBrightness(completeColor.brightness))]
           const allowedMin = control.key === 'gamma' ? gammaRange.min : control.min
           const allowedMax = control.key === 'gamma' ? gammaRange.max : control.max
+          // Shown whenever the current brightness narrows gamma, through the starting
+          // envelope or a limit learned at this brightness.
+          const gammaLimited =
+            control.key === 'gamma' && (allowedMin > control.min || allowedMax < control.max)
+          // The brightness suffix matters only when this display's brightness changes the limit.
+          const gammaLimitLabel =
+            control.key === 'gamma'
+              ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)}${
+                  report?.capabilities.brightness?.supported
+                    ? ` at brightness ${gammaBrightness(completeColor.brightness)}%`
+                    : ''
+                }`
+              : undefined
           const row = (
             <Box
               data-part="color-control"
@@ -244,6 +256,21 @@ export function ColorControls({
                 >
                   {control.label}
                 </Text>
+                {gammaLimited && (
+                  <Tooltip content={gammaLimitLabel}>
+                    <Box
+                      as="span"
+                      data-part="gamma-limit-note"
+                      role="img"
+                      aria-label={gammaLimitLabel}
+                      tabIndex={compact ? undefined : 0}
+                      display="inline-flex"
+                      color="fg.warning"
+                    >
+                      <ShieldAlert size={16} aria-hidden="true" />
+                    </Box>
+                  </Tooltip>
+                )}
                 <Box flex="1" minW="0" display="flex" alignItems="center">
                   {editable && overridden && (
                     <Tooltip content="Reset to neutral">
@@ -287,11 +314,7 @@ export function ColorControls({
                       ? 'saturation'
                       : undefined
                 }
-                limitLabel={
-                  control.key === 'gamma'
-                    ? `Min ${allowedMin.toFixed(2)}, max ${allowedMax.toFixed(2)} at brightness ${gammaBrightness(completeColor.brightness)}%`
-                    : undefined
-                }
+                limitLabel={gammaLimitLabel}
                 disabled={!editable || !support.available}
                 aria-label={`${control.label} for ${display?.name ?? displayId}`}
                 aria-valuetext={formatValue(control.key, value)}
@@ -302,38 +325,15 @@ export function ColorControls({
               />
             </Box>
           )
-          const note =
-            control.key === 'gamma' && learned !== undefined ? (
-              <Tooltip content="Windows rejected a stronger gamma curve on this display.">
-                <Text
-                  data-part="gamma-limit-note"
-                  tabIndex={compact ? undefined : 0}
-                  fontSize="xs"
-                  color="fg.muted"
-                >
-                  Limited to{' '}
-                  {learned.min !== undefined && learned.max !== undefined
-                    ? `${allowedMin.toFixed(2)}–${allowedMax.toFixed(2)}`
-                    : (learned.max ?? learned.min)!.toFixed(2)}{' '}
-                  on this display
-                </Text>
-              </Tooltip>
-            ) : null
           return support.available ? (
-            <Box key={control.key}>
-              {row}
-              {note}
-            </Box>
+            <Box key={control.key}>{row}</Box>
           ) : (
             <Tooltip
               key={control.key}
               content={support.reason}
               positioning={{ placement: 'top-start' }}
             >
-              <Box>
-                {row}
-                {note}
-              </Box>
+              <Box>{row}</Box>
             </Tooltip>
           )
         })}

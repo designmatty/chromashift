@@ -198,8 +198,10 @@ targets remain persisted and resume when the same physical display returns.
   through neutral, read-back failure, or another partial failure restores the
   whole display and reports the existing diagnostic error.
 - Both panels move gamma to the accepted value, narrow the allowed range, and
-  show `Limited to … on this display`. The tooltip explains that Windows
-  rejected a stronger gamma curve. Learning produces no notification. Limits
+  show a shield alert icon left of the gamma value. Its tooltip gives the
+  allowed range, `Min … , max …`, followed by `at brightness …%` only when the
+  display supports brightness, because only then does brightness change the
+  limit. Learning produces no notification. Limits
   persist per stable display, brightness and color mode, bound to captured
   Original settings. Changed captured baselines invalidate them. SDR is the
   only active mode; HDR remains restore-only.
