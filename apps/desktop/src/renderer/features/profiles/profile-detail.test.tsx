@@ -87,13 +87,10 @@ describe('profile detail', () => {
     expect(html).toContain('>Triggers</h2>')
     const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
     expect(header).toContain('data-accelerator="Control+G"')
-    // The name and hotkey share the same vertical stack before the action group.
-    const titleEnd = header.indexOf('data-part="profile-title-text"')
+    // The hotkey leads the header action group on the right.
     const hotkey = header.indexOf('data-part="shortcut-display"')
-    expect(hotkey).toBeGreaterThan(titleEnd)
-    expect(hotkey).toBeLessThan(header.indexOf('data-part="profile-header-actions"'))
+    expect(hotkey).toBeGreaterThan(header.indexOf('data-part="profile-header-actions"'))
     expect(header).toContain('data-part="profile-hotkey"')
-    expect(header).toContain('</kbd></div></div>')
     expect(header).toContain('More profile actions')
     expect(render('game', false)).not.toContain('data-part="shortcut-display"')
   })

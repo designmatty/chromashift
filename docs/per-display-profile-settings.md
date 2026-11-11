@@ -64,8 +64,9 @@ targets remain persisted and resume when the same physical display returns.
 
 ## App-panel behavior
 
-- The profile header shows its configured hotkey below the name using the shared
-  shortcut display, only when a hotkey is assigned. It keeps the overflow menu for
+- The profile header shows its configured hotkey on the right, before the
+  unsaved-changes actions, using the shared shortcut display, only when a hotkey
+  is assigned. It keeps the overflow menu for
   secondary actions. Default keeps its grey badge.
 - The Triggers section sits above the display color controls. App profiles can
   add executable triggers by browsing or choosing an open app. These actions sit

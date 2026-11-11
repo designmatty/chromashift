@@ -232,7 +232,7 @@ caption buttons remains out of scope.
 The profile workspace supports CRUD, default/manual activation, multi-display
 targets, foreground-app triggers, and an Electron `.exe` picker. Triggers sit
 above color controls as compact executable chips, with add actions at the right
-of the section heading. The header shows an assigned hotkey below the name. Its
+of the section heading. The header shows an assigned hotkey at the start of its action group. Its
 controls derive support and provider explanations from each selected display's
 capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
 display view retains the hardware diagnostics needed for provider support.

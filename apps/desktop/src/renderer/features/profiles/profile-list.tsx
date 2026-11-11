@@ -128,7 +128,6 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
       rounded="lg"
       bg="bg.muted"
     >
-      <SegmentGroup.Indicator bg="bg.panel" rounded="md" />
       {(['automatic', 'manual'] as const).map((mode) => (
         <Tooltip
           key={mode}
@@ -147,7 +146,9 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
             fontSize={props.collapsed ? 'xs' : 'sm'}
             rounded="md"
             color={props.mode.kind === mode ? 'fg' : 'fg.muted'}
-            _hover={{ bg: 'bg.emphasized' }}
+            bg={props.mode.kind === mode ? 'bg.panel' : undefined}
+            shadow={props.mode.kind === mode ? 'xs' : undefined}
+            _hover={props.mode.kind === mode ? undefined : { bg: 'bg.emphasized' }}
             disabled={mode === 'manual' && props.currentId === null}
           >
             <SegmentGroup.ItemText srOnly={props.collapsed}>

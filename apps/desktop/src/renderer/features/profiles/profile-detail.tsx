@@ -170,13 +170,13 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
             {isDefault && <ProfileBadge>Default</ProfileBadge>}
             {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
           </Flex>
+        </Stack>
+        <Flex data-part="profile-header-actions" ml="auto" align="center" gap="5">
           {shortcut !== undefined && (
-            <Box data-part="profile-hotkey" alignSelf="start">
+            <Box data-part="profile-hotkey">
               <ShortcutDisplay label={profile.name} accelerator={shortcut} />
             </Box>
           )}
-        </Stack>
-        <Flex data-part="profile-header-actions" ml="auto" align="center" gap="5">
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
               <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
