@@ -144,6 +144,9 @@ export class PreviewSyncSession {
     // needed, so the saved targets follow the latest draft in the same queue.
     if (this.#scheduledSend !== undefined || !joinable) void this.flush(draft, session)
     const update = (profile: ColorProfile): Promise<void> => {
+      // Main requires the sent draft's displays to equal the targets, so the saved
+      // write carries the draft (name, triggers) with the saved display targets.
+      const shown: ColorProfile = { ...draft, displays: structuredClone(profile.displays) }
       const previous = [...this.#pending]
       const pending = (async () => {
         await Promise.allSettled(previous)
@@ -151,7 +154,7 @@ export class PreviewSyncSession {
         const scope: [] | [number] = lifetime === undefined ? [] : [lifetime]
         // Never start a new session here. A shortcut or close may have ended it.
         const result = await run(
-          this.port.updatePreview(draft.id, activeColorTargets(profile), draft, ...scope),
+          this.port.updatePreview(draft.id, activeColorTargets(shown), shown, ...scope),
           this.onError
         )
         if (result !== undefined) this.onError(null)

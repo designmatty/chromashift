@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
-import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
+import {
+  previewUpdateRequestSchema,
+  type PreviewState,
+  type ProductError,
+  type ProductResult
+} from '@shared/product-api.js'
 
 const profile: ColorProfile = {
   id: 'tarkov-night',
@@ -302,6 +307,36 @@ describe('preview sync session', () => {
       expect(port.calls).toEqual([`update:${profile.id}`, `update:${profile.id}`])
       expect(vi.getTimerCount()).toBe(0)
     })
+
+    it.each([
+      ['a saved target', () => saved],
+      ['no saved target (Original settings)', () => ({ ...saved, displays: [] })]
+    ])(
+      'sends requests main accepts for %s, keeping the draft name and triggers',
+      async (_label, savedProfile) => {
+        const draft = { ...profile, name: 'Unsaved name' }
+        const update = vi.spyOn(port, 'updatePreview')
+        const release = session.beginComparison(savedProfile(), draft, activeSession('edit'))
+        await release()
+        expect(update).toHaveBeenCalledTimes(2)
+        // FakePort declares only profileId; the session passes targets and draft too.
+        const calls = update.mock.calls as unknown as [string, unknown, unknown][]
+        for (const [profileId, targets, sentDraft] of calls) {
+          // The IPC schema requires the sent draft's displays to equal the targets.
+          expect(
+            previewUpdateRequestSchema.safeParse({ profileId, targets, draft: sentDraft }).success
+          ).toBe(true)
+          expect(sentDraft).toMatchObject({
+            name: 'Unsaved name',
+            applications: draft.applications
+          })
+        }
+        expect(calls[0]![1]).toEqual(
+          savedProfile().displays.map(({ displayId, color }) => ({ displayId, color }))
+        )
+        expect(calls[1]![2]).toEqual(draft)
+      }
+    )
 
     it('sends a pending debounced draft first, then compares, then restores', async () => {
       const update = vi.spyOn(port, 'updatePreview')
