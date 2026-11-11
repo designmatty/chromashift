@@ -201,21 +201,42 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
           content="New profile"
           positioning={{ placement: props.collapsed ? 'right' : 'bottom-end' }}
         >
-          <Button
-            variant="surface"
-            size="sm"
-            rounded={'full'}
-            height="5"
-            px={1}
-            minW="5"
-            mt={0.5}
-            gap={0.5}
-            aria-label="New profile"
-            onClick={props.onCreate}
-          >
-            New
-            <Plus />
-          </Button>
+          {props.collapsed ? (
+            // Matches a collapsed profile row: a 40px pill holding a 30px icon circle.
+            <Button
+              data-part="new-profile-collapsed"
+              variant="plain"
+              w="full"
+              h="40px"
+              p="0"
+              rounded="full"
+              color="fg"
+              _hover={{ bg: 'bg.panel' }}
+              _dark={{ _hover: { bg: 'bg.muted' } }}
+              aria-label="New profile"
+              onClick={props.onCreate}
+            >
+              <Flex boxSize="30px" align="center" justify="center" rounded="full" bg="bg.muted">
+                <Plus size={16} />
+              </Flex>
+            </Button>
+          ) : (
+            <Button
+              variant="surface"
+              size="sm"
+              rounded={'full'}
+              height="5"
+              px={1}
+              minW="5"
+              mt={0.5}
+              gap={0.5}
+              aria-label="New profile"
+              onClick={props.onCreate}
+            >
+              New
+              <Plus />
+            </Button>
+          )}
         </Tooltip>
       </Flex>
       <Text id={reorderInstructionsId} srOnly>
