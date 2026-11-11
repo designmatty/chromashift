@@ -30,11 +30,11 @@ export function buildNotificationOptions(
 // Characters XML 1.0 does not allow (C0 controls other than tab, newline and carriage
 // return; U+FFFE and U+FFFF; lone surrogates) make Windows reject the toast, so the
 // notification would never show. Replace them before escaping.
-const invalidXmlCharacters = /[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/gu
+const invalidXmlCharacters = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu
 
 function escapeXml(value: string): string {
   return value
-    .replace(invalidXmlCharacters, '�')
+    .replace(invalidXmlCharacters, '\uFFFD')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')

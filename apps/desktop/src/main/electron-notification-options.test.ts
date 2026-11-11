@@ -35,13 +35,23 @@ describe('buildNotificationOptions', () => {
   })
 
   it('replaces characters XML does not allow so Windows still shows the toast', () => {
-    const invalid = ['\u0000', '\u0008', '\u000B', '\u000C', '\u001F', '￾', '￿', '\uD800']
+    const invalid = [
+      '\uDC00',
+      '\u0000',
+      '\u0008',
+      '\u000B',
+      '\u000C',
+      '\u001F',
+      '\uFFFE',
+      '\uFFFF',
+      '\uD800'
+    ]
     const { toastXml } = buildNotificationOptions(
-      { ...message, title: `A${invalid.join('')}B`, body: 'Tab\tand\nnewline stay' },
+      { ...message, title: `A${invalid.join('')}B`, body: 'Tab\tand\nnewline\rstay' },
       'win32'
     )
-    expect(toastXml).toContain(`<text>A${'�'.repeat(invalid.length)}B</text>`)
-    expect(toastXml).toContain('<text>Tab\tand\nnewline stay</text>')
+    expect(toastXml).toContain(`<text>A${'\uFFFD'.repeat(invalid.length)}B</text>`)
+    expect(toastXml).toContain('<text>Tab\tand\nnewline\rstay</text>')
   })
 
   it('keeps astral characters such as emoji', () => {
