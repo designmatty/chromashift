@@ -30,6 +30,8 @@ import { useTextTruncated } from '@/hooks/use-text-truncated'
 import type { ProductError, ProductState } from '@shared/product-api.js'
 import { ApplicationAssignments } from '@/features/profiles/application-assignments'
 import { DisplayControls } from '@/features/profiles/display-controls'
+import { profileShortcut } from '@/features/profiles/control-presentation'
+import { ShortcutDisplay } from '@/components/ui/shortcut-display'
 
 const DEFAULT_ID = 'default'
 
@@ -52,6 +54,7 @@ export interface ProfileDetailProps {
 export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const profile = props.profile
   const isDefault = profile.id.toLowerCase() === DEFAULT_ID
+  const shortcut = profileShortcut(profile, props.product.settings.shortcutBindings)
   const actionsTriggerId = useId()
   const [naming, setNaming] = useState(props.startNaming ?? false)
   const [name, setName] = useState(profile.name)
@@ -79,6 +82,16 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
     props.onNamingEnded?.()
   }
 
+  const triggersHeading = (
+    <SectionHeading title="Triggers" icon={<AppWindow size={20} />}>
+      {isDefault
+        ? 'Used in automatic mode when no other profile is triggered'
+        : profile.applications.length === 0
+          ? 'No triggers assigned. Add a trigger for automatic switching.'
+          : 'Apps that trigger this profile in automatic mode'}
+    </SectionHeading>
+  )
+
   return (
     <Stack
       as="section"
@@ -86,75 +99,84 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       data-display-target-count={profile.displays.length}
     >
       <Flex as="header" align="center" gap={3}>
-        {!naming && (
-          <Tooltip content={profile.name} disabled={!titleTruncated}>
-            <Button
-              data-part="profile-title"
-              variant="plain"
-              px="1"
-              gap="2"
-              fontSize="lg"
-              fontWeight="700"
-              minW="0"
+        <Stack gap="1" flex="1" minW="0">
+          <Flex align="center" gap="3" minW="0">
+            {!naming && (
+              <Tooltip content={profile.name} disabled={!titleTruncated}>
+                <Button
+                  data-part="profile-title"
+                  variant="plain"
+                  px="1"
+                  gap="2"
+                  fontSize="lg"
+                  fontWeight="700"
+                  minW="0"
+                  maxW="300px"
+                  _hover={{
+                    bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
+                    '& [data-part="rename-icon"]': { opacity: 1 }
+                  }}
+                  _focusVisible={{
+                    bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
+                    '& [data-part="rename-icon"]': { opacity: 1 }
+                  }}
+                  disabled={props.busy || props.product.chromaShift.status !== 'active'}
+                  aria-label={`Rename ${profile.name}`}
+                  onClick={() => {
+                    setName(profile.name)
+                    setNaming(true)
+                  }}
+                >
+                  <Text as="span" ref={titleRef} data-part="profile-title-text" minW="0" truncate>
+                    {profile.name}
+                  </Text>
+                  <Icon
+                    data-part="rename-icon"
+                    aria-hidden="true"
+                    boxSize="4"
+                    flexShrink="0"
+                    opacity="0"
+                    transition="opacity 120ms ease-out"
+                    _motionReduce={{ transition: 'none' }}
+                  >
+                    <SquarePen />
+                  </Icon>
+                </Button>
+              </Tooltip>
+            )}
+            <Input
+              ref={nameInput}
+              hidden={!naming}
+              data-part="profile-name"
+              value={naming ? name : profile.name}
+              variant="subtle"
+              maxLength={100}
               maxW="300px"
-              _hover={{
-                bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
-                '& [data-part="rename-icon"]': { opacity: 1 }
-              }}
-              _focusVisible={{
-                bg: { base: 'bg.muted', _dark: 'bg.emphasized' },
-                '& [data-part="rename-icon"]': { opacity: 1 }
-              }}
+              aria-label="Profile name"
+              bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
+              fontSize="lg"
+              size="sm"
+              fontWeight="700"
               disabled={props.busy || props.product.chromaShift.status !== 'active'}
-              aria-label={`Rename ${profile.name}`}
-              onClick={() => {
-                setName(profile.name)
-                setNaming(true)
+              onChange={(event) => setName(event.target.value)}
+              onBlur={() => finishNaming(true)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === 'Escape') {
+                  event.preventDefault()
+                  finishNaming(event.key === 'Enter')
+                }
               }}
-            >
-              <Text as="span" ref={titleRef} data-part="profile-title-text" minW="0" truncate>
-                {profile.name}
-              </Text>
-              <Icon
-                data-part="rename-icon"
-                aria-hidden="true"
-                boxSize="4"
-                flexShrink="0"
-                opacity="0"
-                transition="opacity 120ms ease-out"
-                _motionReduce={{ transition: 'none' }}
-              >
-                <SquarePen />
-              </Icon>
-            </Button>
-          </Tooltip>
-        )}
-        <Input
-          ref={nameInput}
-          hidden={!naming}
-          data-part="profile-name"
-          value={naming ? name : profile.name}
-          variant="subtle"
-          maxLength={100}
-          maxW="300px"
-          aria-label="Profile name"
-          bg={{ base: 'bg.subtle', _dark: 'bg.emphasized' }}
-          fontSize="lg"
-          size="sm"
-          fontWeight="700"
-          disabled={props.busy || props.product.chromaShift.status !== 'active'}
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => finishNaming(true)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === 'Escape') {
-              event.preventDefault()
-              finishNaming(event.key === 'Enter')
-            }
-          }}
-        />
-        {isDefault && <ProfileBadge>Default</ProfileBadge>}
-        {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
-        <Flex ml="auto" align="center" gap="5">
+            />
+            {isDefault && <ProfileBadge>Default</ProfileBadge>}
+            {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
+          </Flex>
+        </Stack>
+        <Flex data-part="profile-header-actions" ml="auto" align="center" gap="5">
+          {shortcut !== undefined && (
+            <Box data-part="profile-hotkey">
+              <ShortcutDisplay label={profile.name} accelerator={shortcut} />
+            </Box>
+          )}
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
               <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
@@ -201,7 +223,12 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                     </Menu.Item>
                   )}
                   {!isDefault && (
-                    <Menu.Item value="delete" onClick={props.onDelete}>
+                    <Menu.Item
+                      value="delete"
+                      color="fg.error"
+                      _highlighted={{ bg: 'bg.error', color: 'fg.error' }}
+                      onClick={props.onDelete}
+                    >
                       <Trash2 />
                       Delete profile
                     </Menu.Item>
@@ -231,7 +258,21 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           </Button>
         </Flex>
       )}
-      <Box as="section" pt="10px">
+      <Box as="section" data-part="profile-triggers" pt="10px">
+        {isDefault ? (
+          triggersHeading
+        ) : (
+          <ApplicationAssignments
+            profile={profile}
+            editing={props.product.chromaShift.status === 'active' && !props.busy}
+            onChange={props.onChange}
+            onError={props.onError}
+          >
+            {triggersHeading}
+          </ApplicationAssignments>
+        )}
+      </Box>
+      <Stack as="section" data-part="profile-color-controls" pt="10px" gap="10px">
         <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
           Select the display you would like to change
         </SectionHeading>
@@ -241,25 +282,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           editing={props.product.chromaShift.status === 'active' && !props.busy}
           onChange={props.onChange}
         />
-      </Box>
-
-      <Box as="section" pt="10px">
-        <SectionHeading title="Applications" icon={<AppWindow size={20} />}>
-          {isDefault
-            ? 'Used in Automatic mode when no application profile matches'
-            : profile.applications.length === 0
-              ? 'No applications assigned. Add applications for automatic switching.'
-              : 'Used in Automatic mode when one of these applications is active.'}
-        </SectionHeading>
-        {!isDefault && (
-          <ApplicationAssignments
-            profile={profile}
-            editing={props.product.chromaShift.status === 'active' && !props.busy}
-            onChange={props.onChange}
-            onError={props.onError}
-          />
-        )}
-      </Box>
+      </Stack>
     </Stack>
   )
 }
@@ -282,7 +305,7 @@ function SectionHeading({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <Flex mb="10px" align="start" justify="space-between" gap="0" flexDir={'column'}>
+    <Flex align="start" gap="0" direction="column">
       <Group>
         {icon}
         <Heading as="h2" fontSize="lg" fontWeight="500">

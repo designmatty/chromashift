@@ -4,10 +4,10 @@ import {
   Button,
   Flex,
   IconButton,
-  Image,
   Menu,
   Portal,
   ScrollArea,
+  SegmentGroup,
   Stack,
   Text
 } from '@chakra-ui/react'
@@ -16,7 +16,6 @@ import {
   Ellipsis,
   PanelLeft,
   PanelLeftClose,
-  Palette,
   Plus,
   PowerOff,
   GripVertical,
@@ -30,6 +29,7 @@ import { useCallback, useEffect, useId, useRef } from 'react'
 import type { ActivationMode, ColorProfile } from '@chromashift/core'
 import type { ProductState, ShortcutBinding } from '@shared/product-api'
 import { Tooltip } from '@/components/ui/tooltip'
+import { ProfileIcon } from '@/features/profiles/profile-icon'
 import { useTextTruncated } from '@/hooks/use-text-truncated'
 import {
   liveProfileSubtitle,
@@ -111,12 +111,19 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
   }
 
   const modeToggle = (
-    <Flex
+    <SegmentGroup.Root
       data-part="mode-toggle"
-      role="group"
       aria-label="Activation mode"
+      orientation={props.collapsed ? 'vertical' : 'horizontal'}
+      value={props.mode.kind}
+      disabled={props.busy}
+      onValueChange={({ value }) => {
+        if (value === 'automatic' || value === 'manual') props.onModeChange(value)
+      }}
+      size="sm"
       w="full"
-      p={props.collapsed ? 0 : 1}
+      minW="0"
+      p="1"
       gap="0"
       rounded="lg"
       bg="bg.muted"
@@ -127,35 +134,40 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
           content={modeTooltip(mode, props.shortcutBindings)}
           positioning={{ placement: props.collapsed ? 'right' : 'top' }}
         >
-          <Button
+          <SegmentGroup.Item
+            value={mode}
             data-mode={mode}
+            data-selected={props.mode.kind === mode ? '' : undefined}
             aria-label={mode === 'automatic' ? 'Automatic' : 'Manual'}
-            aria-pressed={props.mode.kind === mode}
-            variant="plain"
-            size="sm"
-            flex="1"
+            flex={props.collapsed ? undefined : '1'}
+            w={props.collapsed ? 'full' : undefined}
             minW="0"
             px={props.collapsed ? 0 : 2}
             h="8"
             fontSize={props.collapsed ? 'xs' : 'sm'}
             rounded="md"
-            bg={props.mode.kind === mode ? 'bg.panel' : 'transparent'}
             color={props.mode.kind === mode ? 'fg' : 'fg.muted'}
-            _hover={{ bg: 'bg.emphasized' }}
-            disabled={props.busy || (mode === 'manual' && props.currentId === null)}
-            onClick={() => props.onModeChange(mode)}
+            bg={props.mode.kind === mode ? 'bg.panel' : undefined}
+            shadow={props.mode.kind === mode ? 'xs' : undefined}
+            _before={{ display: 'none' }}
+            _hover={props.mode.kind === mode ? undefined : { bg: 'bg.emphasized' }}
+            disabled={mode === 'manual' && props.currentId === null}
           >
-            {props.collapsed
-              ? mode === 'automatic'
-                ? 'A'
-                : 'M'
-              : mode === 'automatic'
-                ? 'Automatic'
-                : 'Manual'}
-          </Button>
+            <SegmentGroup.ItemText srOnly={props.collapsed}>
+              {mode === 'automatic' ? 'Automatic' : 'Manual'}
+            </SegmentGroup.ItemText>
+            {props.collapsed && (
+              <Text as="span" data-part="mode-short-label" aria-hidden="true">
+                {mode === 'automatic' ? 'A' : 'M'}
+              </Text>
+            )}
+            <SegmentGroup.ItemHiddenInput
+              aria-label={mode === 'automatic' ? 'Automatic' : 'Manual'}
+            />
+          </SegmentGroup.Item>
         </Tooltip>
       ))}
-    </Flex>
+    </SegmentGroup.Root>
   )
 
   return (
@@ -190,21 +202,42 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
           content="New profile"
           positioning={{ placement: props.collapsed ? 'right' : 'bottom-end' }}
         >
-          <Button
-            variant="surface"
-            size="sm"
-            rounded={'full'}
-            height="5"
-            px={1}
-            minW="5"
-            mt={0.5}
-            gap={0.5}
-            aria-label="New profile"
-            onClick={props.onCreate}
-          >
-            New
-            <Plus />
-          </Button>
+          {props.collapsed ? (
+            // Matches a collapsed profile row: a 40px pill holding a 30px icon circle.
+            <Button
+              data-part="new-profile-collapsed"
+              variant="plain"
+              w="full"
+              h="40px"
+              p="0"
+              rounded="full"
+              color="fg"
+              _hover={{ bg: 'bg.panel' }}
+              _dark={{ _hover: { bg: 'bg.muted' } }}
+              aria-label="New profile"
+              onClick={props.onCreate}
+            >
+              <Flex boxSize="30px" align="center" justify="center" rounded="full" bg="bg.muted">
+                <Plus size={16} />
+              </Flex>
+            </Button>
+          ) : (
+            <Button
+              variant="surface"
+              size="sm"
+              rounded={'full'}
+              height="5"
+              px={1}
+              minW="5"
+              mt={0.5}
+              gap={0.5}
+              aria-label="New profile"
+              onClick={props.onCreate}
+            >
+              New
+              <Plus />
+            </Button>
+          )}
         </Tooltip>
       </Flex>
       <Text id={reorderInstructionsId} srOnly>
@@ -666,135 +699,5 @@ function ProfileName(props: {
         {label}
       </Text>
     </Tooltip>
-  )
-}
-
-function ProfileIcon({ profile }: { profile: ColorProfile }): React.JSX.Element {
-  return (
-    <Box position="relative">
-      <Box
-        filter={profile.enabled ? undefined : 'grayscale(1)'}
-        opacity={profile.enabled ? 1 : 0.5}
-      >
-        <ProfileImage profile={profile} />
-      </Box>
-      {!profile.enabled && (
-        <Flex
-          data-part="profile-disabled-badge"
-          aria-label="Disabled"
-          position="absolute"
-          right="-3px"
-          bottom="-3px"
-          boxSize="4"
-          rounded="full"
-          bg="bg.panel"
-          color="fg.muted"
-          align="center"
-          justify="center"
-        >
-          <PowerOff size={10} />
-        </Flex>
-      )}
-    </Box>
-  )
-}
-
-function ProfileImage({ profile }: { profile: ColorProfile }): React.JSX.Element {
-  if (profile.id.toLowerCase() === DEFAULT_ID) {
-    return (
-      <ProfileIconFrame>
-        <Palette />
-      </ProfileIconFrame>
-    )
-  }
-  const applications = profile.applications
-  if (applications.length === 0) {
-    return (
-      <ProfileIconFrame>
-        <Palette />
-      </ProfileIconFrame>
-    )
-  }
-  const first = applications[0]
-  return (
-    <ProfileIconFrame>
-      <ApplicationIcon rule={first} />
-      {applications.length === 2 && <ApplicationIcon rule={applications[1]} secondary />}
-      {applications.length > 2 && (
-        <Flex
-          position="absolute"
-          right="-5px"
-          bottom="5px"
-          boxSize="20px"
-          align="center"
-          justify="center"
-          borderWidth="1px"
-          borderColor="border"
-          rounded="full"
-          bg="bg.inverted"
-          color="fg.inverted"
-          fontSize="11px"
-          fontWeight="700"
-        >
-          +{applications.length - 1}
-        </Flex>
-      )}
-    </ProfileIconFrame>
-  )
-}
-
-function ProfileIconFrame({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <Flex
-      position="relative"
-      boxSize="30px"
-      flex="none"
-      align="center"
-      justify="center"
-      overflow="visible"
-      rounded="full"
-      bg="bg.muted"
-      color="fg"
-    >
-      {children}
-    </Flex>
-  )
-}
-
-function ApplicationIcon({
-  rule,
-  secondary = false
-}: {
-  rule: ColorProfile['applications'][number] | undefined
-  secondary?: boolean
-}): React.JSX.Element {
-  return rule?.iconDataUrl === undefined ? (
-    <Flex
-      position={secondary ? 'absolute' : 'relative'}
-      right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '5px' : undefined}
-      boxSize={secondary ? '20px' : '30px'}
-      align="center"
-      justify="center"
-      overflow="hidden"
-      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
-      rounded="full"
-      bg="bg.emphasized"
-    >
-      <Palette />
-    </Flex>
-  ) : (
-    <Image
-      position={secondary ? 'absolute' : 'relative'}
-      right={secondary ? '-5px' : undefined}
-      bottom={secondary ? '5px' : undefined}
-      boxSize={secondary ? '20px' : '30px'}
-      overflow="hidden"
-      border={secondary ? '2px solid {colors.border.muted}' : '1px solid {colors.border.muted}'}
-      rounded="full"
-      objectFit="cover"
-      src={rule.iconDataUrl}
-      alt={rule.executableName}
-    />
   )
 }

@@ -1,18 +1,21 @@
-import { Box, Button, Flex, IconButton, Image, Menu, Portal, Stack, Text } from '@chakra-ui/react'
+import { Button, Flex, Icon, IconButton, Image, Menu, Portal, Stack, Text } from '@chakra-ui/react'
 import { AppWindow, ChevronDown, FolderOpen, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ColorProfile } from '@chromashift/core'
 import { run } from '@/lib/product-result'
+import { Tooltip } from '@/components/ui/tooltip'
 import type { ApplicationSelection, ProductError } from '@shared/product-api.js'
 
 export function ApplicationAssignments({
   profile,
   editing,
+  children,
   onChange,
   onError
 }: {
   profile: ColorProfile
   editing: boolean
+  children: React.ReactNode
   onChange(profile: ColorProfile): void
   onError(error: ProductError | null): void
 }): React.JSX.Element {
@@ -46,9 +49,12 @@ export function ApplicationAssignments({
 
   return (
     <>
-      <Flex align="center" gap={3}>
+      <Flex data-part="trigger-heading" align="center" gap="4" mb="3">
+        <Flex flex="1" minW="0" direction="column">
+          {children}
+        </Flex>
         {editing && (
-          <Flex align="center" gap={3} mb={3}>
+          <Flex data-part="trigger-actions" align="center" gap="3" flexShrink="0" ml="auto">
             <Button
               size="2xs"
               variant="subtle"
@@ -85,7 +91,7 @@ export function ApplicationAssignments({
                   <Menu.Content minW="260px">
                     {apps.length === 0 ? (
                       <Menu.Item disabled value="empty">
-                        No visible applications
+                        No open apps available for triggers
                       </Menu.Item>
                     ) : (
                       apps.map((app) => (
@@ -114,71 +120,59 @@ export function ApplicationAssignments({
           </Flex>
         )}
       </Flex>
-      <Stack gap={3}>
+      <Flex data-part="trigger-chips" gap="2" wrap="wrap">
         {profile.applications.map((rule, index) => (
-          <Box
-            px="3"
+          <Flex
+            data-part="trigger-chip"
+            px="2"
             py="1"
-            display="grid"
-            gridTemplateColumns="30px minmax(0, 1fr) 20px"
-            alignItems="center"
-            gap={3}
+            align="center"
+            gap="1.5"
+            minW="0"
+            maxW="full"
             rounded="md"
             bg="bg.subtle"
             key={`${rule.executableName}-${index}`}
           >
             {rule.iconDataUrl === undefined ? (
-              <AppWindow />
+              <Icon boxSize="4" flexShrink="0">
+                <AppWindow />
+              </Icon>
             ) : (
               <Image
-                boxSize="30px"
+                boxSize="4"
+                flexShrink="0"
                 rounded="full"
                 objectFit="cover"
                 src={rule.iconDataUrl}
-                alt={`${rule.executableName}`}
+                alt=""
               />
             )}
-            <Stack gap="0">
-              <Text
-                as="strong"
-                overflow="hidden"
-                fontSize="md"
-                fontWeight="500"
-                textOverflow="ellipsis"
-                whiteSpace="nowrap"
-              >
-                {rule.executableName}
-              </Text>
-              <Text
-                as="small"
-                overflow="hidden"
-                fontFamily="mono"
-                fontSize="xs"
-                textOverflow="ellipsis"
-                whiteSpace="nowrap"
-              >
-                {rule.executablePath ?? 'Filename match'}
-              </Text>
-            </Stack>
+            <Text minW="0" fontSize="sm" fontWeight="500" truncate>
+              {rule.executableName}
+            </Text>
             {editing && (
-              <IconButton
-                variant="ghost"
-                boxSize="20px"
-                minW="20px"
-                aria-label={`Remove ${rule.executableName}`}
-                onClick={() =>
-                  onChange({
-                    ...profile,
-                    applications: profile.applications.filter((_, item) => item !== index)
-                  })
-                }
-              >
-                <X />
-              </IconButton>
+              <Tooltip content={`Remove ${rule.executableName}`}>
+                <IconButton
+                  variant="ghost"
+                  boxSize="20px"
+                  minW="20px"
+                  flexShrink="0"
+                  aria-label={`Remove ${rule.executableName}`}
+                  onClick={() =>
+                    onChange({
+                      ...profile,
+                      applications: profile.applications.filter((_, item) => item !== index)
+                    })
+                  }
+                >
+                  <X size={14} />
+                </IconButton>
+              </Tooltip>
             )}
-          </Box>
+          </Flex>
         ))}
-      </Stack>
+      </Flex>
     </>
   )
 }

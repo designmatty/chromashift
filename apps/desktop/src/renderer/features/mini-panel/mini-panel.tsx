@@ -1,5 +1,4 @@
 import {
-  Badge,
   Box,
   Button,
   createListCollection,
@@ -9,7 +8,6 @@ import {
   Icon,
   IconButton,
   Portal,
-  RadioGroup,
   Select,
   Stack,
   Text
@@ -36,6 +34,7 @@ import {
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
+import { AUTOMATIC_ID, MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { ColorControls } from '@/features/profiles/color-controls'
 import { showColorTemperature as temperatureVisible } from '@/features/profiles/control-values'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -47,13 +46,6 @@ import type { ProductError, ProductState } from '@shared/product-api.js'
 import { autoSwitchingOnHold } from '@shared/unsaved-changes.js'
 
 const DEFAULT_ID = 'default'
-const AUTOMATIC_ID = '__automatic__'
-
-interface MiniProfilePickerItem {
-  label: string
-  value: string
-  isDefault?: boolean
-}
 
 export function MiniPanel({ product }: { product: ProductState }): React.JSX.Element {
   const [picker, setPicker] = useState(false)
@@ -114,17 +106,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     selectedColor,
     selectedDisplayId === null ? undefined : product.capabilityReports[selectedDisplayId]
   )
-  const pickerItems = [
-    { label: 'Automatic Switching', value: AUTOMATIC_ID },
-    ...product.configuration.profiles
-      .filter((profile) => profile.enabled)
-      .map((profile) => ({
-        label: profile.name,
-        value: profile.id,
-        isDefault: profile.id === DEFAULT_ID
-      }))
-  ] satisfies MiniProfilePickerItem[]
-
   useProductTheme(product.settings.theme)
 
   useEffect(() => {
@@ -171,12 +152,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     if (picker) {
       const pickerValue =
         product.chromaShift.intendedMode.kind === 'automatic' ? AUTOMATIC_ID : active.id
-      const [automaticItem, ...profileItems] = pickerItems
 
       return (
         <>
           <Box
+            data-part="mini-picker-scroll"
             flex="1"
+            minH="0"
             minW="0"
             mx="3"
 
@@ -186,48 +168,11 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             bg="bg.panel"
             overflowY="auto"
           >
-            <RadioGroup.Root
-              w="full"
-              minW="0"
-              display={'flex'}
-              flexDirection={'column'}
+            <MiniProfilePicker
+              product={product}
               value={pickerValue}
-              onValueChange={(details) => {
-                void choose(details.value === AUTOMATIC_ID ? null : details.value)
-              }}
-            >
-              <RadioGroup.Label srOnly>Choose active profile</RadioGroup.Label>
-              {automaticItem !== undefined && (
-                <Box
-                  position={'sticky'}
-                  top={0}
-                  bg={'bg.panel'}
-                  zIndex={1}
-                  px={2}
-                  py={1}
-                  borderBottomWidth="1px"
-                  borderColor="border.muted"
-                >
-                  <MiniProfilePickerOption
-                    item={automaticItem}
-                    selected={automaticItem.value === pickerValue}
-                    onSelect={() => void choose(null)}
-                  />
-                </Box>
-              )}
-              {profileItems.length > 0 && (
-                <Flex gap={1} px={2} py={4} minW="0" flexDirection={'column'}>
-                  {profileItems.map((item) => (
-                    <MiniProfilePickerOption
-                      item={item}
-                      selected={item.value === pickerValue}
-                      onSelect={() => void choose(item.value)}
-                      key={item.value}
-                    />
-                  ))}
-                </Flex>
-              )}
-            </RadioGroup.Root>
+              onChoose={(id) => void choose(id)}
+            />
           </Box>
           <Flex as="footer" mx="5" py="3" align="center" gap="2">
             <Button
@@ -514,55 +459,6 @@ function MiniPanelFrame({ children }: { children: React.ReactNode }): React.JSX.
     >
       {children}
     </Flex>
-  )
-}
-
-function MiniProfilePickerOption({
-  item,
-  selected,
-  onSelect
-}: {
-  item: MiniProfilePickerItem
-  selected: boolean
-  onSelect(): void
-}): React.JSX.Element {
-  return (
-    <RadioGroup.Item
-      value={item.value}
-      width="full"
-      minW="0"
-      alignItems="center"
-      gap={3}
-      fontWeight={'700'}
-      color="fg/70"
-      paddingX={2}
-      paddingY={3}
-      borderRadius={'full'}
-      _hover={{
-        bg: 'bg.muted',
-        color: 'fg'
-      }}
-      _checked={{ color: 'fg', bg: 'bg.muted' }}
-      onClick={selected ? onSelect : undefined}
-    >
-      <RadioGroup.ItemHiddenInput />
-      <RadioGroup.ItemIndicator flexShrink="0" />
-      <RadioGroup.ItemText
-        data-part="mini-profile-name"
-        minW="0"
-        flex="1"
-        overflow="hidden"
-        textOverflow="ellipsis"
-        whiteSpace="nowrap"
-      >
-        {item.label}
-      </RadioGroup.ItemText>
-      {item.isDefault === true && (
-        <Badge size={'sm'} colorPalette={'blue'} flexShrink="0">
-          Default
-        </Badge>
-      )}
-    </RadioGroup.Item>
   )
 }
 

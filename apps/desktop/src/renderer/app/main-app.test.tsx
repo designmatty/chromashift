@@ -6,7 +6,7 @@ import { ProfileList } from '@/features/profiles/profile-list'
 import { SettingsNav } from '@/features/settings/settings-nav'
 import { AboutPanel } from '@/features/settings/about-panel'
 import { MiniPanel } from '@/features/mini-panel/mini-panel'
-import { RadioGroup } from '@chakra-ui/react'
+import { MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { createNeutralColorSettings } from '@chromashift/core'
 import type { ColorProfile } from '@chromashift/core'
 import { ColorControls } from '@/features/profiles/color-controls'
@@ -408,16 +408,17 @@ it('keeps a reopened mini picker open when an older activation reply arrives', a
     (props) => props['data-part'] === 'active-profile'
   )!.props.onClick()
   f.render()
-  const picker = () => find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props
+  const picker = () =>
+    find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props
   const reply = delayed<{ ok: true; value: null }>()
   const activate = vi.mocked(window.chromaShift.activateProfile).getMockImplementation()!
   vi.mocked(window.chromaShift.activateProfile).mockImplementationOnce(async (id) => {
     await activate(id)
     return reply.promise
   })
-  picker().onValueChange!({ value: first.id })
+  picker().onChoose(first.id)
   await f.settle()
-  picker().onValueChange!({ value: second.id })
+  picker().onChoose(second.id)
   await f.settle()
   const active = findWhere<{ 'data-part'?: string; onClick(): void }>(
     f.tree,
@@ -428,7 +429,7 @@ it('keeps a reopened mini picker open when an older activation reply arrives', a
   reply.resolve({ ok: true, value: null })
   await f.settle()
   expect(
-    find(f.tree, RadioGroup.Root),
+    find(f.tree, MiniProfilePicker),
     'an older reply must not close the reopened picker'
   ).toBeDefined()
   expect(f.product.activation.mode).toEqual({ kind: 'manual', profileId: second.id })
@@ -448,9 +449,9 @@ it('does not reset the mini-panel draft to the profile captured before choosing'
     (props) => props['data-part'] === 'active-profile'
   )!.props.onClick()
   f.render()
-  find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
-    value: profile.id
-  })
+  find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props.onChoose(
+    profile.id
+  )
   await f.settle()
   expect(f.product.chromaShift.intendedTarget).toEqual({ kind: 'profile', profileId: profile.id })
   expect(
@@ -526,9 +527,9 @@ it('ignores an old mini save reply after choosing a different profile', async ()
     (props) => props['data-part'] === 'active-profile'
   )!.props.onClick()
   f.render()
-  find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
-    value: chosen.id
-  })
+  find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props.onChoose(
+    chosen.id
+  )
   await f.settle()
   expect(
     find<Parameters<typeof ColorControls>[0]>(f.tree, ColorControls)!.props.color.brightness
@@ -577,9 +578,9 @@ it('drains a mini override before choosing even when its active broadcast has no
     (props) => props['data-part'] === 'active-profile'
   )!.props.onClick()
   f.render()
-  find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
-    value: chosen.id
-  })
+  find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props.onChoose(
+    chosen.id
+  )
   await f.settle()
   expect(window.chromaShift.activateProfile).not.toHaveBeenCalled()
   reply.resolve({ ok: true, value: null })
@@ -647,9 +648,9 @@ it('rereview92: a mini selection must not activate after its panel lifetime ends
   const reply = delayed<{ ok: true; value: null }>()
   // The cancellation was admitted while lifetime 1 was still open.
   vi.mocked(window.chromaShift.cancelPreview).mockImplementationOnce(() => reply.promise)
-  find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
-    value: chosen.id
-  })
+  find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props.onChoose(
+    chosen.id
+  )
   await f.settle()
   expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
   expect(window.chromaShift.activateProfile).not.toHaveBeenCalled()
@@ -734,9 +735,7 @@ it.each([
     f.render()
     const reply = delayed<{ ok: true; value: null }>()
     vi.mocked(window.chromaShift.cancelPreview).mockImplementationOnce(() => reply.promise)
-    find<Parameters<typeof RadioGroup.Root>[0]>(f.tree, RadioGroup.Root)!.props.onValueChange!({
-      value: '__automatic__'
-    })
+    find<Parameters<typeof MiniProfilePicker>[0]>(f.tree, MiniProfilePicker)!.props.onChoose(null)
     await f.settle()
     expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
     lifetime = nextLifetime
