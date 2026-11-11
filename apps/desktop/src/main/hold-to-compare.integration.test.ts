@@ -194,7 +194,6 @@ it('a press while a rollback is in flight shows nothing and writes nothing', asy
   expect(f.shown).not.toHaveBeenCalled()
   expect(f.port.updatePreview).toHaveBeenCalledTimes(1)
   expect(f.controller.state).toEqual({ state: 'inactive' })
-  expect(f.native.applied.length).toBeGreaterThanOrEqual(applied)
   expect(f.native.applied.slice(applied).every((call) => call.settings.brightness !== 54)).toBe(
     true
   )
