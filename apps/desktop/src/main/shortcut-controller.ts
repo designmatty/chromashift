@@ -48,7 +48,8 @@ export class ShortcutController {
     private readonly repository: ProfileRepository,
     private readonly activation: ShortcutActivationPort,
     private readonly stateChanged: () => void | Promise<void>,
-    private readonly logger: StructuredLogger
+    private readonly logger: StructuredLogger,
+    private readonly endPreview: () => Promise<void> = async () => undefined
   ) {}
 
   public get bindings(): ShortcutBinding[] {
@@ -85,9 +86,12 @@ export class ShortcutController {
     this.#bindings = []
   }
 
-  public async execute(action: ShortcutAction): Promise<CompletedActivationOutcome> {
+  public async execute(action: ShortcutAction): Promise<CompletedActivationOutcome | void> {
     let outcome: CompletedActivationOutcome
     switch (action.kind) {
+      case 'endPreview':
+        await this.endPreview()
+        return
       case 'defaultProfile':
         outcome = await this.activation.selectManualProfile(DEFAULT_PROFILE_ID)
         break
@@ -236,6 +240,8 @@ function shortcutActionLabel(action: ShortcutAction): string {
       return 'Return to Automatic'
     case 'toggleChromaShift':
       return 'Toggle ChromaShift'
+    case 'endPreview':
+      return 'End preview'
     case 'profile':
       return `Profile ${action.profileId}`
   }

@@ -386,6 +386,20 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       await returnToLive()
     })
   }
+  useLayoutEffect(() => {
+    window.chromaShift.onEndPreviewRequested((profileId) => {
+      if (
+        activeSession !== null &&
+        activeSession.kind !== 'override' &&
+        activeSession.profileId === profileId
+      ) {
+        // The renderer may have buffered edits that did not reach main before
+        // its flush timeout. A prompt must also be visible in that case.
+        if (dirty) void run(window.chromaShift.openAppPanel('profiles'), setError)
+        endPreview()
+      }
+    })
+  })
   function requestProfileDeletion(profile: ColorProfile): void {
     requestAnimationFrame(() => setProfilePendingDeletion(profile))
   }

@@ -1,4 +1,4 @@
-import { Kbd } from '@chakra-ui/react'
+import { Flex, Kbd } from '@chakra-ui/react'
 import { formatShortcutAccelerator } from '@shared/shortcut-constants.js'
 
 export function ShortcutDisplay({
@@ -12,15 +12,20 @@ export function ShortcutDisplay({
   if (displayKeys.length === 0) return null
 
   return (
-    <Kbd
+    <Flex
       data-part="shortcut-display"
       data-accelerator={accelerator ?? ''}
       aria-label={`${label} shortcut: ${displayAccelerator(accelerator)}`}
-      size="sm"
+      gap="1"
+      align="center"
       flexShrink={0}
     >
-      {displayKeys.join(' + ')}
-    </Kbd>
+      {displayKeys.map((key, index) => (
+        <Kbd key={index} size="sm" data-part="shortcut-key">
+          {key}
+        </Kbd>
+      ))}
+    </Flex>
   )
 }
 

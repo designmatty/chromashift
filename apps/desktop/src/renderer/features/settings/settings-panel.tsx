@@ -43,7 +43,7 @@ export function SettingsPanel({
       </Heading>
       <Stack direction="column" gap={0.5}>
         <SettingsRow
-          title="Launch at start up"
+          title="Launch at startup"
           description="Start ChromaShift when you sign in to Windows"
         >
           <Switch
@@ -52,12 +52,10 @@ export function SettingsPanel({
             aria-label="Launch at startup"
           />
         </SettingsRow>
-        <SettingsRow
-          title="Windows startup behavior"
-          description="Choose how ChromaShift appears at launch"
-        >
+        <SettingsRow title="Startup window" description="Choose how ChromaShift appears at launch">
           <SettingsSelect
-            ariaLabel="Windows startup behavior"
+            ariaLabel="Startup window"
+            disabled={!settings.launchAtStartup}
             value={settings.launchBehavior}
             items={launchItems}
             onChange={(launchBehavior) => update({ ...settings, launchBehavior })}
@@ -110,17 +108,20 @@ function SettingsSelect<T extends string>({
   ariaLabel,
   value,
   items,
+  disabled = false,
   onChange
 }: {
   ariaLabel: string
   value: T
   items: SelectItem<T>[]
+  disabled?: boolean
   onChange(value: T): void
 }): React.JSX.Element {
   const collection = useMemo(() => createListCollection({ items }), [items])
 
   return (
     <Select.Root
+      disabled={disabled}
       collection={collection}
       value={[value]}
       onValueChange={(details) => {

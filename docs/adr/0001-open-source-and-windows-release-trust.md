@@ -4,6 +4,11 @@ status: accepted
 
 # Open-source and Windows release trust
 
+Status note, 2026-11-10: Milestone 8 shipped. Issue #48 is closed, the
+repository is public, and the signed `v0.1.0-preview.4` release was published.
+The private-repository preparation and first-release statements below record
+the original decision and its release sequence.
+
 ChromaShift will publish its existing Git history and author metadata under the
 MIT license with `ChromaShift contributors` as the copyright attribution. The
 repository will permit issues and pull requests without soliciting contributions

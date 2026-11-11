@@ -15,6 +15,7 @@ import {
   diagnosticLogEntriesResultSchema,
   profileReorderDiagnosticSchema,
   emptyRequestSchema,
+  externalLinkRequestSchema,
   panelLifetimeEventSchema,
   scopedPreviewRequestSchema,
   openAppPanelRequestSchema,
@@ -34,7 +35,8 @@ import {
   type AppPanelView,
   type DiagnosticLogEntry,
   type MiniPanelView,
-  type ProductError
+  type ProductError,
+  type ExternalLink
 } from '@shared/product-api.js'
 import { PreviewRestoreError, PreviewValidationError } from '@main/preview-session-controller.js'
 import type { DiagnosticsService } from '@main/diagnostics-service.js'
@@ -61,8 +63,13 @@ export function registerProductIpcHandlers(
   previewLifetime: {
     get(event: IpcMainInvokeEvent): number | null
     assert(event: IpcMainInvokeEvent, lifetime: number): void
-  }
+  },
+  openExternalLink: (link: ExternalLink) => Promise<void> = async () => { throw new Error('External links are unavailable.') }
 ): void {
+  register(ipc, productIpcChannels.openExternalLink, externalLinkRequestSchema, voidResultSchema, assertTrustedRenderer, async ({ link }) => {
+    await openExternalLink(link)
+    return null
+  })
   register(
     ipc,
     productIpcChannels.getUpdateStatus,

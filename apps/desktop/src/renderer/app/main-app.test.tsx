@@ -96,6 +96,7 @@ function setup(withLimits = true, Surface = MainApp) {
     removeItem: (key: string) => storage.delete(key)
   })
   const navigation = new LatestEventRelay<AppPanelView>()
+  const endPreviewRequests = new LatestEventRelay<string>()
   let product: ProductState = {
     version: 'test',
     configuration: {
@@ -104,7 +105,7 @@ function setup(withLimits = true, Surface = MainApp) {
       profiles: [{ id: 'default', name: 'Default', enabled: true, applications: [], displays: [] }]
     },
     settings: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       launchAtStartup: false,
       launchBehavior: 'tray',
       closeBehavior: 'tray',
@@ -152,6 +153,9 @@ function setup(withLimits = true, Surface = MainApp) {
   vi.stubGlobal('window', {
     chromaShift: {
       getState,
+      openAppPanel: vi.fn(async () => ({ ok: true, value: null })),
+      onEndPreviewRequested: (listener: (profileId: string) => void) =>
+        endPreviewRequests.subscribe(listener),
       getPanelLifetime: () => 1,
       cancelPreview: vi.fn(async () => {
         product = { ...product, preview: { state: 'inactive' } }
@@ -233,6 +237,7 @@ function setup(withLimits = true, Surface = MainApp) {
     startPreview,
     updatePreview,
     navigation,
+    endPreviewRequests,
     storage,
     get product() {
       return product
@@ -318,6 +323,61 @@ function addProfile(f: ReturnType<typeof setup>, id = 'smoke'): ColorProfile {
   }
   return profile
 }
+
+it.each(['inactive', 'clean', 'dirty'] as const)(
+  'End preview shortcut uses the button action: %s',
+  async (state) => {
+    const f = setup()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    const profile = addProfile(f, 'preview')
+    if (state !== 'inactive') {
+      f.product = {
+        ...f.product,
+        preview: {
+          state: 'active',
+          kind: state === 'dirty' ? 'edit' : 'preview',
+          profileId: profile.id,
+          targets: [],
+          draft: state === 'dirty' ? { ...profile, name: 'Unsaved' } : profile,
+          unsavedChanges: state === 'dirty'
+        }
+      }
+    }
+    f.render()
+    f.endPreviewRequests.publish(profile.id)
+    f.render()
+    await f.settle()
+    const dialog = () =>
+      find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!.props
+    if (state === 'dirty') {
+      expect(window.chromaShift.openAppPanel).toHaveBeenCalledExactlyOnceWith('profiles')
+      expect(dialog().open).toBe(true)
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+      dialog().onCancel()
+      f.render()
+      expect(f.product.preview.state).toBe('active')
+      f.endPreviewRequests.publish(profile.id)
+      f.render()
+      dialog().onDiscard!()
+      await f.settle()
+      expect(f.product.preview.state).toBe('inactive')
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledTimes(2)
+    } else if (state === 'clean') {
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+      expect(f.product.preview.state).toBe('inactive')
+      expect(
+        find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.profile.id
+      ).toBe('default')
+      expect(dialog().open).toBe(false)
+    } else {
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+      expect(dialog().open).toBe(false)
+    }
+  }
+)
 
 it('does not repaint Profiles when an older profile open finishes after Settings navigation', async () => {
   const f = setup()

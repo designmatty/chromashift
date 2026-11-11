@@ -197,7 +197,7 @@ describe('product API contracts', () => {
 
 function validSettings() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     launchAtStartup: false,
     launchBehavior: 'tray',
     closeBehavior: 'tray',

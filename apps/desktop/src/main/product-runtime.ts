@@ -29,6 +29,7 @@ import { PowerEventAdapter, type PowerMonitorPort } from '@main/power-event-adap
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { prepareUnsavedQuit, type UnsavedQuitDecision } from '@main/unsaved-quit.js'
 import { hasUnsavedSession } from '@shared/unsaved-changes.js'
+import { requestEndPreview } from '@main/end-preview-shortcut.js'
 import { ProductController } from '@main/product-controller.js'
 import { migrateLegacyProfileConfiguration } from '@main/profile-configuration-migration.js'
 import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
@@ -94,6 +95,7 @@ export interface ProductRuntimePorts {
     createTrayMenu: () => Promise<TrayMenuPort>
     broadcastProductState: () => void
     flushRendererDrafts?: () => Promise<void>
+    requestEndPreview: (profileId: string, needsPrompt: boolean) => void
   }
   dialogs: {
     showError: (title: string, message: string) => void
@@ -538,7 +540,12 @@ export class ProductRuntime {
         await trayController.refresh()
         shell.broadcastProductState()
       },
-      logger
+      logger,
+      () => requestEndPreview({
+        preview: () => previewController.state,
+        flushDrafts: () => shell.flushRendererDrafts?.() ?? Promise.resolve(),
+        dispatch: (profileId, needsPrompt) => shell.requestEndPreview(profileId, needsPrompt)
+      })
     )
     this.#shortcutController = shortcutController
     try {

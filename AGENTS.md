@@ -212,8 +212,8 @@ It never receives a filesystem path.
   the human enrollment and workflow tickets complete.
 - Verify version, tag, installer, block map, update metadata, architecture, and
   every required Authenticode signature before draft publication.
-- Repository visibility and release publication require the explicit approval in
-  issue #48. Preparation work must leave the repository private.
+- The repository is public. Issue #48 records the approval and publication of
+  the signed preview. Future release publication still requires owner direction.
 
 See `docs/packaging.md`, `docs/signing.md`, and `docs/third-party.md`.
 
@@ -240,15 +240,9 @@ live in `docs/testing.md`; performance and footprint budgets live in
 
 ## Current release work
 
-Milestones 1 through 7 are shipped. The explicitly authorized unsigned
-`v0.1.0-preview.3` hotfix validates the uninstall and Start menu cleanup before
-Milestone 8 publishes the existing product as signed `v0.1.0-preview.4`:
-
-- #44 public-source readiness and documentation cleanup
-- #45 human Azure Artifact Signing enrollment
-- #46 Azure signing integration
-- #47 signed `v0.1.0-preview.4` release-candidate validation
-- #48 explicit public-repository and release publication
+Milestones 1 through 8 are shipped. The repository is public, and the signed
+`v0.1.0-preview.4` release completed Milestone 8 under #44 through #48.
+Current UX work is tracked in #65.
 
 Additional sleep, lock, driver-reset, AMD, mixed-GPU, clean-VM, and SmartScreen
-studies are issue-driven follow-up work, not Milestone 8 release gates.
+studies are issue-driven follow-up work.

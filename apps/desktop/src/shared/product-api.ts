@@ -18,6 +18,8 @@ export const productIpcChannels = {
   getUpdateStatus: 'application:get-update-status',
   checkForUpdates: 'application:check-for-updates',
   installUpdate: 'application:install-update',
+  openExternalLink: 'application:open-external-link',
+  endPreviewRequested: 'application:end-preview-requested',
   createProfile: 'product:create-profile',
   openProfile: 'product:open-profile',
   resetLearnedLimits: 'product:reset-learned-limits',
@@ -59,6 +61,9 @@ export const productIpcChannels = {
 } as const
 
 export const previewDraftFlushSchema = z.object({ requestId: z.uuid() }).strict()
+export const externalLinkRequestSchema = z.object({ link: z.enum(['releases', 'repository', 'license']) }).strict()
+export type ExternalLink = z.infer<typeof externalLinkRequestSchema>['link']
+export const endPreviewRequestSchema = z.object({ lifetime: z.number().int().positive(), profileId: z.string().min(1) }).strict()
 export const displayLimitsResetRequestSchema = z
   .object({ displayId: z.string().startsWith('display:') })
   .strict()
@@ -125,6 +130,7 @@ export const shortcutActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('nextProfile') }).strict(),
   z.object({ kind: z.literal('automatic') }).strict(),
   z.object({ kind: z.literal('toggleChromaShift') }).strict(),
+  z.object({ kind: z.literal('endPreview') }).strict(),
   z.object({ kind: z.literal('profile'), profileId: z.string().trim().min(1) }).strict()
 ])
 
@@ -141,7 +147,7 @@ export const shortcutBindingSchema = z
 // chromaShift section.
 export const userPreferencesSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     launchAtStartup: z.boolean(),
     launchBehavior: z.enum(['tray', 'app']),
     closeBehavior: z.enum(['tray', 'shutdown']),
@@ -360,6 +366,8 @@ export type MiniPanelView = z.infer<typeof miniPanelViewSchema>
 export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: ProductError }
 
 export interface ChromaShiftApi {
+  openExternalLink(link: ExternalLink): Promise<ProductResult<null>>
+  onEndPreviewRequested(listener: (profileId: string) => void): void
   openProfile(profileId: string): Promise<ProductResult<ColorProfile>>
   resetLearnedLimits(displayId: string): Promise<ProductResult<null>>
   getState(): Promise<ProductResult<ProductState>>

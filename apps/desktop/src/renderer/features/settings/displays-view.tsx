@@ -1,4 +1,15 @@
-import { Badge, Box, Button, Flex, Heading, SimpleGrid, Stack, Text } from '@chakra-ui/react'
+import {
+  Badge,
+  Box,
+  Button,
+  CloseButton,
+  Flex,
+  Heading,
+  SimpleGrid,
+  Stack,
+  Text
+} from '@chakra-ui/react'
+import { useEffect, useState } from 'react'
 import { RefreshCcwDot } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { formatName, run } from '@/lib/product-result'
@@ -11,6 +22,35 @@ export function DisplaysView({
   product: ProductState
   onError(error: ProductError | null): void
 }): React.JSX.Element {
+  const [restored, setRestored] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (product.chromaShift.status !== 'paused') setRestored(false)
+  }, [product.chromaShift.status])
+  useEffect(() => {
+    if (!restored) return
+    const timeout = window.setTimeout(() => setRestored(false), 10_000)
+    return () => window.clearTimeout(timeout)
+  }, [restored])
+  async function restore(): Promise<void> {
+    setBusy(true)
+    try {
+      if ((await run(window.chromaShift.restoreBaseline(), onError)) === undefined) return
+      const state = await run(window.chromaShift.getState(), onError)
+      setRestored(state?.chromaShift.status === 'paused')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function resume(): Promise<void> {
+    setBusy(true)
+    try {
+      if ((await run(window.chromaShift.controlChromaShift('resume'), onError)) !== undefined)
+        setRestored(false)
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <Stack as="section" h="full" gap="4">
       <Flex as="header" align="center" justify="space-between">
@@ -21,7 +61,8 @@ export function DisplaysView({
           variant="outline"
           size={'xs'}
           borderRadius={'full'}
-          onClick={() => void run(window.chromaShift.restoreBaseline(), onError)}
+          loading={busy}
+          onClick={() => void restore()}
         >
           <RefreshCcwDot />
           Restore original display settings
@@ -64,7 +105,12 @@ export function DisplaysView({
                   textOverflow="ellipsis"
                   whiteSpace="nowrap"
                 >
-                  {display.adapter.name} · {display.connection} · {display.refreshRate} Hz
+                  {display.adapter.name} · {display.connection} ·{' '}
+                  <Tooltip content={`${display.refreshRate} Hz`}>
+                    <Text as="span" tabIndex={0}>
+                      {Math.round(display.refreshRate)} Hz
+                    </Text>
+                  </Tooltip>
                 </Text>
               </Box>
               {display.primary && (
@@ -78,13 +124,13 @@ export function DisplaysView({
                 .filter(([name]) => name !== 'colorTemperature' || display.adapter.vendor === 'amd')
                 .map(([name, capability]) => (
                   <Flex
-                    align="center"
-                    gap="3"
+                    gap="1"
+                    direction="column"
+                    alignItems="flex-start"
                     color={capability.supported ? 'fg' : 'fg.muted'}
                     key={name}
                   >
                     <Text
-                      flex="1"
                       overflow="hidden"
                       fontSize="md"
                       fontWeight="500"
@@ -93,8 +139,11 @@ export function DisplaysView({
                     >
                       {formatName(name)}
                     </Text>
-                    <Text as="strong" fontFamily="mono" fontSize="xs" fontWeight="400">
-                      {capability.supported ? capability.provider.toLowerCase() : 'unavailable'}
+                    <Text fontSize="xs" color="fg.muted">
+                      Controlled by:{' '}
+                      <Text as="span" fontFamily="mono">
+                        {capability.supported ? providerName(capability.provider) : 'Unavailable'}
+                      </Text>
                     </Text>
                   </Flex>
                 ))}
@@ -118,6 +167,50 @@ export function DisplaysView({
           </Box>
         )
       })}
+      {restored && (
+        <Flex
+          role="status"
+          aria-live="polite"
+          position="fixed"
+          bottom="4"
+          right="4"
+          maxW="calc(100vw - 32px)"
+          align="center"
+          gap="3"
+          p="3"
+          borderWidth="1px"
+          borderColor="border"
+          rounded="lg"
+          bg="bg.panel"
+          shadow="md"
+          zIndex="toast"
+        >
+          <Text fontSize="sm">Display settings restored. ChromaShift is paused.</Text>
+          <Button size="xs" variant="outline" disabled={busy} onClick={() => void resume()}>
+            Resume
+          </Button>
+          <Tooltip content="Dismiss restore notification">
+            <CloseButton
+              size="2xs"
+              aria-label="Dismiss restore notification"
+              onClick={() => setRestored(false)}
+            />
+          </Tooltip>
+        </Flex>
+      )}
     </Stack>
+  )
+}
+
+function providerName(provider: string): string {
+  return (
+    (
+      {
+        windows: 'Windows',
+        nvidia: 'NVIDIA driver',
+        amd: 'AMD driver',
+        intel: 'Intel driver'
+      } as Record<string, string>
+    )[provider] ?? 'Unknown provider'
   )
 }

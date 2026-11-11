@@ -37,7 +37,14 @@ export const chromaShiftIntentSchema = z
 export type WindowState = z.infer<typeof windowStateSchema>
 export type ChromaShiftIntent = z.infer<typeof chromaShiftIntentSchema>
 
-const legacyUserPreferencesSchema = userPreferencesSchema
+const version2UserPreferencesSchema = userPreferencesSchema.extend({
+  schemaVersion: z.literal(2),
+  shortcutBindings: userPreferencesSchema.shape.shortcutBindings.refine(
+    (bindings) => bindings.every((binding) => binding.action.kind !== 'endPreview')
+  )
+}).strict()
+
+const legacyUserPreferencesSchema = version2UserPreferencesSchema
   .omit({ schemaVersion: true, notificationsEnabled: true })
   .extend({
     schemaVersion: z.literal(1),
@@ -46,19 +53,20 @@ const legacyUserPreferencesSchema = userPreferencesSchema
   .strict()
 
 const persistedUserPreferencesSchema = z
-  .union([userPreferencesSchema, legacyUserPreferencesSchema])
+  .union([userPreferencesSchema, version2UserPreferencesSchema, legacyUserPreferencesSchema])
   .transform((preferences): UserPreferences => {
-    if (preferences.schemaVersion === 2) return preferences
+    if (preferences.schemaVersion === 3) return preferences
+    if (preferences.schemaVersion === 2) return { ...preferences, schemaVersion: 3 }
     const { profileChangeNotifications, ...unchanged } = preferences
     return {
       ...unchanged,
-      schemaVersion: 2,
+      schemaVersion: 3,
       notificationsEnabled: profileChangeNotifications
     }
   })
 
 export const defaultUserPreferences: UserPreferences = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   launchAtStartup: false,
   launchBehavior: 'tray',
   closeBehavior: 'tray',

@@ -1,8 +1,25 @@
-import { Badge, Box, Button, Flex, Heading, Stack, Text } from '@chakra-ui/react'
-import { useEffect, useState } from 'react'
+import {
+  Badge,
+  Box,
+  Button,
+  Dialog,
+  Flex,
+  Heading,
+  Input,
+  NativeSelect,
+  Portal,
+  Stack,
+  Text
+} from '@chakra-ui/react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { run } from '@/lib/product-result'
 import type { DiagnosticLogEntry, ProductError } from '@shared/product-api.js'
+import {
+  filterDiagnosticEntries,
+  prettyDiagnosticDetails,
+  type DiagnosticLevelFilter
+} from '@/features/settings/diagnostic-entries'
 
 export function DiagnosticsPanel({
   onError
@@ -13,6 +30,13 @@ export function DiagnosticsPanel({
   const [loading, setLoading] = useState(true)
   const [sharing, setSharing] = useState<'copy' | 'download' | 'clear' | null>(null)
   const [completed, setCompleted] = useState<{ action: 'copy' | 'download' } | null>(null)
+  const [level, setLevel] = useState<DiagnosticLevelFilter>('all')
+  const [search, setSearch] = useState('')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const clearRef = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const visibleEntries = filterDiagnosticEntries(entries, level, search)
 
   useEffect(() => {
     if (completed === null) return
@@ -50,7 +74,10 @@ export function DiagnosticsPanel({
     onError(null)
     try {
       const value = await run(window.chromaShift.clearDiagnostics(), onError)
-      if (value !== undefined) setEntries([])
+      if (value !== undefined) {
+        setEntries([])
+        setConfirmClear(false)
+      }
     } finally {
       setSharing(null)
     }
@@ -114,23 +141,57 @@ export function DiagnosticsPanel({
             <RefreshCw /> Refresh
           </Button>
           <Button
+            ref={clearRef}
             aria-label="Clear logs"
+            colorPalette="red"
             variant="outline"
             size="xs"
             rounded="full"
             loading={sharing === 'clear'}
             disabled={sharing !== null || loading || entries.length === 0}
-            onClick={() => void clear()}
+            onClick={() => setConfirmClear(true)}
           >
             <Trash2 /> Clear logs
           </Button>
         </Flex>
       </Stack>
+      <Flex gap="2">
+        <NativeSelect.Root size="sm" width="40">
+          <NativeSelect.Field
+            aria-label="Log level"
+            value={level}
+            onChange={(event) => setLevel(event.target.value as DiagnosticLevelFilter)}
+          >
+            <option value="all">All levels</option>
+            {['information', 'warning', 'error', 'critical'].map((value) => (
+              <option key={value} value={value}>
+                {value === 'information' ? 'Info' : value[0]!.toUpperCase() + value.slice(1)}
+              </option>
+            ))}
+          </NativeSelect.Field>
+          <NativeSelect.Indicator />
+        </NativeSelect.Root>
+        <Input
+          ref={searchRef}
+          size="sm"
+          aria-label="Search logs"
+          placeholder="Search logs"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </Flex>
+      <Text color="fg.muted" fontSize="xs">
+        Showing {visibleEntries.length} of {entries.length} events. Copy and download include the
+        full tail.
+      </Text>
       <Stack gap="2" aria-live="polite">
         {!loading && entries.length === 0 && (
           <Text color="fg.muted">No diagnostic events are available yet.</Text>
         )}
-        {entries.map((entry, index) => (
+        {!loading && entries.length > 0 && visibleEntries.length === 0 && (
+          <Text color="fg.muted">No events match these filters.</Text>
+        )}
+        {visibleEntries.map((entry, index) => (
           <Stack
             as="article"
             key={`${entry.timestamp}-${entry.eventName}-${index}`}
@@ -144,7 +205,7 @@ export function DiagnosticsPanel({
           >
             <Flex align="center" gap="2" wrap="wrap">
               <Badge size="sm" colorPalette={levelColor(entry.level)}>
-                {entry.level}
+                {entry.level === 'information' ? 'Info' : entry.level}
               </Badge>
               <Text as="strong" fontSize="sm" fontWeight="600">
                 {entry.eventName}
@@ -168,13 +229,59 @@ export function DiagnosticsPanel({
                   overflowWrap="anywhere"
                   whiteSpace="pre-wrap"
                 >
-                  {entry.details}
+                  {prettyDiagnosticDetails(entry.details)}
                 </Text>
               </Box>
             )}
           </Stack>
         ))}
       </Stack>
+      <Dialog.Root
+        open={confirmClear}
+        role="alertdialog"
+        placement="center"
+        size="sm"
+        initialFocusEl={() => cancelRef.current}
+        finalFocusEl={() => (entries.length === 0 ? searchRef.current : clearRef.current)}
+        closeOnEscape={sharing !== 'clear'}
+        closeOnInteractOutside={sharing !== 'clear'}
+        onOpenChange={({ open }) => {
+          if (sharing !== 'clear') setConfirmClear(open)
+        }}
+      >
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>Clear logs?</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Dialog.Description>
+                  This deletes all local diagnostic logs. This cannot be undone.
+                </Dialog.Description>
+              </Dialog.Body>
+              <Dialog.Footer>
+                <Button
+                  ref={cancelRef}
+                  variant="outline"
+                  disabled={sharing === 'clear'}
+                  onClick={() => setConfirmClear(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  colorPalette="red"
+                  loading={sharing === 'clear'}
+                  onClick={() => void clear()}
+                >
+                  Clear logs
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
     </Stack>
   )
 }

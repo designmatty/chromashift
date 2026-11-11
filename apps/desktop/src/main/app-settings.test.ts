@@ -26,6 +26,38 @@ afterEach(async () => {
 })
 
 describe('settings slice stores', () => {
+  it.each([1, 2])('migrates the v%s fixture without adding an End preview binding', async (version) => {
+    const directory = await temporaryDirectory()
+    const original = await readFile(new URL(`../../../../fixtures/preferences/v${version}.json`, import.meta.url), 'utf8')
+    const expected = JSON.parse(await readFile(new URL('../../../../fixtures/preferences/v3.json', import.meta.url), 'utf8'))
+    const path = join(directory, 'preferences.json')
+    await writeFile(path, original)
+    const stores = createSettingsStores(directory)
+    await expect(stores.preferences.load()).resolves.toEqual(expected)
+    // Loading never rewrites a legacy file. The next authorized preferences update does.
+    expect(await readFile(path, 'utf8')).toBe(original)
+    await stores.preferences.update((preferences) => preferences)
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(expected)
+    await expect(createSettingsStores(directory).preferences.load()).resolves.toEqual(expected)
+  })
+
+  it.each([999, 2])('preserves invalid preferences version %s on load and update failure', async (schemaVersion) => {
+    const directory = await temporaryDirectory()
+    const path = join(directory, 'preferences.json')
+    const original = JSON.stringify({ ...defaultUserPreferences, schemaVersion, shortcutBindings: [{ action: { kind: 'endPreview' }, accelerator: 'Ctrl+E' }] })
+    await writeFile(path, original)
+    const stores = createSettingsStores(directory)
+    await expect(stores.preferences.load()).rejects.toThrow()
+    await expect(stores.preferences.update(() => defaultUserPreferences)).rejects.toThrow()
+    expect(await readFile(path, 'utf8')).toBe(original)
+  })
+
+  it('persists a new End preview binding at version 3', async () => {
+    const directory = await temporaryDirectory()
+    const expected = { ...defaultUserPreferences, shortcutBindings: [{ action: { kind: 'endPreview' as const }, accelerator: 'Ctrl+E' }] }
+    await createSettingsStores(directory).preferences.update(() => expected)
+    await expect(createSettingsStores(directory).preferences.load()).resolves.toEqual(expected)
+  })
   it('uses the slice defaults when no file exists', async () => {
     const stores = createSettingsStores(await temporaryDirectory())
     await expect(stores.preferences.load()).resolves.toEqual(defaultUserPreferences)
