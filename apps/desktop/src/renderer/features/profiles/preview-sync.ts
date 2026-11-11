@@ -123,18 +123,21 @@ export class PreviewSyncSession {
    * and return the release that sends the draft targets back. Both writes join
    * #pending behind any draft write, so they stay ordered, and rollback or a
    * panel close invalidates and drains them like any other send. Neither write
-   * starts a session: a shortcut or a close may have ended this one.
+   * starts a session: a shortcut or a close may have ended this one. Returns
+   * null when nothing will be written, so the caller never shows saved values
+   * that the displays will not receive.
    */
   public beginComparison(
     saved: ColorProfile,
     draft: ColorProfile,
     session: PreviewState
-  ): () => Promise<void> {
-    // A rollback owns the session's ending. Comparing into it could land after
-    // the cancel, so the press does nothing.
-    if (this.#rollback !== undefined) return async () => undefined
-    const generation = this.#generation
+  ): (() => Promise<void>) | null {
+    // A rollback owns the session's ending, and comparing into it could land
+    // after the cancel. A revoked panel opening admits no writes either.
+    if (this.#rollback !== undefined) return null
     const lifetime = this.port.getPanelLifetime?.()
+    if (lifetime === null) return null
+    const generation = this.#generation
     const joinable =
       !this.#needsStart &&
       session.state === 'active' &&
@@ -150,7 +153,7 @@ export class PreviewSyncSession {
       const previous = [...this.#pending]
       const pending = (async () => {
         await Promise.allSettled(previous)
-        if (generation !== this.#generation || lifetime === null) return
+        if (generation !== this.#generation) return
         const scope: [] | [number] = lifetime === undefined ? [] : [lifetime]
         // Never start a new session here. A shortcut or close may have ended it.
         const result = await run(

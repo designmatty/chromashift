@@ -12,10 +12,13 @@ export class HoldToCompare {
     return this.#restore !== null || this.#releasing !== null
   }
 
-  public press(input: CompareInput, start: () => () => Promise<void>): void {
+  /** `start` returns null when nothing will be written; the press then shows nothing. */
+  public press(input: CompareInput, start: () => (() => Promise<void>) | null): void {
     if (this.#restore !== null || this.#releasing !== null) return
+    const restore = start()
+    if (restore === null) return
     this.#input = input
-    this.#restore = start()
+    this.#restore = restore
     this.onShowingSaved(true)
   }
 

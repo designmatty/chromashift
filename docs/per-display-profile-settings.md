@@ -252,9 +252,15 @@ holds automatic writes while remembering foreground changes and has no countdown
 
 Hold to compare is renderer-only. Press sends the saved targets, and release
 sends the draft targets, through the same edit session's `updatePreview`
-without the 120 ms edit debounce. Main keeps the full draft throughout. A
+without the 120 ms edit debounce. While held, main's session draft carries the
+saved display targets with the draft's name and triggers, so main reports no
+unsaved color changes until release restores the draft targets. Quit, End
+preview and Update release first. If a quit's 750 ms renderer flush times out
+mid-hold, the quit prompt can be skipped; shutdown still restores the displays. A
 pending debounced draft write is sent first, and both compare writes queue behind
-in-flight writes, so the release always lands after the saved write. Release runs
+in-flight writes, so the release always lands after the saved write. A press while
+a rollback is in flight or after the panel opening is revoked writes nothing and
+does not show saved values. Release runs
 on pointer up anywhere, pointer cancel, key up, window blur, minimize, navigation,
 busy work, Paused or Safety blocked, unmount, flush before quit or End preview,
 and Update or Discard. A panel close or a session that ended or changed drops the

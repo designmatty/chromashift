@@ -58,6 +58,22 @@ describe('hold to compare', () => {
     f.unmount()
   })
 
+  it('ignores a press that will write nothing, then accepts the next one', async () => {
+    const f = fixture()
+    f.compare.press('pointer', () => null)
+    expect(f.compare.showingSaved).toBe(false)
+    expect(f.changed).not.toHaveBeenCalled()
+    f.window.dispatchEvent(new Event('pointerup'))
+    await f.compare.release()
+    expect(f.changed).not.toHaveBeenCalled()
+    f.compare.press('pointer', f.start)
+    expect(f.compare.showingSaved).toBe(true)
+    await f.compare.release('pointer')
+    expect(f.restore).toHaveBeenCalledOnce()
+    expect(f.changed.mock.calls).toEqual([[true], [false]])
+    f.unmount()
+  })
+
   it.each([' ', 'Enter'] as const)('releases the matching %s key only', async (key) => {
     const f = fixture()
     const keyup = (value: string) => Object.assign(new Event('keyup'), { key: value })

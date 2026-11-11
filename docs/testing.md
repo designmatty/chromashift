@@ -303,8 +303,8 @@ not establish hardware failure recovery.
 
 ### Owner checks for Hold to compare
 
-For #80, the implementation agent updated and syntax-checked the smoke step
-without running it. On a supporting SDR display with a restoration guard, edit a
+For #80, the Hold to compare smoke step passed on hardware at ddde67d. On a
+supporting SDR display with a restoration guard, edit a
 saved profile, then hold `Hold to compare` with the mouse, Space and Enter.
 The displays show the saved values and return to the draft exactly on release.
 Repeat with a profile that has no target for one display; that display shows

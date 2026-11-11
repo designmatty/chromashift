@@ -299,7 +299,7 @@ describe('preview sync session', () => {
 
     it('sends saved then draft targets into a joined edit session without the debounce', async () => {
       const update = vi.spyOn(port, 'updatePreview')
-      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      const release = session.beginComparison(saved, profile, activeSession('edit'))!
       await Promise.resolve()
       expect(targets(update)).toEqual([54])
       await release()
@@ -316,7 +316,7 @@ describe('preview sync session', () => {
       async (_label, savedProfile) => {
         const draft = { ...profile, name: 'Unsaved name' }
         const update = vi.spyOn(port, 'updatePreview')
-        const release = session.beginComparison(savedProfile(), draft, activeSession('edit'))
+        const release = session.beginComparison(savedProfile(), draft, activeSession('edit'))!
         await release()
         expect(update).toHaveBeenCalledTimes(2)
         // FakePort declares only profileId; the session passes targets and draft too.
@@ -341,14 +341,14 @@ describe('preview sync session', () => {
     it('sends a pending debounced draft first, then compares, then restores', async () => {
       const update = vi.spyOn(port, 'updatePreview')
       session.schedule(profile, activeSession('edit'))
-      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      const release = session.beginComparison(saved, profile, activeSession('edit'))!
       expect(vi.getTimerCount()).toBe(0)
       await release()
       expect(targets(update)).toEqual([84, 54, 84])
     })
 
     it('starts the edit session before comparing when none is active yet', async () => {
-      const release = session.beginComparison(saved, profile, inactive)
+      const release = session.beginComparison(saved, profile, inactive)!
       await release()
       expect(port.calls).toEqual([
         `start:edit:${profile.id}`,
@@ -362,7 +362,7 @@ describe('preview sync session', () => {
       const update = vi
         .spyOn(port, 'updatePreview')
         .mockImplementationOnce(() => new Promise((resolve) => (finish = () => resolve(ok))))
-      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      const release = session.beginComparison(saved, profile, activeSession('edit'))!
       // The release queues behind the in-flight saved write; a close then invalidates.
       const restoring = release()
       await vi.advanceTimersByTimeAsync(0)
@@ -374,17 +374,29 @@ describe('preview sync session', () => {
       expect(port.calls.some((call) => call.startsWith('start'))).toBe(false)
     })
 
-    it('does nothing while a rollback owns the session', async () => {
+    it('returns no release and writes nothing while a rollback owns the session', async () => {
       let finishCancel!: () => void
       vi.spyOn(port, 'cancelPreview').mockImplementationOnce(
         () => new Promise((resolve) => (finishCancel = () => resolve(ok)))
       )
       const rollback = session.rollback()
       await Promise.resolve()
-      const release = session.beginComparison(saved, profile, activeSession('edit'))
-      await release()
+      expect(session.beginComparison(saved, profile, activeSession('edit'))).toBeNull()
+      await vi.advanceTimersByTimeAsync(0)
       finishCancel()
       await rollback
+      expect(port.calls).toEqual([])
+    })
+
+    it('returns no release and writes nothing once the panel opening is revoked', async () => {
+      const revoked = new PreviewSyncSession(
+        Object.assign(port, { getPanelLifetime: () => null }),
+        'edit',
+        () => undefined
+      )
+      revoked.schedule(profile, activeSession('edit'))
+      expect(revoked.beginComparison(saved, profile, activeSession('edit'))).toBeNull()
+      await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
       expect(port.calls).toEqual([])
     })
   })
