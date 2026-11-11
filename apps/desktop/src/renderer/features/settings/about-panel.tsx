@@ -6,6 +6,11 @@ import type { ExternalLink } from '@shared/product-api.js'
 
 const aboutLinks: Array<{ link: ExternalLink; label: string; url: string }> = [
   {
+    link: 'website',
+    label: 'chromashift.io',
+    url: 'https://chromashift.io'
+  },
+  {
     link: 'releases',
     label: 'Release notes',
     url: 'https://github.com/designmatty/chromashift/releases'

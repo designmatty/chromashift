@@ -194,9 +194,10 @@ privileged request, validates its response before returning it, and maps native,
 persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
-About exposes `openExternalLink(link)` with only three validated identifiers:
-`releases`, `repository`, and `license`. Main maps them to fixed HTTPS URLs under
-`https://github.com/designmatty/chromashift`, sender-checks each request, and uses
+About exposes `openExternalLink(link)` with only four validated identifiers:
+`website`, `releases`, `repository`, and `license`. Main maps them to fixed HTTPS
+URLs (`https://chromashift.io` and pages under
+`https://github.com/designmatty/chromashift`), sender-checks each request, and uses
 `shell.openExternal`. The renderer cannot supply a URL. Window creation and
 unexpected navigation remain denied.
 

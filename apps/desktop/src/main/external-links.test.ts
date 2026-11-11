@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { openExternalLink } from '@main/external-links.js'
 
 it.each([
+  ['website', 'https://chromashift.io'],
   ['releases', 'https://github.com/designmatty/chromashift/releases'],
   ['repository', 'https://github.com/designmatty/chromashift'],
   ['license', 'https://github.com/designmatty/chromashift/blob/main/LICENSE']
@@ -13,6 +14,8 @@ it.each([
 
 it.each([
   'https://example.com',
+  'https://chromashift.io',
+  'WEBSITE',
   'https://github.com/designmatty/chromashift?redirect=evil',
   'http://github.com/designmatty/chromashift',
   'file:///C:/Windows',

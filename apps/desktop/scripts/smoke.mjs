@@ -2448,8 +2448,8 @@ async function runSmoke() {
   await waitForText(debuggerClient, 'Version')
   await waitForExpression(
     debuggerClient,
-    `['https://github.com/designmatty/chromashift/releases', 'https://github.com/designmatty/chromashift', 'https://github.com/designmatty/chromashift/blob/main/LICENSE'].every(url => [...document.querySelectorAll('a')].some(link => link.href === url))`,
-    'About omitted a public repository link.'
+    `['https://chromashift.io/', 'https://github.com/designmatty/chromashift/releases', 'https://github.com/designmatty/chromashift', 'https://github.com/designmatty/chromashift/blob/main/LICENSE'].every(url => [...document.querySelectorAll('a')].some(link => link.href === url))`,
+    'About omitted the website or a public repository link.'
   )
   await captureScreenshot(debuggerClient, aboutScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {

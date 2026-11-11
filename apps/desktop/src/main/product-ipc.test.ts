@@ -85,18 +85,18 @@ function harness() {
 
 it('opens only a sender-checked, validated fixed link identifier', async () => {
   const h = harness()
-  for (const link of ['releases', 'repository', 'license']) {
+  for (const link of ['website', 'releases', 'repository', 'license']) {
     expect(await h.invoke(productIpcChannels.openExternalLink, { link })).toEqual({ ok: true, value: null })
   }
-  expect(h.trusted).toHaveBeenCalledTimes(3)
-  expect(h.openExternalLink.mock.calls).toEqual([['releases'], ['repository'], ['license']])
+  expect(h.trusted).toHaveBeenCalledTimes(4)
+  expect(h.openExternalLink.mock.calls).toEqual([['website'], ['releases'], ['repository'], ['license']])
   for (const input of [{ link: 'https://example.com' }, { link: 'releases', url: 'https://example.com' }, { url: 'https://github.com/designmatty/chromashift' }, { link: '__proto__' }]) {
     expect(await h.invoke(productIpcChannels.openExternalLink, input)).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } })
   }
-  expect(h.openExternalLink).toHaveBeenCalledTimes(3)
+  expect(h.openExternalLink).toHaveBeenCalledTimes(4)
   h.trusted.mockImplementation(() => { throw new Error('Untrusted renderer') })
   await expect(h.invoke(productIpcChannels.openExternalLink, { link: 'releases' })).rejects.toThrow('Untrusted renderer')
-  expect(h.openExternalLink).toHaveBeenCalledTimes(3)
+  expect(h.openExternalLink).toHaveBeenCalledTimes(4)
 })
 
 describe('preview lifetime IPC', () => {

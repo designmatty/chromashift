@@ -61,7 +61,7 @@ export const productIpcChannels = {
 } as const
 
 export const previewDraftFlushSchema = z.object({ requestId: z.uuid() }).strict()
-export const externalLinkRequestSchema = z.object({ link: z.enum(['releases', 'repository', 'license']) }).strict()
+export const externalLinkRequestSchema = z.object({ link: z.enum(['website', 'releases', 'repository', 'license']) }).strict()
 export type ExternalLink = z.infer<typeof externalLinkRequestSchema>['link']
 export const endPreviewRequestSchema = z.object({
   lifetime: z.number().int().positive(),
