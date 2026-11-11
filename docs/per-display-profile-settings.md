@@ -330,9 +330,14 @@ The mini panel edits one explicitly selected display at a time and shows the sam
 icons and per-control neutral reset actions. `Update profile` saves the complete
 temporary draft across touched displays; `Discard changes` rolls the session back.
 Picking a profile discards the temporary changes without a blocking dialog.
-The picker keeps Automatic first. In Automatic mode it shows `Using: <profile>`
-for the Intended target and marks that profile's row `Live` while display control
-is Active. Paused and Safety blocked never show a Live badge. Enabled profiles
+The picker keeps Automatic first. In Automatic mode while display control is Active,
+it shows `Using: <profile>` for the confirmed applied profile from
+`activation.currentTarget` and marks only that profile's row `Live`. Confirmed
+Original settings show `Using: Original settings` with no Live badge. When no
+applied target is confirmed, including after a failed activation, it omits both
+Using and Live. Paused shows `Using: Original settings` with no Live badge;
+Safety blocked omits both. Preserved intent and a queued automatic target do not
+replace the confirmed applied state, including during a temporary override. Enabled profiles
 show their normal text, shared profile icons, and configured hotkeys. Default's
 badge stays grey. Disabled profiles stay hidden, with a `1 disabled profile` or
 `N disabled profiles` footer. While Paused, the picker says

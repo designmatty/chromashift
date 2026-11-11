@@ -1,6 +1,6 @@
 import { Badge, Box, Flex, RadioGroup, Stack, Text } from '@chakra-ui/react'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
-import { liveProfile } from '@/features/profiles/app-preview-state'
+import { miniProfilePickerStatus } from '@/features/mini-panel/mini-profile-picker-status'
 import { profileShortcut } from '@/features/profiles/control-presentation'
 import { ProfileIcon } from '@/features/profiles/profile-icon'
 import type { ProductState } from '@shared/product-api'
@@ -18,8 +18,7 @@ export function MiniProfilePickerOptions({
   onChoose(profileId: string | null): void
 }): React.JSX.Element {
   const profiles = product.configuration.profiles
-  const automatic = product.chromaShift.intendedMode.kind === 'automatic'
-  const current = liveProfile(product)
+  const current = miniProfilePickerStatus(product)
   const disabledCount = profiles.filter((profile) => !profile.enabled).length
   return (
     <>
@@ -37,7 +36,7 @@ export function MiniProfilePickerOptions({
           label="Automatic"
           value={AUTOMATIC_ID}
           selected={value === AUTOMATIC_ID}
-          using={automatic ? current?.name : undefined}
+          using={current.using}
           onSelect={() => onChoose(null)}
         />
       </Box>
@@ -52,9 +51,7 @@ export function MiniProfilePickerOptions({
               profile={profile}
               shortcut={profileShortcut(profile, product.settings.shortcutBindings)}
               selected={value === profile.id}
-              live={
-                automatic && product.chromaShift.status === 'active' && current?.id === profile.id
-              }
+              live={current.liveProfileId === profile.id}
               onSelect={() => onChoose(profile.id)}
             />
           ))}

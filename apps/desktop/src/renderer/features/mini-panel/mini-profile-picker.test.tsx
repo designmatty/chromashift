@@ -22,6 +22,11 @@ function state(): ProductState {
         { action: { kind: 'profile', profileId: 'Game' }, accelerator: 'Control+G' }
       ]
     },
+    activation: {
+      enabled: true,
+      mode: { kind: 'automatic' },
+      currentTarget: { kind: 'profile', profileId: 'Game' }
+    },
     chromaShift: {
       status: 'active',
       intendedMode: { kind: 'automatic' },
@@ -88,7 +93,8 @@ describe('mini profile picker', () => {
     const html = render(product)
     expect(html).toContain('ChromaShift is paused — your choice applies when you resume')
     expect(html).not.toContain('mini-profile-live')
-    expect(html).toContain('Using: Game')
+    expect(html).toContain('Using: Original settings')
+    expect(html).not.toContain('Using: Game')
   })
 
   it('omits automatic Using and Live in Manual mode, and Live while Safety blocked', () => {
@@ -99,13 +105,30 @@ describe('mini profile picker', () => {
     product.chromaShift.intendedMode = { kind: 'automatic' }
     product.chromaShift.status = 'safetyBlocked'
     expect(render(product)).not.toContain('mini-profile-live')
+    expect(render(product)).not.toContain('automatic-using')
   })
 
-  it('follows the intended target when Automatic returns to Default', () => {
+  it('follows the applied target when Automatic returns to Default before intent updates', () => {
     const product = state()
-    product.chromaShift.intendedTarget = { kind: 'profile', profileId: 'default' }
+    product.activation.currentTarget = { kind: 'profile', profileId: 'default' }
     const html = render(product)
     expect(html).toContain('Using: Default')
     expect(html.indexOf('mini-profile-live')).toBeLessThan(html.indexOf('>Game</span>'))
+  })
+
+  it('names confirmed Original settings without marking a profile Live', () => {
+    const product = state()
+    product.activation.currentTarget = { kind: 'baseline' }
+    const html = render(product)
+    expect(html).toContain('Using: Original settings')
+    expect(html).not.toContain('mini-profile-live')
+  })
+
+  it('omits Using and Live when no applied target is confirmed', () => {
+    const product = state()
+    product.activation.currentTarget = null
+    const html = render(product)
+    expect(html).not.toContain('automatic-using')
+    expect(html).not.toContain('mini-profile-live')
   })
 })

@@ -301,14 +301,22 @@ async function assertMiniProfilePicker(debuggerClient) {
       const footer = document.querySelector('[data-part="disabled-profiles-count"]')
       if (disabled === 0 ? footer !== null : footer?.textContent?.trim() !== disabled + ' disabled ' + (disabled === 1 ? 'profile' : 'profiles')) return false
       const automatic = state.chromaShift.intendedMode.kind === 'automatic'
-      const id = state.chromaShift.intendedTarget?.kind === 'profile' ? state.chromaShift.intendedTarget.profileId : 'default'
-      const current = state.configuration.profiles.find((profile) => profile.id.toLowerCase() === id.toLowerCase()) ??
-        state.configuration.profiles.find((profile) => profile.id === 'default')
+      const status = state.chromaShift.status
+      const target = state.activation.currentTarget
+      const current = target?.kind === 'profile'
+        ? state.configuration.profiles.find((profile) => profile.id.toLowerCase() === target.profileId.toLowerCase())
+        : undefined
+      const expectedUsing = !automatic || status === 'safetyBlocked'
+        ? undefined
+        : status === 'paused' || target?.kind === 'baseline'
+          ? 'Original settings'
+          : current?.name
       const using = document.querySelector('[data-part="automatic-using"]')
-      if (automatic ? using?.textContent !== 'Using: ' + current?.name : using !== null) return false
-      const live = document.querySelector('[data-part="mini-profile-live"]')
-      const expectedLive = automatic && state.chromaShift.status === 'active' && current?.enabled
-      if (expectedLive ? live?.closest('[data-scope="radio-group"][data-part="item"]')?.querySelector('[data-part="mini-profile-name"]')?.textContent !== current.name : live !== null) return false
+      if (expectedUsing === undefined ? using !== null : using?.textContent !== 'Using: ' + expectedUsing) return false
+      const live = [...document.querySelectorAll('[data-part="mini-profile-live"]')]
+      const expectedLive = automatic && status === 'active' && current?.enabled
+      if (live.length !== (expectedLive ? 1 : 0)) return false
+      if (expectedLive && live[0]?.closest('[data-scope="radio-group"][data-part="item"]')?.querySelector('[data-part="mini-profile-name"]')?.textContent !== current.name) return false
       const hint = document.querySelector('[data-part="paused-picker-hint"]')
       return state.chromaShift.status === 'paused'
         ? hint?.textContent === 'ChromaShift is paused — your choice applies when you resume'
