@@ -60,6 +60,8 @@ export class PreviewRestoreError extends Error {
 }
 
 interface ActivePreview {
+  /** Stable across draft updates and in-place Preview to Edit promotion. */
+  sessionId: number
   version: number
   draft: ColorProfile
   saved: ColorProfile
@@ -121,6 +123,7 @@ export class PreviewSessionController {
     }
     return {
       state: 'active',
+      sessionId: this.#active.sessionId,
       profileId: this.#active.profileId,
       kind: this.#active.kind,
       draft: structuredClone(this.#active.draft),
@@ -236,6 +239,7 @@ export class PreviewSessionController {
     } catch (error) {
       // Even a partially started session owns the displays it may have changed.
       this.#active = {
+        sessionId: version,
         version,
         profileId: profile.id,
         kind,
@@ -259,6 +263,7 @@ export class PreviewSessionController {
     }
 
     this.#active = {
+      sessionId: version,
       version,
       profileId: profile.id,
       kind,

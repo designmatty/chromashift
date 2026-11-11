@@ -387,11 +387,13 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     })
   }
   useLayoutEffect(() => {
-    window.chromaShift.onEndPreviewRequested((profileId) => {
+    window.chromaShift.onEndPreviewRequested((request) => {
       if (
         activeSession !== null &&
         activeSession.kind !== 'override' &&
-        activeSession.profileId === profileId
+        activeSession.profileId === request.profileId &&
+        activeSession.sessionId === request.sessionId &&
+        window.chromaShift.getPanelLifetime() === request.lifetime
       ) {
         // The renderer may have buffered edits that did not reach main before
         // its flush timeout. A prompt must also be visible in that case.

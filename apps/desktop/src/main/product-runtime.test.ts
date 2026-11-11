@@ -242,6 +242,7 @@ async function createHarness(
       }
     },
     shell: {
+      getAppPanelLifetime: () => 21,
       requestEndPreview,
       openWindow: () => undefined,
       openProfile: () => undefined,
@@ -376,7 +377,7 @@ it.each(['inactive', 'preview', 'edit'] as const)('routes the registered End pre
     h.pressShortcut('CommandOrControl+E')
     for (let turn = 0; turn < 20; turn++) await Promise.resolve()
     if (kind === 'inactive') expect(h.requestEndPreview).not.toHaveBeenCalled()
-    else expect(h.requestEndPreview).toHaveBeenCalledExactlyOnceWith('default', kind === 'edit')
+    else expect(h.requestEndPreview).toHaveBeenCalledExactlyOnceWith({ lifetime: 21, sessionId: 1, profileId: 'default' }, kind === 'edit')
     expect(h.client.calls).toEqual(before)
   } finally {
     h.runtime.dispose()

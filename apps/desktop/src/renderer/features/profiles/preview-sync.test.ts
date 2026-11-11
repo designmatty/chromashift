@@ -22,7 +22,14 @@ function activeSession(
   kind: 'preview' | 'edit' | 'override',
   profileId = profile.id
 ): PreviewState {
-  return { state: 'active', profileId, kind, targets: [], unsavedChanges: kind !== 'preview' }
+  return {
+    state: 'active',
+    sessionId: 1,
+    profileId,
+    kind,
+    targets: [],
+    unsavedChanges: kind !== 'preview'
+  }
 }
 
 const ok: ProductResult<null> = { ok: true, value: null }

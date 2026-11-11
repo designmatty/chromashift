@@ -31,6 +31,7 @@ function fixture(
   let appliedDraft = profile
   let preview: PreviewState = {
     state: 'active',
+    sessionId: 1,
     kind,
     unsavedChanges: true,
     profileId: profile.id,
@@ -47,6 +48,7 @@ function fixture(
       appliedDraft = draft
       preview = {
         state: 'active',
+        sessionId: 1,
         kind,
         profileId: draft.id,
         targets: draft.displays,
@@ -263,6 +265,7 @@ it.each([
     expect(f.calls.at(-1)).toBe('save')
     expect(f.state()).toEqual({
       state: 'active',
+      sessionId: 1,
       kind: 'edit',
       profileId: profile.id,
       targets: draft.displays,
@@ -303,6 +306,7 @@ it.each([
     expect(f.calls.at(-1)).toBe('update')
     expect(f.state()).toEqual({
       state: 'active',
+      sessionId: 1,
       kind: 'edit',
       profileId: profile.id,
       targets: saved.displays,

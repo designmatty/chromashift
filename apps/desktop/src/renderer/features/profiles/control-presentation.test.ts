@@ -65,6 +65,7 @@ describe('control pill', () => {
     const product = state()
     product.preview = {
       state: 'active',
+      sessionId: 1,
       kind: 'preview',
       profileId: 'GAME',
       targets: [],
@@ -84,6 +85,7 @@ describe('control pill', () => {
     for (const kind of ['edit', 'override'] as const) {
       product.preview = {
         state: 'active',
+        sessionId: 1,
         kind,
         profileId: 'game',
         targets: [],
@@ -104,6 +106,7 @@ describe('control pill', () => {
     product.chromaShift.status = status
     product.preview = {
       state: 'active',
+      sessionId: 1,
       kind: 'edit',
       profileId: 'game',
       targets: [],
@@ -133,6 +136,7 @@ describe('mode toggle decisions', () => {
     const product = state()
     product.preview = {
       state: 'active',
+      sessionId: 1,
       kind: 'preview',
       profileId: 'game',
       targets: [],
@@ -189,6 +193,7 @@ describe('row activation and preview markers', () => {
     for (const kind of ['preview', 'edit'] as const) {
       product.preview = {
         state: 'active',
+        sessionId: 1,
         kind,
         profileId: 'game',
         targets: [],

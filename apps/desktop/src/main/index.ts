@@ -175,12 +175,13 @@ const runtime = createProductRuntime({
     }
   },
   shell: {
-    requestEndPreview: (profileId, needsPrompt) => {
+    getAppPanelLifetime: () => panelController.getPanelLifetime('app'),
+    requestEndPreview: (request, needsPrompt) => {
+      if (panelController.getPanelLifetime('app') !== request.lifetime) return
       if (needsPrompt) panelController.openAppPanel()
       const window = mainWindow
-      const lifetime = panelController.getPanelLifetime('app')
-      if (!window || window.isDestroyed() || window.webContents.isDestroyed() || lifetime === null) return
-      window.webContents.send(productIpcChannels.endPreviewRequested, { lifetime, profileId })
+      if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+      window.webContents.send(productIpcChannels.endPreviewRequested, request)
     },
     flushRendererDrafts: () =>
       flushRendererDrafts(

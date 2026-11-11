@@ -6,7 +6,7 @@ import {
 } from '@chromashift/core'
 import type { ForegroundApplication } from '@chromashift/native-client'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
-import type { UserPreferences } from '@shared/product-api.js'
+import type { EndPreviewRequest, UserPreferences } from '@shared/product-api.js'
 import type { ChromaShiftIntent } from '@main/app-settings.js'
 import { attachActivationOutcomeRouter } from '@main/activation-outcome-router.js'
 import { applicationFriendlyName } from '@main/application-friendly-name.js'
@@ -95,7 +95,8 @@ export interface ProductRuntimePorts {
     createTrayMenu: () => Promise<TrayMenuPort>
     broadcastProductState: () => void
     flushRendererDrafts?: () => Promise<void>
-    requestEndPreview: (profileId: string, needsPrompt: boolean) => void
+    getAppPanelLifetime: () => number | null
+    requestEndPreview: (request: EndPreviewRequest, needsPrompt: boolean) => void
   }
   dialogs: {
     showError: (title: string, message: string) => void
@@ -543,8 +544,9 @@ export class ProductRuntime {
       logger,
       () => requestEndPreview({
         preview: () => previewController.state,
+        panelLifetime: () => shell.getAppPanelLifetime(),
         flushDrafts: () => shell.flushRendererDrafts?.() ?? Promise.resolve(),
-        dispatch: (profileId, needsPrompt) => shell.requestEndPreview(profileId, needsPrompt)
+        dispatch: (request, needsPrompt) => shell.requestEndPreview(request, needsPrompt)
       })
     )
     this.#shortcutController = shortcutController

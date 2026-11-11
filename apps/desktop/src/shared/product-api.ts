@@ -63,7 +63,12 @@ export const productIpcChannels = {
 export const previewDraftFlushSchema = z.object({ requestId: z.uuid() }).strict()
 export const externalLinkRequestSchema = z.object({ link: z.enum(['releases', 'repository', 'license']) }).strict()
 export type ExternalLink = z.infer<typeof externalLinkRequestSchema>['link']
-export const endPreviewRequestSchema = z.object({ lifetime: z.number().int().positive(), profileId: z.string().min(1) }).strict()
+export const endPreviewRequestSchema = z.object({
+  lifetime: z.number().int().positive(),
+  sessionId: z.number().int().positive(),
+  profileId: z.string().min(1)
+}).strict()
+export type EndPreviewRequest = z.infer<typeof endPreviewRequestSchema>
 export const displayLimitsResetRequestSchema = z
   .object({ displayId: z.string().startsWith('display:') })
   .strict()
@@ -99,6 +104,7 @@ export const previewStateSchema = z.discriminatedUnion('state', [
   }),
   z.object({
     state: z.literal('active'),
+    sessionId: z.number().int().positive(),
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
     targets: z.array(previewTargetSchema),
@@ -367,7 +373,7 @@ export type ProductResult<T> = { ok: true; value: T } | { ok: false; error: Prod
 
 export interface ChromaShiftApi {
   openExternalLink(link: ExternalLink): Promise<ProductResult<null>>
-  onEndPreviewRequested(listener: (profileId: string) => void): void
+  onEndPreviewRequested(listener: (request: EndPreviewRequest) => void): void
   openProfile(profileId: string): Promise<ProductResult<ColorProfile>>
   resetLearnedLimits(displayId: string): Promise<ProductResult<null>>
   getState(): Promise<ProductResult<ProductState>>
