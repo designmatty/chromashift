@@ -3347,7 +3347,7 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'automatic' &&
         result.value.activation.currentTarget?.profileId === 'default' &&
         document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-        document.querySelector('[data-part="mode-toggle"] input[aria-label="Automatic"]')?.checked === true &&
+        document.querySelector('[data-part="mode-toggle"] [data-mode="automatic"]')?.hasAttribute('data-selected') === true &&
         document.querySelector('[data-part="profile-nav"] [data-part="mode-toggle"]') !== null &&
         document.querySelector('[aria-label="Profile active"]') === null &&
         [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Automatic')
@@ -3404,7 +3404,7 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'manual' &&
         result.value.activation.mode.profileId === profile?.id &&
         result.value.activation.currentTarget?.profileId === profile?.id &&
-        document.querySelector('[data-part="mode-toggle"] input[aria-label="Manual"]')?.checked === true &&
+        document.querySelector('[data-part="mode-toggle"] [data-mode="manual"]')?.hasAttribute('data-selected') === true &&
         [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Manual')
     })()`,
     'Use this profile did not establish Manual mode.'
@@ -3516,7 +3516,7 @@ async function runSmoke() {
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-      document.querySelector('[data-part="mode-toggle"] input[aria-label="Manual"]')?.checked === true`,
+      document.querySelector('[data-part="mode-toggle"] [data-mode="manual"]')?.hasAttribute('data-selected') === true`,
     'Browsing Default changed the manual selection.'
   )
   await selectAppActivation(debuggerClient, 'Automatic')
@@ -3611,7 +3611,7 @@ async function runSmoke() {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="mode-toggle"] input[aria-label="Automatic"]')?.checked === true`,
+    `document.querySelector('[data-part="mode-toggle"] [data-mode="automatic"]')?.hasAttribute('data-selected') === true`,
     'Automatic selection was unavailable in the collapsed sidebar.'
   )
   await debuggerClient.send('Runtime.evaluate', {
@@ -4128,7 +4128,7 @@ async function runSmoke() {
   await answerUnsavedChanges(debuggerClient, 'Cancel')
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="mode-toggle"] input[aria-label="Automatic"]')?.checked === true &&
+    `document.querySelector('[data-part="mode-toggle"] [data-mode="automatic"]')?.hasAttribute('data-selected') === true &&
       document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile unsaved'`,
     'Cancelling a mode change did not preserve Automatic and its draft.'
   )

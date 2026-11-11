@@ -137,6 +137,7 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
           <SegmentGroup.Item
             value={mode}
             data-mode={mode}
+            data-selected={props.mode.kind === mode ? '' : undefined}
             aria-label={mode === 'automatic' ? 'Automatic' : 'Manual'}
             flex={props.collapsed ? undefined : '1'}
             w={props.collapsed ? 'full' : undefined}

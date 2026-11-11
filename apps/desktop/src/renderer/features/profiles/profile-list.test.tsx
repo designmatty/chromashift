@@ -64,6 +64,10 @@ describe('sidebar activation SegmentGroup', () => {
     expect(toggle).toContain('data-tooltip="Automatic (Ctrl+A)"')
     expect(toggle).toContain('data-tooltip="Manual"')
     expect(toggle).toMatch(/data-state="checked"[^>]*data-mode="automatic"/)
+    // Smoke reads data-selected: at runtime the tooltip trigger overrides data-state and
+    // the hidden radio uses defaultChecked, so neither tracks later mode changes.
+    expect(toggle).toMatch(/data-mode="automatic" data-selected=""/)
+    expect(toggle).not.toMatch(/data-mode="manual" data-selected/)
     if (collapsed) {
       expect(html).toContain('width:40px')
       expect(html).toContain('min-width:0')
@@ -73,6 +77,9 @@ describe('sidebar activation SegmentGroup', () => {
   it('selects the Manual segment when Manual is intended', () => {
     expect(render({ mode: { kind: 'manual', profileId: 'game' } })).toMatch(
       /data-state="checked"[^>]*data-mode="manual"/
+    )
+    expect(render({ mode: { kind: 'manual', profileId: 'game' } })).toMatch(
+      /data-mode="manual" data-selected=""/
     )
   })
 
