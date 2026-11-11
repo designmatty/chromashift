@@ -64,6 +64,15 @@ targets remain persisted and resume when the same physical display returns.
 
 ## App-panel behavior
 
+- The profile header shows its configured hotkey using the shared shortcut
+  display and keeps the overflow menu for secondary actions. Default keeps its
+  grey badge. App profiles show a trigger summary below the name: `Triggers: None`,
+  one or two executable names, or the first two names followed by `+N` for the
+  remaining triggers. The summary truncates to the available width; a tooltip
+  exposes every trigger when the text truncates or the summary omits names.
+- The Triggers section sits above the display color controls. App profiles can
+  add executable triggers by browsing or choosing an open app. Default shows
+  "Used when no other profile's triggers match" without an empty trigger list.
 - The sidebar has an Automatic | Manual toggle. Automatic calls Return to
   Automatic; Manual keeps the live profile, independently of the profile being
   previewed. Sidebar profile clicks preview without changing mode. Choose
@@ -321,6 +330,15 @@ The mini panel edits one explicitly selected display at a time and shows the sam
 icons and per-control neutral reset actions. `Update profile` saves the complete
 temporary draft across touched displays; `Discard changes` rolls the session back.
 Picking a profile discards the temporary changes without a blocking dialog.
+The picker keeps Automatic first. In Automatic mode it shows `Using: <profile>`
+for the Intended target and marks that profile's row `Live` while display control
+is Active. Paused and Safety blocked never show a Live badge. Enabled profiles
+show their normal text, shared profile icons, and configured hotkeys. Default's
+badge stays grey. Disabled profiles stay hidden, with a `1 disabled profile` or
+`N disabled profiles` footer. While Paused, the picker says
+"ChromaShift is paused — your choice applies when you resume". A successful
+selection returns immediately to the sliders and stays scoped to the current
+panel lifetime. While Paused it updates intent without applying or resuming.
 The panel remains non-activating, always on top,
 pointer-oriented, and non-resizable.
 

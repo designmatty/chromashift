@@ -230,7 +230,8 @@ layout plus explicit drag/no-drag regions. A fully frameless window with replace
 caption buttons remains out of scope.
 
 The profile workspace supports CRUD, default/manual activation, multi-display
-targets, foreground-application assignment, and an Electron `.exe` picker. Its
+targets, foreground-app triggers, and an Electron `.exe` picker. Triggers sit
+above color controls; the header summarizes them and shows the profile hotkey. Its
 controls derive support and provider explanations from each selected display's
 capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
 display view retains the hardware diagnostics needed for provider support.
@@ -319,7 +320,7 @@ defensively guarded. A missing slice file yields defaults; the pre-slice
 `settings.json` blob was converted once and has no in-code migration path.
 Explicit launches still show the app panel. The permanent Default profile
 remains the only catch-all, cannot be disabled or deleted, and cannot receive
-application assignments.
+triggers.
 
 Electron main owns native notifications and global shortcut registration, so
 both remain available with no renderer alive. One user preference enables or

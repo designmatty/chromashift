@@ -237,7 +237,7 @@ Enabled/Disabled availability, paused presentation and explicit resume, profile 
 per-display tabs, read-only parity, sidebar collapse, pointer and keyboard profile
 reordering, cancelled drops, saved order, disabled rows, pinned Default, and list
 edge scrolling, capability states,
-application assignment, live preview and rollback, Default and manual activation,
+trigger assignment and summary, Triggers above color controls, live preview and rollback, Default and manual activation,
 temporary mini-panel overrides,
 Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini
 mutual exclusion, native caption behavior, mini-panel non-activation, tray

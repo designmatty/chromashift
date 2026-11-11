@@ -286,6 +286,38 @@ async function waitForExpression(debuggerClient, expression, failureMessage) {
   throw new Error(failureMessage + ' ' + JSON.stringify(diagnostic))
 }
 
+async function assertMiniProfilePicker(debuggerClient) {
+  await waitForExpression(
+    debuggerClient,
+    `(async () => {
+      const result = await window.chromaShift.getState()
+      if (!result.ok) return false
+      const state = result.value
+      const names = [...document.querySelectorAll('[data-part="mini-profile-name"]')]
+        .map((item) => item.textContent)
+      const enabled = state.configuration.profiles.filter((profile) => profile.enabled)
+      if (JSON.stringify(names) !== JSON.stringify(['Automatic', ...enabled.map((profile) => profile.name)])) return false
+      const disabled = state.configuration.profiles.length - enabled.length
+      const footer = document.querySelector('[data-part="disabled-profiles-count"]')
+      if (disabled === 0 ? footer !== null : footer?.textContent?.trim() !== disabled + ' disabled ' + (disabled === 1 ? 'profile' : 'profiles')) return false
+      const automatic = state.chromaShift.intendedMode.kind === 'automatic'
+      const id = state.chromaShift.intendedTarget?.kind === 'profile' ? state.chromaShift.intendedTarget.profileId : 'default'
+      const current = state.configuration.profiles.find((profile) => profile.id.toLowerCase() === id.toLowerCase()) ??
+        state.configuration.profiles.find((profile) => profile.id === 'default')
+      const using = document.querySelector('[data-part="automatic-using"]')
+      if (automatic ? using?.textContent !== 'Using: ' + current?.name : using !== null) return false
+      const live = document.querySelector('[data-part="mini-profile-live"]')
+      const expectedLive = automatic && state.chromaShift.status === 'active' && current?.enabled
+      if (expectedLive ? live?.closest('[data-scope="radio-group"][data-part="item"]')?.querySelector('[data-part="mini-profile-name"]')?.textContent !== current.name : live !== null) return false
+      const hint = document.querySelector('[data-part="paused-picker-hint"]')
+      return state.chromaShift.status === 'paused'
+        ? hint?.textContent === 'ChromaShift is paused — your choice applies when you resume'
+        : hint === null
+    })()`,
+    'The mini picker did not show Automatic, its current profile, Live, disabled count, or Paused hint correctly.'
+  )
+}
+
 async function captureScreenshot(debuggerClient, path) {
   const screenshot = await debuggerClient.send('Page.captureScreenshot', {
     format: 'png',
@@ -2066,6 +2098,13 @@ async function runSmoke() {
     `document.querySelector('[aria-label="Profile name"]') !== null`,
     'The Default profile did not expose its name in Edit mode.'
   )
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[data-part="profile-triggers"]')?.textContent?.includes("Used when no other profile's triggers match") &&
+      document.querySelector('[data-part="profile-trigger-summary"]') === null &&
+      !document.querySelector('[data-part="profile-triggers"]')?.textContent?.includes('Select from open apps')`,
+    'Default did not show its Triggers explanation without an empty list.'
+  )
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(() => {
       document.querySelector('[data-part="profile-title"]')?.click()
@@ -2439,6 +2478,17 @@ async function runSmoke() {
     debuggerClient,
     `document.querySelector('[aria-label="Profile name"]') !== null`,
     'New profile did not enter Edit mode.'
+  )
+  await waitForExpression(
+    debuggerClient,
+    `(() => {
+      const triggers = document.querySelector('[data-part="profile-triggers"]')
+      const colors = document.querySelector('[data-part="profile-color-controls"]')
+      return triggers?.querySelector('h2')?.textContent === 'Triggers' && colors !== null &&
+        (triggers.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+        document.querySelector('[data-part="profile-trigger-summary"]')?.textContent === 'Triggers: None'
+    })()`,
+    'The new profile did not show its trigger summary and Triggers above color controls.'
   )
   await waitForExpression(
     debuggerClient,
@@ -3165,6 +3215,7 @@ async function runSmoke() {
           getComputedStyle(name).textOverflow === 'ellipsis' && row.scrollWidth <= row.clientWidth + 1 &&
           document.querySelector('[role="tooltip"]') === null
       })()`, `The mini-panel picker did not truncate the long name (${theme}).`)
+      await assertMiniProfilePicker(pausedMiniDebugger)
       await hoverElement(pausedMiniDebugger, '[data-part="mini-profile-name"]')
       await delay(600)
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-picker-long-name-${theme}-native.png`))
@@ -4572,6 +4623,7 @@ async function runSmoke() {
       [...document.querySelectorAll('button')].some((candidate) => candidate.textContent?.trim() === 'Back')`,
     'The mini-panel profile picker did not open.'
   )
+  await assertMiniProfilePicker(debuggerClient)
   await debuggerClient.send('Emulation.setDeviceMetricsOverride', {
     width: 400,
     height: 575,

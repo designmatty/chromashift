@@ -85,7 +85,7 @@ export function ApplicationAssignments({
                   <Menu.Content minW="260px">
                     {apps.length === 0 ? (
                       <Menu.Item disabled value="empty">
-                        No visible applications
+                        No open apps available for triggers
                       </Menu.Item>
                     ) : (
                       apps.map((app) => (

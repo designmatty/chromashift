@@ -359,7 +359,7 @@ export function initColorDemo(): void {
     const list = document.createElement('div')
     list.className = 'mini__picker-list'
     const items = [
-      { value: 'automatic', label: 'Automatic Switching', isDefault: false },
+      { value: 'automatic', label: 'Automatic', isDefault: false },
       ...state.profiles.map((profile) => ({
         value: profile.id,
         label: profile.name,

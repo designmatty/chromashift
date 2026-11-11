@@ -15,8 +15,10 @@ The persisted root object has schema version 3:
 }
 ```
 
-A profile contains application rules and display targets keyed by stable physical
-display ID. Every assigned target owns the complete vendor-neutral color vector:
+A profile contains executable triggers and display targets keyed by stable physical
+display ID. Triggers remain stored as application rules in the `applications`
+array; the UI name does not change the persistence schema. Every assigned target
+owns the complete vendor-neutral color vector:
 
 ```json
 {
