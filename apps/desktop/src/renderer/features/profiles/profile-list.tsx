@@ -148,6 +148,7 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
             color={props.mode.kind === mode ? 'fg' : 'fg.muted'}
             bg={props.mode.kind === mode ? 'bg.panel' : undefined}
             shadow={props.mode.kind === mode ? 'xs' : undefined}
+            _before={{ display: 'none' }}
             _hover={props.mode.kind === mode ? undefined : { bg: 'bg.emphasized' }}
             disabled={mode === 'manual' && props.currentId === null}
           >
