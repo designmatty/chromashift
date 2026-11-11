@@ -1,4 +1,5 @@
 import { Notification } from 'electron'
+import { buildNotificationOptions } from '@main/electron-notification-options.js'
 import type {
   ProductNotification,
   ProductNotificationPort
@@ -15,11 +16,7 @@ export class ElectronNotificationPort implements ProductNotificationPort {
   }
 
   public show(message: ProductNotification): void {
-    const notification = new Notification({
-      title: message.title,
-      body: message.body,
-      urgency: message.urgency
-    })
+    const notification = new Notification(buildNotificationOptions(message, process.platform))
     const release = (): void => {
       this.#active.delete(notification)
     }

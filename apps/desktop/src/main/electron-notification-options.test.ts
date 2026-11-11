@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest'
+import { buildNotificationOptions } from '@main/electron-notification-options.js'
+import type { ProductNotification } from '@main/profile-notification-controller.js'
+
+const message: Omit<ProductNotification, 'onClick'> = {
+  title: 'Gaming activated',
+  body: 'Activated automatically.',
+  severity: 'information',
+  urgency: 'normal'
+}
+
+describe('buildNotificationOptions', () => {
+  it('carries the title and body in the Windows toast', () => {
+    const { toastXml } = buildNotificationOptions(message, 'win32')
+    expect(toastXml).toContain('<binding template="ToastGeneric">')
+    expect(toastXml).toContain('<text>Gaming activated</text>')
+    expect(toastXml).toContain('<text>Activated automatically.</text>')
+  })
+
+  it('escapes profile names and error text without allowing XML injection', () => {
+    const { toastXml } = buildNotificationOptions(
+      {
+        ...message,
+        title: `Tom & Jerry's <"Gaming"> was not fully applied`,
+        body: `Write failed: <error reason="A&B's"> &lt; </text><actions />`
+      },
+      'win32'
+    )
+    expect(toastXml).toContain(
+      '<text>Tom &amp; Jerry&apos;s &lt;&quot;Gaming&quot;&gt; was not fully applied</text>'
+    )
+    expect(toastXml).toContain(
+      '<text>Write failed: &lt;error reason=&quot;A&amp;B&apos;s&quot;&gt; &amp;lt; &lt;/text&gt;&lt;actions /&gt;</text>'
+    )
+  })
+
+  it('includes exactly one visible Close action handled by Windows and silent audio', () => {
+    const { toastXml } = buildNotificationOptions(message, 'win32')
+    expect(toastXml).toContain(
+      '<action content="Close" activationType="system" arguments="dismiss" />'
+    )
+    expect(toastXml?.match(/<action\s/gu)).toHaveLength(1)
+    expect(toastXml).toContain('<audio silent="true" />')
+  })
+
+  it.each([
+    { severity: 'information', urgency: 'normal' },
+    { severity: 'information', urgency: 'low' },
+    { severity: 'warning', urgency: 'critical' },
+    { severity: 'error', urgency: 'critical' }
+  ] as const)('preserves $severity urgency $urgency', ({ severity, urgency }) => {
+    const options = buildNotificationOptions({ ...message, severity, urgency }, 'win32')
+    expect(options.urgency).toBe(urgency)
+    expect(options.toastXml).toContain('<audio silent="true" />')
+    expect(options.toastXml).not.toContain('scenario=')
+  })
+
+  it.each(['linux', 'darwin'] as const)('keeps the existing %s options', (platform) => {
+    expect(buildNotificationOptions(message, platform)).toEqual({
+      title: message.title,
+      body: message.body,
+      urgency: message.urgency
+    })
+  })
+})
