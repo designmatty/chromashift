@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createNeutralColorSettings } from '@chromashift/core'
 import {
   controlChromaShiftRequestSchema,
+  endPreviewRequestSchema,
   previewStateSchema,
   activationStateSchema,
   diagnosticLogEntriesResultSchema,
@@ -15,6 +16,26 @@ import {
 } from '@shared/product-api.js'
 
 describe('product API contracts', () => {
+  it('requires both positive identities on End preview events and active sessions', () => {
+    const request = { lifetime: 21, sessionId: 7, profileId: 'game' }
+    const preview = {
+      state: 'active',
+      sessionId: 7,
+      kind: 'preview',
+      profileId: 'game',
+      targets: [],
+      unsavedChanges: false
+    }
+    expect(endPreviewRequestSchema.parse(request)).toEqual(request)
+    expect(previewStateSchema.parse(preview)).toEqual(preview)
+    for (const sessionId of [undefined, null, 0, -1, 1.5, '7']) {
+      expect(endPreviewRequestSchema.safeParse({ ...request, sessionId }).success).toBe(false)
+      expect(previewStateSchema.safeParse({ ...preview, sessionId }).success).toBe(false)
+    }
+    for (const lifetime of [undefined, null, 0, -1, 1.5, '21']) {
+      expect(endPreviewRequestSchema.safeParse({ ...request, lifetime }).success).toBe(false)
+    }
+  })
   it('validates pending restoration display IDs without exposing an editable draft', () => {
     expect(
       previewStateSchema.parse({ state: 'restorePending', displayIds: ['display:one'] })
@@ -197,7 +218,7 @@ describe('product API contracts', () => {
 
 function validSettings() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     launchAtStartup: false,
     launchBehavior: 'tray',
     closeBehavior: 'tray',

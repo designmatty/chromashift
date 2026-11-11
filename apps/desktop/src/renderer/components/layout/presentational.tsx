@@ -210,10 +210,12 @@ export function Empty({ title }: { title: string }): React.JSX.Element {
 export function SettingsRow({
   title,
   description,
+  icon,
   children
 }: {
   title: string
   description: string
+  icon?: ReactNode
   children: ReactNode
 }): React.JSX.Element {
   return (
@@ -235,16 +237,19 @@ export function SettingsRow({
         borderBottomRadius: 'lg'
       }}
     >
-      <Box>
-        <Heading as="h2" fontSize="md" lineHeight={'short'}>
-          {title}
-        </Heading>
-        {description !== '' && (
-          <Text fontFamily="mono" fontSize="sm" color="fg.muted">
-            {description}
-          </Text>
-        )}
-      </Box>
+      <Flex align="center" gap="3" minW="0">
+        {icon}
+        <Box minW="0">
+          <Heading as="h2" fontSize="md" lineHeight={'short'}>
+            {title}
+          </Heading>
+          {description !== '' && (
+            <Text fontSize="sm" color="fg.muted">
+              {description}
+            </Text>
+          )}
+        </Box>
+      </Flex>
       {children}
     </Flex>
   )

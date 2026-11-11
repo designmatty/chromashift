@@ -47,6 +47,7 @@ it.each(['edit', 'override'] as const)(
             },
             state: () => ({
               state: 'active',
+              sessionId: 1,
               profileId: draft.id,
               kind,
               targets: [],
@@ -81,13 +82,22 @@ it.each<PreviewState>([
   { state: 'inactive' },
   {
     state: 'active',
+    sessionId: 1,
     kind: 'preview',
     profileId: draft.id,
     targets: [],
     draft,
     unsavedChanges: false
   },
-  { state: 'active', kind: 'edit', profileId: draft.id, targets: [], draft, unsavedChanges: false }
+  {
+    state: 'active',
+    sessionId: 1,
+    kind: 'edit',
+    profileId: draft.id,
+    targets: [],
+    draft,
+    unsavedChanges: false
+  }
 ])('does not warn for clean sessions', async (preview) => {
   const decide = vi.fn()
   expect(
@@ -116,6 +126,7 @@ it('keeps the app and helper alive when updating the profile fails', async () =>
         settle: async () => undefined,
         state: () => ({
           state: 'active',
+          sessionId: 1,
           kind: 'edit',
           profileId: draft.id,
           targets: [],

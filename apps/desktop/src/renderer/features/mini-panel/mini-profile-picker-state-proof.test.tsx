@@ -25,7 +25,7 @@ function state(status: ProductState['chromaShift']['status'] = 'active'): Produc
       profiles: [profile('default'), profile('Game')]
     },
     settings: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       launchAtStartup: false,
       launchBehavior: 'app',
       closeBehavior: 'tray',
@@ -82,6 +82,7 @@ describe('review #93: report displayed state rather than intent', () => {
     product.activation.queuedTarget = { kind: 'profile', profileId: 'default' }
     product.preview = {
       state: 'active',
+      sessionId: 1,
       kind: 'override',
       profileId: 'Game',
       targets: [

@@ -1,7 +1,31 @@
-import { Button, Flex, Heading, Progress, Stack, Text } from '@chakra-ui/react'
+import { Button, Flex, Heading, Link, Progress, Stack, Text } from '@chakra-ui/react'
 import { useEffect, useState } from 'react'
 import { Brand } from '@/components/layout/presentational'
 import type { AppUpdateStatus } from '@shared/app-updates.js'
+import type { ExternalLink } from '@shared/product-api.js'
+
+const aboutLinks: Array<{ link: ExternalLink; label: string; url: string }> = [
+  {
+    link: 'website',
+    label: 'chromashift.io',
+    url: 'https://chromashift.io'
+  },
+  {
+    link: 'releases',
+    label: 'Release notes',
+    url: 'https://github.com/designmatty/chromashift/releases'
+  },
+  {
+    link: 'repository',
+    label: 'GitHub repository',
+    url: 'https://github.com/designmatty/chromashift'
+  },
+  {
+    link: 'license',
+    label: 'License',
+    url: 'https://github.com/designmatty/chromashift/blob/main/LICENSE'
+  }
+]
 
 export function AboutPanel({ version }: { version: string }): React.JSX.Element {
   const [lastCheck, setLastCheck] = useState<AppUpdateStatus | null>(null)
@@ -77,6 +101,15 @@ export function AboutPanel({ version }: { version: string }): React.JSX.Element 
       setBusy(null)
     }
   }
+  async function openLink(link: ExternalLink): Promise<void> {
+    setError(null)
+    try {
+      const result = await window.chromaShift.openExternalLink(link)
+      if (!result.ok) setError(result.error.message)
+    } catch {
+      setError('Could not open the link. Try again.')
+    }
+  }
 
   const updating =
     busy !== null ||
@@ -131,7 +164,7 @@ export function AboutPanel({ version }: { version: string }): React.JSX.Element 
             {message}
           </Text>
           {lastCheck?.checkedAt && (
-            <Text fontFamily="mono" fontSize="xs" color="fg.muted">
+            <Text fontSize="xs" color="fg.muted">
               Last checked {new Date(lastCheck.checkedAt).toLocaleString()}
             </Text>
           )}
@@ -152,7 +185,7 @@ export function AboutPanel({ version }: { version: string }): React.JSX.Element 
               loading={busy === 'install'}
               onClick={() => void install()}
             >
-              Restart and install
+              Restart to update
             </Button>
           )}
           {lastCheck?.phase !== 'ready' && (
@@ -169,9 +202,23 @@ export function AboutPanel({ version }: { version: string }): React.JSX.Element 
         </Flex>
       </Flex>
       <Text fontSize="xs" color="fg.muted">
-        New updates download automatically when you check. Restart and install when ready. Your
+        New updates download automatically when you check. Restart to update when ready. Your
         original display settings are restored before installation.
       </Text>
+      <Flex gap="4" wrap="wrap">
+        {aboutLinks.map(({ link, label, url }) => (
+          <Link
+            key={link}
+            href={url}
+            onClick={(event) => {
+              event.preventDefault()
+              void openLink(link)
+            }}
+          >
+            {label}
+          </Link>
+        ))}
+      </Flex>
     </Stack>
   )
 }

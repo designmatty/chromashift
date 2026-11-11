@@ -15,6 +15,8 @@ import {
   diagnosticLogEntriesResultSchema,
   profileReorderDiagnosticSchema,
   emptyRequestSchema,
+  externalLinkRequestSchema,
+  endPreviewRequestSchema,
   panelLifetimeEventSchema,
   scopedPreviewRequestSchema,
   openAppPanelRequestSchema,
@@ -34,7 +36,8 @@ import {
   setDefaultProfileRequestSchema,
   voidResultSchema,
   type AppPanelView,
-  type ChromaShiftApi
+  type ChromaShiftApi,
+  type EndPreviewRequest
 } from '@shared/product-api.js'
 import { LatestEventRelay } from '@shared/latest-event-relay.js'
 
@@ -43,7 +46,12 @@ import { LatestEventRelay } from '@shared/latest-event-relay.js'
 // Listen from preload time and keep the latest request until the app subscribes.
 const appPanelNavigation = new LatestEventRelay<AppPanelView>()
 const appPanelProfileSelection = new LatestEventRelay<string>()
+const endPreviewRequests = new LatestEventRelay<EndPreviewRequest>()
 let panelLifetime: number | null = null
+ipcRenderer.on(productIpcChannels.endPreviewRequested, (_event, input: unknown) => {
+  const request = endPreviewRequestSchema.safeParse(input)
+  if (request.success) endPreviewRequests.publish(request.data)
+})
 ipcRenderer.on(productIpcChannels.panelLifetimeChanged, (_event, input: unknown) => {
   const event = panelLifetimeEventSchema.safeParse(input)
   if (event.success) panelLifetime = event.data.lifetime
@@ -73,6 +81,10 @@ async function invoke<TRequest, TResult>(
 }
 
 const api: ChromaShiftApi = {
+  openExternalLink: (link) => invoke(productIpcChannels.openExternalLink, externalLinkRequestSchema, voidResultSchema, { link }),
+  onEndPreviewRequested: (listener) => endPreviewRequests.subscribe((request) => {
+    if (request.lifetime === panelLifetime) listener(request)
+  }),
   getPanelLifetime: () => panelLifetime,
   onPanelClosing: (listener) => {
     const receive = (_event: unknown, input: unknown): void => {

@@ -12,7 +12,7 @@ import {
   Text
 } from '@chakra-ui/react'
 import { useEffect, useRef, useState } from 'react'
-import { DEFAULT_PROFILE_ID } from '@chromashift/core'
+import { DEFAULT_PROFILE_ID, type ColorProfile } from '@chromashift/core'
 import { SettingsRow } from '@/components/layout/presentational'
 import { acceleratorKeys, ShortcutDisplay } from '@/components/ui/shortcut-display'
 import {
@@ -23,39 +23,44 @@ import {
 } from '@shared/product-api.js'
 import { EMERGENCY_RESTORE_ACCELERATOR } from '@shared/shortcut-constants.js'
 import { recordShortcut } from '@/features/settings/shortcut-recording.js'
-import { Ellipsis } from 'lucide-react'
+import { Ellipsis, LockKeyhole } from 'lucide-react'
+import { Tooltip } from '@/components/ui/tooltip'
+import { ProfileIcon } from '@/features/profiles/profile-icon'
 
 type ShortcutRowDefinition = {
   action: ShortcutAction
   label: string
   description: string
+  profile?: ColorProfile
 }
 
-const builtInActions: ShortcutRowDefinition[] = [
-  {
-    action: { kind: 'defaultProfile' },
-    label: 'Default',
-    description: 'Selects Default profile'
-  },
+const navigationActions: ShortcutRowDefinition[] = [
   {
     action: { kind: 'previousProfile' },
     label: 'Previous profile',
-    description: 'Selects previous enabled profile'
+    description: 'Switches to the previous enabled profile in Manual mode'
   },
   {
     action: { kind: 'nextProfile' },
     label: 'Next profile',
-    description: 'Selects next enabled profile'
+    description: 'Switches to the next enabled profile in Manual mode'
+  }
+]
+const controlActions: ShortcutRowDefinition[] = [
+  {
+    action: { kind: 'toggleChromaShift' },
+    label: 'Toggle ChromaShift',
+    description: 'Switches to Paused or Active display control'
   },
   {
     action: { kind: 'automatic' },
     label: 'Return to Automatic',
-    description: 'Follow the foreground app again'
+    description: 'Switches to Automatic mode to follow the foreground app'
   },
   {
-    action: { kind: 'toggleChromaShift' },
-    label: 'Toggle ChromaShift',
-    description: 'Pause or resume ChromaShift'
+    action: { kind: 'endPreview' },
+    label: 'End preview',
+    description: 'Switches to the live profile after resolving unsaved changes'
   }
 ]
 
@@ -71,9 +76,13 @@ export function ShortcutsPanel({
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
 
-  const profiles = product.configuration.profiles.filter(
-    (profile) => profile.enabled && profile.id.toLowerCase() !== DEFAULT_PROFILE_ID
-  )
+  const profiles = product.configuration.profiles
+    .filter((profile) => profile.enabled)
+    .sort(
+      (a, b) =>
+        Number(b.id.toLowerCase() === DEFAULT_PROFILE_ID) -
+        Number(a.id.toLowerCase() === DEFAULT_PROFILE_ID)
+    )
 
   async function replaceBinding(
     action: ShortcutAction,
@@ -136,12 +145,22 @@ export function ShortcutsPanel({
       <FixedShortcutGroup
         title="Safety"
         label="Restore original display settings"
-        description="Restores display settings before ChromaShift changed them"
+        description="Switches to original display settings and pauses ChromaShift"
         accelerator={EMERGENCY_RESTORE_ACCELERATOR}
       />
       <ShortcutGroup
+        title="Control"
+        rows={controlActions}
+        bindings={product.settings.shortcutBindings}
+        recording={recording}
+        disabled={saving}
+        onRecordingChange={setRecording}
+        onBindingChange={replaceBinding}
+        onMessage={setMessage}
+      />
+      <ShortcutGroup
         title="Navigation"
-        rows={builtInActions}
+        rows={navigationActions}
         bindings={product.settings.shortcutBindings}
         recording={recording}
         disabled={saving}
@@ -152,10 +171,15 @@ export function ShortcutsPanel({
       {profiles.length > 0 && (
         <ShortcutGroup
           title="Profiles"
+          description="Switches to the profile in Manual mode."
           rows={profiles.map((profile) => ({
-            action: { kind: 'profile' as const, profileId: profile.id },
+            action:
+              profile.id.toLowerCase() === DEFAULT_PROFILE_ID
+                ? { kind: 'defaultProfile' as const }
+                : { kind: 'profile' as const, profileId: profile.id },
             label: profile.name,
-            description: 'Select this profile'
+            description: '',
+            profile
           }))}
           bindings={product.settings.shortcutBindings}
           recording={recording}
@@ -187,7 +211,21 @@ function FixedShortcutGroup({
       </Heading>
       <Stack gap={0.5}>
         <SettingsRow title={label} description={description}>
-          <ShortcutDisplay label={label} accelerator={accelerator} />
+          <Flex align="center" gap="3" flexShrink={0}>
+            <Tooltip content="Always available as a safety shortcut">
+              <Flex
+                align="center"
+                gap="1"
+                color="fg.muted"
+                tabIndex={0}
+                aria-label="Fixed safety shortcut"
+              >
+                <LockKeyhole size={12} />
+                <Text fontSize="xs">Fixed</Text>
+              </Flex>
+            </Tooltip>
+            <ShortcutDisplay label={label} accelerator={accelerator} />
+          </Flex>
         </SettingsRow>
       </Stack>
     </Stack>
@@ -196,6 +234,7 @@ function FixedShortcutGroup({
 
 function ShortcutGroup({
   title,
+  description,
   rows,
   bindings,
   recording,
@@ -205,6 +244,7 @@ function ShortcutGroup({
   onMessage
 }: {
   title: string
+  description?: string
   rows: ShortcutRowDefinition[]
   bindings: readonly ShortcutBinding[]
   recording: string | null
@@ -218,6 +258,11 @@ function ShortcutGroup({
       <Heading as="h2" size="md">
         {title}
       </Heading>
+      {description && (
+        <Text color="fg.muted" fontSize="sm">
+          {description}
+        </Text>
+      )}
       <Stack gap={0.5}>
         {rows.map((row) => {
           const id = actionId(row.action)
@@ -226,6 +271,7 @@ function ShortcutGroup({
               key={id}
               label={row.label}
               description={row.description}
+              profile={row.profile}
               accelerator={
                 bindings.find((binding) => actionId(binding.action) === id)?.accelerator ?? null
               }
@@ -252,6 +298,7 @@ function ShortcutGroup({
 function ShortcutRow({
   label,
   description,
+  profile,
   accelerator,
   recording,
   disabled,
@@ -262,6 +309,7 @@ function ShortcutRow({
 }: {
   label: string
   description: string
+  profile?: ColorProfile
   accelerator: string | null
   recording: boolean
   disabled: boolean
@@ -334,7 +382,11 @@ function ShortcutRow({
   })
 
   return (
-    <SettingsRow title={label} description={description}>
+    <SettingsRow
+      title={label}
+      description={description}
+      icon={profile && <ProfileIcon profile={profile} />}
+    >
       <Flex ref={control} className="group" gap="1.5" align="center" flexShrink={0}>
         {recording ? (
           <>
@@ -416,11 +468,7 @@ function ShortcutRow({
                   Add shortcut
                 </Text>
               ) : (
-                acceleratorKeys(accelerator).map((key, index) => (
-                  <Kbd key={index} size="sm" data-part="shortcut-key">
-                    {key}
-                  </Kbd>
-                ))
+                <ShortcutDisplay label={label} accelerator={accelerator} />
               )}
             </Button>
           </>

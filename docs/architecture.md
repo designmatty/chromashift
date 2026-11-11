@@ -194,6 +194,13 @@ privileged request, validates its response before returning it, and maps native,
 persistence, validation, and unsupported-capability failures into explicit
 user-facing results.
 
+About exposes `openExternalLink(link)` with only four validated identifiers:
+`website`, `releases`, `repository`, and `license`. Main maps them to fixed HTTPS
+URLs (`https://chromashift.io` and pages under
+`https://github.com/designmatty/chromashift`), sender-checks each request, and uses
+`shell.openExternal`. The renderer cannot supply a URL. Window creation and
+unexpected navigation remain denied.
+
 The About page requests update checks through that same validated preload API.
 The main-owned `UpdateChecker` contacts the fixed HTTPS feed at
 `updates.chromashift.io/v1/releases.json` only on request, compares semantic
@@ -319,6 +326,10 @@ coordination exists. The renderer sees and edits only the preferences slice;
 main-owned fields are structurally absent from the IPC contract rather than
 defensively guarded. A missing slice file yields defaults; the pre-slice
 `settings.json` blob was converted once and has no in-code migration path.
+Preferences schema version 3 adds the optional End preview shortcut action.
+Version 1 and 2 documents migrate explicitly, preserving all bindings and
+preferences; End preview starts unassigned. Invalid documents are preserved and
+reported. Migration is written on the next successful preferences update.
 Explicit launches still show the app panel. The permanent Default profile
 remains the only catch-all, cannot be disabled or deleted, and cannot receive
 triggers.
@@ -332,6 +343,25 @@ set is restored. Profile bindings follow profile rename, disable, and deletion;
 disabling a bound profile requires explicit confirmation that names the binding.
 The fixed emergency-restore accelerator is reserved outside configurable
 bindings and appears as a read-only Safety action in Shortcut settings.
+Settings groups shortcuts into Safety, Control, Navigation, and Profiles, with
+Default first and one keycap per key. End preview is a Control action. Main
+flushes buffered renderer drafts, ignores requests without an app preview, and
+dispatches to the renderer's existing End preview action. Unsaved changes bring
+the app forward for the same Update / Discard / Cancel dialog. A clean preview
+rolls back and returns to the live profile. It does not end mini-panel overrides.
+The event carries the current app-panel lifetime and profile ID so stale requests
+cannot act on another panel opening or profile.
+
+General labels the login preference Launch at startup and disables Startup
+window while it is off. Settings Back sits beside the sidebar collapse control;
+bare Escape goes back only outside inputs, shortcut recorders, menus and dialogs.
+Displays reports each capability's Controlled by source and rounds refresh rates
+with the precise value available on hover. Successful Restore displays a paused
+notification with Resume, after confirming Paused through the product API.
+Diagnostics filters and searches only the validated tail of at most 250 entries
+already received through preload. Filtering does not change copied or downloaded
+logs. Details pretty-print valid JSON and preserve plain text. Clear logs uses a
+renderer confirmation dialog.
 Notification wording is derived from completed activation outcomes and
 distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
 and no-op results. Clicking a profile notification opens that profile in the app

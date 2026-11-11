@@ -22,6 +22,7 @@ function harness() {
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json([]))
   const installUpdate = vi.fn(async () => true)
   const hideMiniPanel = vi.fn(async () => undefined)
+  const openExternalLink = vi.fn(async () => undefined)
   const getController = vi.fn<() => ProductController | undefined>(() => undefined)
   const panels = new PanelController(
     () => undefined,
@@ -61,7 +62,8 @@ function harness() {
     {
       get: () => panels.getPanelLifetime('mini'),
       assert: (_event, lifetime) => panels.assertPanelLifetime('mini', lifetime)
-    }
+    },
+    openExternalLink
   )
   const invoke = (name: string, input: unknown = {}) =>
     handlers.get(name)!({} as IpcMainInvokeEvent, input)
@@ -75,10 +77,27 @@ function harness() {
     fetch,
     installUpdate,
     hideMiniPanel,
+    openExternalLink,
     panels,
     getController
   }
 }
+
+it('opens only a sender-checked, validated fixed link identifier', async () => {
+  const h = harness()
+  for (const link of ['website', 'releases', 'repository', 'license']) {
+    expect(await h.invoke(productIpcChannels.openExternalLink, { link })).toEqual({ ok: true, value: null })
+  }
+  expect(h.trusted).toHaveBeenCalledTimes(4)
+  expect(h.openExternalLink.mock.calls).toEqual([['website'], ['releases'], ['repository'], ['license']])
+  for (const input of [{ link: 'https://example.com' }, { link: 'releases', url: 'https://example.com' }, { url: 'https://github.com/designmatty/chromashift' }, { link: '__proto__' }]) {
+    expect(await h.invoke(productIpcChannels.openExternalLink, input)).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } })
+  }
+  expect(h.openExternalLink).toHaveBeenCalledTimes(4)
+  h.trusted.mockImplementation(() => { throw new Error('Untrusted renderer') })
+  await expect(h.invoke(productIpcChannels.openExternalLink, { link: 'releases' })).rejects.toThrow('Untrusted renderer')
+  expect(h.openExternalLink).toHaveBeenCalledTimes(4)
+})
 
 describe('preview lifetime IPC', () => {
   it('sender-checks and validates editor-open and per-display learned-limit reset', async () => {

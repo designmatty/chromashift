@@ -72,6 +72,7 @@ describe('app preview selection', () => {
         ...state(),
         preview: {
           state: 'active',
+          sessionId: 1,
           kind,
           profileId: draft.id,
           targets: draft.displays,
@@ -92,6 +93,7 @@ describe('app preview selection', () => {
     draft.displays[0]!.color.saturation = 80
     const preview: ProductState['preview'] = {
       state: 'active',
+      sessionId: 1,
       kind: 'override',
       profileId: saved.id,
       targets: draft.displays,
@@ -183,6 +185,7 @@ describe('preview banner while switching profiles', () => {
     profileId = 'game'
   ): ProductState['preview'] => ({
     state: 'active',
+    sessionId: 1,
     profileId,
     kind,
     targets: [],
@@ -249,6 +252,7 @@ describe('header Update and Discard', () => {
     overrides: { kind?: 'preview' | 'edit' | 'override'; profileId?: string } = {}
   ): ProductState['preview'] => ({
     state: 'active',
+    sessionId: 1,
     kind: overrides.kind ?? 'edit',
     unsavedChanges: true,
     profileId: overrides.profileId ?? 'game',

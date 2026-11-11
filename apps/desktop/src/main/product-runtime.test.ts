@@ -161,6 +161,7 @@ async function createHarness(
   trayCommands: () => TrayCommands
   trayModel: () => TrayReadModel
   openAppPanel: ReturnType<typeof vi.fn>
+  requestEndPreview: ReturnType<typeof vi.fn>
   configurationPath: string
   notifications: Array<ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }>
   invokeRestore: () => Promise<unknown>
@@ -209,6 +210,7 @@ async function createHarness(
   let trayCommands: TrayCommands | undefined
   let trayModel: TrayReadModel | undefined
   const openAppPanel = vi.fn()
+  const requestEndPreview = vi.fn()
   const shortcutHandlers = new Map<string, () => void>()
   const notifications: Array<
     ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }
@@ -240,6 +242,8 @@ async function createHarness(
       }
     },
     shell: {
+      getAppPanelLifetime: () => 21,
+      requestEndPreview,
       openWindow: () => undefined,
       openProfile: () => undefined,
       openAppPanel,
@@ -342,6 +346,7 @@ async function createHarness(
     trayCommands: () => trayCommands!,
     trayModel: () => trayModel!,
     openAppPanel,
+    requestEndPreview,
     configurationPath: join(directory, 'profiles.json'),
     notifications,
     invokeRestore: () =>
@@ -359,6 +364,25 @@ async function createHarness(
     pressShortcut: (accelerator) => shortcutHandlers.get(accelerator)!()
   }
 }
+
+it.each(['inactive', 'preview', 'edit'] as const)('routes the registered End preview shortcut without an independent rollback: %s', async (kind) => {
+  const h = await createHarness({}, { preferences: { shortcutBindings: [{ action: { kind: 'endPreview' }, accelerator: 'CommandOrControl+E' }] } })
+  try {
+    await h.runtime.start()
+    if (kind !== 'inactive') {
+      const saved = (await h.runtime.productController!.getState()).configuration.profiles[0]!
+      await h.runtime.productController!.startPreview(kind === 'edit' ? { ...saved, name: 'Unsaved name' } : saved, kind)
+    }
+    const before = [...h.client.calls]
+    h.pressShortcut('CommandOrControl+E')
+    for (let turn = 0; turn < 20; turn++) await Promise.resolve()
+    if (kind === 'inactive') expect(h.requestEndPreview).not.toHaveBeenCalled()
+    else expect(h.requestEndPreview).toHaveBeenCalledExactlyOnceWith({ lifetime: 21, sessionId: 1, profileId: 'default' }, kind === 'edit')
+    expect(h.client.calls).toEqual(before)
+  } finally {
+    h.runtime.dispose()
+  }
+})
 
 it('reports invalid learned-limit configuration before any automatic display writer starts', async () => {
   const h = await createHarness({}, { displayLimits: { schemaVersion: 999, displays: {} } })

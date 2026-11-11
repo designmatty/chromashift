@@ -46,6 +46,7 @@ import {
 } from '@main/renderer-recovery-controller.js'
 import { isSameDocumentNavigation, isTrustedRendererUrl } from '@main/renderer-security.js'
 import { EMERGENCY_RESTORE_ACCELERATOR } from '@main/shortcut-controller.js'
+import { openExternalLink } from '@main/external-links.js'
 import { describeError, PersistentJsonLogger, readDiagnosticLog } from '@main/structured-logger.js'
 import { WindowController } from '@main/window-controller.js'
 
@@ -174,6 +175,14 @@ const runtime = createProductRuntime({
     }
   },
   shell: {
+    getAppPanelLifetime: () => panelController.getPanelLifetime('app'),
+    requestEndPreview: (request, needsPrompt) => {
+      if (panelController.getPanelLifetime('app') !== request.lifetime) return
+      if (needsPrompt) panelController.openAppPanel()
+      const window = mainWindow
+      if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+      window.webContents.send(productIpcChannels.endPreviewRequested, request)
+    },
     flushRendererDrafts: () =>
       flushRendererDrafts(
         ipcMain,
@@ -674,7 +683,8 @@ registerProductIpcHandlers(
         event.sender === miniWindow?.webContents ? 'mini' : 'app',
         lifetime
       )
-  }
+  },
+  (link) => openExternalLink(link, (url) => shell.openExternal(url))
 )
 
 void app.whenReady().then(async () => {

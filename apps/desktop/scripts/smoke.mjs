@@ -2184,7 +2184,7 @@ async function runSmoke() {
   })
   if (settingsNavigation.result.value !== true)
     throw new Error('Settings navigation was unavailable.')
-  await waitForText(debuggerClient, 'Launch at start up')
+  await waitForText(debuggerClient, 'Launch at startup')
   await waitForExpression(
     debuggerClient,
     `getComputedStyle(document.querySelector('[data-part="settings-nav"]')).width === '40px' &&
@@ -2293,68 +2293,99 @@ async function runSmoke() {
     'The notification preference was not persisted.'
   )
 
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
-      const trigger = document.querySelector('[aria-label="Windows startup behavior"]')
+  const startupPreference = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const state = await window.chromaShift.getState()
+      if (!state.ok) throw new Error('Could not read startup preferences')
+      const launchAtStartup = state.value.settings.launchAtStartup
+      const trigger = document.querySelector('[aria-label="Startup window"]')
+      if (!trigger || trigger.disabled !== !launchAtStartup) throw new Error('Startup window availability does not follow Launch at startup')
+      const updated = await window.chromaShift.updateSettings({ ...state.value.settings, launchAtStartup: true })
+      if (!updated.ok) throw new Error('Could not enable Startup window for the smoke')
+      return launchAtStartup
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  try {
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[aria-label="Startup window"]')?.disabled === false`,
+      'Startup window stayed disabled after enabling Launch at startup.'
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(() => {
+      const trigger = document.querySelector('[aria-label="Startup window"]')
       trigger?.focus()
       trigger?.click()
     })()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `document.querySelector('[aria-label="Windows startup behavior"]')?.getAttribute('aria-expanded') === 'true' &&
+    })
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[aria-label="Startup window"]')?.getAttribute('aria-expanded') === 'true' &&
       [...document.querySelectorAll('[role="option"]')]
         .some((candidate) => candidate.textContent?.trim() === 'Open app panel')`,
-    'The Chakra startup behavior Select did not open its option list.'
-  )
-  await waitForExpression(
-    debuggerClient,
-    `(() => {
+      'The Chakra startup behavior Select did not open its option list.'
+    )
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
       const content = document.querySelector('[data-scope="select"][data-part="content"]')
       return content instanceof HTMLElement && getComputedStyle(content).opacity === '1'
     })()`,
-    'The Chakra startup behavior Select did not finish opening.'
-  )
-  await captureScreenshot(debuggerClient, settingsSelectScreenshotPath)
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('[role="option"]')]
+      'The Chakra startup behavior Select did not finish opening.'
+    )
+    await captureScreenshot(debuggerClient, settingsSelectScreenshotPath)
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('[role="option"]')]
       .find((candidate) => candidate.textContent?.trim() === 'Open app panel')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
+    })
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.settings.launchBehavior === 'app' &&
-        document.querySelector('[aria-label="Windows startup behavior"]')?.textContent?.trim() === 'Open app panel'
+        document.querySelector('[aria-label="Startup window"]')?.textContent?.trim() === 'Open app panel'
     })()`,
-    'Selecting an item from the Chakra startup behavior Select did not update settings.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
-      const trigger = document.querySelector('[aria-label="Windows startup behavior"]')
+      'Selecting an item from the Chakra startup behavior Select did not update settings.'
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(() => {
+      const trigger = document.querySelector('[aria-label="Startup window"]')
       trigger?.focus()
       trigger?.click()
     })()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `[...document.querySelectorAll('[role="option"]')]
+    })
+    await waitForExpression(
+      debuggerClient,
+      `[...document.querySelectorAll('[role="option"]')]
       .some((candidate) => candidate.textContent?.trim() === 'Minimized to tray')`,
-    'The Chakra startup behavior Select did not reopen.'
-  )
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `[...document.querySelectorAll('[role="option"]')]
+      'The Chakra startup behavior Select did not reopen.'
+    )
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `[...document.querySelectorAll('[role="option"]')]
       .find((candidate) => candidate.textContent?.trim() === 'Minimized to tray')?.click()`
-  })
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
+    })
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
       const result = await window.chromaShift.getState()
       return result.ok && result.value.settings.launchBehavior === 'tray' &&
-        document.querySelector('[aria-label="Windows startup behavior"]')?.textContent?.trim() === 'Minimized to tray'
+        document.querySelector('[aria-label="Startup window"]')?.textContent?.trim() === 'Minimized to tray'
     })()`,
-    'The Chakra startup behavior Select did not restore the original smoke setting.'
-  )
+      'The Chakra startup behavior Select did not restore the original smoke setting.'
+    )
+  } finally {
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(async () => {
+        const state = await window.chromaShift.getState()
+        if (!state.ok) throw new Error('Could not restore startup preferences')
+        const result = await window.chromaShift.updateSettings({ ...state.value.settings, launchAtStartup: ${JSON.stringify(startupPreference.result.value)} })
+        if (!result.ok) throw new Error('Could not restore Launch at startup')
+      })()`,
+      awaitPromise: true
+    })
+  }
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
@@ -2388,12 +2419,38 @@ async function runSmoke() {
     'Copy or download the latest 250 events, including event details, as JSON Lines.'
   )
   await waitForText(debuggerClient, 'ApplicationStarted')
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[aria-label="Log level"]') !== null && document.querySelector('[aria-label="Search logs"]') !== null`,
+    'Diagnostics level filter and search were unavailable.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `document.querySelector('[aria-label="Clear logs"]')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]')?.textContent.includes('Clear logs?')`,
+    'Clear logs skipped its confirmation dialog.'
+  )
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: `[...document.querySelectorAll('[role="alertdialog"] button')].find(button => button.textContent === 'Cancel')?.click()`
+  })
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector('[role="alertdialog"]') === null`,
+    'Clear logs confirmation did not close.'
+  )
   await captureScreenshot(debuggerClient, diagnosticsScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="settings-nav"] button')]
       .find((candidate) => candidate.textContent?.trim() === 'About')?.click()`
   })
   await waitForText(debuggerClient, 'Version')
+  await waitForExpression(
+    debuggerClient,
+    `['https://chromashift.io/', 'https://github.com/designmatty/chromashift/releases', 'https://github.com/designmatty/chromashift', 'https://github.com/designmatty/chromashift/blob/main/LICENSE'].every(url => [...document.querySelectorAll('a')].some(link => link.href === url))`,
+    'About omitted the website or a public repository link.'
+  )
   await captureScreenshot(debuggerClient, aboutScreenshotPath)
   await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {

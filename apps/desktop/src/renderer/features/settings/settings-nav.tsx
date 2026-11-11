@@ -9,6 +9,11 @@ import {
   Settings
 } from 'lucide-react'
 import { Button, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
+import { useEffect } from 'react'
+import {
+  escapeOwnerSelector,
+  settingsEscapeGoesBack
+} from '@/features/settings/settings-navigation'
 
 import { NavButton } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -36,6 +41,21 @@ export function SettingsNav({
   onSelect(page: SettingsPage): void
   onBack(): void
 }): React.JSX.Element {
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent): void => {
+      const ownsEscape =
+        event.target instanceof Element && event.target.closest(escapeOwnerSelector) !== null
+      const overlayOpen =
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]'
+        ) !== null
+      if (!settingsEscapeGoesBack(event, ownsEscape, overlayOpen)) return
+      event.preventDefault()
+      onBack()
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  }, [onBack])
   return (
     <Flex
       as="aside"
@@ -98,16 +118,24 @@ export function SettingsNav({
         bottom={0}
         align="center"
         direction={collapsed ? 'column' : 'row'}
-        gap="3"
+        gap="1"
         bg={'bg.subtle'}
       >
-        <Button size={'xs'} aria-label="Back to profiles" onClick={onBack} borderRadius={'full'}>
-          <ArrowLeft />
-          {!collapsed && <Text fontSize="sm">Back</Text>}
-        </Button>
+        <Tooltip content="Back to profiles" disabled={!collapsed}>
+          <Button
+            size="xs"
+            variant="ghost"
+            ml={collapsed ? undefined : 'auto'}
+            aria-label="Back to profiles"
+            onClick={onBack}
+            borderRadius="full"
+          >
+            <ArrowLeft />
+            {!collapsed && <Text fontSize="sm">Back</Text>}
+          </Button>
+        </Tooltip>
         <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           <IconButton
-            ml={collapsed ? undefined : 'auto'}
             size="xs"
             variant="ghost"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

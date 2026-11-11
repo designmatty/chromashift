@@ -28,6 +28,13 @@ non-interactive session where restoration cannot be observed and recovered.
 
 ## Deterministic coverage
 
+Settings coverage includes preferences v1/v2 to v3 migration fixtures in
+`fixtures/preferences`, retained invalid files, the End preview shortcut with
+clean, dirty and absent sessions, sender-checked fixed external links, Startup
+window disabling, diagnostic filtering/search, and guarded Settings Escape.
+The desktop smoke also checks the new Settings controls and shortcut groups.
+Deterministic checks do not establish native-window focus or real shortcut delivery.
+
 The TypeScript and native test suites cover these contracts:
 
 - Profile schema version 3, version 0 through 2 migrations, complete color

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "launchAtStartup": true,
+  "launchBehavior": "app",
+  "closeBehavior": "shutdown",
+  "theme": "dark",
+  "notificationsEnabled": true,
+  "shortcutBindings": [{ "action": { "kind": "automatic" }, "accelerator": "Ctrl+Shift+A" }]
+}

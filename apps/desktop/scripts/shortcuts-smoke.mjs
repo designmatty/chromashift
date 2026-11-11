@@ -72,6 +72,11 @@ export async function verifyShortcuts({
     'Safety shortcut must remain read-only.'
   )
   await capture('empty')
+  await waitForExpression(
+    debuggerClient,
+    `JSON.stringify([...document.querySelectorAll('h2')].map(h => h.textContent).filter(text => ['Safety', 'Control', 'Navigation', 'Profiles'].includes(text))) === JSON.stringify(['Safety', 'Control', 'Navigation', 'Profiles']) && document.querySelector('button[aria-label="End preview shortcut"]') !== null && document.querySelector('[aria-label="Fixed safety shortcut"]') !== null && document.querySelector('[data-part="shortcut-display"][data-accelerator="CommandOrControl+Alt+Super+R"]')?.querySelectorAll('[data-part="shortcut-key"]').length === 4`,
+    'Settings shortcut groups, End preview or fixed safety keycaps were missing.'
+  )
   await click(toggle)
   await waitForExpression(
     debuggerClient,

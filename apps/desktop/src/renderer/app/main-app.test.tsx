@@ -13,7 +13,7 @@ import { ColorControls } from '@/features/profiles/color-controls'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
 import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import { LatestEventRelay } from '@shared/latest-event-relay'
-import type { AppPanelView, ProductState } from '@shared/product-api'
+import type { AppPanelView, EndPreviewRequest, ProductState } from '@shared/product-api'
 
 // Exercise MainApp and usePreviewDraft effects using the same browser-free
 // approach as override-hydration.integration.test.ts. Children remain elements.
@@ -96,6 +96,7 @@ function setup(withLimits = true, Surface = MainApp) {
     removeItem: (key: string) => storage.delete(key)
   })
   const navigation = new LatestEventRelay<AppPanelView>()
+  const endPreviewRequests = new LatestEventRelay<EndPreviewRequest>()
   let product: ProductState = {
     version: 'test',
     configuration: {
@@ -104,7 +105,7 @@ function setup(withLimits = true, Surface = MainApp) {
       profiles: [{ id: 'default', name: 'Default', enabled: true, applications: [], displays: [] }]
     },
     settings: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       launchAtStartup: false,
       launchBehavior: 'tray',
       closeBehavior: 'tray',
@@ -139,6 +140,7 @@ function setup(withLimits = true, Surface = MainApp) {
       ...product,
       preview: {
         state: 'active',
+        sessionId: 1,
         kind: 'preview',
         profileId: profile.id,
         targets: profile.displays,
@@ -152,6 +154,9 @@ function setup(withLimits = true, Surface = MainApp) {
   vi.stubGlobal('window', {
     chromaShift: {
       getState,
+      openAppPanel: vi.fn(async () => ({ ok: true, value: null })),
+      onEndPreviewRequested: (listener: (request: EndPreviewRequest) => void) =>
+        endPreviewRequests.subscribe(listener),
       getPanelLifetime: () => 1,
       cancelPreview: vi.fn(async () => {
         product = { ...product, preview: { state: 'inactive' } }
@@ -233,6 +238,7 @@ function setup(withLimits = true, Surface = MainApp) {
     startPreview,
     updatePreview,
     navigation,
+    endPreviewRequests,
     storage,
     get product() {
       return product
@@ -319,6 +325,95 @@ function addProfile(f: ReturnType<typeof setup>, id = 'smoke'): ColorProfile {
   return profile
 }
 
+it.each(['inactive', 'clean', 'dirty'] as const)(
+  'End preview shortcut uses the button action: %s',
+  async (state) => {
+    const f = setup()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    const profile = addProfile(f, 'preview')
+    if (state !== 'inactive') {
+      f.product = {
+        ...f.product,
+        preview: {
+          state: 'active',
+          sessionId: 1,
+          kind: state === 'dirty' ? 'edit' : 'preview',
+          profileId: profile.id,
+          targets: [],
+          draft: state === 'dirty' ? { ...profile, name: 'Unsaved' } : profile,
+          unsavedChanges: state === 'dirty'
+        }
+      }
+    }
+    f.render()
+    f.endPreviewRequests.publish({ lifetime: 1, sessionId: 1, profileId: profile.id })
+    f.render()
+    await f.settle()
+    const dialog = () =>
+      find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!.props
+    if (state === 'dirty') {
+      expect(window.chromaShift.openAppPanel).toHaveBeenCalledExactlyOnceWith('profiles')
+      expect(dialog().open).toBe(true)
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+      dialog().onCancel()
+      f.render()
+      expect(f.product.preview.state).toBe('active')
+      f.endPreviewRequests.publish({ lifetime: 1, sessionId: 1, profileId: profile.id })
+      f.render()
+      dialog().onDiscard!()
+      await f.settle()
+      expect(f.product.preview.state).toBe('inactive')
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledTimes(2)
+    } else if (state === 'clean') {
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+      expect(f.product.preview.state).toBe('inactive')
+      expect(
+        find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.profile.id
+      ).toBe('default')
+      expect(dialog().open).toBe(false)
+    } else {
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+      expect(dialog().open).toBe(false)
+    }
+  }
+)
+
+it.each(['session', 'panel', 'override'] as const)(
+  'ignores a buffered End preview request for a stale %s',
+  async (replacement) => {
+    const f = setup()
+    const profile = addProfile(f, 'preview')
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: replacement === 'session' ? 2 : 1,
+        kind: replacement === 'override' ? 'override' : 'preview',
+        profileId: profile.id,
+        targets: [],
+        draft: profile,
+        unsavedChanges: false
+      }
+    }
+    // Publish before the app subscribes, as with a freshly mounted renderer.
+    f.endPreviewRequests.publish({
+      lifetime: replacement === 'panel' ? 2 : 1,
+      sessionId: 1,
+      profileId: profile.id
+    })
+    f.render()
+    await f.settle()
+    expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+    expect(window.chromaShift.openAppPanel).not.toHaveBeenCalled()
+    expect(f.product.preview).toMatchObject({ state: 'active', profileId: profile.id })
+    const dialog = find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!
+    expect(dialog.props.open).toBe(false)
+  }
+)
+
 it('does not repaint Profiles when an older profile open finishes after Settings navigation', async () => {
   const f = setup()
   const profile = addProfile(f)
@@ -367,6 +462,7 @@ it('publishes Preview before the Use button is enabled, then sends exactly one m
       ...f.product,
       preview: {
         state: 'active',
+        sessionId: 1,
         kind: 'preview',
         profileId: profile.id,
         targets: [],
@@ -508,6 +604,7 @@ it('ignores an old mini save reply after choosing a different profile', async ()
     ...f.product,
     preview: {
       state: 'active',
+      sessionId: 1,
       kind: 'override',
       profileId: 'default',
       targets: [],
@@ -557,6 +654,7 @@ it('drains a mini override before choosing even when its active broadcast has no
       ...f.product,
       preview: {
         state: 'active',
+        sessionId: 1,
         kind: 'override',
         profileId: profile.id,
         targets: profile.displays,
