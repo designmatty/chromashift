@@ -51,7 +51,7 @@ describe('ElectronNotificationPort', () => {
     expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
   })
 
-  it('does not open or focus the app when Windows dismisses the toast with Close', () => {
+  it('declares a system-dismiss Close action, and a dismissed toast does not route to the profile', () => {
     const { notification, openProfile } = showProfileNotification()
     expect(Notification).toHaveBeenCalledWith(
       expect.objectContaining({

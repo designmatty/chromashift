@@ -365,7 +365,8 @@ renderer confirmation dialog.
 Notification wording is derived from completed activation outcomes and
 distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
 and no-op results. Clicking a profile notification opens that profile in the app
-panel.
+panel. On Windows, profile notifications are silent and have one Close button
+that Windows dismisses itself, without opening or focusing ChromaShift.
 
 Display control has three persisted states: Active, Paused, and Safety blocked.
 Pause suspends new writes, waits for in-flight activation, restores every owned
