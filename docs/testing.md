@@ -231,13 +231,14 @@ distinct from this presentation evidence. A deterministic two-window regression
 covers renderer recovery during a pending close without starving either drain.
 
 The flow covers independent profile navigation, the Automatic | Manual toggle
-in expanded and collapsed A | M forms, keeping the live profile when entering
+in expanded horizontal and collapsed vertical A / M forms, keeping the live profile when entering
 Manual over a preview, row-menu activation, pill labels, shortcut tooltips,
 Enabled/Disabled availability, paused presentation and explicit resume, profile editing,
 per-display tabs, read-only parity, sidebar collapse, pointer and keyboard profile
 reordering, cancelled drops, saved order, disabled rows, pinned Default, and list
 edge scrolling, capability states,
-trigger assignment and summary, Triggers above color controls, live preview and rollback, Default and manual activation,
+compact trigger assignment chips and inline heading actions, the hotkey below the profile name,
+Triggers above color controls, live preview and rollback, Default and manual activation,
 temporary mini-panel overrides,
 Pause and Resume, diagnostics, theme states, profile deletion focus, app and mini
 mutual exclusion, native caption behavior, mini-panel non-activation, tray

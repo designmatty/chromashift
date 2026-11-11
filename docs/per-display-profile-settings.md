@@ -64,22 +64,22 @@ targets remain persisted and resume when the same physical display returns.
 
 ## App-panel behavior
 
-- The profile header shows its configured hotkey using the shared shortcut
-  display and keeps the overflow menu for secondary actions. Default keeps its
-  grey badge. App profiles show a trigger summary below the name: `Triggers: None`,
-  one or two executable names, or the first two names followed by `+N` for the
-  remaining triggers. The summary truncates to the available width; a tooltip
-  exposes every trigger when the text truncates or the summary omits names.
+- The profile header shows its configured hotkey below the name using the shared
+  shortcut display, only when a hotkey is assigned. It keeps the overflow menu for
+  secondary actions. Default keeps its grey badge.
 - The Triggers section sits above the display color controls. App profiles can
-  add executable triggers by browsing or choosing an open app. Default shows
-  "Used when no other profile's triggers match" without an empty trigger list.
-- The sidebar has an Automatic | Manual toggle. Automatic calls Return to
+  add executable triggers by browsing or choosing an open app. These actions sit
+  flush right in the heading row, vertically centered against the title and
+  description. Triggers appear as small inline chips that wrap, showing only a
+  small icon, executable name, and a remove action with a tooltip. Default shows
+  "Used in automatic mode when no other profile is triggered" without an empty trigger list.
+- The sidebar has a Chakra v3 SegmentGroup for Automatic | Manual. Automatic calls Return to
   Automatic; Manual keeps the live profile, independently of the profile being
   previewed. Sidebar profile clicks preview without changing mode. Choose
   `Use this profile` in the preview strip or row menu, double-click a row, or
   press Shift+Enter on a row, including in the collapsed rail, to use an enabled
   profile manually. Mode changes use the existing unsaved-changes
-  dialog. The collapsed 40px rail shows the same toggle as A | M, with the active
+  dialog. The collapsed 40px rail shows the same control vertically as A / M, with the active
   mode highlighted. Both sizes have full labels and tooltips; Automatic includes
   its configured shortcut. Changing mode or selecting a profile while Paused updates persisted intent
   and stays Paused. Selection never bypasses a safety block.
@@ -330,17 +330,20 @@ The mini panel edits one explicitly selected display at a time and shows the sam
 icons and per-control neutral reset actions. `Update profile` saves the complete
 temporary draft across touched displays; `Discard changes` rolls the session back.
 Picking a profile discards the temporary changes without a blocking dialog.
-The picker keeps Automatic first. In Automatic mode while display control is Active,
-it shows `Using: <profile>` for the confirmed applied profile from
-`activation.currentTarget` and marks only that profile's row `Live`. Confirmed
+The picker keeps Automatic first. While display control is Active, both Automatic
+and Manual mark only the confirmed applied profile's row `Live`, using
+`activation.currentTarget`. The `Using:` line appears under Automatic only when
+Automatic mode is selected, showing `Using: <profile>` for the confirmed applied profile. Confirmed
 Original settings show `Using: Original settings` with no Live badge. When no
 applied target is confirmed, including after a failed activation, it omits both
-Using and Live. Paused shows `Using: Original settings` with no Live badge;
+Using and Live. Paused shows `Using: Original settings` in Automatic mode, with no Live badge in either mode;
 Safety blocked omits both. Preserved intent and a queued automatic target do not
 replace the confirmed applied state, including during a temporary override. Enabled profiles
 show their normal text, shared profile icons, and configured hotkeys. Default's
 badge stays grey. Disabled profiles stay hidden, with a `1 disabled profile` or
-`N disabled profiles` footer. While Paused, the picker says
+`N disabled profiles` footer. The list grows to fill the picker so this footer stays
+at the bottom even with few profiles, and remains sticky while the list scrolls.
+While Paused, the footer says
 "ChromaShift is paused — your choice applies when you resume". A successful
 selection returns immediately to the sliders and stays scoped to the current
 panel lifetime. While Paused it updates intent without applying or resuming.

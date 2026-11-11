@@ -8,6 +8,32 @@ import type { ColorProfile } from '@chromashift/core'
 
 export const AUTOMATIC_ID = '__automatic__'
 
+export function MiniProfilePicker({
+  product,
+  value,
+  onChoose
+}: {
+  product: ProductState
+  value: string
+  onChoose(profileId: string | null): void
+}): React.JSX.Element {
+  return (
+    <RadioGroup.Root
+      w="full"
+      minW="0"
+      minH="full"
+      gap="0"
+      display="flex"
+      flexDirection="column"
+      value={value}
+      onValueChange={({ value }) => onChoose(value === AUTOMATIC_ID ? null : value)}
+    >
+      <RadioGroup.Label srOnly>Choose active profile</RadioGroup.Label>
+      <MiniProfilePickerOptions product={product} value={value} onChoose={onChoose} />
+    </RadioGroup.Root>
+  )
+}
+
 export function MiniProfilePickerOptions({
   product,
   value,
@@ -27,6 +53,7 @@ export function MiniProfilePickerOptions({
         top="0"
         bg="bg.panel"
         zIndex="1"
+        flexShrink="0"
         px="2"
         py="1"
         borderBottomWidth="1px"
@@ -40,7 +67,16 @@ export function MiniProfilePickerOptions({
           onSelect={() => onChoose(null)}
         />
       </Box>
-      <Flex gap="1" px="2" py="4" minW="0" direction="column">
+      <Flex
+        data-part="mini-picker-list"
+        flex="1"
+        flexShrink="0"
+        gap="1"
+        px="2"
+        py="4"
+        minW="0"
+        direction="column"
+      >
         {profiles
           .filter((profile) => profile.enabled)
           .map((profile) => (
@@ -58,10 +94,12 @@ export function MiniProfilePickerOptions({
       </Flex>
       {(disabledCount > 0 || product.chromaShift.status === 'paused') && (
         <Stack
+          data-part="mini-picker-footer"
           position="sticky"
           bottom="0"
           bg="bg.panel"
           zIndex="1"
+          flexShrink="0"
           gap="2"
           px="4"
           py="3"

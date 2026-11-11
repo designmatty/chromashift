@@ -5,7 +5,6 @@ import type { ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import { system } from '@/theme/system'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
-import { ProfileTriggerSummary } from '@/features/profiles/profile-trigger-summary'
 
 // Keep tooltip content inspectable without opening a browser portal.
 vi.mock('@/components/ui/tooltip', () => ({
@@ -36,39 +35,8 @@ function profile(names: string[], id = 'game'): ColorProfile {
   }
 }
 
-function summary(names: string[], id?: string): string {
-  return renderToStaticMarkup(
-    <ChakraProvider value={system}>
-      <ProfileTriggerSummary profile={profile(names, id)} />
-    </ChakraProvider>
-  )
-}
-
-describe('profile trigger summary', () => {
-  it.each([
-    [[], 'Triggers: None'],
-    [['game.exe'], 'Triggers: game.exe'],
-    [['a.exe', 'b.exe'], 'Triggers: a.exe, b.exe'],
-    [['a.exe', 'b.exe', 'c.exe', 'd.exe'], 'Triggers: a.exe, b.exe +2']
-  ])('summarizes %j', (names, expected) => {
-    const html = summary(names as string[])
-    expect(html).toContain(`>${expected}</p>`)
-    expect(html).toContain('data-part="profile-trigger-summary"')
-  })
-
-  it('exposes every trigger in the tooltip when the summary is compacted', () => {
-    const html = summary(['a.exe', 'b.exe', 'c.exe'])
-    expect(html).toContain('data-tooltip="Triggers: a.exe, b.exe, c.exe"')
-    expect(html).toContain('data-tooltip-disabled="false"')
-  })
-
-  it('omits the summary for Default, even with legacy triggers', () => {
-    expect(summary(['legacy.exe'], 'DEFAULT')).not.toContain('Triggers:')
-  })
-})
-
 describe('profile detail', () => {
-  function render(id: string, bound = true): string {
+  function render(id: string, bound = true, names: string[] = []): string {
     vi.stubGlobal('localStorage', { getItem: () => null })
     const product = {
       displays: [],
@@ -89,7 +57,13 @@ describe('profile detail', () => {
     return renderToStaticMarkup(
       <ChakraProvider value={system}>
         <ProfileDetail
-          profile={profile([], id)}
+          profile={{
+            ...profile(names, id),
+            applications: names.map((executableName) => ({
+              executableName,
+              executablePath: `C:\\Apps\\${executableName}`
+            }))
+          }}
           product={product}
           busy={false}
           dirty={false}
@@ -113,8 +87,38 @@ describe('profile detail', () => {
     expect(html).toContain('>Triggers</h2>')
     const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
     expect(header).toContain('data-accelerator="Control+G"')
+    // The name and hotkey share the same vertical stack before the action group.
+    const titleEnd = header.indexOf('data-part="profile-title-text"')
+    const hotkey = header.indexOf('data-part="shortcut-display"')
+    expect(hotkey).toBeGreaterThan(titleEnd)
+    expect(hotkey).toBeLessThan(header.indexOf('data-part="profile-header-actions"'))
+    expect(header).toContain('data-part="profile-hotkey"')
+    expect(header).toContain('</kbd></div></div>')
     expect(header).toContain('More profile actions')
     expect(render('game', false)).not.toContain('data-part="shortcut-display"')
+  })
+
+  it('keeps trigger actions beside the heading and uses compact wrapping executable chips', () => {
+    const html = render('game', true, ['game.exe', 'other.exe'])
+    const triggers = html.slice(
+      html.indexOf('data-part="profile-triggers"'),
+      html.indexOf('data-part="profile-color-controls"')
+    )
+    expect(triggers.indexOf('data-part="trigger-heading"')).toBeLessThan(
+      triggers.indexOf('>Triggers</h2>')
+    )
+    expect(triggers.indexOf('data-part="trigger-actions"')).toBeLessThan(
+      triggers.indexOf('data-part="trigger-chips"')
+    )
+    expect(triggers.match(/data-part="trigger-chip"/g)).toHaveLength(2)
+    expect(triggers).toContain('flex-wrap:wrap')
+    for (const name of ['game.exe', 'other.exe']) {
+      expect(triggers).toContain(`>${name}</p>`)
+      expect(triggers).toContain(`aria-label="Remove ${name}"`)
+      expect(triggers).toContain(`data-tooltip="Remove ${name}"`)
+    }
+    expect(html).not.toContain('C:\\Apps')
+    expect(html).not.toContain('Triggers:')
   })
 
   it('keeps Default grey with its fallback explanation and no trigger list', () => {
@@ -122,7 +126,7 @@ describe('profile detail', () => {
     expect(
       html.includes('--chromashift-colors-color-palette-fg:var(--chromashift-colors-gray-fg)')
     ).toBe(true)
-    expect(html).toContain('Used when no other profile&#x27;s triggers match')
+    expect(html).toContain('Used in automatic mode when no other profile is triggered')
     expect(html).not.toContain('Select from open apps')
     expect(html).not.toContain('profile-trigger-summary')
     expect(html).toContain('data-accelerator="Control+G"')

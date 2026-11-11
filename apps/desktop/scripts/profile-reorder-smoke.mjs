@@ -147,7 +147,7 @@ export async function verifyProfileReorder({
         JSON.stringify([...document.querySelectorAll('[data-part="profile-rows"] [data-reorder-id]')].map(p => p.dataset.reorderId)) === ${JSON.stringify(JSON.stringify(ids))} &&
         document.querySelector('[data-dragging]') === null &&
         document.querySelector('[data-part="profile-reorder-handle"]:disabled') === null &&
-        document.querySelector('[data-part="mode-toggle"] button:disabled') === null
+        document.querySelector('[data-part="mode-toggle"] input[type="radio"]:disabled') === null
     })()`,
         'The dropped profile order was not rendered and persisted.'
       )

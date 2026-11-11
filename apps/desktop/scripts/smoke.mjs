@@ -314,9 +314,18 @@ async function assertMiniProfilePicker(debuggerClient) {
       const using = document.querySelector('[data-part="automatic-using"]')
       if (expectedUsing === undefined ? using !== null : using?.textContent !== 'Using: ' + expectedUsing) return false
       const live = [...document.querySelectorAll('[data-part="mini-profile-live"]')]
-      const expectedLive = automatic && status === 'active' && current?.enabled
+      const expectedLive = status === 'active' && current?.enabled
       if (live.length !== (expectedLive ? 1 : 0)) return false
       if (expectedLive && live[0]?.closest('[data-scope="radio-group"][data-part="item"]')?.querySelector('[data-part="mini-profile-name"]')?.textContent !== current.name) return false
+      const pickerFooter = document.querySelector('[data-part="mini-picker-footer"]')
+      const scroll = document.querySelector('[data-part="mini-picker-scroll"]')
+      if (pickerFooter !== null) {
+        const style = getComputedStyle(pickerFooter)
+        if (style.position !== 'sticky' || style.bottom !== '0px') return false
+        const footerBounds = pickerFooter.getBoundingClientRect()
+        const scrollBounds = scroll?.getBoundingClientRect()
+        if (!scrollBounds || Math.abs(footerBounds.bottom - (scrollBounds.bottom - scroll.clientTop)) > 2) return false
+      }
       const hint = document.querySelector('[data-part="paused-picker-hint"]')
       return state.chromaShift.status === 'paused'
         ? hint?.textContent === 'ChromaShift is paused — your choice applies when you resume'
@@ -677,7 +686,7 @@ async function focusTooltip(debuggerClient, selector, expectedText) {
 async function selectAppActivation(debuggerClient, label) {
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="mode-toggle"] button')?.disabled === false`,
+    `document.querySelector('[data-part="mode-toggle"] input[type="radio"]')?.disabled === false`,
     'The mode toggle did not become ready.'
   )
   if (label === 'Automatic' || label === 'Manual') {
@@ -694,7 +703,7 @@ async function selectAppActivation(debuggerClient, label) {
       const result = await window.chromaShift.getState()
       if (!result.ok || result.value.preview.state !== 'inactive' ||
         result.value.chromaShift.transitionInProgress ||
-        document.querySelector('[data-part="mode-toggle"] button')?.disabled !== false) return false
+        document.querySelector('[data-part="mode-toggle"] input[type="radio"]')?.disabled !== false) return false
       const mode = result.value.chromaShift.intendedMode
       if (${JSON.stringify(label)} === 'Automatic') return mode.kind === 'automatic'
       if (${JSON.stringify(label)} === 'Manual') return mode.kind === 'manual'
@@ -2108,8 +2117,7 @@ async function runSmoke() {
   )
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="profile-triggers"]')?.textContent?.includes("Used when no other profile's triggers match") &&
-      document.querySelector('[data-part="profile-trigger-summary"]') === null &&
+    `document.querySelector('[data-part="profile-triggers"]')?.textContent?.includes('Used in automatic mode when no other profile is triggered') &&
       !document.querySelector('[data-part="profile-triggers"]')?.textContent?.includes('Select from open apps')`,
     'Default did not show its Triggers explanation without an empty list.'
   )
@@ -2494,9 +2502,10 @@ async function runSmoke() {
       const colors = document.querySelector('[data-part="profile-color-controls"]')
       return triggers?.querySelector('h2')?.textContent === 'Triggers' && colors !== null &&
         (triggers.compareDocumentPosition(colors) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
-        document.querySelector('[data-part="profile-trigger-summary"]')?.textContent === 'Triggers: None'
+        triggers.querySelector('[data-part="trigger-heading"] [data-part="trigger-actions"]') !== null &&
+        triggers.querySelector('[data-part="trigger-chips"]') !== null
     })()`,
-    'The new profile did not show its trigger summary and Triggers above color controls.'
+    'The new profile did not show its inline trigger actions and Triggers above color controls.'
   )
   await waitForExpression(
     debuggerClient,
@@ -3338,7 +3347,7 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'automatic' &&
         result.value.activation.currentTarget?.profileId === 'default' &&
         document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-        document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true' &&
+        document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('data-state') === 'checked' &&
         document.querySelector('[data-part="profile-nav"] [data-part="mode-toggle"]') !== null &&
         document.querySelector('[aria-label="Profile active"]') === null &&
         [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Automatic')
@@ -3395,7 +3404,7 @@ async function runSmoke() {
       return result.ok && result.value.activation.mode.kind === 'manual' &&
         result.value.activation.mode.profileId === profile?.id &&
         result.value.activation.currentTarget?.profileId === profile?.id &&
-        document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('aria-pressed') === 'true' &&
+        document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('data-state') === 'checked' &&
         [...document.querySelectorAll('[data-part="profile-status"]')].some((item) => item.textContent === 'Live · Manual')
     })()`,
     'Use this profile did not establish Manual mode.'
@@ -3421,7 +3430,7 @@ async function runSmoke() {
     throw new Error('Could not assign tooltip shortcuts.')
   await focusTooltip(
     debuggerClient,
-    '[data-part="mode-toggle"] [aria-label="Automatic"]',
+    '[data-part="mode-toggle"] input[aria-label="Automatic"]',
     'Automatic (Ctrl+Alt+Shift+F7)'
   )
   // Expanded names show a tooltip only when truncated. Check the profile
@@ -3507,7 +3516,7 @@ async function runSmoke() {
   await waitForExpression(
     debuggerClient,
     `document.querySelector('[data-part="profile-name"]')?.value === 'Default profile' &&
-      document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('aria-pressed') === 'true'`,
+      document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.getAttribute('data-state') === 'checked'`,
     'Browsing Default changed the manual selection.'
   )
   await selectAppActivation(debuggerClient, 'Automatic')
@@ -3573,23 +3582,24 @@ async function runSmoke() {
   await waitForExpression(
     debuggerClient,
     `getComputedStyle(document.querySelector('[data-part="profile-nav"]')).width === '40px' &&
-      document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.textContent === 'A' &&
-      document.querySelector('[data-part="mode-toggle"] [aria-label="Manual"]')?.textContent === 'M' &&
+      document.querySelector('[data-part="mode-toggle"] [data-mode="automatic"] [data-part="mode-short-label"]')?.textContent === 'A' &&
+      document.querySelector('[data-part="mode-toggle"] [data-mode="manual"] [data-part="mode-short-label"]')?.textContent === 'M' &&
+      document.querySelector('[data-part="mode-toggle"]')?.getAttribute('data-orientation') === 'vertical' &&
       (() => {
         const toggle = document.querySelector('[data-part="mode-toggle"]').getBoundingClientRect()
-        return [...document.querySelectorAll('[data-part="mode-toggle"] button')].every(button => {
+        return [...document.querySelectorAll('[data-part="mode-toggle"] [data-mode]')].every(button => {
           const rect = button.getBoundingClientRect()
           return rect.left >= toggle.left && rect.right <= toggle.right && rect.width > 0
         })
       })()`,
-    'The collapsed A | M toggle did not fit the 40px rail.'
+    'The collapsed vertical A / M control did not fit the 40px rail.'
   )
   await selectAppActivation(debuggerClient, 'Automatic')
   await selectAppActivation(debuggerClient, 'Manual')
   await selectAppActivation(debuggerClient, 'Automatic')
   await focusTooltip(
     debuggerClient,
-    '[data-part="mode-toggle"] [aria-label="Automatic"]',
+    '[data-part="mode-toggle"] input[aria-label="Automatic"]',
     'Automatic (Ctrl+Alt+Shift+F7)'
   )
   await captureNativeWindow(
@@ -3601,7 +3611,7 @@ async function runSmoke() {
   })
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true'`,
+    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('data-state') === 'checked'`,
     'Automatic selection was unavailable in the collapsed sidebar.'
   )
   await debuggerClient.send('Runtime.evaluate', {
@@ -4118,7 +4128,7 @@ async function runSmoke() {
   await answerUnsavedChanges(debuggerClient, 'Cancel')
   await waitForExpression(
     debuggerClient,
-    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('aria-pressed') === 'true' &&
+    `document.querySelector('[data-part="mode-toggle"] [aria-label="Automatic"]')?.getAttribute('data-state') === 'checked' &&
       document.querySelector('[aria-label="Profile name"]')?.value === 'Smoke profile unsaved'`,
     'Cancelling a mode change did not preserve Automatic and its draft.'
   )

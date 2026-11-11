@@ -77,10 +77,23 @@ describe('mini profile picker status', () => {
   )
 
   it.each(['active', 'paused', 'safetyBlocked'] as const)(
-    'omits automatic status in Manual mode while %s',
+    'shows only confirmed Live in Manual mode while %s',
     (status) => {
       const product = state(status)
       product.chromaShift.intendedMode = { kind: 'manual', profileId: 'Game' }
+      expect(miniProfilePickerStatus(product)).toEqual(
+        status === 'active' ? { liveProfileId: 'Game' } : {}
+      )
+    }
+  )
+
+  it.each(['baseline', 'unconfirmed', 'disabled'] as const)(
+    'omits Manual Live for %s',
+    (target) => {
+      const product = state()
+      product.chromaShift.intendedMode = { kind: 'manual', profileId: 'Game' }
+      if (target === 'disabled') product.configuration.profiles[1]!.enabled = false
+      else product.activation.currentTarget = target === 'baseline' ? { kind: 'baseline' } : null
       expect(miniProfilePickerStatus(product)).toEqual({})
     }
   )

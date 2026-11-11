@@ -1,10 +1,10 @@
-import { ChakraProvider, RadioGroup } from '@chakra-ui/react'
+import { ChakraProvider } from '@chakra-ui/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import { system } from '@/theme/system'
-import { AUTOMATIC_ID, MiniProfilePickerOptions } from '@/features/mini-panel/mini-profile-picker'
+import { AUTOMATIC_ID, MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 
 function state(): ProductState {
   const profile = (id: string, enabled = true): ColorProfile => ({
@@ -39,9 +39,7 @@ function render(product: ProductState): string {
   const value = product.chromaShift.intendedMode.kind === 'automatic' ? AUTOMATIC_ID : 'Game'
   return renderToStaticMarkup(
     <ChakraProvider value={system}>
-      <RadioGroup.Root value={value}>
-        <MiniProfilePickerOptions product={product} value={value} onChoose={() => undefined} />
-      </RadioGroup.Root>
+      <MiniProfilePicker product={product} value={value} onChoose={() => undefined} />
     </ChakraProvider>
   )
 }
@@ -97,15 +95,60 @@ describe('mini profile picker', () => {
     expect(html).not.toContain('Using: Game')
   })
 
-  it('omits automatic Using and Live in Manual mode, and Live while Safety blocked', () => {
+  it('shows confirmed Live in Manual mode while keeping Using under Automatic only', () => {
     const product = state()
     product.chromaShift.intendedMode = { kind: 'manual', profileId: 'Game' }
     expect(render(product)).not.toContain('automatic-using')
-    expect(render(product)).not.toContain('mini-profile-live')
-    product.chromaShift.intendedMode = { kind: 'automatic' }
-    product.chromaShift.status = 'safetyBlocked'
-    expect(render(product)).not.toContain('mini-profile-live')
-    expect(render(product)).not.toContain('automatic-using')
+    expect(render(product).match(/data-part="mini-profile-live"/g)).toHaveLength(1)
+    // Intent can differ from the last confirmed application after a failed switch.
+    product.chromaShift.intendedMode = { kind: 'manual', profileId: 'default' }
+    expect(render(product).indexOf('mini-profile-live')).toBeGreaterThan(
+      render(product).indexOf('>Game</span>')
+    )
+  })
+
+  it.each(['automatic', 'manual'] as const)(
+    'hides Live for Paused and Safety blocked in %s mode',
+    (mode) => {
+      const product = state()
+      product.chromaShift.intendedMode =
+        mode === 'automatic' ? { kind: mode } : { kind: mode, profileId: 'Game' }
+      for (const status of ['paused', 'safetyBlocked'] as const) {
+        product.chromaShift.status = status
+        expect(render(product)).not.toContain('mini-profile-live')
+        if (mode === 'manual' || status === 'safetyBlocked')
+          expect(render(product)).not.toContain('automatic-using')
+      }
+    }
+  )
+
+  it('grows the list before a sticky footer for short and overflowing lists', () => {
+    const product = state()
+    product.chromaShift.status = 'paused'
+    for (const count of [0, 30]) {
+      product.configuration.profiles.push(
+        ...Array.from({ length: count }, (_, index) => ({
+          ...product.configuration.profiles[1]!,
+          id: `extra-${index}`,
+          name: `Extra ${index}`
+        }))
+      )
+      const html = render(product)
+      const cssFor = (part: string): string => {
+        const tag = html.match(new RegExp(`<[^>]+data-part="${part}"[^>]*>`))![0]
+        const className = tag
+          .match(/class="([^"]+)"/)![1]!
+          .split(' ')
+          .find((name) => name.startsWith('css-'))!
+        return html.match(new RegExp(`\\.${className}\\{([^}]+)\\}`))![1]!
+      }
+      expect(cssFor('mini-picker-list')).toContain('flex:1')
+      expect(cssFor('root')).toContain('min-height:var(--chromashift-sizes-full)')
+      expect(cssFor('mini-picker-footer')).toContain('position:sticky')
+      expect(cssFor('mini-picker-footer')).toContain('bottom:0')
+      expect(html.indexOf('mini-picker-list')).toBeLessThan(html.indexOf('mini-picker-footer'))
+      expect(html.indexOf('mini-picker-footer')).toBeLessThan(html.indexOf('paused-picker-hint'))
+    }
   })
 
   it('follows the applied target when Automatic returns to Default before intent updates', () => {

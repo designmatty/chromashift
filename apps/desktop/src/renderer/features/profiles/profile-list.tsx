@@ -7,6 +7,7 @@ import {
   Menu,
   Portal,
   ScrollArea,
+  SegmentGroup,
   Stack,
   Text
 } from '@chakra-ui/react'
@@ -110,51 +111,60 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
   }
 
   const modeToggle = (
-    <Flex
+    <SegmentGroup.Root
       data-part="mode-toggle"
-      role="group"
       aria-label="Activation mode"
+      orientation={props.collapsed ? 'vertical' : 'horizontal'}
+      value={props.mode.kind}
+      disabled={props.busy}
+      onValueChange={({ value }) => {
+        if (value === 'automatic' || value === 'manual') props.onModeChange(value)
+      }}
+      size="sm"
       w="full"
-      p={props.collapsed ? 0 : 1}
+      minW="0"
+      p="1"
       gap="0"
       rounded="lg"
       bg="bg.muted"
     >
+      <SegmentGroup.Indicator bg="bg.panel" rounded="md" />
       {(['automatic', 'manual'] as const).map((mode) => (
         <Tooltip
           key={mode}
           content={modeTooltip(mode, props.shortcutBindings)}
           positioning={{ placement: props.collapsed ? 'right' : 'top' }}
         >
-          <Button
+          <SegmentGroup.Item
+            value={mode}
             data-mode={mode}
             aria-label={mode === 'automatic' ? 'Automatic' : 'Manual'}
-            aria-pressed={props.mode.kind === mode}
-            variant="plain"
-            size="sm"
-            flex="1"
+            flex={props.collapsed ? undefined : '1'}
+            w={props.collapsed ? 'full' : undefined}
             minW="0"
             px={props.collapsed ? 0 : 2}
             h="8"
             fontSize={props.collapsed ? 'xs' : 'sm'}
             rounded="md"
-            bg={props.mode.kind === mode ? 'bg.panel' : 'transparent'}
             color={props.mode.kind === mode ? 'fg' : 'fg.muted'}
             _hover={{ bg: 'bg.emphasized' }}
-            disabled={props.busy || (mode === 'manual' && props.currentId === null)}
-            onClick={() => props.onModeChange(mode)}
+            disabled={mode === 'manual' && props.currentId === null}
           >
-            {props.collapsed
-              ? mode === 'automatic'
-                ? 'A'
-                : 'M'
-              : mode === 'automatic'
-                ? 'Automatic'
-                : 'Manual'}
-          </Button>
+            <SegmentGroup.ItemText srOnly={props.collapsed}>
+              {mode === 'automatic' ? 'Automatic' : 'Manual'}
+            </SegmentGroup.ItemText>
+            {props.collapsed && (
+              <Text as="span" data-part="mode-short-label" aria-hidden="true">
+                {mode === 'automatic' ? 'A' : 'M'}
+              </Text>
+            )}
+            <SegmentGroup.ItemHiddenInput
+              aria-label={mode === 'automatic' ? 'Automatic' : 'Manual'}
+            />
+          </SegmentGroup.Item>
         </Tooltip>
       ))}
-    </Flex>
+    </SegmentGroup.Root>
   )
 
   return (

@@ -8,7 +8,6 @@ import {
   Icon,
   IconButton,
   Portal,
-  RadioGroup,
   Select,
   Stack,
   Text
@@ -35,7 +34,7 @@ import {
 } from '@chromashift/core'
 import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentational'
 import { Tooltip } from '@/components/ui/tooltip'
-import { AUTOMATIC_ID, MiniProfilePickerOptions } from '@/features/mini-panel/mini-profile-picker'
+import { AUTOMATIC_ID, MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { ColorControls } from '@/features/profiles/color-controls'
 import { showColorTemperature as temperatureVisible } from '@/features/profiles/control-values'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -157,7 +156,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
       return (
         <>
           <Box
+            data-part="mini-picker-scroll"
             flex="1"
+            minH="0"
             minW="0"
             mx="3"
 
@@ -167,23 +168,11 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             bg="bg.panel"
             overflowY="auto"
           >
-            <RadioGroup.Root
-              w="full"
-              minW="0"
-              display={'flex'}
-              flexDirection={'column'}
+            <MiniProfilePicker
+              product={product}
               value={pickerValue}
-              onValueChange={(details) => {
-                void choose(details.value === AUTOMATIC_ID ? null : details.value)
-              }}
-            >
-              <RadioGroup.Label srOnly>Choose active profile</RadioGroup.Label>
-              <MiniProfilePickerOptions
-                product={product}
-                value={pickerValue}
-                onChoose={(id) => void choose(id)}
-              />
-            </RadioGroup.Root>
+              onChoose={(id) => void choose(id)}
+            />
           </Box>
           <Flex as="footer" mx="5" py="3" align="center" gap="2">
             <Button
