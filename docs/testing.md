@@ -264,6 +264,12 @@ fault is induced for these label and color checks.
 The smoke retains the neutral new-profile, persistent preview-strip,
 same-profile no-op, in-place header Update/Discard, truncated-name tooltip,
 mini-panel ellipsis, override-hydration and native quit-Cancel checks from main.
+After the first new-profile brightness edit, it holds Hold to compare by pointer,
+Space and Enter in dark and light. Each hold checks the saved neutral guard
+fingerprint, disabled saved sliders, the Saved badge and the status text. Each
+release checks the exact draft fingerprint. A native capture is taken while held
+in each theme. Missing-target compare to Original settings is covered by the
+fake-native integration test.
 It explicitly dismisses any remaining profile menu before inline naming and
 waits for the unselected-profile delete dialog to focus Cancel before choosing
 an action. Intermittent assertions and native quit automation limits are tracked
@@ -294,6 +300,18 @@ smoke-owned window checks Windows outside-click behavior. The native quit
 warning checks Update / Discard / Cancel and cancels for both session kinds.
 The close-retry presentation fixture still fakes restoration failure; it does
 not establish hardware failure recovery.
+
+### Owner checks for Hold to compare
+
+For #80, the implementation agent updated and syntax-checked the smoke step
+without running it. On a supporting SDR display with a restoration guard, edit a
+saved profile, then hold `Hold to compare` with the mouse, Space and Enter.
+The displays show the saved values and return to the draft exactly on release.
+Repeat with a profile that has no target for one display; that display shows
+Original settings while held. Release by dragging off the button, Alt+Tab,
+minimize, the End preview shortcut, a profile hotkey and caption close. Close
+must restore the exact prior target, and none may leave saved values applied
+under a draft editor.
 
 ### Owner checks for panel close and handoff
 

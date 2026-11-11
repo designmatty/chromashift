@@ -151,7 +151,10 @@ function setup(withLimits = true, Surface = MainApp) {
     return { ok: true as const, value: null }
   })
   const updatePreview = vi.fn(async () => ({ ok: true as const, value: null }))
+  const events = new EventTarget()
   vi.stubGlobal('window', {
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
     chromaShift: {
       getState,
       openAppPanel: vi.fn(async () => ({ ok: true, value: null })),
@@ -239,6 +242,7 @@ function setup(withLimits = true, Surface = MainApp) {
     updatePreview,
     navigation,
     endPreviewRequests,
+    events,
     storage,
     get product() {
       return product
@@ -252,6 +256,143 @@ function setup(withLimits = true, Surface = MainApp) {
     }
   }
 }
+
+it.each(['blur', 'pointerup', 'minimize', 'navigation', 'endPreview', 'unmount'])(
+  'releases saved comparison on %s while keeping the local dirty draft',
+  async (reason) => {
+    const f = setup()
+    const saved = addProfile(f)
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'edit',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    let minimized = () => undefined as void
+    window.chromaShift.onAppPanelMinimized = (callback) => {
+      minimized = callback
+    }
+    f.render()
+    const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    detail().compare!.onPress('pointer')
+    f.render()
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    expect(detail().dirty).toBe(true)
+    expect(detail().profile).toEqual(draft)
+    // The joined edit session already holds the draft, so the press sends only
+    // the saved targets: no debounce and no redundant draft write first.
+    expect(f.updatePreview.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      saved.displays
+    ])
+    expect(detail().compare).toBeDefined()
+    if (reason === 'minimize') minimized()
+    else if (reason === 'navigation') f.profiles()!.props.onOpenSettings()
+    else if (reason === 'endPreview')
+      f.endPreviewRequests.publish({ profileId: saved.id, sessionId: 7, lifetime: 1 })
+    else if (reason === 'unmount') {
+      for (const slot of hooks.slots) (slot as { cleanup?: () => void })?.cleanup?.()
+    } else f.events.dispatchEvent(new Event(reason))
+    await f.settle()
+    expect(f.updatePreview.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      saved.displays,
+      draft.displays
+    ])
+    expect(detail().compare!.showingSaved).toBe(false)
+    expect(detail().profile).toEqual(draft)
+    expect(detail().dirty).toBe(true)
+    expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+  }
+)
+
+it('does not offer compare for a hydrated mini override, so a press cannot promote it', () => {
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'override',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  f.render()
+  const detail = find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  expect(detail.dirty).toBe(true)
+  expect(detail.compare).toBeUndefined()
+})
+
+it('drops the compare release on panel close and leaves the prior-target rollback to main', async () => {
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  let closing = () => undefined as void
+  window.chromaShift.onPanelClosing = (callback) => {
+    closing = callback
+    return () => undefined
+  }
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  detail().compare!.onPress(' ')
+  f.render()
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  // Main revokes the opening first, then reports the close.
+  closing()
+  const closed = vi.mocked(window.chromaShift.onAppPanelClosed).mock.calls.at(-1)![0]
+  closed()
+  await f.settle()
+  // No draft write lands after the close: main restores the exact prior target.
+  expect(f.updatePreview.mock.calls.map((call) => (call as unknown[])[1])).toEqual([saved.displays])
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledOnce()
+  f.render()
+  expect(
+    find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)?.props.compare?.showingSaved
+  ).not.toBe(true)
+})
 
 it.each([true, false])(
   'keeps Profiles rendered after About, a settings update and Back, gamma limits=%s',

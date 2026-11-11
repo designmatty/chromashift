@@ -272,6 +272,9 @@ an edit clears it. On the live profile, `Update profile` commits while preservin
 mode and `Discard changes` rolls back. On another profile, both stay on it: Update saves while its
 session keeps previewing the saved values, and Discard reverts the session to them
 in place, restoring Original settings for targets the saved profile lacks.
+Hold to compare (#80) stays in the renderer's preview-sync seam: it sends the
+saved and then the draft targets through the same session's `updatePreview`,
+queued with draft writes and dropped with them on close or session change.
 Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, and close return to
 the live profile. Minimize ends only a clean preview; unsaved edits and overrides

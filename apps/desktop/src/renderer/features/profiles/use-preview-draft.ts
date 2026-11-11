@@ -7,6 +7,11 @@ import {
 } from '@/features/profiles/preview-sync.js'
 import type { PreviewState, ProductError, ProductState } from '@shared/product-api.js'
 import { hasUnsavedSession, profilesDiffer } from '@shared/unsaved-changes.js'
+import {
+  HoldToCompare,
+  listenForCompareRelease,
+  type CompareInput
+} from '@/features/profiles/hold-to-compare.js'
 
 export interface UsePreviewDraftOptions {
   kind: PreviewSyncKind
@@ -29,6 +34,15 @@ export interface UsePreviewDraftOptions {
 export interface PreviewDraft {
   draft: ColorProfile | null
   dirty: boolean
+  /**
+   * Hold to compare is offered for unsaved app edits whose edit session exists
+   * or is queued. A hydrated mini override is not promoted by a press.
+   */
+  canCompare: boolean
+  /** True from press until the draft write after release has drained. */
+  comparing: boolean
+  pressCompare(input: CompareInput): void
+  releaseCompare(input?: CompareInput): Promise<void>
   /** Replace the draft with a user change and mark it dirty. */
   updateDraft(profile: ColorProfile): void
   /** Replace the draft without touching dirtiness, e.g. after save or duplicate. */
@@ -64,6 +78,10 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   // Hydration can be dirty without representing a new local edit. Only user
   // changes schedule writes; main's session broadcasts must not echo them back.
   const [localRevision, setLocalRevision] = useState(0)
+  const [comparing, setComparing] = useState(false)
+  const compareRef = useRef<HoldToCompare | null>(null)
+  if (compareRef.current === null) compareRef.current = new HoldToCompare(setComparing)
+  const compare = compareRef.current
   const dirty =
     options.savedProfile === undefined
       ? markedDirty
@@ -92,7 +110,54 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     )
   }, [JSON.stringify(options.gammaLimits), JSON.stringify(brightnessSupport)])
 
-  useLayoutEffect(() => window.chromaShift.onPanelClosing(() => sync.invalidate()), [sync])
+  useLayoutEffect(
+    () =>
+      window.chromaShift.onPanelClosing(() => {
+        // Main has revoked this opening and owns the exact prior-target rollback.
+        sync.invalidate()
+        void compare.release()
+      }),
+    [sync, compare]
+  )
+
+  useEffect(() => {
+    if (kind !== 'edit') return
+    return listenForCompareRelease(window, (input) => compare.release(input))
+  }, [kind, compare])
+
+  const canCompare =
+    kind === 'edit' &&
+    dirty &&
+    draft !== null &&
+    options.savedProfile !== undefined &&
+    options.savedProfile !== null &&
+    ((session.state === 'active' && session.kind === 'edit' && session.profileId === draft.id) ||
+      localRevision !== 0)
+  useLayoutEffect(() => {
+    // Busy work, navigation, Paused or a reverted draft end the comparison.
+    if (!enabled || !canCompare) void compare.release()
+  }, [enabled, canCompare, compare])
+
+  const sessionId = session.state === 'active' ? session.sessionId : null
+  const previousSession = useRef(sessionId)
+  useLayoutEffect(() => {
+    if (
+      previousSession.current !== null &&
+      previousSession.current !== sessionId &&
+      compare.showingSaved
+    ) {
+      // An external shortcut ended/replaced this session. Do not send the old
+      // draft into a newer session for the same profile.
+      sync.invalidate()
+      void compare.release()
+    }
+    previousSession.current = sessionId
+  }, [sessionId, compare, sync])
+  useLayoutEffect(() => {
+    return () => {
+      void compare.release()
+    }
+  }, [draft?.id, compare])
 
   useEffect(() => {
     if (localRevision === 0) return
@@ -104,6 +169,7 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
 
   useLayoutEffect(() => {
     return window.chromaShift.onFlushPreviewDraft(async () => {
+      await compare.release()
       if (localRevision !== 0 && enabled && draft !== null && (dirty || hasUnsavedSession(session)))
         await sync.flush(draft, session)
     })
@@ -112,7 +178,16 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   return {
     draft,
     dirty,
+    canCompare,
+    comparing,
+    pressCompare: (input) => {
+      const saved = options.savedProfile
+      if (!enabled || !canCompare || draft === null || !saved) return
+      compare.press(input, () => sync.beginComparison(saved, draft, session))
+    },
+    releaseCompare: (input) => compare.release(input),
     updateDraft: (profile) => {
+      if (compare.showingSaved) return
       setDraft(profile)
       setDirty(true)
       setLocalRevision((revision) => revision + 1)
@@ -125,8 +200,18 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
       setDirty(resetOptions?.dirty ?? false)
       setLocalRevision(0)
     },
-    invalidateSync: () => sync.invalidate(),
-    settlePreview: () => sync.settle(),
-    rollbackPreview: (throwOnError) => sync.rollback(throwOnError)
+    invalidateSync: () => {
+      sync.invalidate()
+      void compare.release()
+    },
+    settlePreview: async () => {
+      await compare.release()
+      await sync.settle()
+    },
+    rollbackPreview: (throwOnError) => {
+      const rollback = sync.rollback(throwOnError)
+      void compare.release()
+      return rollback
+    }
   }
 }

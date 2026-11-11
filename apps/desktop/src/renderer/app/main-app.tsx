@@ -76,9 +76,15 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   const queuedTasks = useRef(0)
   const followingLive = useRef(true)
   const locallyEdited = useRef(false)
+  const savedSelection =
+    product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null
   const {
     draft,
     dirty,
+    canCompare,
+    comparing,
+    pressCompare,
+    releaseCompare,
     updateDraft: changeDraft,
     resetTo: resetDraft,
     invalidateSync,
@@ -91,14 +97,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     onError: setError,
     initialDraft: () => appSessionDraft(product),
     initialDirty: () => hasUnsavedSession(product.preview),
-    savedProfile:
-      product.configuration.profiles.find((profile) => profile.id === selectedId) ?? null,
+    savedProfile: savedSelection,
     gammaLimits: product.gammaLimits,
     capabilityReports: product.capabilityReports
   })
-  const selected =
-    product.configuration.profiles.find((profile) => profile.id === selectedId) ??
-    liveProfile(product)
+  const selected = savedSelection ?? liveProfile(product)
   const activeSession = product.preview.state === 'active' ? product.preview : null
   const temporaryOverride = activeSession?.kind === 'override' ? activeSession : null
   const currentProfileId = liveProfile(product)?.id ?? null
@@ -156,6 +159,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       runningVersion.current = version
       setError(null)
       try {
+        await releaseCompare()
         await work()
       } catch (cause) {
         setError(
@@ -255,6 +259,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     }
   }
   function continueAfterChanges(work: () => Promise<void>): void {
+    void releaseCompare()
     if (dirty) {
       const version = ++actionVersion.current
       requestAnimationFrame(() => {
@@ -377,6 +382,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     }
     window.chromaShift.onAppPanelClosed(endAppPreview)
     window.chromaShift.onAppPanelMinimized(() => {
+      void releaseCompare()
       if (shouldEndPreviewOnMinimize(dirty)) endAppPreview(true)
     })
   })
@@ -388,6 +394,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   }
   useLayoutEffect(() => {
     window.chromaShift.onEndPreviewRequested((request) => {
+      void releaseCompare()
       if (
         activeSession !== null &&
         activeSession.kind !== 'override' &&
@@ -656,6 +663,16 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                       product={product}
                       busy={busy}
                       dirty={dirty}
+                      compare={
+                        savedSelection === null || !canCompare
+                          ? undefined
+                          : {
+                              showingSaved: comparing,
+                              savedProfile: savedSelection,
+                              onPress: pressCompare,
+                              onRelease: releaseCompare
+                            }
+                      }
                       onChange={updateDraft}
                       onCancel={() => perform(discardShownChanges)}
                       onSave={() => perform(updateShownProfile)}

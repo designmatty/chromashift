@@ -1,7 +1,7 @@
 import { ChakraProvider } from '@chakra-ui/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ColorProfile } from '@chromashift/core'
+import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import { system } from '@/theme/system'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
@@ -36,11 +36,36 @@ function profile(names: string[], id = 'game'): ColorProfile {
 }
 
 describe('profile detail', () => {
-  function render(id: string, bound = true, names: string[] = []): string {
+  function render(
+    id: string,
+    bound = true,
+    names: string[] = [],
+    comparison: 'clean' | 'draft' | 'saved' = 'clean'
+  ): string {
     vi.stubGlobal('localStorage', { getItem: () => null })
     const product = {
-      displays: [],
-      capabilityReports: {},
+      displays:
+        comparison === 'clean'
+          ? []
+          : [
+              {
+                id: 'display:one',
+                name: 'Display',
+                hdr: false,
+                primary: true,
+                adapter: { name: 'Test adapter' },
+                connection: 'DisplayPort'
+              }
+            ],
+      capabilityReports: {
+        'display:one': {
+          capabilities: Object.fromEntries(
+            ['brightness', 'contrast', 'gamma', 'saturation', 'hue', 'colorTemperature'].map(
+              (key) => [key, { supported: true, provider: 'nvidia' }]
+            )
+          )
+        }
+      },
       chromaShift: { status: 'active' },
       settings: {
         shortcutBindings: bound
@@ -59,6 +84,15 @@ describe('profile detail', () => {
         <ProfileDetail
           profile={{
             ...profile(names, id),
+            displays:
+              comparison === 'clean'
+                ? []
+                : [
+                    {
+                      displayId: 'display:one',
+                      color: { ...createNeutralColorSettings(), brightness: 61 }
+                    }
+                  ],
             applications: names.map((executableName) => ({
               executableName,
               executablePath: `C:\\Apps\\${executableName}`
@@ -66,7 +100,21 @@ describe('profile detail', () => {
           }}
           product={product}
           busy={false}
-          dirty={false}
+          dirty={comparison !== 'clean'}
+          compare={{
+            showingSaved: comparison === 'saved',
+            savedProfile: {
+              ...profile(names, id),
+              displays: [
+                {
+                  displayId: 'display:one',
+                  color: { ...createNeutralColorSettings(), brightness: 54 }
+                }
+              ]
+            },
+            onPress: vi.fn(),
+            onRelease: vi.fn(async () => undefined)
+          }}
           onChange={vi.fn()}
           onCancel={vi.fn()}
           onSave={vi.fn()}
@@ -78,6 +126,24 @@ describe('profile detail', () => {
       </ChakraProvider>
     )
   }
+
+  it('shows compare only for dirty drafts and displays disabled saved controls while held', () => {
+    expect(render('game')).not.toContain('Hold to compare with saved')
+    const draft = render('game', true, [], 'draft')
+    expect(draft).toContain('aria-label="Hold to compare with saved"')
+    expect(draft).toContain('aria-pressed="false"')
+    expect(draft).not.toContain('Showing saved values')
+    const saved = render('game', true, [], 'saved')
+    expect(saved).toContain('aria-pressed="true"')
+    expect(saved).toContain('>Saved</span>')
+    expect(saved).toContain('Showing saved values')
+    const controls = saved.slice(saved.indexOf('data-part="profile-color-controls"'))
+    expect(controls).toContain('54%')
+    expect(controls).not.toContain('61%')
+    const sliders = [...controls.matchAll(/<div\b[^>]*data-slot="slider"[^>]*>/g)]
+    expect(sliders).toHaveLength(6)
+    expect(sliders.every(([slider]) => slider.includes('data-disabled=""'))).toBe(true)
+  })
 
   it('puts Triggers above display controls and shows the configured profile shortcut in the header', () => {
     const html = render('game')

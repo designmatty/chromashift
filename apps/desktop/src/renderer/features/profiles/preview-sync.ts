@@ -118,6 +118,52 @@ export class PreviewSyncSession {
     await Promise.allSettled([...this.#pending])
   }
 
+  /**
+   * Hold to compare (#80): send the saved targets now, without the debounce,
+   * and return the release that sends the draft targets back. Both writes join
+   * #pending behind any draft write, so they stay ordered, and rollback or a
+   * panel close invalidates and drains them like any other send. Neither write
+   * starts a session: a shortcut or a close may have ended this one.
+   */
+  public beginComparison(
+    saved: ColorProfile,
+    draft: ColorProfile,
+    session: PreviewState
+  ): () => Promise<void> {
+    // A rollback owns the session's ending. Comparing into it could land after
+    // the cancel, so the press does nothing.
+    if (this.#rollback !== undefined) return async () => undefined
+    const generation = this.#generation
+    const lifetime = this.port.getPanelLifetime?.()
+    const joinable =
+      !this.#needsStart &&
+      session.state === 'active' &&
+      session.kind === 'edit' &&
+      session.profileId === draft.id
+    // Send a debounced edit now, and start or promote the edit session when
+    // needed, so the saved targets follow the latest draft in the same queue.
+    if (this.#scheduledSend !== undefined || !joinable) void this.flush(draft, session)
+    const update = (profile: ColorProfile): Promise<void> => {
+      const previous = [...this.#pending]
+      const pending = (async () => {
+        await Promise.allSettled(previous)
+        if (generation !== this.#generation || lifetime === null) return
+        const scope: [] | [number] = lifetime === undefined ? [] : [lifetime]
+        // Never start a new session here. A shortcut or close may have ended it.
+        const result = await run(
+          this.port.updatePreview(draft.id, activeColorTargets(profile), draft, ...scope),
+          this.onError
+        )
+        if (result !== undefined) this.onError(null)
+      })()
+      this.#pending.add(pending)
+      void pending.finally(() => this.#pending.delete(pending))
+      return pending
+    }
+    void update(saved)
+    return () => update(draft)
+  }
+
   public cancelScheduled(): void {
     if (this.#timer === undefined) return
     clearTimeout(this.#timer)

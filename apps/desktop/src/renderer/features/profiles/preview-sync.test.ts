@@ -277,4 +277,80 @@ describe('preview sync session', () => {
     await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
     expect(errors.at(-1)).toBe(null)
   })
+
+  describe('hold to compare (#80)', () => {
+    const saved: ColorProfile = {
+      ...profile,
+      displays: [
+        { displayId: 'display:abc', color: { ...createNeutralColorSettings(), brightness: 54 } }
+      ]
+    }
+    // FakePort declares only profileId; the session still passes the targets.
+    function targets(update: { mock: { calls: unknown[][] } }): number[] {
+      return update.mock.calls.map(
+        (call) => (call[1] as ColorProfile['displays'])[0]?.color.brightness ?? -1
+      )
+    }
+
+    it('sends saved then draft targets into a joined edit session without the debounce', async () => {
+      const update = vi.spyOn(port, 'updatePreview')
+      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      await Promise.resolve()
+      expect(targets(update)).toEqual([54])
+      await release()
+      expect(targets(update)).toEqual([54, 84])
+      expect(port.calls).toEqual([`update:${profile.id}`, `update:${profile.id}`])
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('sends a pending debounced draft first, then compares, then restores', async () => {
+      const update = vi.spyOn(port, 'updatePreview')
+      session.schedule(profile, activeSession('edit'))
+      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      expect(vi.getTimerCount()).toBe(0)
+      await release()
+      expect(targets(update)).toEqual([84, 54, 84])
+    })
+
+    it('starts the edit session before comparing when none is active yet', async () => {
+      const release = session.beginComparison(saved, profile, inactive)
+      await release()
+      expect(port.calls).toEqual([
+        `start:edit:${profile.id}`,
+        `update:${profile.id}`,
+        `update:${profile.id}`
+      ])
+    })
+
+    it('drops queued compare writes once invalidated and never starts a session', async () => {
+      let finish!: () => void
+      const update = vi
+        .spyOn(port, 'updatePreview')
+        .mockImplementationOnce(() => new Promise((resolve) => (finish = () => resolve(ok))))
+      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      // The release queues behind the in-flight saved write; a close then invalidates.
+      const restoring = release()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(targets(update)).toEqual([54])
+      session.invalidate()
+      finish()
+      await restoring
+      expect(targets(update)).toEqual([54])
+      expect(port.calls.some((call) => call.startsWith('start'))).toBe(false)
+    })
+
+    it('does nothing while a rollback owns the session', async () => {
+      let finishCancel!: () => void
+      vi.spyOn(port, 'cancelPreview').mockImplementationOnce(
+        () => new Promise((resolve) => (finishCancel = () => resolve(ok)))
+      )
+      const rollback = session.rollback()
+      await Promise.resolve()
+      const release = session.beginComparison(saved, profile, activeSession('edit'))
+      await release()
+      finishCancel()
+      await rollback
+      expect(port.calls).toEqual([])
+    })
+  })
 })

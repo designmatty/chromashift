@@ -2716,6 +2716,11 @@ async function runSmoke() {
     })()`,
     'A new profile did not start a neutral native Preview with the banner.'
   )
+  // #80: the saved new profile is neutral on every display. Record that native
+  // output so Hold to compare can be checked against it after the first edit.
+  const savedCompareFingerprint = displayStateFingerprint(
+    await restorationGuard.getDisplayState(guardedDisplay.id)
+  )
   // Record any frame in which the banner disappears while the first change
   // promotes Preview to Edit.
   await debuggerClient.send('Runtime.evaluate', {
@@ -2907,6 +2912,105 @@ async function runSmoke() {
     })()`,
     'Brightness could not be changed again after an individual reset.'
   )
+
+  // #80: Hold to compare shows the saved neutral values on the guarded display,
+  // disables the controls with a Saved indicator, then returns to the exact
+  // unsaved draft output. Cover pointer, Space and Enter in dark and light.
+  const compareButton = `document.querySelector('[data-part="unsaved-changes-actions"] [aria-label="Hold to compare with saved"]')`
+  const draftCompareFingerprint = displayStateFingerprint(
+    await restorationGuard.getDisplayState(guardedDisplay.id)
+  )
+  if (draftCompareFingerprint === savedCompareFingerprint) {
+    throw new Error('The unsaved brightness edit did not change the guarded display output.')
+  }
+  const compareTheme = await setTheme(debuggerClient, 'dark')
+  for (const theme of ['dark', 'light']) {
+    await setTheme(debuggerClient, theme)
+    for (const input of ['pointer', ' ', 'Enter']) {
+      const key = {
+        key: input,
+        code: input === ' ' ? 'Space' : 'Enter',
+        windowsVirtualKeyCode: input === ' ' ? 32 : 13
+      }
+      if (input === 'pointer') {
+        const bounds = await debuggerClient.send('Runtime.evaluate', {
+          expression: `(() => {
+            const rect = ${compareButton}?.getBoundingClientRect()
+            return rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null
+          })()`,
+          returnByValue: true
+        })
+        if (!bounds.result.value) throw new Error('The Hold to compare button was missing.')
+        await debuggerClient.send('Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          button: 'left',
+          clickCount: 1,
+          ...bounds.result.value
+        })
+      } else {
+        await debuggerClient.send('Runtime.evaluate', { expression: `${compareButton}?.focus()` })
+        await debuggerClient.send('Input.dispatchKeyEvent', { type: 'keyDown', ...key })
+      }
+      await waitForExpression(
+        debuggerClient,
+        `(async () => {
+          const state = await window.chromaShift.getState()
+          const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+          return state.ok && state.value.preview.state === 'active' &&
+            state.value.preview.kind === 'edit' &&
+            state.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 50 &&
+            ${compareButton}?.getAttribute('aria-pressed') === 'true' &&
+            document.querySelector('[data-part="compare-saved-indicator"]')?.textContent?.trim() === 'Saved' &&
+            document.querySelector('[data-part="profile-color-controls"] [role="status"]')?.textContent === 'Showing saved values' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') === 'true' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '50'
+        })()`,
+        `Hold to compare did not show disabled saved values (${theme}, ${JSON.stringify(input)}).`
+      )
+      const held = displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
+      if (held !== savedCompareFingerprint) {
+        throw new Error(`Hold to compare did not write the saved output (${theme}, ${JSON.stringify(input)}).`)
+      }
+      if (input === 'pointer') {
+        await captureNativeWindow(
+          electron.pid,
+          join(screenshotDirectory, `hold-to-compare-${theme}-native.png`)
+        )
+        // Release away from the button: pointer capture and the window listener
+        // must still end the comparison.
+        await debuggerClient.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          button: 'left',
+          clickCount: 1,
+          x: 8,
+          y: 80
+        })
+      } else {
+        await debuggerClient.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+      }
+      await waitForExpression(
+        debuggerClient,
+        `(async () => {
+          const state = await window.chromaShift.getState()
+          const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+          return state.ok && state.value.preview.state === 'active' &&
+            state.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+            ${compareButton}?.getAttribute('aria-pressed') === 'false' &&
+            document.querySelector('[data-part="compare-saved-indicator"]') === null &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '51'
+        })()`,
+        `Hold to compare did not release back to the draft (${theme}, ${JSON.stringify(input)}).`
+      )
+      const released = displayStateFingerprint(
+        await restorationGuard.getDisplayState(guardedDisplay.id)
+      )
+      if (released !== draftCompareFingerprint) {
+        throw new Error(`Hold to compare did not restore the exact draft output (${theme}, ${JSON.stringify(input)}).`)
+      }
+    }
+  }
+  await setTheme(debuggerClient, compareTheme)
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]

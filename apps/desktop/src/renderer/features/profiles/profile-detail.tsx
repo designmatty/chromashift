@@ -32,6 +32,7 @@ import { ApplicationAssignments } from '@/features/profiles/application-assignme
 import { DisplayControls } from '@/features/profiles/display-controls'
 import { profileShortcut } from '@/features/profiles/control-presentation'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
+import type { CompareInput } from '@/features/profiles/hold-to-compare'
 
 const DEFAULT_ID = 'default'
 
@@ -40,6 +41,12 @@ export interface ProfileDetailProps {
   product: ProductState
   busy: boolean
   dirty: boolean
+  compare?: {
+    showingSaved: boolean
+    savedProfile: ColorProfile
+    onPress(input: CompareInput): void
+    onRelease(input?: CompareInput): Promise<void>
+  }
   startNaming?: boolean
   onNamingEnded?(): void
   onChange(profile: ColorProfile): void
@@ -53,6 +60,7 @@ export interface ProfileDetailProps {
 
 export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const profile = props.profile
+  const comparing = props.compare?.showingSaved === true
   const isDefault = profile.id.toLowerCase() === DEFAULT_ID
   const shortcut = profileShortcut(profile, props.product.settings.shortcutBindings)
   const actionsTriggerId = useId()
@@ -179,6 +187,38 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           )}
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
+              {props.compare !== undefined && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  aria-label="Hold to compare with saved"
+                  aria-pressed={comparing}
+                  disabled={props.busy || props.product.chromaShift.status !== 'active'}
+                  touchAction="none"
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    props.compare?.onPress('pointer')
+                  }}
+                  onPointerUp={() => void props.compare?.onRelease('pointer')}
+                  onPointerCancel={() => void props.compare?.onRelease('pointer')}
+                  onLostPointerCapture={() => void props.compare?.onRelease('pointer')}
+                  onKeyDown={(event) => {
+                    if (event.key !== ' ' && event.key !== 'Enter') return
+                    event.preventDefault()
+                    if (!event.repeat) props.compare?.onPress(event.key)
+                  }}
+                  onKeyUp={(event) => {
+                    if (event.key !== ' ' && event.key !== 'Enter') return
+                    event.preventDefault()
+                    void props.compare?.onRelease(event.key)
+                  }}
+                  onBlur={() => void props.compare?.onRelease()}
+                  onClick={(event) => event.preventDefault()}
+                >
+                  Hold to compare
+                </Button>
+              )}
               <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
                 Discard changes
               </Button>
@@ -273,13 +313,31 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         )}
       </Box>
       <Stack as="section" data-part="profile-color-controls" pt="10px" gap="10px">
-        <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
+        {/* Always mounted so the change is announced; srOnly keeps it out of the layout. */}
+        <Text role="status" aria-live="polite" srOnly>
+          {comparing ? 'Showing saved values' : ''}
+        </Text>
+        <SectionHeading
+          title="Display color controls"
+          icon={<Monitor size={20} />}
+          badge={
+            comparing ? (
+              <Box as="span" data-part="compare-saved-indicator" aria-hidden="true">
+                <ProfileBadge>Saved</ProfileBadge>
+              </Box>
+            ) : undefined
+          }
+        >
           Select the display you would like to change
         </SectionHeading>
         <DisplayControls
-          profile={profile}
+          profile={
+            comparing && props.compare
+              ? { ...profile, displays: props.compare.savedProfile.displays }
+              : profile
+          }
           product={props.product}
-          editing={props.product.chromaShift.status === 'active' && !props.busy}
+          editing={props.product.chromaShift.status === 'active' && !props.busy && !comparing}
           onChange={props.onChange}
         />
       </Stack>
@@ -298,10 +356,12 @@ function ProfileBadge({ children }: { children: React.ReactNode }): React.JSX.El
 function SectionHeading({
   title,
   icon,
+  badge,
   children
 }: {
   title: string
   icon?: React.ReactNode
+  badge?: React.ReactNode
   children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -311,6 +371,7 @@ function SectionHeading({
         <Heading as="h2" fontSize="lg" fontWeight="500">
           {title}
         </Heading>
+        {badge}
       </Group>
       <Text fontSize="sm" color={'fg.muted'}>
         {children}

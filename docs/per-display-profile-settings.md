@@ -148,6 +148,14 @@ targets remain persisted and resume when the same physical display returns.
   offers Update, Discard, or Cancel before leaving unsaved changes through
   profile selection, activation selection, or navigation; either choice then
   continues to that destination.
+- While an app-panel Edit has unsaved changes, `Hold to compare` sits before
+  `Discard changes`. Its accessible name is `Hold to compare with saved`.
+  Holding the pointer, Space, or Enter shows the profile's saved values on the
+  displays; displays the saved profile has no target for show Original settings.
+  The color controls show the saved values, disabled, with a `Saved` badge on
+  the section heading, and a polite status announces `Showing saved values`.
+  Release returns to the draft. The mini panel has no compare, and a mini
+  override carried into the app does not offer it until the first app edit.
 - Click the header title to rename a profile in place. Enter or blur records the
   name in the unsaved draft; Escape cancels the name input. New profiles open
   with naming focused. New profiles use `New profile`, `New profile 2`, and the
@@ -241,6 +249,17 @@ and restores the prior automatic or manual target. `Discard changes` also waits
 for pending writes; on a non-live profile it returns the session to the saved
 values instead. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
+
+Hold to compare is renderer-only. Press sends the saved targets, and release
+sends the draft targets, through the same edit session's `updatePreview`
+without the 120 ms edit debounce. Main keeps the full draft throughout. A
+pending debounced draft write is sent first, and both compare writes queue behind
+in-flight writes, so the release always lands after the saved write. Release runs
+on pointer up anywhere, pointer cancel, key up, window blur, minimize, navigation,
+busy work, Paused or Safety blocked, unmount, flush before quit or End preview,
+and Update or Discard. A panel close or a session that ended or changed drops the
+queued release instead: main's rollback restores the exact prior target, and the
+renderer never writes the old draft into a newer session.
 
 During app-panel Preview or Edit, connected SDR displays without a draft target
 are held at Original settings. The session restores any existing immutable native
