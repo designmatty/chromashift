@@ -44,6 +44,26 @@ function Find-TrayIcon {
   } | Select-Object -First 1
 }
 
+# Windows shows toasts in ShellExperienceHost windows above the taskbar. A toast that
+# appears while the tray is clicked takes the click (and its own context menu) or
+# closes the tray menu. ChromaShift's own Original settings restored toast arrives
+# right before this capture, so wait for visible toasts to leave first.
+function Wait-NoToast([int]$Seconds = 15) {
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $deadline) {
+    $toasts = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) |
+      Where-Object {
+        $owner = Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue
+        $rect = $_.Current.BoundingRectangle
+        $owner.ProcessName -eq 'ShellExperienceHost' -and -not $_.Current.IsOffscreen -and
+          $rect.Width -gt 0 -and $rect.Height -gt 0 -and $_.Current.Name -match 'notification'
+      }
+    if ($null -eq $toasts) { return }
+    Start-Sleep -Milliseconds 500
+  }
+}
+
 $openedOverflow = $false
 try {
   $icon = Find-TrayIcon
@@ -70,6 +90,7 @@ try {
   # A notification toast from any app can cover the tray icon, and the click would
   # then open the toast's menu. Wait until a taskbar or overflow window owns the
   # point. FromPoint can return the overflow window itself rather than the icon.
+  Wait-NoToast
   $unobstructedDeadline = (Get-Date).AddSeconds(10)
   $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
   $rootElement = [System.Windows.Automation.AutomationElement]::RootElement
@@ -87,32 +108,42 @@ try {
     }
     Start-Sleep -Milliseconds 500
   }
-  [void][ChromaShiftTrayCapture]::SetCursorPos([int]$iconPoint.X, [int]$iconPoint.Y)
-  [ChromaShiftTrayCapture]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
-  [ChromaShiftTrayCapture]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 300
-  $resumeCondition = [System.Windows.Automation.AndCondition]::new(
-    [System.Windows.Automation.PropertyCondition]::new(
-      [System.Windows.Automation.AutomationElement]::NameProperty, 'Resume ChromaShift'),
-    [System.Windows.Automation.PropertyCondition]::new(
-      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-      [System.Windows.Automation.ControlType]::MenuItem))
-  # The native popup menu is a small top-level window: a Win32 menu (#32768) owned
-  # by Electron. Search only those windows. Other apps' small windows can take
-  # many seconds to walk; Steam's Friends List took about 16 s. Requiring a small
-  # window also keeps the lookup away from the app's own Resume button.
   $resume = $null
-  $popups = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-    [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) |
-    Where-Object {
-      $rect = $_.Current.BoundingRectangle
-      $owner = Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue
-      $rect.Width -gt 0 -and $rect.Width -lt 800 -and $rect.Height -gt 0 -and $rect.Height -lt 1000 -and
-        ($_.Current.ClassName -eq '#32768' -or $owner.ProcessName -in @('electron', 'ChromaShift'))
+  for ($attempt = 1; $attempt -le 3 -and $null -eq $resume; $attempt++) {
+    if ($attempt -gt 1) {
+      # A toast or focus change closed the menu; dismiss whatever opened and retry.
+      [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+      Start-Sleep -Milliseconds 500
+      Wait-NoToast
     }
-  foreach ($popup in $popups) {
-    $resume = $popup.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $resumeCondition)
-    if ($null -ne $resume) { break }
+    [void][ChromaShiftTrayCapture]::SetCursorPos([int]$iconPoint.X, [int]$iconPoint.Y)
+    [ChromaShiftTrayCapture]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
+    [ChromaShiftTrayCapture]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 300
+    $resumeCondition = [System.Windows.Automation.AndCondition]::new(
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty, 'Resume ChromaShift'),
+      [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::MenuItem))
+    # The native popup menu is a small top-level window: a Win32 menu (#32768) owned
+    # by Electron. Search only those windows. Other apps' small windows can take
+    # many seconds to walk; Steam's Friends List took about 16 s. Requiring a small
+    # window also keeps the lookup away from the app's own Resume button.
+    $resume = $null
+    $popups = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) |
+      Where-Object {
+        $rect = $_.Current.BoundingRectangle
+        $owner = Get-Process -Id $_.Current.ProcessId -ErrorAction SilentlyContinue
+        $rect.Width -gt 0 -and $rect.Width -lt 800 -and $rect.Height -gt 0 -and $rect.Height -lt 1000 -and
+          ($_.Current.ClassName -eq '#32768' -or $owner.ProcessName -in @('electron', 'ChromaShift'))
+      }
+    foreach ($popup in $popups) {
+      $resume = $popup.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $resumeCondition)
+      if ($null -ne $resume) { break }
+    }
+
   }
   if ($null -eq $resume) { throw 'The emergency restore tray menu did not offer Resume ChromaShift.' }
   $menu = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($resume)
