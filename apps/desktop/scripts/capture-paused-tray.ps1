@@ -102,10 +102,17 @@ try {
   function Get-IconHit {
     $hit = [System.Windows.Automation.AutomationElement]::FromPoint($iconPoint)
     $node = $hit
+    $topLevel = $null
     while ($null -ne $node -and $node -ne $rootElement) {
       if ([System.Windows.Automation.Automation]::Compare($node, $icon)) { return $null }
+      $topLevel = $node
       $node = $walker.GetParent($node)
     }
+    # In the overflow flyout's XAML island, FromPoint returns the flyout window rather
+    # than the icon. The point is inside the icon's bounds, so a shell-owned window
+    # there is the icon; any other window (a toast, another app) is a blocker.
+    if ($null -ne $topLevel -and $shellClasses -contains $topLevel.Current.ClassName -and
+      $iconBounds.Contains($iconPoint)) { return $null }
     return $hit
   }
   function Describe([System.Windows.Automation.AutomationElement]$element) {
