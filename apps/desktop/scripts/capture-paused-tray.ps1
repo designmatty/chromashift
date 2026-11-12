@@ -85,26 +85,42 @@ try {
     throw 'The emergency restore tray icon did not say ChromaShift: Paused.'
   }
   $iconBounds = $icon.Current.BoundingRectangle
-  $iconPoint = [System.Windows.Point]::new(
-    [int]($iconBounds.X + $iconBounds.Width / 2), [int]($iconBounds.Y + $iconBounds.Height / 2))
-  # A notification toast from any app can cover the tray icon, and the click would
-  # then open the toast's menu. Wait until a taskbar or overflow window owns the
-  # point. FromPoint can return the overflow window itself rather than the icon.
-  Wait-NoToast
-  $unobstructedDeadline = (Get-Date).AddSeconds(10)
+  # Prefer UI Automation's own clickable point for the icon; the rectangle centre
+  # missed the icon by about 10 px on the owner's taskbar.
+  $clickable = [System.Windows.Point]::new(0, 0)
+  if ($icon.TryGetClickablePoint([ref]$clickable)) {
+    $iconPoint = [System.Windows.Point]::new([int]$clickable.X, [int]$clickable.Y)
+  } else {
+    $iconPoint = [System.Windows.Point]::new(
+      [int]($iconBounds.X + $iconBounds.Width / 2), [int]($iconBounds.Y + $iconBounds.Height / 2))
+  }
   $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
   $rootElement = [System.Windows.Automation.AutomationElement]::RootElement
-  while ($true) {
+  # The click is only safe when the element under the point is the ChromaShift icon
+  # itself (or inside it). A taskbar-owned point next to the icon, or a toast above
+  # it, would open some other menu.
+  function Get-IconHit {
     $hit = [System.Windows.Automation.AutomationElement]::FromPoint($iconPoint)
-    $topLevel = $hit
-    while ($null -ne $topLevel) {
-      $parent = $walker.GetParent($topLevel)
-      if ($null -eq $parent -or $parent -eq $rootElement) { break }
-      $topLevel = $parent
+    $node = $hit
+    while ($null -ne $node -and $node -ne $rootElement) {
+      if ([System.Windows.Automation.Automation]::Compare($node, $icon)) { return $null }
+      $node = $walker.GetParent($node)
     }
-    if ($null -ne $topLevel -and $shellClasses -contains $topLevel.Current.ClassName) { break }
+    return $hit
+  }
+  function Describe([System.Windows.Automation.AutomationElement]$element) {
+    if ($null -eq $element) { return 'nothing' }
+    return "'$($element.Current.Name)' [$($element.Current.ClassName)]"
+  }
+  Write-Output ("Tray icon bounds ({0},{1},{2}x{3}); click point ({4},{5})." -f
+    $iconBounds.X, $iconBounds.Y, $iconBounds.Width, $iconBounds.Height, $iconPoint.X, $iconPoint.Y)
+  Wait-NoToast
+  $unobstructedDeadline = (Get-Date).AddSeconds(10)
+  while ($true) {
+    $blocker = Get-IconHit
+    if ($null -eq $blocker) { break }
     if ((Get-Date) -ge $unobstructedDeadline) {
-      throw "The ChromaShift tray icon stayed covered by '$($topLevel.Current.Name)' [$($topLevel.Current.ClassName)]."
+      throw "The ChromaShift tray icon was not under the click point ($($iconPoint.X),$($iconPoint.Y)); found $(Describe $blocker)."
     }
     Start-Sleep -Milliseconds 500
   }
@@ -115,6 +131,13 @@ try {
       [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
       Start-Sleep -Milliseconds 500
       Wait-NoToast
+    }
+    # Re-check right before clicking: a toast can appear between the wait and the click.
+    $blocker = Get-IconHit
+    if ($null -ne $blocker) {
+      Write-Output "Attempt ${attempt}: the click point is covered by $(Describe $blocker); waiting."
+      Start-Sleep -Milliseconds 1000
+      continue
     }
     [void][ChromaShiftTrayCapture]::SetCursorPos([int]$iconPoint.X, [int]$iconPoint.Y)
     [ChromaShiftTrayCapture]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
