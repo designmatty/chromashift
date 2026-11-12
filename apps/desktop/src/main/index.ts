@@ -27,6 +27,10 @@ import { confirmRestoreRetry } from '@main/restore-retry-dialog.js'
 import { createSettingsStores } from '@main/app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
 import { ElectronNotificationPort } from '@main/electron-notification.js'
+import {
+  handleSecondInstanceLaunch,
+  isWindowsNotificationLaunch
+} from '@main/notification-activation.js'
 import { createDevelopmentShortcutCleanup } from '@main/development-shortcut-cleanup.js'
 import { resolveDisplayServicePath } from '@main/display-service-path.js'
 import { ElectronTrayMenu } from '@main/electron-tray-menu.js'
@@ -74,6 +78,7 @@ const applicationDataPaths = resolveApplicationDataPaths(
 )
 const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
 const logger = new PersistentJsonLogger(diagnosticLogPath)
+const notifications = new ElectronNotificationPort(logger, (profileId) => openProfile(profileId))
 const cleanupDevelopmentShortcut = createDevelopmentShortcutCleanup({
   platform: process.platform,
   isPackaged: app.isPackaged,
@@ -264,7 +269,7 @@ const runtime = createProductRuntime({
       screen.on('display-metrics-changed', () => listener('displayMetricsChanged'))
     }
   },
-  notifications: new ElectronNotificationPort(logger)
+  notifications
 })
 
 function saveMiniPanelPosition(position: { x: number; y: number }): void {
@@ -548,8 +553,8 @@ function openProfile(profileId: string | null): void {
 
 if (ownsSingleInstanceLock) {
   cleanupDevelopmentShortcut()
-  app.on('second-instance', () => {
-    if (app.isReady()) openWindow()
+  app.on('second-instance', (_event, argv) => {
+    if (app.isReady()) handleSecondInstanceLaunch(process.platform, argv, () => openWindow())
   })
 }
 
@@ -689,6 +694,7 @@ registerProductIpcHandlers(
 
 void app.whenReady().then(async () => {
   if (!ownsSingleInstanceLock) return
+  notifications.initialize()
   await Promise.all([
     settingsStores.preferences.load(),
     settingsStores.windowState.load(),
@@ -697,9 +703,11 @@ void app.whenReady().then(async () => {
   app.setLoginItemSettings({ openAtLogin: settingsStores.preferences.current.launchAtStartup })
   nativeTheme.on('updated', () => applyTitleBarOverlay())
   await runtime.start()
+  notifications.ready()
   if (
-    !app.getLoginItemSettings().wasOpenedAtLogin ||
-    settingsStores.preferences.current.launchBehavior === 'app'
+    !isWindowsNotificationLaunch(process.platform, process.argv) &&
+    (!app.getLoginItemSettings().wasOpenedAtLogin ||
+      settingsStores.preferences.current.launchBehavior === 'app')
   ) {
     openWindow()
   }

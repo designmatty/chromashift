@@ -1,24 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import { buildNotificationOptions } from '@main/electron-notification-options.js'
+import { notificationActivationArguments } from '@main/notification-activation.js'
 import type { ProductNotification } from '@main/profile-notification-controller.js'
 
 const message: Omit<ProductNotification, 'onClick'> = {
   title: 'Gaming activated',
   body: 'Activated automatically.',
   severity: 'information',
-  urgency: 'normal'
+  urgency: 'normal',
+  profileId: 'gaming'
+}
+
+const target = { id: '4c692b42-0cc0-49b9-8f37-c59e7056ac4c', profileId: 'gaming' }
+function buildOptions(message: Omit<ProductNotification, 'onClick'>, platform: NodeJS.Platform) {
+  return buildNotificationOptions(message, platform, target)
 }
 
 describe('buildNotificationOptions', () => {
   it('carries the title and body in the Windows toast', () => {
-    const { toastXml } = buildNotificationOptions(message, 'win32')
+    const { toastXml } = buildOptions(message, 'win32')
+    expect(toastXml).toContain(
+      `<toast launch="${notificationActivationArguments(target, 'body').replaceAll('&', '&amp;')}">`
+    )
     expect(toastXml).toContain('<binding template="ToastGeneric">')
     expect(toastXml).toContain('<text>Gaming activated</text>')
     expect(toastXml).toContain('<text>Activated automatically.</text>')
   })
 
   it('escapes profile names and error text without allowing XML injection', () => {
-    const { toastXml } = buildNotificationOptions(
+    const { toastXml } = buildOptions(
       {
         ...message,
         title: `Tom & Jerry's <"Gaming"> was not fully applied`,
@@ -46,7 +56,7 @@ describe('buildNotificationOptions', () => {
       '\uFFFF',
       '\uD800'
     ]
-    const { toastXml } = buildNotificationOptions(
+    const { toastXml } = buildOptions(
       { ...message, title: `A${invalid.join('')}B`, body: 'Tab\tand\nnewline\rstay' },
       'win32'
     )
@@ -55,14 +65,15 @@ describe('buildNotificationOptions', () => {
   })
 
   it('keeps astral characters such as emoji', () => {
-    const { toastXml } = buildNotificationOptions({ ...message, title: 'Game \u{1F3AE}' }, 'win32')
+    const { toastXml } = buildOptions({ ...message, title: 'Game \u{1F3AE}' }, 'win32')
     expect(toastXml).toContain('<text>Game \u{1F3AE}</text>')
   })
 
-  it('includes exactly one visible Close action handled by Windows and silent audio', () => {
-    const { toastXml } = buildNotificationOptions(message, 'win32')
+  it('includes exactly one structured Close action and silent audio', () => {
+    const { toastXml, id } = buildOptions(message, 'win32')
+    expect(id).toBe(target.id)
     expect(toastXml).toContain(
-      '<action content="Close" activationType="system" arguments="dismiss" />'
+      `<action content="Close" activationType="foreground" arguments="${notificationActivationArguments(target, 'close').replaceAll('&', '&amp;')}" />`
     )
     expect(toastXml?.match(/<action\s/gu)).toHaveLength(1)
     expect(toastXml).toContain('<audio silent="true" />')
@@ -74,14 +85,14 @@ describe('buildNotificationOptions', () => {
     { severity: 'warning', urgency: 'critical' },
     { severity: 'error', urgency: 'critical' }
   ] as const)('preserves $severity urgency $urgency', ({ severity, urgency }) => {
-    const options = buildNotificationOptions({ ...message, severity, urgency }, 'win32')
+    const options = buildOptions({ ...message, severity, urgency }, 'win32')
     expect(options.urgency).toBe(urgency)
     expect(options.toastXml).toContain('<audio silent="true" />')
     expect(options.toastXml).not.toContain('scenario=')
   })
 
   it.each(['linux', 'darwin'] as const)('keeps the existing %s options', (platform) => {
-    expect(buildNotificationOptions(message, platform)).toEqual({
+    expect(buildOptions(message, platform)).toEqual({
       title: message.title,
       body: message.body,
       urgency: message.urgency

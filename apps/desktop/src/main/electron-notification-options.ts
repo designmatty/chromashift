@@ -1,9 +1,14 @@
 import type { NotificationConstructorOptions } from 'electron'
 import type { ProductNotification } from '@main/profile-notification-controller.js'
+import {
+  notificationActivationArguments,
+  type NotificationTarget
+} from '@main/notification-activation.js'
 
 export function buildNotificationOptions(
   message: Omit<ProductNotification, 'onClick'>,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  target: NotificationTarget
 ): NotificationConstructorOptions {
   const options: NotificationConstructorOptions = {
     title: message.title,
@@ -11,7 +16,8 @@ export function buildNotificationOptions(
     urgency: message.urgency
   }
   if (platform === 'win32') {
-    options.toastXml = `<toast>
+    options.id = target.id
+    options.toastXml = `<toast launch="${escapeXml(notificationActivationArguments(target, 'body'))}">
   <visual>
     <binding template="ToastGeneric">
       <text>${escapeXml(message.title)}</text>
@@ -19,7 +25,7 @@ export function buildNotificationOptions(
     </binding>
   </visual>
   <actions>
-    <action content="Close" activationType="system" arguments="dismiss" />
+    <action content="Close" activationType="foreground" arguments="${escapeXml(notificationActivationArguments(target, 'close'))}" />
   </actions>
   <audio silent="true" />
 </toast>`

@@ -1,0 +1,92 @@
+import type { ActivationArguments } from 'electron'
+
+export interface NotificationTarget {
+  id: string
+  profileId: string | null
+}
+
+// Use Electron's structured action format for the body as well as Close. The
+// Windows WinRT path drops the arguments for ordinary clicks; structured actions
+// reach handleActivation even while the original Notification is still alive.
+export function notificationActivationArguments(
+  target: NotificationTarget,
+  action: 'close' | 'body'
+): string {
+  return new URLSearchParams({
+    type: 'action',
+    action: action === 'close' ? '0' : '1',
+    tag: target.id,
+    chromashift: 'notification-v1',
+    profile: target.profileId ?? ''
+  }).toString()
+}
+
+function parseActivation(
+  details: ActivationArguments
+): (NotificationTarget & { action: 'close' | 'body' }) | null {
+  const args = new URLSearchParams(details.arguments)
+  const keys = ['type', 'action', 'tag', 'chromashift', 'profile']
+  if (
+    details.type !== 'action' ||
+    args.size !== keys.length ||
+    keys.some((key) => args.getAll(key).length !== 1) ||
+    args.get('chromashift') !== 'notification-v1' ||
+    args.get('type') !== 'action'
+  )
+    return null
+  const id = args.get('tag')!
+  const action = args.get('action')
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(id) ||
+    (action !== '0' && action !== '1') ||
+    details.actionIndex !== Number(action)
+  )
+    return null
+  return { id, profileId: args.get('profile') || null, action: action === '0' ? 'close' : 'body' }
+}
+
+export function isWindowsNotificationLaunch(
+  platform: NodeJS.Platform,
+  argv: readonly string[]
+): boolean {
+  // LocalServer32 COM activation appends -Embedding, not the toast arguments.
+  // Those arrive separately through Notification.handleActivation.
+  return platform === 'win32' && argv.some((arg) => /^[-/]embedding$/iu.test(arg))
+}
+
+export function handleSecondInstanceLaunch(
+  platform: NodeJS.Platform,
+  argv: readonly string[],
+  openWindow: () => void
+): void {
+  if (!isWindowsNotificationLaunch(platform, argv)) openWindow()
+}
+
+export class NotificationActivationController {
+  readonly #handled = new Set<string>()
+  readonly #pending: Array<string | null> = []
+  #ready = false
+
+  public constructor(
+    private readonly openProfile: (profileId: string | null) => void,
+    private readonly dismiss: (id: string) => void
+  ) {}
+
+  public handle(details: ActivationArguments): void {
+    const activation = parseActivation(details)
+    if (activation === null || this.#handled.has(activation.id)) return
+    this.#handled.add(activation.id)
+    // Bound duplicate tracking across long tray sessions. Electron can deliver
+    // both the global callback and the instance event for one activation.
+    if (this.#handled.size > 256) this.#handled.delete(this.#handled.values().next().value!)
+    this.dismiss(activation.id)
+    if (activation.action === 'close') return
+    if (this.#ready) this.openProfile(activation.profileId)
+    else this.#pending.push(activation.profileId)
+  }
+
+  public ready(): void {
+    this.#ready = true
+    for (const profileId of this.#pending.splice(0)) this.openProfile(profileId)
+  }
+}
