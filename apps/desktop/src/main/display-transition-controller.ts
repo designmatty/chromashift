@@ -19,6 +19,7 @@ export interface DisplayTransitionActivationPort {
 }
 
 export interface DisplayTransitionPreviewPort {
+  invalidateComparison?(): Promise<void>
   reapplyAfterDisplayTransition(): Promise<boolean>
 }
 
@@ -135,6 +136,7 @@ export class DisplayTransitionController {
         ...describeError(error)
       })
     } finally {
+      if (!topologyValidated) await this.preview.invalidateComparison?.()
       await this.activation.completeSystemTransition(refreshed && !previewActive, topologyValidated)
       if (refreshed) this.onRefreshed()
     }

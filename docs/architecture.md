@@ -272,6 +272,20 @@ an edit clears it. On the live profile, `Update profile` commits while preservin
 mode and `Discard changes` rolls back. On another profile, both stay on it: Update saves while its
 session keeps previewing the saved values, and Discard reverts the session to them
 in place, restoring Original settings for targets the saved profile lacks.
+Hold to compare (#80) is owned by `PreviewSessionController` in main. The narrow
+`setPreviewCompare(profileId, showing, sessionId, lifetime)` preload call uses a strict Zod
+schema, trusted-sender validation, and panel-lifetime checks at admission and
+inside the serialized preview queue. A session ID rejects delayed requests after
+session replacement. Press also requires a visible, unminimized panel and no quit
+in progress; release remains allowed. Main applies saved targets on press and the
+current draft on release, including captured-baseline restoration for missing
+saved targets. Neither request changes the session draft, saved reference, kind,
+or unsaved-change flag. Published targets describe the draft while held so panel
+hydration cannot mistake comparison output for an edit. Draft updates are rejected
+while comparing. Compare clears on restoration, session replacement, recovery and
+topology changes; minimize, override handoff and quit release it in main. Both
+panels share the pointer-release state machine and semantic pressed styling. The
+app also supports Space and Enter; the mini panel stays non-activating.
 Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, and close return to
 the live profile. Minimize ends only a clean preview; unsaved edits and overrides

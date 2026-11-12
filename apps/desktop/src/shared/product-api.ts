@@ -43,6 +43,7 @@ export const productIpcChannels = {
   startPreview: 'product:start-preview',
   panelLifetimeChanged: 'application:panel-lifetime-changed',
   updatePreview: 'product:update-preview',
+  setPreviewCompare: 'product:set-preview-compare',
   confirmPreview: 'product:confirm-preview',
   cancelPreview: 'product:cancel-preview',
   requestExit: 'application:request-exit',
@@ -107,6 +108,7 @@ export const previewStateSchema = z.discriminatedUnion('state', [
     sessionId: z.number().int().positive(),
     profileId: z.string().min(1),
     kind: z.enum(['preview', 'edit', 'override']),
+    comparing: z.boolean().optional(),
     targets: z.array(previewTargetSchema),
     draft: colorProfileSchema.optional(),
     /** Main-computed: the session draft differs from the saved profile. */
@@ -284,6 +286,13 @@ export const commitSessionRequestSchema = z
     activation: z.enum(['manual', 'preserve'])
   })
   .strict()
+export const previewCompareRequestSchema = z
+  .object({
+    profileId: z.string().trim().min(1),
+    showing: z.boolean(),
+    sessionId: z.number().int().positive()
+  })
+  .strict()
 export const previewUpdateRequestSchema = z
   .object({
     profileId: z.string().trim().min(1),
@@ -413,6 +422,12 @@ export interface ChromaShiftApi {
     profile: ColorProfile,
     activation: 'manual' | 'preserve'
   ): Promise<ProductResult<ColorProfile>>
+  setPreviewCompare(
+    profileId: string,
+    showing: boolean,
+    sessionId: number,
+    lifetime?: number
+  ): Promise<ProductResult<null>>
   cancelPreview(lifetime?: number): Promise<ProductResult<null>>
   getPanelLifetime(): number | null
   onPanelClosing(listener: () => void): () => void

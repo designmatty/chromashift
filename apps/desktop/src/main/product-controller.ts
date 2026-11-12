@@ -423,6 +423,20 @@ export class ProductController {
     this.refresh.stateChanged()
   }
 
+  public async setPreviewCompare(
+    profileId: string,
+    showing: boolean,
+    assertCurrent: () => void = () => undefined,
+    sessionId?: number
+  ): Promise<void> {
+    this.assertDisplayControlAvailable()
+    if (this.activation.chromaShiftState.status !== 'active') {
+      throw new ProductConflictError('Resume ChromaShift before comparing display colors.')
+    }
+    await this.preview.setCompare(profileId, showing, assertCurrent, sessionId)
+    this.refresh.stateChanged()
+  }
+
   public async confirmPreview(
     profile: ColorProfile,
     activation: 'manual' | 'preserve',

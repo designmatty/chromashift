@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
-import type { PreviewState, ProductError, ProductResult } from '@shared/product-api.js'
+import {
+  previewCompareRequestSchema,
+  type PreviewState,
+  type ProductError,
+  type ProductResult
+} from '@shared/product-api.js'
 
 const profile: ColorProfile = {
   id: 'tarkov-night',
@@ -55,6 +60,16 @@ class FakePort {
 
   public updatePreview(profileId: string): Promise<ProductResult<null>> {
     this.calls.push(`update:${profileId}`)
+    return Promise.resolve(ok)
+  }
+
+  public setPreviewCompare(
+    profileId: string,
+    showing: boolean,
+    sessionId: number
+  ): Promise<ProductResult<null>> {
+    previewCompareRequestSchema.parse({ profileId, showing, sessionId })
+    this.calls.push(`compare:${profileId}:${showing}`)
     return Promise.resolve(ok)
   }
 
@@ -276,5 +291,90 @@ describe('preview sync session', () => {
     session.schedule(profile, inactive)
     await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
     expect(errors.at(-1)).toBe(null)
+  })
+
+  describe('hold to compare (#80)', () => {
+    it.each(['edit', 'override'] as const)(
+      'compares a joined %s without sending saved targets as a draft',
+      async (kind) => {
+        const compare = vi.spyOn(port, 'setPreviewCompare')
+        const update = vi.spyOn(port, 'updatePreview')
+        const release = session.beginComparison(profile, activeSession(kind))!
+        await release()
+        expect(compare.mock.calls).toEqual([
+          [profile.id, true, 1],
+          [profile.id, false, 1]
+        ])
+        for (const [profileId, showing, sessionId] of compare.mock.calls) {
+          expect(
+            previewCompareRequestSchema.safeParse({ profileId, showing, sessionId }).success
+          ).toBe(true)
+        }
+        expect(update).not.toHaveBeenCalled()
+        expect(vi.getTimerCount()).toBe(0)
+      }
+    )
+
+    it('sends a pending draft first, then compares and releases in order', async () => {
+      session.schedule(profile, activeSession('edit'))
+      const release = session.beginComparison(profile, activeSession('edit'))!
+      await release()
+      expect(port.calls).toEqual([
+        `update:${profile.id}`,
+        `compare:${profile.id}:true`,
+        `compare:${profile.id}:false`
+      ])
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('does not create a session on press', () => {
+      expect(session.beginComparison(profile, inactive)).toBeNull()
+      expect(port.calls).toEqual([])
+    })
+
+    it('drains an in-flight comparison but drops its release after invalidation', async () => {
+      let finish!: () => void
+      const compare = vi.spyOn(port, 'setPreviewCompare').mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = () => resolve(ok)
+          })
+      )
+      const release = session.beginComparison(profile, activeSession('edit'))!
+      const restoring = release()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(compare).toHaveBeenCalledTimes(1)
+      session.invalidate()
+      finish()
+      await restoring
+      expect(compare).toHaveBeenCalledTimes(1)
+      expect(port.calls).toEqual([])
+    })
+
+    it('returns no release and writes nothing while a rollback owns the session', async () => {
+      let finishCancel!: () => void
+      vi.spyOn(port, 'cancelPreview').mockImplementationOnce(
+        () => new Promise((resolve) => (finishCancel = () => resolve(ok)))
+      )
+      const rollback = session.rollback()
+      await Promise.resolve()
+      expect(session.beginComparison(profile, activeSession('edit'))).toBeNull()
+      await vi.advanceTimersByTimeAsync(0)
+      finishCancel()
+      await rollback
+      expect(port.calls).toEqual([])
+    })
+
+    it('returns no release and writes nothing once the panel opening is revoked', async () => {
+      const revoked = new PreviewSyncSession(
+        Object.assign(port, { getPanelLifetime: () => null }),
+        'edit',
+        () => undefined
+      )
+      revoked.schedule(profile, activeSession('edit'))
+      expect(revoked.beginComparison(profile, activeSession('edit'))).toBeNull()
+      await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+      expect(port.calls).toEqual([])
+    })
   })
 })
