@@ -6,7 +6,7 @@ import {
   type PreviewSyncPort
 } from '@/features/profiles/preview-sync.js'
 import type { PreviewState, ProductError, ProductState } from '@shared/product-api.js'
-import { hasUnsavedSession, profilesDiffer } from '@shared/unsaved-changes.js'
+import { hasUnsavedSession, profilesDiffer, profileColorsDiffer } from '@shared/unsaved-changes.js'
 import {
   HoldToCompare,
   listenForCompareRelease,
@@ -34,10 +34,7 @@ export interface UsePreviewDraftOptions {
 export interface PreviewDraft {
   draft: ColorProfile | null
   dirty: boolean
-  /**
-   * Hold to compare is offered for unsaved app edits whose edit session exists
-   * or is queued. A hydrated mini override is not promoted by a press.
-   */
+  /** Unsaved colors in either panel, including a carried-in override. */
   canCompare: boolean
   /** True from press until the draft write after release has drained. */
   comparing: boolean
@@ -97,7 +94,9 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
         window.chromaShift.startPreview(profile, sessionKind, lifetime),
       updatePreview: (profileId, targets, draft, lifetime) =>
         window.chromaShift.updatePreview(profileId, targets, draft, lifetime),
-      cancelPreview: (lifetime) => window.chromaShift.cancelPreview(lifetime)
+      cancelPreview: (lifetime) => window.chromaShift.cancelPreview(lifetime),
+      setPreviewCompare: (profileId, showing, sessionId, lifetime) =>
+        window.chromaShift.setPreviewCompare(profileId, showing, sessionId, lifetime)
     }
     syncRef.current = new PreviewSyncSession(port, kind, onError)
   }
@@ -121,17 +120,16 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   )
 
   useEffect(() => {
-    if (kind !== 'edit') return
     return listenForCompareRelease(window, (input) => compare.release(input))
   }, [kind, compare])
 
   const canCompare =
-    kind === 'edit' &&
     dirty &&
     draft !== null &&
     options.savedProfile !== undefined &&
     options.savedProfile !== null &&
-    ((session.state === 'active' && session.kind === 'edit' && session.profileId === draft.id) ||
+    profileColorsDiffer(draft, options.savedProfile) &&
+    ((session.state === 'active' && session.kind !== 'preview' && session.profileId === draft.id) ||
       localRevision !== 0)
   useLayoutEffect(() => {
     // Busy work, navigation, Paused or a reverted draft end the comparison.
@@ -140,10 +138,13 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
 
   const sessionId = session.state === 'active' ? session.sessionId : null
   const previousSession = useRef(sessionId)
+  const previousMainCompare = useRef(false)
   useLayoutEffect(() => {
     if (
-      previousSession.current !== null &&
-      previousSession.current !== sessionId &&
+      ((previousSession.current !== null && previousSession.current !== sessionId) ||
+        (previousMainCompare.current &&
+          session.state === 'active' &&
+          session.comparing === false)) &&
       compare.showingSaved
     ) {
       // An external shortcut ended/replaced this session. Do not send the old
@@ -152,7 +153,8 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
       void compare.release()
     }
     previousSession.current = sessionId
-  }, [sessionId, compare, sync])
+    previousMainCompare.current = session.state === 'active' && session.comparing === true
+  }, [sessionId, session.state === 'active' && session.comparing, compare, sync])
   useLayoutEffect(() => {
     return () => {
       void compare.release()
@@ -183,7 +185,12 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     pressCompare: (input) => {
       const saved = options.savedProfile
       if (!enabled || !canCompare || draft === null || !saved) return
-      compare.press(input, () => sync.beginComparison(saved, draft, session))
+      compare.press(input, () =>
+        sync.beginComparison(draft, session, () => {
+          sync.invalidate()
+          void compare.release()
+        })
+      )
     },
     releaseCompare: (input) => compare.release(input),
     updateDraft: (profile) => {

@@ -266,10 +266,14 @@ same-profile no-op, in-place header Update/Discard, truncated-name tooltip,
 mini-panel ellipsis, override-hydration and native quit-Cancel checks from main.
 After the first new-profile brightness edit, it holds Hold to compare by pointer,
 Space and Enter in dark and light. Each hold checks the saved neutral guard
-fingerprint, disabled saved sliders, the Saved badge and the status text. Each
+fingerprint, disabled saved sliders, the visible pressed state and the status text. Each
 release checks the exact draft fingerprint. A native capture is taken while held
 in each theme. Missing-target compare to Original settings is covered by the
-fake-native integration test.
+fake-native integration test. The real panel-lifecycle step also holds compare in
+the mini panel, checks saved and draft native fingerprints and retained unsaved
+override state, and captures the visible native mini window in both themes.
+These owner-feedback smoke updates have been syntax-checked only; the earlier
+hardware pass does not validate the new main-owned compare behavior.
 It explicitly dismisses any remaining profile menu before inline naming and
 waits for the unselected-profile delete dialog to focus Cancel before choosing
 an action. Intermittent assertions and native quit automation limits are tracked
@@ -303,7 +307,8 @@ not establish hardware failure recovery.
 
 ### Owner checks for Hold to compare
 
-For #80, the Hold to compare smoke step passed on hardware at ddde67d. On a
+For #80, the earlier renderer-only smoke step passed on hardware at ddde67d.
+The main-owned compare and mini-panel additions await owner hardware validation. On a
 supporting SDR display with a restoration guard, edit a
 saved profile, then hold `Hold to compare` with the mouse, Space and Enter.
 The displays show the saved values and return to the draft exactly on release.
@@ -311,7 +316,13 @@ Repeat with a profile that has no target for one display; that display shows
 Original settings while held. Release by dragging off the button, Alt+Tab,
 minimize, the End preview shortcut, a profile hotkey and caption close. Close
 must restore the exact prior target, and none may leave saved values applied
-under a draft editor.
+under a draft editor. Repeat pointer holds in the mini panel, including pointer
+cancel, blur, close and the app handoff. A carried-in override offers compare in
+the app without changing its session kind. Check that metadata-only edits never
+show compare, color target additions/removals do, and both themes show a clear
+pressed state without a Saved badge. While held, verify the tray keeps its unsaved
+hold label and quitting still asks about changes, including when no renderer
+flush acknowledgement arrives.
 
 ### Owner checks for panel close and handoff
 

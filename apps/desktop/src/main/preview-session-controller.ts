@@ -67,6 +67,8 @@ interface ActivePreview {
   saved: ColorProfile
   profileId: string
   kind: 'preview' | 'edit' | 'override'
+  comparing?: boolean
+  comparisonInterrupted?: boolean
   /** Session targets, including desired values deferred by HDR or disconnection. */
   applied: Map<string, DisplayColorTarget>
   /** Activation-owned baselines plus every display written by this session. */
@@ -103,6 +105,7 @@ export class PreviewSessionController {
   #recovery: PreviewRecovery | null = null
   #operationTail: Promise<void> = Promise.resolve()
   #startVersion = 0
+  #comparisonEpoch = 0
 
   public constructor(
     private readonly native: PreviewNativePort,
@@ -126,9 +129,13 @@ export class PreviewSessionController {
       sessionId: this.#active.sessionId,
       profileId: this.#active.profileId,
       kind: this.#active.kind,
+      comparing: this.#active.comparing === true,
       draft: structuredClone(this.#active.draft),
       unsavedChanges: hasUnsavedChanges(this.#active),
-      targets: [...this.#active.applied.values()].map((target) => ({
+      targets: (this.#active.comparing
+        ? this.#active.draft.displays
+        : [...this.#active.applied.values()]
+      ).map((target) => ({
         displayId: target.displayId,
         color: { ...target.color }
       }))
@@ -164,7 +171,10 @@ export class PreviewSessionController {
     saved = profile
   ): Promise<void> {
     const version = ++this.#startVersion
-    return this.#enqueue(() => this.#start(profile, kind, saved, version))
+    return this.#enqueue(async () => {
+      await this.#releaseComparison()
+      await this.#start(profile, kind, saved, version)
+    })
   }
 
   async #start(
@@ -283,7 +293,10 @@ export class PreviewSessionController {
     draft?: ColorProfile
   ): Promise<void> {
     return this.#enqueue(async () => {
-      this.#requireActive(profileId)
+      const active = this.#requireActive(profileId)
+      // Reject rather than buffer edits: a delayed edit must not change held output.
+      if (active.comparing)
+        throw new PreviewValidationError('Release Hold to compare before editing.')
       try {
         await this.#update(profileId, targets)
         const active = this.#requireActive(profileId)
@@ -307,6 +320,93 @@ export class PreviewSessionController {
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
       }
+    })
+  }
+
+  /** Compare changes applied output only. The session draft and dirty state stay owned by main. */
+  public setCompare(
+    profileId: string,
+    showing: boolean,
+    assertCurrent: () => void = () => undefined,
+    sessionId = this.#active?.sessionId
+  ): Promise<void> {
+    const version = this.#active?.version
+    const epoch = this.#comparisonEpoch
+    return this.#enqueue(async () => {
+      assertCurrent()
+      const active = this.#requireActive(profileId)
+      if (
+        active.sessionId !== sessionId ||
+        active.version !== version ||
+        epoch !== this.#comparisonEpoch
+      )
+        throw new PreviewValidationError('The preview session changed.')
+      if (active.comparing === showing || (!active.comparing && !showing)) return
+      if (showing && active.kind === 'preview')
+        throw new PreviewValidationError('No unsaved colors to compare.')
+      await this.#applyComparison(active, showing)
+    })
+  }
+
+  async #applyComparison(active: ActivePreview, showing: boolean): Promise<void> {
+    active.comparing = showing
+    try {
+      const targets = activeColorTargets(structuredClone(showing ? active.saved : active.draft))
+      if (showing) {
+        // #update restores removed session targets. Also restore activation-owned
+        // baselines that an override never included, without restoring twice.
+        await this.#holdOriginal(
+          new Map([...active.touched].filter(([key]) => !active.applied.has(key))),
+          targets
+        )
+      }
+      await this.#update(active.profileId, targets)
+      this.onStateChanged(this.state)
+    } catch (error) {
+      active.comparing = false
+      // A failed saved write must never replace the retained draft with saved colors.
+      if (error instanceof PreviewRestoreError) {
+        active.applied = new Map(
+          active.draft.displays.map((target) => [
+            target.displayId.toLowerCase(),
+            structuredClone(target)
+          ])
+        )
+        await this.#retainSessionForRecovery(error)
+        throw error
+      }
+      const rollback = await this.#teardown()
+      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      throw error
+    }
+  }
+
+  async #releaseComparison(): Promise<void> {
+    const active = this.#active
+    if (!active?.comparing) return
+    // Use the same failure and restoration path as an ordinary preview update.
+    await this.#applyComparison(active, false)
+  }
+
+  public releaseComparison(): Promise<void> {
+    return this.#enqueue(() => this.#releaseComparison())
+  }
+
+  /** Invalid ownership or blocked control permits no release write. Retain the draft for Retry. */
+  public invalidateComparison(): Promise<void> {
+    this.#comparisonEpoch += 1
+    return this.#enqueue(async () => {
+      const active = this.#active
+      if (!active?.comparing) return
+      active.comparing = false
+      active.comparisonInterrupted = true
+      active.applied = new Map(
+        active.draft.displays.map((target) => [
+          target.displayId.toLowerCase(),
+          structuredClone(target)
+        ])
+      )
+      this.onStateChanged(this.state)
     })
   }
 
@@ -380,6 +480,7 @@ export class PreviewSessionController {
 
   async #complete(profileId: string, activation: 'manual' | 'preserve'): Promise<void> {
     this.#requireActive(profileId)
+    this.#active!.comparing = false
     const rollback = await this.#restoreTouched()
     if (rollback.failures.length > 0) {
       await this.#retainFailedRestore(rollback)
@@ -415,6 +516,15 @@ export class PreviewSessionController {
     scope = this.panelHideScope
   ): Promise<void> {
     await this.#enqueue(async () => {
+      if (
+        this.#active !== null &&
+        this.#active.version <= scope &&
+        this.#active.comparing &&
+        reason !== 'close' &&
+        this.#active.kind === 'override'
+      ) {
+        await this.#releaseComparison()
+      }
       // A reopened panel owns any newer session. Its start is serialized
       // behind the restoration owed by the closing panel.
       if (
@@ -499,6 +609,7 @@ export class PreviewSessionController {
   }
 
   async #retainSessionForRecovery(error: PreviewRestoreError): Promise<void> {
+    if (this.#active) this.#active.comparing = false
     this.#recovery = {
       kind: 'continuation',
       displayIds: error.displayIds ?? [...(this.#active?.touched.values() ?? [])]
@@ -513,6 +624,16 @@ export class PreviewSessionController {
   async #reapplyAfterDisplayTransition(): Promise<boolean> {
     const active = this.#active
     if (active === null) return false
+    const wasComparing = active.comparing || active.comparisonInterrupted
+    if (active.comparing) {
+      active.comparing = false
+      active.applied = new Map(
+        active.draft.displays.map((target) => [
+          target.displayId.toLowerCase(),
+          structuredClone(target)
+        ])
+      )
+    }
     // A topology event must never reapply values whose rollback is unconfirmed.
     if (this.#recovery !== null) return true
 
@@ -532,9 +653,10 @@ export class PreviewSessionController {
     )
     active.validated.clear()
     await this.#validateTargets(targets, active.validated, displays, true)
-    if (active.kind !== 'override') {
+    if (active.kind !== 'override' || wasComparing) {
       await this.#holdOriginal(active.touched, [...active.applied.values()])
     }
+    active.comparisonInterrupted = false
     for (const target of targets) {
       if (!this.#isTargetValidated(target, active.validated)) continue
       try {
@@ -563,6 +685,7 @@ export class PreviewSessionController {
    */
   async #teardown(): Promise<RestoreTouchedResult> {
     if (this.#active === null) return { failures: [], retainedDisplayIds: [] }
+    this.#active.comparing = false
     const rollback = await this.#restoreTouched()
     if (rollback.failures.length > 0) {
       await this.#retainFailedRestore(rollback)

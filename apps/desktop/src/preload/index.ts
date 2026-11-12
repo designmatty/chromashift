@@ -24,6 +24,7 @@ import {
   commitSessionRequestSchema,
   startSessionRequestSchema,
   previewUpdateRequestSchema,
+  previewCompareRequestSchema,
   previewDraftFlushSchema,
   productIpcChannels,
   productStateResultSchema,
@@ -232,6 +233,8 @@ const api: ChromaShiftApi = {
       },
       lifetime
     ),
+  setPreviewCompare: (profileId, showing, sessionId, lifetime) =>
+    invokePreview(productIpcChannels.setPreviewCompare, previewCompareRequestSchema, voidResultSchema, { profileId, showing, sessionId }, lifetime),
   confirmPreview: (profile, activation) =>
     invokePreview(
       productIpcChannels.confirmPreview,

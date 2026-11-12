@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import { PreviewSyncSession, PREVIEW_SYNC_DEBOUNCE_MS } from '@/features/profiles/preview-sync.js'
 import {
-  previewUpdateRequestSchema,
+  previewCompareRequestSchema,
   type PreviewState,
   type ProductError,
   type ProductResult
@@ -60,6 +60,16 @@ class FakePort {
 
   public updatePreview(profileId: string): Promise<ProductResult<null>> {
     this.calls.push(`update:${profileId}`)
+    return Promise.resolve(ok)
+  }
+
+  public setPreviewCompare(
+    profileId: string,
+    showing: boolean,
+    sessionId: number
+  ): Promise<ProductResult<null>> {
+    previewCompareRequestSchema.parse({ profileId, showing, sessionId })
+    this.calls.push(`compare:${profileId}:${showing}`)
     return Promise.resolve(ok)
   }
 
@@ -284,94 +294,61 @@ describe('preview sync session', () => {
   })
 
   describe('hold to compare (#80)', () => {
-    const saved: ColorProfile = {
-      ...profile,
-      displays: [
-        { displayId: 'display:abc', color: { ...createNeutralColorSettings(), brightness: 54 } }
-      ]
-    }
-    // FakePort declares only profileId; the session still passes the targets.
-    function targets(update: { mock: { calls: unknown[][] } }): number[] {
-      return update.mock.calls.map(
-        (call) => (call[1] as ColorProfile['displays'])[0]?.color.brightness ?? -1
-      )
-    }
-
-    it('sends saved then draft targets into a joined edit session without the debounce', async () => {
-      const update = vi.spyOn(port, 'updatePreview')
-      const release = session.beginComparison(saved, profile, activeSession('edit'))!
-      await Promise.resolve()
-      expect(targets(update)).toEqual([54])
-      await release()
-      expect(targets(update)).toEqual([54, 84])
-      expect(port.calls).toEqual([`update:${profile.id}`, `update:${profile.id}`])
-      expect(vi.getTimerCount()).toBe(0)
-    })
-
-    it.each([
-      ['a saved target', () => saved],
-      ['no saved target (Original settings)', () => ({ ...saved, displays: [] })]
-    ])(
-      'sends requests main accepts for %s, keeping the draft name and triggers',
-      async (_label, savedProfile) => {
-        const draft = { ...profile, name: 'Unsaved name' }
+    it.each(['edit', 'override'] as const)(
+      'compares a joined %s without sending saved targets as a draft',
+      async (kind) => {
+        const compare = vi.spyOn(port, 'setPreviewCompare')
         const update = vi.spyOn(port, 'updatePreview')
-        const release = session.beginComparison(savedProfile(), draft, activeSession('edit'))!
+        const release = session.beginComparison(profile, activeSession(kind))!
         await release()
-        expect(update).toHaveBeenCalledTimes(2)
-        // FakePort declares only profileId; the session passes targets and draft too.
-        const calls = update.mock.calls as unknown as [string, unknown, unknown][]
-        for (const [profileId, targets, sentDraft] of calls) {
-          // The IPC schema requires the sent draft's displays to equal the targets.
+        expect(compare.mock.calls).toEqual([
+          [profile.id, true, 1],
+          [profile.id, false, 1]
+        ])
+        for (const [profileId, showing, sessionId] of compare.mock.calls) {
           expect(
-            previewUpdateRequestSchema.safeParse({ profileId, targets, draft: sentDraft }).success
+            previewCompareRequestSchema.safeParse({ profileId, showing, sessionId }).success
           ).toBe(true)
-          expect(sentDraft).toMatchObject({
-            name: 'Unsaved name',
-            applications: draft.applications
-          })
         }
-        expect(calls[0]![1]).toEqual(
-          savedProfile().displays.map(({ displayId, color }) => ({ displayId, color }))
-        )
-        expect(calls[1]![2]).toEqual(draft)
+        expect(update).not.toHaveBeenCalled()
+        expect(vi.getTimerCount()).toBe(0)
       }
     )
 
-    it('sends a pending debounced draft first, then compares, then restores', async () => {
-      const update = vi.spyOn(port, 'updatePreview')
+    it('sends a pending draft first, then compares and releases in order', async () => {
       session.schedule(profile, activeSession('edit'))
-      const release = session.beginComparison(saved, profile, activeSession('edit'))!
-      expect(vi.getTimerCount()).toBe(0)
-      await release()
-      expect(targets(update)).toEqual([84, 54, 84])
-    })
-
-    it('starts the edit session before comparing when none is active yet', async () => {
-      const release = session.beginComparison(saved, profile, inactive)!
+      const release = session.beginComparison(profile, activeSession('edit'))!
       await release()
       expect(port.calls).toEqual([
-        `start:edit:${profile.id}`,
         `update:${profile.id}`,
-        `update:${profile.id}`
+        `compare:${profile.id}:true`,
+        `compare:${profile.id}:false`
       ])
+      expect(vi.getTimerCount()).toBe(0)
     })
 
-    it('drops queued compare writes once invalidated and never starts a session', async () => {
+    it('does not create a session on press', () => {
+      expect(session.beginComparison(profile, inactive)).toBeNull()
+      expect(port.calls).toEqual([])
+    })
+
+    it('drains an in-flight comparison but drops its release after invalidation', async () => {
       let finish!: () => void
-      const update = vi
-        .spyOn(port, 'updatePreview')
-        .mockImplementationOnce(() => new Promise((resolve) => (finish = () => resolve(ok))))
-      const release = session.beginComparison(saved, profile, activeSession('edit'))!
-      // The release queues behind the in-flight saved write; a close then invalidates.
+      const compare = vi.spyOn(port, 'setPreviewCompare').mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = () => resolve(ok)
+          })
+      )
+      const release = session.beginComparison(profile, activeSession('edit'))!
       const restoring = release()
       await vi.advanceTimersByTimeAsync(0)
-      expect(targets(update)).toEqual([54])
+      expect(compare).toHaveBeenCalledTimes(1)
       session.invalidate()
       finish()
       await restoring
-      expect(targets(update)).toEqual([54])
-      expect(port.calls.some((call) => call.startsWith('start'))).toBe(false)
+      expect(compare).toHaveBeenCalledTimes(1)
+      expect(port.calls).toEqual([])
     })
 
     it('returns no release and writes nothing while a rollback owns the session', async () => {
@@ -381,7 +358,7 @@ describe('preview sync session', () => {
       )
       const rollback = session.rollback()
       await Promise.resolve()
-      expect(session.beginComparison(saved, profile, activeSession('edit'))).toBeNull()
+      expect(session.beginComparison(profile, activeSession('edit'))).toBeNull()
       await vi.advanceTimersByTimeAsync(0)
       finishCancel()
       await rollback
@@ -395,7 +372,7 @@ describe('preview sync session', () => {
         () => undefined
       )
       revoked.schedule(profile, activeSession('edit'))
-      expect(revoked.beginComparison(saved, profile, activeSession('edit'))).toBeNull()
+      expect(revoked.beginComparison(profile, activeSession('edit'))).toBeNull()
       await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
       expect(port.calls).toEqual([])
     })

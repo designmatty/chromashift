@@ -32,6 +32,7 @@ import { ApplicationAssignments } from '@/features/profiles/application-assignme
 import { DisplayControls } from '@/features/profiles/display-controls'
 import { profileShortcut } from '@/features/profiles/control-presentation'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
+import { CompareButton } from '@/features/profiles/compare-button'
 import type { CompareInput } from '@/features/profiles/hold-to-compare'
 
 const DEFAULT_ID = 'default'
@@ -188,36 +189,12 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
               {props.compare !== undefined && (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  aria-label="Hold to compare with saved"
-                  aria-pressed={comparing}
+                <CompareButton
+                  showingSaved={comparing}
+                  onPress={props.compare.onPress}
+                  onRelease={props.compare.onRelease}
                   disabled={props.busy || props.product.chromaShift.status !== 'active'}
-                  touchAction="none"
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return
-                    event.currentTarget.setPointerCapture(event.pointerId)
-                    props.compare?.onPress('pointer')
-                  }}
-                  onPointerUp={() => void props.compare?.onRelease('pointer')}
-                  onPointerCancel={() => void props.compare?.onRelease('pointer')}
-                  onLostPointerCapture={() => void props.compare?.onRelease('pointer')}
-                  onKeyDown={(event) => {
-                    if (event.key !== ' ' && event.key !== 'Enter') return
-                    event.preventDefault()
-                    if (!event.repeat) props.compare?.onPress(event.key)
-                  }}
-                  onKeyUp={(event) => {
-                    if (event.key !== ' ' && event.key !== 'Enter') return
-                    event.preventDefault()
-                    void props.compare?.onRelease(event.key)
-                  }}
-                  onBlur={() => void props.compare?.onRelease()}
-                  onClick={(event) => event.preventDefault()}
-                >
-                  Hold to compare
-                </Button>
+                />
               )}
               <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
                 Discard changes
@@ -317,20 +294,11 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         <Text role="status" aria-live="polite" srOnly>
           {comparing ? 'Showing saved values' : ''}
         </Text>
-        <SectionHeading
-          title="Display color controls"
-          icon={<Monitor size={20} />}
-          badge={
-            comparing ? (
-              <Box as="span" data-part="compare-saved-indicator" aria-hidden="true">
-                <ProfileBadge>Saved</ProfileBadge>
-              </Box>
-            ) : undefined
-          }
-        >
+        <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
           Select the display you would like to change
         </SectionHeading>
         <DisplayControls
+          comparing={comparing}
           profile={
             comparing && props.compare
               ? { ...profile, displays: props.compare.savedProfile.displays }

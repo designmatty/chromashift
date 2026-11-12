@@ -148,14 +148,17 @@ targets remain persisted and resume when the same physical display returns.
   offers Update, Discard, or Cancel before leaving unsaved changes through
   profile selection, activation selection, or navigation; either choice then
   continues to that destination.
-- While an app-panel Edit has unsaved changes, `Hold to compare` sits before
-  `Discard changes`. Its accessible name is `Hold to compare with saved`.
-  Holding the pointer, Space, or Enter shows the profile's saved values on the
-  displays; displays the saved profile has no target for show Original settings.
-  The color controls show the saved values, disabled, with a `Saved` badge on
-  the section heading, and a polite status announces `Showing saved values`.
-  Release returns to the draft. The mini panel has no compare, and a mini
-  override carried into the app does not offer it until the first app edit.
+- When a profile has unsaved color changes, `Hold to compare` sits before
+  `Discard changes` in the app header and beside the mini panel's unsaved actions.
+  Added or removed display targets count; name, trigger and other metadata changes
+  alone do not. Carried-in overrides offer compare without promotion to Edit.
+  Its accessible name is `Hold to compare with saved`.
+  Holding the pointer, or Space or Enter in the app, shows the saved colors.
+  Displays without a saved target show Original settings, including on screen.
+  Controls show saved values and stay disabled. The button has a visible pressed
+  state in both themes, with no Saved badge or extra missing-target hint.
+  A polite status announces `Showing saved values`. Release returns to the draft.
+  The mini panel remains pointer-oriented, non-activating and fixed in size.
 - Click the header title to rename a profile in place. Enter or blur records the
   name in the unsaved draft; Escape cancels the name input. New profiles open
   with naming focused. New profiles use `New profile`, `New profile 2`, and the
@@ -250,22 +253,26 @@ for pending writes; on a non-live profile it returns the session to the saved
 values instead. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
 
-Hold to compare is renderer-only. Press sends the saved targets, and release
-sends the draft targets, through the same edit session's `updatePreview`
-without the 120 ms edit debounce. While held, main's session draft carries the
-saved display targets with the draft's name and triggers, so main reports no
-unsaved color changes until release restores the draft targets. Quit, End
-preview and Update release first. If a quit's 750 ms renderer flush times out
-mid-hold, the quit prompt can be skipped; shutdown still restores the displays. A
-pending debounced draft write is sent first, and both compare writes queue behind
-in-flight writes, so the release always lands after the saved write. A press while
-a rollback is in flight or after the panel opening is revoked writes nothing and
-does not show saved values. Release runs
-on pointer up anywhere, pointer cancel, key up, window blur, minimize, navigation,
-busy work, Paused or Safety blocked, unmount, flush before quit or End preview,
-and Update or Discard. A panel close or a session that ended or changed drops the
-queued release instead: main's rollback restores the exact prior target, and the
-renderer never writes the old draft into a newer session.
+Main owns Hold to compare through the narrow `setPreviewCompare(profileId,
+showing, sessionId, lifetime)` preload call. Its strict Zod request and response contracts,
+sender check and panel lifetime admission match the other preview calls. Main
+checks lifetime again inside its serialized queue. Saved targets never travel as
+an `updatePreview` draft. The session keeps its full current draft and dirty
+state throughout, so the tray hold label and quit prompt remain correct even
+without a renderer flush. Published targets continue to describe the draft.
+Press applies saved colors and uses captured Original settings for missing
+targets; release applies the session's current draft. Both use the existing native
+baseline, read-back and full-display rollback paths. Pending draft writes drain
+first; compare requests bypass the 120 ms edit debounce. Main rejects draft edits
+while held rather than queueing edits that could unexpectedly land after release.
+A press never creates or promotes a session.
+
+Pointer up anywhere, pointer cancel, lost capture, blur, unmount, navigation,
+Update and Discard release compare in both panels; the app also handles key up.
+Main releases compare on minimize, override handoff and quit, independently of
+renderer cleanup. Close, cancellation, pause, safety recovery, topology changes
+and session replacement clear compare through the existing restoration paths.
+Old panel openings and queued releases cannot write into newer sessions.
 
 During app-panel Preview or Edit, connected SDR displays without a draft target
 are held at Original settings. The session restores any existing immutable native

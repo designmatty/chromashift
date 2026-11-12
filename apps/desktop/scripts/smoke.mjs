@@ -1795,6 +1795,50 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
     })()`,
       'App to mini did not carry the temporary override.'
     )
+    // Compare in the real non-activating mini window, with native captures.
+    const previousCompareTheme = await setTheme(debuggerClient, 'dark')
+    for (const theme of ['dark', 'light']) {
+      await setTheme(debuggerClient, theme)
+      const point = await evaluate(`(() => {
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        if (!button) return null
+        window.__miniCompareIdleBackground = getComputedStyle(button).backgroundColor
+        const rect = button.getBoundingClientRect()
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      })()`)
+      if (!point) throw new Error('The mini-panel compare button was missing.')
+      await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point })
+      await waitForExpression(debuggerClient, `(async () => {
+        const state = await window.chromaShift.getState()
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        return state.ok && state.value.preview.state === 'active' &&
+          state.value.preview.kind === 'override' && state.value.preview.comparing && state.value.preview.unsavedChanges &&
+          state.value.preview.draft.displays.find(target => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 56 &&
+          button?.getAttribute('aria-pressed') === 'true' &&
+          getComputedStyle(button).backgroundColor !== window.__miniCompareIdleBackground &&
+          document.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') === 'true' &&
+          document.querySelector('[role="status"]')?.textContent === 'Showing saved values' &&
+          document.querySelector('[data-part="compare-saved-indicator"]') === null
+      })()`, 'The mini-panel did not show disabled saved colors with its pressed state.')
+      for (const display of guardedDisplays) {
+        const held = await waitForRestoredDisplayState(restorationGuard, display.id, prior.get(display.id))
+        if (displayStateFingerprint(held) !== prior.get(display.id)) throw new Error('Mini compare did not show saved output.')
+      }
+      await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-hold-to-compare-${theme}-native.png`))
+      await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, x: 8, y: 80 })
+      await waitForExpression(debuggerClient, `(async () => {
+        const state = await window.chromaShift.getState()
+        return state.ok && state.value.preview.state === 'active' &&
+          state.value.preview.kind === 'override' && state.value.preview.comparing === false && state.value.preview.unsavedChanges &&
+          document.querySelector('[aria-label="Hold to compare with saved"]')?.getAttribute('aria-pressed') === 'false' &&
+          document.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '56'
+      })()`, 'Mini compare did not return to its unsaved override.')
+      for (const display of guardedDisplays) {
+        const released = await waitForRestoredDisplayState(restorationGuard, display.id, applied.get(display.id))
+        if (displayStateFingerprint(released) !== applied.get(display.id)) throw new Error('Mini compare did not restore the draft exactly.')
+      }
+    }
+    await setTheme(debuggerClient, previousCompareTheme)
     await clickOutside()
     await waitForExpression(
       debuggerClient,
@@ -2914,7 +2958,7 @@ async function runSmoke() {
   )
 
   // #80: Hold to compare shows the saved neutral values on the guarded display,
-  // disables the controls with a Saved indicator, then returns to the exact
+  // disables the controls with a visible pressed state, then returns to the exact
   // unsaved draft output. Cover pointer, Space and Enter in dark and light.
   const compareButton = `document.querySelector('[data-part="unsaved-changes-actions"] [aria-label="Hold to compare with saved"]')`
   const draftCompareFingerprint = displayStateFingerprint(
@@ -2958,9 +3002,12 @@ async function runSmoke() {
           const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
           return state.ok && state.value.preview.state === 'active' &&
             state.value.preview.kind === 'edit' &&
-            state.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 50 &&
+            state.value.preview.comparing === true && state.value.preview.unsavedChanges &&
+            state.value.preview.draft.displays.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
             ${compareButton}?.getAttribute('aria-pressed') === 'true' &&
-            document.querySelector('[data-part="compare-saved-indicator"]')?.textContent?.trim() === 'Saved' &&
+            ${compareButton}?.getAttribute('data-comparing') === 'true' &&
+            getComputedStyle(${compareButton}).backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+            document.querySelector('[data-part="compare-saved-indicator"]') === null &&
             document.querySelector('[data-part="profile-color-controls"] [role="status"]')?.textContent === 'Showing saved values' &&
             row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') === 'true' &&
             row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '50'
@@ -2994,6 +3041,7 @@ async function runSmoke() {
           const state = await window.chromaShift.getState()
           const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
           return state.ok && state.value.preview.state === 'active' &&
+            state.value.preview.comparing === false && state.value.preview.unsavedChanges &&
             state.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
             ${compareButton}?.getAttribute('aria-pressed') === 'false' &&
             document.querySelector('[data-part="compare-saved-indicator"]') === null &&

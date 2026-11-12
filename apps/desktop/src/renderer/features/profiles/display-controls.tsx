@@ -17,11 +17,13 @@ export function DisplayControls({
   profile,
   product,
   editing,
+  comparing = false,
   onChange
 }: {
   profile: ColorProfile
   product: ProductState
   editing: boolean
+  comparing?: boolean
   onChange(profile: ColorProfile): void
 }): React.JSX.Element {
   const rows = buildDisplayRows(profile, product)
@@ -130,15 +132,21 @@ export function DisplayControls({
                 />
               )}
             </Flex>
-            <ColorControls
-              displayId={row.displayId}
-              color={color}
-              product={product}
-              editable={editing}
-              onChange={(nextColor) =>
-                onChange(setDisplayTarget(profile, { displayId: row.displayId, color: nextColor }))
-              }
-            />
+            {row.target === undefined && comparing ? (
+              <Text>Original settings</Text>
+            ) : (
+              <ColorControls
+                displayId={row.displayId}
+                color={color}
+                product={product}
+                editable={editing}
+                onChange={(nextColor) =>
+                  onChange(
+                    setDisplayTarget(profile, { displayId: row.displayId, color: nextColor })
+                  )
+                }
+              />
+            )}
           </Tabs.Content>
         )
       })}

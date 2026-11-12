@@ -36,6 +36,7 @@ import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentationa
 import { Tooltip } from '@/components/ui/tooltip'
 import { AUTOMATIC_ID, MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { ColorControls } from '@/features/profiles/color-controls'
+import { CompareButton } from '@/features/profiles/compare-button'
 import { showColorTemperature as temperatureVisible } from '@/features/profiles/control-values'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
 import { liveProfile } from '@/features/profiles/app-preview-state'
@@ -81,16 +82,27 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
         ? undefined
         : override === null
           ? active
-          : applyOverrideTargets(active, override.targets),
+          : (override.draft ?? applyOverrideTargets(active, override.targets)),
     [active, override]
   )
-  const { draft, dirty, updateDraft, resetTo, rollbackPreview } = usePreviewDraft({
+  const {
+    draft,
+    dirty,
+    canCompare,
+    comparing,
+    pressCompare,
+    releaseCompare,
+    updateDraft,
+    resetTo,
+    rollbackPreview
+  } = usePreviewDraft({
     kind: 'override',
     session: product.preview,
     enabled: active !== undefined && product.chromaShift.status === 'active',
     onError: setError,
     initialDraft: () => (appliedProfile === undefined ? null : structuredClone(appliedProfile)),
     initialDirty: () => override !== null,
+    savedProfile: active ?? null,
     gammaLimits: product.gammaLimits,
     capabilityReports: product.capabilityReports
   })
@@ -101,12 +113,17 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
   const selectedColor =
     (selectedDisplayId === null || draft === null
       ? undefined
-      : findDisplayTarget(draft, selectedDisplayId)?.color) ?? createNeutralColorSettings()
+      : findDisplayTarget(comparing && active ? active : draft, selectedDisplayId)?.color) ??
+    createNeutralColorSettings()
   const showColorTemperature = temperatureVisible(
     selectedColor,
     selectedDisplayId === null ? undefined : product.capabilityReports[selectedDisplayId]
   )
   useProductTheme(product.settings.theme)
+
+  useLayoutEffect(() => {
+    if (picker) void releaseCompare()
+  }, [picker])
 
   useEffect(() => {
     resetTo(appliedProfile ?? null, { dirty: override !== null })
@@ -200,7 +217,21 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
     return (
       <>
         {dirty && (
-          <Grid p="3" templateColumns="repeat(2, minmax(0, 1fr))" gap={3}>
+          <Grid
+            data-part="unsaved-changes-actions"
+            p="3"
+            templateColumns="repeat(3, minmax(0, 1fr))"
+            gap={2}
+          >
+            {canCompare && (
+              <CompareButton
+                showingSaved={comparing}
+                onPress={pressCompare}
+                onRelease={releaseCompare}
+                pointerOnly
+                disabled={product.chromaShift.status !== 'active'}
+              />
+            )}
             <Button
               variant="solid"
               size={'2xs'}
@@ -219,12 +250,12 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               borderRadius={'full'}
               onClick={() => {
                 const version = ++choiceVersion.current
-                void run(window.chromaShift.confirmPreview(draft, 'preserve'), setError).then(
-                  (saved) => {
+                void releaseCompare()
+                  .then(() => run(window.chromaShift.confirmPreview(draft, 'preserve'), setError))
+                  .then((saved) => {
                     if (saved === undefined || version !== choiceVersion.current) return
                     resetTo(saved)
-                  }
-                )
+                  })
               }}
             >
               Update profile
@@ -255,6 +286,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             )
           }
         >
+          <Text role="status" aria-live="polite" srOnly>
+            {comparing ? 'Showing saved values' : ''}
+          </Text>
           {product.displays.length > 1 && selectedDisplay !== undefined && (
             <MiniDisplaySelect
               displays={product.displays}
@@ -264,12 +298,14 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           )}
           {selectedDisplay === undefined || selectedDisplayId === null ? (
             <Empty title="No displays connected" />
+          ) : comparing && !findDisplayTarget(active, selectedDisplayId) ? (
+            <Text>Original settings</Text>
           ) : (
             <ColorControls
               displayId={selectedDisplayId}
               color={selectedColor}
               product={product}
-              editable={product.chromaShift.status === 'active'}
+              editable={product.chromaShift.status === 'active' && !comparing}
               onChange={(color) => {
                 choiceVersion.current += 1
                 const next = setDisplayTarget(draft, {
