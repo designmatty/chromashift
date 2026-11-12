@@ -29,7 +29,8 @@ import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/applicat
 import { ElectronNotificationPort } from '@main/electron-notification.js'
 import {
   handleSecondInstanceLaunch,
-  isWindowsNotificationLaunch
+  isWindowsNotificationLaunch,
+  startAfterNotificationActivation
 } from '@main/notification-activation.js'
 import { createDevelopmentShortcutCleanup } from '@main/development-shortcut-cleanup.js'
 import { resolveDisplayServicePath } from '@main/display-service-path.js'
@@ -557,9 +558,10 @@ function openProfile(profileId: string | null): void {
 }
 
 if (ownsSingleInstanceLock) {
-  if (!notificationLaunch) cleanupDevelopmentShortcut()
   app.on('second-instance', (_event, argv) => {
-    if (app.isReady()) handleSecondInstanceLaunch(process.platform, argv, () => openWindow())
+    handleSecondInstanceLaunch(process.platform, argv, () =>
+      notifications.requestLaunch(() => app.relaunch({ args: argv.slice(1) }))
+    )
   })
 }
 
@@ -699,31 +701,32 @@ registerProductIpcHandlers(
 
 void app.whenReady().then(async () => {
   if (!ownsSingleInstanceLock) return
-  notifications.initialize()
-  if (!(await notifications.waitForStartup())) {
-    // No runtime or native client exists yet, so before-quit has no shutdown
-    // coordinator and needs no restoration for a cold Close or timeout.
-    app.quit()
-    return
-  }
-  if (notificationLaunch) cleanupDevelopmentShortcut()
-  await Promise.all([
-    settingsStores.preferences.load(),
-    settingsStores.windowState.load(),
-    settingsStores.chromaShiftIntent.load()
-  ])
-  app.setLoginItemSettings({ openAtLogin: settingsStores.preferences.current.launchAtStartup })
-  nativeTheme.on('updated', () => applyTitleBarOverlay())
-  await runtime.start()
-  notifications.ready()
-  if (
-    !notificationLaunch &&
-    (!app.getLoginItemSettings().wasOpenedAtLogin ||
-      settingsStores.preferences.current.launchBehavior === 'app')
-  ) {
-    openWindow()
-  }
-  app.on('activate', () => openWindow())
+  await startAfterNotificationActivation({
+    initialize: () => notifications.initialize(),
+    wait: () => notifications.waitForStartup(),
+    quit: () => app.quit(),
+    loadAndStart: async () => {
+      cleanupDevelopmentShortcut()
+      await Promise.all([
+        settingsStores.preferences.load(),
+        settingsStores.windowState.load(),
+        settingsStores.chromaShiftIntent.load()
+      ])
+      app.setLoginItemSettings({ openAtLogin: settingsStores.preferences.current.launchAtStartup })
+      nativeTheme.on('updated', () => applyTitleBarOverlay())
+      await runtime.start()
+    },
+    ready: () => {
+      notifications.ready()
+      app.on('activate', () => openWindow())
+    },
+    shouldOpenWindow: () =>
+      !notificationLaunch &&
+      (!app.getLoginItemSettings().wasOpenedAtLogin ||
+        settingsStores.preferences.current.launchBehavior === 'app'),
+    openWindow: () => openWindow(),
+    logger
+  })
 })
 
 app.on('window-all-closed', () => {
@@ -738,7 +741,8 @@ app.on('before-quit', (event) => {
 })
 
 app.on('will-quit', () => {
-  if (ownsSingleInstanceLock) cleanupDevelopmentShortcut()
+  if (ownsSingleInstanceLock && runtime.shutdownCoordinator !== undefined)
+    cleanupDevelopmentShortcut()
   runtime.dispose()
   appWindowStateController.dispose()
   globalShortcut.unregister(EMERGENCY_RESTORE_ACCELERATOR)

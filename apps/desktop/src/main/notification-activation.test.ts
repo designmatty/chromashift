@@ -4,7 +4,8 @@ import {
   handleSecondInstanceLaunch,
   isWindowsNotificationLaunch,
   notificationActivationArguments,
-  NotificationActivationController
+  NotificationActivationController,
+  startAfterNotificationActivation
 } from '@main/notification-activation.js'
 
 const target = { id: '4c692b42-0cc0-49b9-8f37-c59e7056ac4c', profileId: 'gaming' }
@@ -27,28 +28,52 @@ describe('cold notification startup', () => {
     const dismiss = vi.fn()
     const start = vi.fn(async () => {})
     const quit = vi.fn()
+    const initialize = vi.fn()
+    const write = vi.fn()
+    const openWindow = vi.fn()
     const controller = new NotificationActivationController(
       openProfile,
       dismiss,
       notificationLaunch
     )
-    // The shell registers notifications at whenReady, then waits here before
-    // loading settings, registering shortcuts, or starting the runtime.
-    const whenReady = async (): Promise<void> => {
-      if (!(await controller.waitForStartup())) {
-        quit()
-        return
-      }
-      await start()
-      controller.ready()
+    const whenReady = (): Promise<void> =>
+      startAfterNotificationActivation({
+        initialize,
+        wait: () => controller.waitForStartup(),
+        quit,
+        loadAndStart: start,
+        ready: () => controller.ready(),
+        shouldOpenWindow: () => !notificationLaunch,
+        openWindow,
+        logger: { write }
+      })
+    return {
+      controller,
+      openProfile,
+      dismiss,
+      start,
+      quit,
+      whenReady,
+      initialize,
+      write,
+      openWindow
     }
-    return { controller, openProfile, dismiss, start, quit, whenReady }
   }
 
   it.each(['before', 'after'] as const)(
     'quits without starting for Close arriving %s whenReady',
     async (arrival) => {
-      const { controller, openProfile, dismiss, start, quit, whenReady } = setup()
+      const {
+        controller,
+        openProfile,
+        dismiss,
+        start,
+        quit,
+        whenReady,
+        initialize,
+        write,
+        openWindow
+      } = setup()
       if (arrival === 'before') controller.handle(close)
       const startup = whenReady()
       expect(start).not.toHaveBeenCalled()
@@ -56,7 +81,14 @@ describe('cold notification startup', () => {
       await startup
       expect(dismiss).toHaveBeenCalledExactlyOnceWith(target.id)
       expect(quit).toHaveBeenCalledOnce()
+      expect(initialize).toHaveBeenCalledOnce()
+      expect(write).toHaveBeenCalledExactlyOnceWith({
+        level: 'information',
+        eventName: 'NotificationLaunchQuit',
+        reason: 'close'
+      })
       expect(start).not.toHaveBeenCalled()
+      expect(openWindow).not.toHaveBeenCalled()
       expect(openProfile).not.toHaveBeenCalled()
       // A later activation cannot restart a process already committed to quit.
       controller.handle({
@@ -64,7 +96,7 @@ describe('cold notification startup', () => {
         arguments: body.arguments.replace(target.id, '5c692b42-0cc0-49b9-8f37-c59e7056ac4c')
       })
       controller.ready()
-      expect(await controller.waitForStartup()).toBe(false)
+      expect(await controller.waitForStartup()).toEqual({ action: 'quit', reason: 'close' })
       expect(openProfile).not.toHaveBeenCalled()
     }
   )
@@ -98,7 +130,7 @@ describe('cold notification startup', () => {
 
   it('quits after three seconds without recognizable activation and ignores a late body', async () => {
     vi.useFakeTimers()
-    const { controller, openProfile, dismiss, start, quit, whenReady } = setup()
+    const { controller, openProfile, dismiss, start, quit, whenReady, write, openWindow } = setup()
     const startup = whenReady()
     controller.handle({ type: 'click', arguments: 'unknown' })
     await vi.advanceTimersByTimeAsync(2_999)
@@ -107,6 +139,12 @@ describe('cold notification startup', () => {
     await vi.advanceTimersByTimeAsync(1)
     await startup
     expect(quit).toHaveBeenCalledOnce()
+    expect(write).toHaveBeenCalledExactlyOnceWith({
+      level: 'information',
+      eventName: 'NotificationLaunchQuit',
+      reason: 'timeout'
+    })
+    expect(openWindow).not.toHaveBeenCalled()
     controller.handle(body)
     controller.ready()
     expect(start).not.toHaveBeenCalled()
@@ -123,7 +161,9 @@ describe('cold notification startup', () => {
       const decision = controller.waitForStartup()
       controller.handle(details)
       await startup
-      expect(await decision).toBe(details === body)
+      expect(await decision).toEqual(
+        details === body ? { action: 'start' } : { action: 'quit', reason: 'close' }
+      )
       expect(vi.getTimerCount()).toBe(0)
       await vi.advanceTimersByTimeAsync(3_000)
       expect(start).toHaveBeenCalledTimes(details === body ? 1 : 0)
@@ -135,11 +175,13 @@ describe('cold notification startup', () => {
     'starts a normal launch immediately regardless of notification activation $actionIndex',
     async (details) => {
       vi.useFakeTimers()
-      const { controller, openProfile, start, quit, whenReady } = setup(false)
+      const { controller, openProfile, start, quit, whenReady, write, openWindow } = setup(false)
       if (details !== undefined) controller.handle(details)
       await whenReady()
       expect(start).toHaveBeenCalledOnce()
       expect(quit).not.toHaveBeenCalled()
+      expect(write).not.toHaveBeenCalled()
+      expect(openWindow).toHaveBeenCalledOnce()
       if (details === body) expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
       else expect(openProfile).not.toHaveBeenCalled()
       expect(vi.getTimerCount()).toBe(0)

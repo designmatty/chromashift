@@ -1,4 +1,38 @@
 import type { ActivationArguments } from 'electron'
+import type { StructuredLogger } from '@main/structured-logger.js'
+
+export type NotificationStartupDecision =
+  { action: 'start' } | { action: 'quit'; reason: 'close' | 'timeout' }
+
+interface NotificationStartupPorts {
+  initialize(): void
+  wait(): Promise<NotificationStartupDecision>
+  quit(): void
+  loadAndStart(): Promise<void>
+  ready(): void
+  shouldOpenWindow(): boolean
+  openWindow(): void
+  logger: StructuredLogger
+}
+
+export async function startAfterNotificationActivation(
+  ports: NotificationStartupPorts
+): Promise<void> {
+  ports.initialize()
+  const decision = await ports.wait()
+  if (decision.action === 'quit') {
+    ports.logger.write({
+      level: 'information',
+      eventName: 'NotificationLaunchQuit',
+      reason: decision.reason
+    })
+    ports.quit()
+    return
+  }
+  await ports.loadAndStart()
+  ports.ready()
+  if (ports.shouldOpenWindow()) ports.openWindow()
+}
 
 export interface NotificationTarget {
   id: string
@@ -57,18 +91,19 @@ export function isWindowsNotificationLaunch(
 export function handleSecondInstanceLaunch(
   platform: NodeJS.Platform,
   argv: readonly string[],
-  openWindow: () => void
+  requestLaunch: () => void
 ): void {
-  if (!isWindowsNotificationLaunch(platform, argv)) openWindow()
+  if (!isWindowsNotificationLaunch(platform, argv)) requestLaunch()
 }
 
 export class NotificationActivationController {
   readonly #handled = new Set<string>()
   readonly #pending: Array<string | null> = []
   #ready = false
-  #startupAllowed: boolean | undefined
-  #startupWait: Promise<boolean> | undefined
-  #resolveStartup: ((allowed: boolean) => void) | undefined
+  #startupDecision: NotificationStartupDecision | undefined
+  #startupWait: Promise<NotificationStartupDecision> | undefined
+  #resolveStartup: ((decision: NotificationStartupDecision) => void) | undefined
+  #relaunchRequested = false
 
   public constructor(
     private readonly openProfile: (profileId: string | null) => void,
@@ -76,24 +111,42 @@ export class NotificationActivationController {
     private readonly notificationLaunch = false
   ) {}
 
-  public waitForStartup(): Promise<boolean> {
-    if (!this.notificationLaunch) return Promise.resolve(true)
-    if (this.#startupAllowed !== undefined) return Promise.resolve(this.#startupAllowed)
+  public waitForStartup(): Promise<NotificationStartupDecision> {
+    if (!this.notificationLaunch) return Promise.resolve({ action: 'start' })
+    if (this.#startupDecision !== undefined) return Promise.resolve(this.#startupDecision)
     this.#startupWait ??= new Promise((resolve) => {
       // Start only after the shell has registered the COM callback. Three
       // seconds allows delayed delivery without leaving an idle tray process
       // alive indefinitely when Windows sends no recognizable activation.
-      const timeout = setTimeout(() => this.#settleStartup(false), 3_000)
-      this.#resolveStartup = (allowed) => {
+      const timeout = setTimeout(
+        () => this.#settleStartup({ action: 'quit', reason: 'timeout' }),
+        3_000
+      )
+      this.#resolveStartup = (decision) => {
         clearTimeout(timeout)
-        resolve(allowed)
+        resolve(decision)
       }
     })
     return this.#startupWait
   }
 
+  public requestLaunch(relaunch: () => void): void {
+    if (this.#startupDecision?.action === 'quit') {
+      // The startup continuation is already committed to quit. Preserve the
+      // explicit launch in a new process instead of reviving a settled gate.
+      if (!this.#relaunchRequested) {
+        this.#relaunchRequested = true
+        relaunch()
+      }
+      return
+    }
+    this.#settleStartup({ action: 'start' })
+    if (this.#ready) this.openProfile(null)
+    else this.#pending.push(null)
+  }
+
   public handle(details: ActivationArguments): void {
-    if (this.notificationLaunch && this.#startupAllowed === false) return
+    if (this.notificationLaunch && this.#startupDecision?.action === 'quit') return
     const activation = parseActivation(details)
     if (activation === null || this.#handled.has(activation.id)) return
     this.#handled.add(activation.id)
@@ -103,22 +156,25 @@ export class NotificationActivationController {
     this.dismiss(activation.id)
     // Remember the first recognized activation even if Electron replays it
     // synchronously during callback registration, before waitForStartup.
-    if (this.notificationLaunch) this.#settleStartup(activation.action === 'body')
+    if (this.notificationLaunch)
+      this.#settleStartup(
+        activation.action === 'body' ? { action: 'start' } : { action: 'quit', reason: 'close' }
+      )
     if (activation.action === 'close') return
     if (this.#ready) this.openProfile(activation.profileId)
     else this.#pending.push(activation.profileId)
   }
 
   public ready(): void {
-    if (this.notificationLaunch && this.#startupAllowed !== true) return
+    if (this.notificationLaunch && this.#startupDecision?.action !== 'start') return
     this.#ready = true
     for (const profileId of this.#pending.splice(0)) this.openProfile(profileId)
   }
 
-  #settleStartup(allowed: boolean): void {
-    if (this.#startupAllowed !== undefined) return
-    this.#startupAllowed = allowed
-    this.#resolveStartup?.(allowed)
+  #settleStartup(decision: NotificationStartupDecision): void {
+    if (this.#startupDecision !== undefined) return
+    this.#startupDecision = decision
+    this.#resolveStartup?.(decision)
     this.#resolveStartup = undefined
   }
 }

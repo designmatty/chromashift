@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { buildNotificationOptions } from '@main/electron-notification-options.js'
 import {
   NotificationActivationController,
-  notificationActivationArguments
+  notificationActivationArguments,
+  type NotificationStartupDecision
 } from '@main/notification-activation.js'
 import type {
   ProductNotification,
@@ -47,8 +48,12 @@ export class ElectronNotificationPort implements ProductNotificationPort {
     this.#activation.ready()
   }
 
-  public waitForStartup(): Promise<boolean> {
+  public waitForStartup(): Promise<NotificationStartupDecision> {
     return this.#activation.waitForStartup()
+  }
+
+  public requestLaunch(relaunch: () => void): void {
+    this.#activation.requestLaunch(relaunch)
   }
 
   public isSupported(): boolean {

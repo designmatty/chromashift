@@ -153,7 +153,9 @@ describe('ElectronNotificationPort', () => {
       handleSecondInstanceLaunch('win32', ['ChromaShift.exe', '-Embedding'], openWindow)
       expect(openWindow).not.toHaveBeenCalled()
       expect(openProfile).not.toHaveBeenCalled()
-      expect(await cold.waitForStartup()).toBe(action === 'body')
+      expect(await cold.waitForStartup()).toEqual(
+        action === 'body' ? { action: 'start' } : { action: 'quit', reason: 'close' }
+      )
       cold.ready()
       expect(previous.notification.close).not.toHaveBeenCalled()
       if (action === 'body') expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
@@ -176,7 +178,9 @@ describe('ElectronNotificationPort', () => {
       expect(settled).not.toHaveBeenCalled()
       expect(openProfile).not.toHaveBeenCalled()
       vi.mocked(Notification.handleActivation).mock.calls.at(-1)![0](details)
-      expect(await decision).toBe(action === 'body')
+      expect(await decision).toEqual(
+        action === 'body' ? { action: 'start' } : { action: 'quit', reason: 'close' }
+      )
       expect(openProfile).not.toHaveBeenCalled()
       cold.ready()
       if (action === 'body') expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
