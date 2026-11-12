@@ -63,7 +63,7 @@ public static class NotificationSmokeWindows {
     if (opened) throw new Exception("Close opened or restored a ChromaShift window.");
   }
 }
-'@
+'@ -ReferencedAssemblies System.Windows.Forms
 
 # Toast popup roots are not consistently exposed by UIA. Use the persistent
 # Notification Center card and require the unique title before any click.
