@@ -1,4 +1,11 @@
 import { Notification } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { buildNotificationOptions } from '@main/electron-notification-options.js'
+import {
+  NotificationActivationController,
+  notificationActivationArguments,
+  type NotificationStartupDecision
+} from '@main/notification-activation.js'
 import type {
   ProductNotification,
   ProductNotificationPort
@@ -7,27 +14,84 @@ import type { StructuredLogger } from '@main/structured-logger.js'
 
 export class ElectronNotificationPort implements ProductNotificationPort {
   readonly #active = new Set<Notification>()
+  readonly #windows = new Map<string, Notification>()
+  readonly #activation: NotificationActivationController
 
-  public constructor(private readonly logger: StructuredLogger) {}
+  public constructor(
+    private readonly logger: StructuredLogger,
+    openProfile: (profileId: string | null) => void,
+    notificationLaunch = false
+  ) {
+    this.#activation = new NotificationActivationController(
+      openProfile,
+      (id) => {
+        const notification = this.#windows.get(id)
+        if (notification !== undefined) notification.close()
+        // Windows dismisses foreground action toasts itself. After a cold start
+        // or timeout there may be no live object to close. Notification.remove()
+        // is a no-op on Windows in Electron 43, so do not use it as a fallback.
+        this.#windows.delete(id)
+        if (notification !== undefined) this.#active.delete(notification)
+      },
+      notificationLaunch
+    )
+  }
+
+  public initialize(): void {
+    if (process.platform !== 'win32') return
+    // Initialize the presenter/COM activator even on a cold notification launch.
+    Notification.isSupported()
+    Notification.handleActivation((details) => this.#activation.handle(details))
+  }
+
+  public ready(): void {
+    this.#activation.ready()
+  }
+
+  public waitForStartup(): Promise<NotificationStartupDecision> {
+    return this.#activation.waitForStartup()
+  }
+
+  public requestLaunch(relaunch: () => void): void {
+    this.#activation.requestLaunch(relaunch)
+  }
 
   public isSupported(): boolean {
     return Notification.isSupported()
   }
 
   public show(message: ProductNotification): void {
-    const notification = new Notification({
-      title: message.title,
-      body: message.body,
-      urgency: message.urgency
-    })
+    const target = { id: randomUUID(), profileId: message.profileId }
+    const windows = process.platform === 'win32'
+    const notification = new Notification(
+      buildNotificationOptions(message, process.platform, target)
+    )
     const release = (): void => {
       this.#active.delete(notification)
+      this.#windows.delete(target.id)
     }
 
-    notification.on('click', () => {
-      release()
-      message.onClick()
-    })
+    if (windows) {
+      this.#windows.set(target.id, notification)
+      notification.on('action', (event) => {
+        if (event.actionIndex !== 0 && event.actionIndex !== 1) return
+        this.#activation.handle({
+          type: 'action',
+          actionIndex: event.actionIndex,
+          arguments: notificationActivationArguments(
+            target,
+            event.actionIndex === 0 ? 'close' : 'body'
+          )
+        })
+      })
+      // Do not interpret argument-less Windows click events. Only the structured
+      // body activation above can open a profile; Close can never fall through.
+    } else {
+      notification.on('click', () => {
+        release()
+        message.onClick()
+      })
+    }
     notification.on('show', () => {
       this.logger.write({
         level: 'information',

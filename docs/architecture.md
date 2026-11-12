@@ -365,7 +365,17 @@ renderer confirmation dialog.
 Notification wording is derived from completed activation outcomes and
 distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
 and no-op results. Clicking a profile notification opens that profile in the app
-panel.
+panel. On Windows, profile notifications are silent and have one Close button.
+Close is a foreground activation that ChromaShift handles only by dismissing the
+toast, without opening or focusing a window. A cold Close starts ChromaShift
+briefly to receive the activation, then quits with no window, tray, runtime, or
+display writes. A body click starts normally and opens the related profile.
+Cold notification launches wait up to three seconds for recognizable activation
+before quitting. An explicit normal launch during that wait starts the runtime
+and queues the window until startup completes. If the quit decision has already
+settled, ChromaShift schedules a normal relaunch before exiting so that launch
+is preserved. Toasts from earlier builds have no structured activation arguments,
+so clicking them does nothing.
 
 Display control has three persisted states: Active, Paused, and Safety blocked.
 Pause suspends new writes, waits for in-flight activation, restores every owned

@@ -21,7 +21,8 @@
     "measure:performance": "node scripts/measure-memory.mjs --packaged --check",
     "smoke:package": "node scripts/package-smoke.mjs",
     "test": "install-electron --no && vitest run src/main src/shared src/renderer",
-    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "smoke:notifications": "node scripts/smoke.mjs --notifications-only"
   },
   "dependencies": {
     "@chakra-ui/react": "3.36.1",

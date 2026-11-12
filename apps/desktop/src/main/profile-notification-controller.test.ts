@@ -157,6 +157,7 @@ describe('ProfileNotificationController', () => {
     expect(notifications.messages[0]).toMatchObject({
       title: 'Gaming activated',
       body: 'Activated automatically.',
+      profileId: 'gaming',
       urgency: 'normal'
     })
     notifications.messages[0]?.onClick()

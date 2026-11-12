@@ -7,6 +7,7 @@ export interface ProductNotification {
   body: string
   severity: 'information' | 'warning' | 'error'
   urgency: 'normal' | 'critical' | 'low'
+  profileId: string | null
   onClick(): void
 }
 
@@ -36,6 +37,7 @@ export class ProfileNotificationController {
         : (selected?.name ?? 'Selected profile')
     this.notifications.show({
       ...this.#describeOutcome(outcome, label),
+      profileId,
       onClick: () => this.openProfile(profileId)
     })
   }
@@ -83,7 +85,7 @@ export class ProfileNotificationController {
   #describeOutcome(
     outcome: CompletedActivationOutcome,
     label: string
-  ): Omit<ProductNotification, 'onClick'> {
+  ): Omit<ProductNotification, 'onClick' | 'profileId'> {
     if (outcome.pausedSelection !== undefined) {
       const selection = outcome.pausedSelection.kind === 'automatic' ? 'Automatic' : label
       return {
