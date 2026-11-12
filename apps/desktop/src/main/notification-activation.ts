@@ -66,13 +66,34 @@ export class NotificationActivationController {
   readonly #handled = new Set<string>()
   readonly #pending: Array<string | null> = []
   #ready = false
+  #startupAllowed: boolean | undefined
+  #startupWait: Promise<boolean> | undefined
+  #resolveStartup: ((allowed: boolean) => void) | undefined
 
   public constructor(
     private readonly openProfile: (profileId: string | null) => void,
-    private readonly dismiss: (id: string) => void
+    private readonly dismiss: (id: string) => void,
+    private readonly notificationLaunch = false
   ) {}
 
+  public waitForStartup(): Promise<boolean> {
+    if (!this.notificationLaunch) return Promise.resolve(true)
+    if (this.#startupAllowed !== undefined) return Promise.resolve(this.#startupAllowed)
+    this.#startupWait ??= new Promise((resolve) => {
+      // Start only after the shell has registered the COM callback. Three
+      // seconds allows delayed delivery without leaving an idle tray process
+      // alive indefinitely when Windows sends no recognizable activation.
+      const timeout = setTimeout(() => this.#settleStartup(false), 3_000)
+      this.#resolveStartup = (allowed) => {
+        clearTimeout(timeout)
+        resolve(allowed)
+      }
+    })
+    return this.#startupWait
+  }
+
   public handle(details: ActivationArguments): void {
+    if (this.notificationLaunch && this.#startupAllowed === false) return
     const activation = parseActivation(details)
     if (activation === null || this.#handled.has(activation.id)) return
     this.#handled.add(activation.id)
@@ -80,13 +101,24 @@ export class NotificationActivationController {
     // both the global callback and the instance event for one activation.
     if (this.#handled.size > 256) this.#handled.delete(this.#handled.values().next().value!)
     this.dismiss(activation.id)
+    // Remember the first recognized activation even if Electron replays it
+    // synchronously during callback registration, before waitForStartup.
+    if (this.notificationLaunch) this.#settleStartup(activation.action === 'body')
     if (activation.action === 'close') return
     if (this.#ready) this.openProfile(activation.profileId)
     else this.#pending.push(activation.profileId)
   }
 
   public ready(): void {
+    if (this.notificationLaunch && this.#startupAllowed !== true) return
     this.#ready = true
     for (const profileId of this.#pending.splice(0)) this.openProfile(profileId)
+  }
+
+  #settleStartup(allowed: boolean): void {
+    if (this.#startupAllowed !== undefined) return
+    this.#startupAllowed = allowed
+    this.#resolveStartup?.(allowed)
+    this.#resolveStartup = undefined
   }
 }

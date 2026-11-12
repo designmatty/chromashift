@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActivationArguments } from 'electron'
 import {
   handleSecondInstanceLaunch,
@@ -13,6 +13,139 @@ const close: ActivationArguments = {
   actionIndex: 0,
   arguments: notificationActivationArguments(target, 'close')
 }
+const body: ActivationArguments = {
+  type: 'action',
+  actionIndex: 1,
+  arguments: notificationActivationArguments(target, 'body')
+}
+
+describe('cold notification startup', () => {
+  afterEach(() => vi.useRealTimers())
+
+  function setup(notificationLaunch = true) {
+    const openProfile = vi.fn()
+    const dismiss = vi.fn()
+    const start = vi.fn(async () => {})
+    const quit = vi.fn()
+    const controller = new NotificationActivationController(
+      openProfile,
+      dismiss,
+      notificationLaunch
+    )
+    // The shell registers notifications at whenReady, then waits here before
+    // loading settings, registering shortcuts, or starting the runtime.
+    const whenReady = async (): Promise<void> => {
+      if (!(await controller.waitForStartup())) {
+        quit()
+        return
+      }
+      await start()
+      controller.ready()
+    }
+    return { controller, openProfile, dismiss, start, quit, whenReady }
+  }
+
+  it.each(['before', 'after'] as const)(
+    'quits without starting for Close arriving %s whenReady',
+    async (arrival) => {
+      const { controller, openProfile, dismiss, start, quit, whenReady } = setup()
+      if (arrival === 'before') controller.handle(close)
+      const startup = whenReady()
+      expect(start).not.toHaveBeenCalled()
+      if (arrival === 'after') controller.handle(close)
+      await startup
+      expect(dismiss).toHaveBeenCalledExactlyOnceWith(target.id)
+      expect(quit).toHaveBeenCalledOnce()
+      expect(start).not.toHaveBeenCalled()
+      expect(openProfile).not.toHaveBeenCalled()
+      // A later activation cannot restart a process already committed to quit.
+      controller.handle({
+        ...body,
+        arguments: body.arguments.replace(target.id, '5c692b42-0cc0-49b9-8f37-c59e7056ac4c')
+      })
+      controller.ready()
+      expect(await controller.waitForStartup()).toBe(false)
+      expect(openProfile).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(['before', 'after'] as const)(
+    'starts and opens the body profile arriving %s whenReady',
+    async (arrival) => {
+      const { controller, openProfile, dismiss, start, quit, whenReady } = setup()
+      let finishStart!: () => void
+      const runtimeReady = new Promise<void>((resolve) => {
+        finishStart = resolve
+      })
+      start.mockImplementationOnce(() => runtimeReady)
+      if (arrival === 'before') controller.handle(body)
+      const startup = whenReady()
+      expect(start).not.toHaveBeenCalled()
+      if (arrival === 'after') controller.handle(body)
+      await Promise.resolve()
+      expect(start).toHaveBeenCalledOnce()
+      expect(openProfile).not.toHaveBeenCalled()
+      finishStart()
+      await startup
+      expect(dismiss).toHaveBeenCalledExactlyOnceWith(target.id)
+      expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
+      expect(quit).not.toHaveBeenCalled()
+      controller.handle(body)
+      controller.ready()
+      expect(openProfile).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('quits after three seconds without recognizable activation and ignores a late body', async () => {
+    vi.useFakeTimers()
+    const { controller, openProfile, dismiss, start, quit, whenReady } = setup()
+    const startup = whenReady()
+    controller.handle({ type: 'click', arguments: 'unknown' })
+    await vi.advanceTimersByTimeAsync(2_999)
+    expect(quit).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await startup
+    expect(quit).toHaveBeenCalledOnce()
+    controller.handle(body)
+    controller.ready()
+    expect(start).not.toHaveBeenCalled()
+    expect(openProfile).not.toHaveBeenCalled()
+    expect(dismiss).not.toHaveBeenCalled()
+  })
+
+  it.each([close, body])(
+    'clears the timeout after a recognized activation $actionIndex',
+    async (details) => {
+      vi.useFakeTimers()
+      const { controller, start, quit, whenReady } = setup()
+      const startup = whenReady()
+      const decision = controller.waitForStartup()
+      controller.handle(details)
+      await startup
+      expect(await decision).toBe(details === body)
+      expect(vi.getTimerCount()).toBe(0)
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(start).toHaveBeenCalledTimes(details === body ? 1 : 0)
+      expect(quit).toHaveBeenCalledTimes(details === close ? 1 : 0)
+    }
+  )
+
+  it.each([undefined, close, body])(
+    'starts a normal launch immediately regardless of notification activation $actionIndex',
+    async (details) => {
+      vi.useFakeTimers()
+      const { controller, openProfile, start, quit, whenReady } = setup(false)
+      if (details !== undefined) controller.handle(details)
+      await whenReady()
+      expect(start).toHaveBeenCalledOnce()
+      expect(quit).not.toHaveBeenCalled()
+      if (details === body) expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
+      else expect(openProfile).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    }
+  )
+})
 
 describe('notification activation validation', () => {
   it.each([

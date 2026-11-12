@@ -78,7 +78,12 @@ const applicationDataPaths = resolveApplicationDataPaths(
 )
 const diagnosticLogPath = join(applicationDataPaths.userDataDirectory, 'logs', 'main.jsonl')
 const logger = new PersistentJsonLogger(diagnosticLogPath)
-const notifications = new ElectronNotificationPort(logger, (profileId) => openProfile(profileId))
+const notificationLaunch = isWindowsNotificationLaunch(process.platform, process.argv)
+const notifications = new ElectronNotificationPort(
+  logger,
+  (profileId) => openProfile(profileId),
+  notificationLaunch
+)
 const cleanupDevelopmentShortcut = createDevelopmentShortcutCleanup({
   platform: process.platform,
   isPackaged: app.isPackaged,
@@ -552,7 +557,7 @@ function openProfile(profileId: string | null): void {
 }
 
 if (ownsSingleInstanceLock) {
-  cleanupDevelopmentShortcut()
+  if (!notificationLaunch) cleanupDevelopmentShortcut()
   app.on('second-instance', (_event, argv) => {
     if (app.isReady()) handleSecondInstanceLaunch(process.platform, argv, () => openWindow())
   })
@@ -695,6 +700,13 @@ registerProductIpcHandlers(
 void app.whenReady().then(async () => {
   if (!ownsSingleInstanceLock) return
   notifications.initialize()
+  if (!(await notifications.waitForStartup())) {
+    // No runtime or native client exists yet, so before-quit has no shutdown
+    // coordinator and needs no restoration for a cold Close or timeout.
+    app.quit()
+    return
+  }
+  if (notificationLaunch) cleanupDevelopmentShortcut()
   await Promise.all([
     settingsStores.preferences.load(),
     settingsStores.windowState.load(),
@@ -705,7 +717,7 @@ void app.whenReady().then(async () => {
   await runtime.start()
   notifications.ready()
   if (
-    !isWindowsNotificationLaunch(process.platform, process.argv) &&
+    !notificationLaunch &&
     (!app.getLoginItemSettings().wasOpenedAtLogin ||
       settingsStores.preferences.current.launchBehavior === 'app')
   ) {

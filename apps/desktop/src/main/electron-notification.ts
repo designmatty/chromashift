@@ -18,17 +18,22 @@ export class ElectronNotificationPort implements ProductNotificationPort {
 
   public constructor(
     private readonly logger: StructuredLogger,
-    openProfile: (profileId: string | null) => void
+    openProfile: (profileId: string | null) => void,
+    notificationLaunch = false
   ) {
-    this.#activation = new NotificationActivationController(openProfile, (id) => {
-      const notification = this.#windows.get(id)
-      if (notification !== undefined) notification.close()
-      // Windows dismisses foreground action toasts itself. After a cold start
-      // or timeout there may be no live object to close. Notification.remove()
-      // is a no-op on Windows in Electron 43, so do not use it as a fallback.
-      this.#windows.delete(id)
-      if (notification !== undefined) this.#active.delete(notification)
-    })
+    this.#activation = new NotificationActivationController(
+      openProfile,
+      (id) => {
+        const notification = this.#windows.get(id)
+        if (notification !== undefined) notification.close()
+        // Windows dismisses foreground action toasts itself. After a cold start
+        // or timeout there may be no live object to close. Notification.remove()
+        // is a no-op on Windows in Electron 43, so do not use it as a fallback.
+        this.#windows.delete(id)
+        if (notification !== undefined) this.#active.delete(notification)
+      },
+      notificationLaunch
+    )
   }
 
   public initialize(): void {
@@ -40,6 +45,10 @@ export class ElectronNotificationPort implements ProductNotificationPort {
 
   public ready(): void {
     this.#activation.ready()
+  }
+
+  public waitForStartup(): Promise<boolean> {
+    return this.#activation.waitForStartup()
   }
 
   public isSupported(): boolean {

@@ -138,7 +138,7 @@ describe('ElectronNotificationPort', () => {
 
   it.each(['close', 'body'] as const)(
     'routes a cold COM %s without the original port or renderer',
-    (action) => {
+    async (action) => {
       const previous = setup()
       const details = activation(previous.options, action)
       const openProfile = vi.fn()
@@ -147,14 +147,38 @@ describe('ElectronNotificationPort', () => {
       vi.mocked(Notification.handleActivation).mockImplementationOnce((callback) =>
         callback(details)
       )
-      const cold = new ElectronNotificationPort({ write: vi.fn() }, openProfile)
+      const cold = new ElectronNotificationPort({ write: vi.fn() }, openProfile, true)
       expect(isWindowsNotificationLaunch('win32', ['ChromaShift.exe', '-Embedding'])).toBe(true)
       cold.initialize()
       handleSecondInstanceLaunch('win32', ['ChromaShift.exe', '-Embedding'], openWindow)
       expect(openWindow).not.toHaveBeenCalled()
       expect(openProfile).not.toHaveBeenCalled()
+      expect(await cold.waitForStartup()).toBe(action === 'body')
       cold.ready()
       expect(previous.notification.close).not.toHaveBeenCalled()
+      if (action === 'body') expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
+      else expect(openProfile).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(['close', 'body'] as const)(
+    'gates startup on a delayed cold COM %s callback',
+    async (action) => {
+      const previous = setup()
+      const details = activation(previous.options, action)
+      const openProfile = vi.fn()
+      const cold = new ElectronNotificationPort({ write: vi.fn() }, openProfile, true)
+      cold.initialize()
+      const decision = cold.waitForStartup()
+      const settled = vi.fn()
+      void decision.then(settled)
+      await Promise.resolve()
+      expect(settled).not.toHaveBeenCalled()
+      expect(openProfile).not.toHaveBeenCalled()
+      vi.mocked(Notification.handleActivation).mock.calls.at(-1)![0](details)
+      expect(await decision).toBe(action === 'body')
+      expect(openProfile).not.toHaveBeenCalled()
+      cold.ready()
       if (action === 'body') expect(openProfile).toHaveBeenCalledExactlyOnceWith('gaming')
       else expect(openProfile).not.toHaveBeenCalled()
     }
