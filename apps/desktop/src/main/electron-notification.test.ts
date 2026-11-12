@@ -211,17 +211,25 @@ describe('ElectronNotificationPort', () => {
     expect(onClick).not.toHaveBeenCalled()
   })
 
-  it('logs Windows toast rejection without opening a profile', () => {
-    const { notification, openProfile, write } = setup()
-    notification.emit('failed', {}, 'Invalid XML')
-    expect(write).toHaveBeenCalledWith({
-      level: 'error',
-      eventName: 'ProfileNotificationFailed',
-      title: 'Gaming activated',
-      message: 'Invalid XML'
-    })
-    expect(openProfile).not.toHaveBeenCalled()
-  })
+  it.each(['Invalid XML', 'Settings prevent the notification from being delivered'])(
+    'logs the request and Windows toast rejection without opening a profile: %s',
+    (error) => {
+      const { notification, openProfile, write } = setup()
+      notification.emit('failed', {}, error)
+      expect(write).toHaveBeenCalledWith({
+        level: 'information',
+        eventName: 'ProfileNotificationRequested',
+        title: 'Gaming activated'
+      })
+      expect(write).toHaveBeenCalledWith({
+        level: 'error',
+        eventName: 'ProfileNotificationFailed',
+        title: 'Gaming activated',
+        message: error
+      })
+      expect(openProfile).not.toHaveBeenCalled()
+    }
+  )
 
   it.each(['linux', 'darwin'] as const)(
     'keeps the %s instance click callback and options',

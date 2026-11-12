@@ -14,6 +14,8 @@ import { verifyCloseRetryGuidance } from './close-retry-smoke.mjs'
 import { verifyLearnedGammaLimits } from './learned-gamma-limits-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 import { clickAppButton as clickReadyAppButton } from './smoke-app-actions.mjs'
+import { withNotificationSettings } from './notification-settings-guard.mjs'
+import { verifyNotifications } from './notifications-smoke.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const desktopDirectory = resolve(scriptDirectory, '..')
@@ -40,7 +42,15 @@ const displayServicePath = resolve(
 const timeoutMilliseconds = 15_000
 const execFileAsync = promisify(execFile)
 
+let smokeSignal
+let electron
+let cleaningUp = false
+function checkInterrupted() {
+  if (!cleaningUp) smokeSignal?.throwIfAborted()
+}
+
 function delay(milliseconds) {
+  checkInterrupted()
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
 }
 
@@ -192,6 +202,7 @@ async function connectToDebugger(url) {
     events,
     close: () => socket.close(),
     send(method, params = {}, responseTimeout = timeoutMilliseconds) {
+      checkInterrupted()
       const id = nextId++
       const response = new Promise((resolveResponse, reject) => {
         pending.set(id, { resolve: resolveResponse, reject })
@@ -1100,7 +1111,10 @@ $processId`
   return processId
 }
 
-await verifyLearnedGammaLimits({
+await withNotificationSettings(async (notificationSettings) => {
+smokeSignal = notificationSettings.signal
+const notificationsOnly = globalThis.process.argv.includes('--notifications-only')
+if (!notificationsOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
   environment: Object.fromEntries(Object.entries(globalThis.process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
   reservePort, waitForDebuggerTarget, connectToDebugger, waitForExpression, hoverElement
@@ -1131,6 +1145,7 @@ const testNativeRecovery = globalThis.process.argv.includes('--native-recovery')
 // after Electron has fully exited. The guard restores its own baseline in the
 // final cleanup even when the assertion fails.
 const restorationGuard = new NativeClient({ executablePath: displayServicePath })
+try {
 await restorationGuard.start()
 const guardDisplays = await restorationGuard.getDisplays()
 const guardGroups = new Map()
@@ -1177,6 +1192,7 @@ const neutralColorSettings = {
 }
 
 let standardOutput = ''
+let notificationOutput = ''
 
 function countLogMatches(pattern) {
   return (standardOutput.match(pattern) ?? []).length
@@ -1190,7 +1206,8 @@ async function waitForLogCount(pattern, previousCount, failureMessage) {
   }
 }
 let standardError = ''
-const electron = spawn(
+checkInterrupted()
+electron = spawn(
   electronPath,
   [
     `--remote-debugging-port=${debuggingPort}`,
@@ -1214,9 +1231,11 @@ electron.stdout.setEncoding('utf8')
 electron.stderr.setEncoding('utf8')
 electron.stdout.on('data', (data) => {
   standardOutput += data
+  notificationOutput += data
 })
 electron.stderr.on('data', (data) => {
   standardError += data
+  notificationOutput += data
 })
 
 let debuggerClient
@@ -1859,6 +1878,23 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
   )
 }
 
+async function runNotifications(includeBodyClick) {
+  await debuggerClient.send('Runtime.evaluate', {
+    expression: "window.chromaShift.openAppPanel('profiles')", awaitPromise: true
+  })
+  const target = await waitForDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
+  debuggerClient.close()
+  debuggerClient = await connectToDebugger(target.webSocketDebuggerUrl)
+  await debuggerClient.send('Runtime.enable')
+  await debuggerClient.send('Page.enable')
+  await waitForUi(debuggerClient)
+  await verifyNotifications({
+    client: debuggerClient, settings: notificationSettings, processId: electron.pid,
+    minimize: setMainWindowMinimized, waitForExpression, getOutput: () => notificationOutput,
+    delay, includeBodyClick
+  })
+}
+
 async function runSmoke() {
   await mkdir(screenshotDirectory, { recursive: true })
   const target = await waitForDebuggerTarget(
@@ -1879,7 +1915,7 @@ async function runSmoke() {
   await loaded
 
   const ui = await waitForUi(debuggerClient)
-  await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
+  if (!notificationsOnly) await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
   const productState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',
     awaitPromise: true,
@@ -1892,6 +1928,11 @@ async function runSmoke() {
     throw new Error(`The product UI was incomplete:\n${ui.body}`)
   }
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
+
+  if (notificationsOnly) {
+    await runNotifications(true)
+    return
+  }
 
   if (testNativeRecovery) {
     const killedProcessId = await killChildDisplayService(electron.pid)
@@ -4755,6 +4796,9 @@ async function runSmoke() {
     }
   }
 
+  // Keep real toast interaction last so it cannot obscure any tray/UI checks.
+  await runNotifications(false)
+
   globalThis.console.log('Desktop smoke test passed.')
   globalThis.console.log(`Renderer: ${ui.title} (${target.url})`)
   globalThis.console.log('Preload bridge: ready')
@@ -4783,6 +4827,7 @@ try {
 } catch (error) {
   smokeFailure = error
 } finally {
+  cleaningUp = true
   if (debuggerClient !== undefined) {
     if (!forceElectronTermination) {
       try {
@@ -4854,3 +4899,10 @@ if (smokeFailure !== undefined) {
   if (standardError !== '') globalThis.console.error(`Electron stderr:\n${standardError}`)
   throw smokeFailure
 }
+
+} finally {
+  // Also release the baseline-free guard when launch/setup fails before runSmoke.
+  cleaningUp = true
+  await restorationGuard.stop()
+}
+})
