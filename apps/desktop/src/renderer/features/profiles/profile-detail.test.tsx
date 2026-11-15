@@ -40,7 +40,7 @@ describe('profile detail', () => {
     id: string,
     bound = true,
     names: string[] = [],
-    comparison: 'clean' | 'draft' | 'saved' = 'clean'
+    comparison: 'clean' | 'draft' | 'saved' | 'saved-missing' = 'clean'
   ): string {
     vi.stubGlobal('localStorage', { getItem: () => null })
     const product = {
@@ -102,15 +102,18 @@ describe('profile detail', () => {
           busy={false}
           dirty={comparison !== 'clean'}
           compare={{
-            showingSaved: comparison === 'saved',
+            showingSaved: comparison.startsWith('saved'),
             savedProfile: {
               ...profile(names, id),
-              displays: [
-                {
-                  displayId: 'display:one',
-                  color: { ...createNeutralColorSettings(), brightness: 54 }
-                }
-              ]
+              displays:
+                comparison === 'saved-missing'
+                  ? []
+                  : [
+                      {
+                        displayId: 'display:one',
+                        color: { ...createNeutralColorSettings(), brightness: 54 }
+                      }
+                    ]
             },
             onPress: vi.fn(),
             onRelease: vi.fn(async () => undefined)
@@ -160,6 +163,33 @@ describe('profile detail', () => {
     expect(header).toContain('data-part="profile-hotkey"')
     expect(header).toContain('More profile actions')
     expect(render('game', false)).not.toContain('data-part="shortcut-display"')
+  })
+
+  it('pins the whole header with an opaque panel surface and stable height', () => {
+    for (const comparison of ['clean', 'draft'] as const) {
+      const html = render('game', true, [], comparison)
+      expect(html).toContain('position:sticky;top:0;z-index:1;')
+      expect(html).toContain('background:var(--chromashift-colors-bg)')
+      expect(html).toContain('background:var(--chromashift-colors-bg-muted)')
+      expect(html).toContain('min-height:var(--chromashift-sizes-10)')
+      const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
+      expect(header).toContain('profile-title')
+      expect(header).toContain('Profile name')
+      expect(header).toContain('More profile actions')
+      if (comparison === 'draft') {
+        for (const action of ['Hold to compare', 'Discard changes', 'Update profile'])
+          expect(header).toContain(action)
+      }
+    }
+  })
+
+  it('keeps disabled control rows without a hint for a missing saved target', () => {
+    const html = render('game', true, [], 'saved-missing')
+    const controls = html.slice(html.indexOf('data-part="profile-color-controls"'))
+    expect(controls).not.toContain('Original settings')
+    const sliders = [...controls.matchAll(/<div\b[^>]*data-slot="slider"[^>]*>/g)]
+    expect(sliders).toHaveLength(6)
+    expect(sliders.every(([slider]) => slider.includes('data-disabled=""'))).toBe(true)
   })
 
   it('keeps trigger actions beside the heading and uses compact wrapping executable chips', () => {

@@ -154,11 +154,17 @@ targets remain persisted and resume when the same physical display returns.
   alone do not. Carried-in overrides offer compare without promotion to Edit.
   Its accessible name is `Hold to compare with saved`.
   Holding the pointer, or Space or Enter in the app, shows the saved colors.
-  Displays without a saved target show Original settings, including on screen.
+  Without a saved target, the display shows Original settings.
   Controls show saved values and stay disabled. The button has a visible pressed
   state in both themes, with no Saved badge or extra missing-target hint.
   A polite status announces `Showing saved values`. Release returns to the draft.
   The mini panel remains pointer-oriented, non-activating and fixed in size.
+  Its compare button matches Update profile's compact pill shape and subtle
+  surface. The app header keeps its existing compare style.
+- The whole profile header stays pinned inside the scrolling profile pane,
+  including rename, compare, Update/Discard and the overflow menu. Its opaque
+  surface matches the pane in both themes, and its height stays stable when
+  unsaved actions appear. A pointer hold preserves an open rename input.
 - Click the header title to rename a profile in place. Enter or blur records the
   name in the unsaved draft; Escape cancels the name input. New profiles open
   with naming focused. New profiles use `New profile`, `New profile 2`, and the
@@ -265,13 +271,19 @@ targets; release applies the session's current draft. Both use the existing nati
 baseline, read-back and full-display rollback paths. Pending draft writes drain
 first; compare requests bypass the 120 ms edit debounce. Main rejects draft edits
 while held rather than queueing edits that could unexpectedly land after release.
-A press never creates or promotes a session.
+A press never starts or promotes a session itself.
 
 Pointer up anywhere, pointer cancel, lost capture, blur, unmount, navigation,
 Update and Discard release compare in both panels; the app also handles key up.
 Main releases compare on minimize, override handoff and quit, independently of
-renderer cleanup. Close, cancellation, pause, safety recovery, topology changes
-and session replacement clear compare through the existing restoration paths.
+renderer cleanup. Close, cancellation, pause, safety recovery and session
+replacement clear compare through the existing restoration paths. A validated
+topology change reapplies the draft. Failed topology refresh or unvalidated
+ownership during a hold retains the session and every display the hold touched,
+clears compare and enters Safety blocked. Edits remain blocked until Retry
+validates ownership, restores affected displays and reapplies the full draft,
+including Original settings for saved-only targets. Published draft targets
+describe retained intent while recovery is pending, not confirmed applied output.
 Old panel openings and queued releases cannot write into newer sessions.
 
 During app-panel Preview or Edit, connected SDR displays without a draft target

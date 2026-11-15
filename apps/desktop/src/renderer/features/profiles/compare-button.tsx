@@ -6,18 +6,25 @@ export function CompareButton({
   onPress,
   onRelease,
   disabled,
-  pointerOnly = false
+  pointerOnly = false,
+  size = 'xs',
+  variant = 'outline',
+  borderRadius
 }: {
   showingSaved: boolean
   onPress(input: CompareInput): void
   onRelease(input?: CompareInput): Promise<void>
   disabled?: boolean
   pointerOnly?: boolean
+  size?: 'xs' | '2xs'
+  variant?: 'outline' | 'subtle'
+  borderRadius?: 'full'
 }): React.JSX.Element {
   return (
     <Button
-      size="xs"
-      variant="outline"
+      size={size}
+      variant={variant}
+      borderRadius={borderRadius}
       aria-label="Hold to compare with saved"
       aria-pressed={showingSaved}
       data-comparing={showingSaved ? 'true' : 'false'}
@@ -30,7 +37,8 @@ export function CompareButton({
       touchAction="none"
       onPointerDown={(event) => {
         if (event.button !== 0) return
-        if (pointerOnly) event.preventDefault()
+        // A pointer hold must preserve an in-progress rename and mini non-activation.
+        event.preventDefault()
         event.currentTarget.setPointerCapture(event.pointerId)
         onPress('pointer')
       }}

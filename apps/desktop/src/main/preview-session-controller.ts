@@ -132,7 +132,7 @@ export class PreviewSessionController {
       comparing: this.#active.comparing === true,
       draft: structuredClone(this.#active.draft),
       unsavedChanges: hasUnsavedChanges(this.#active),
-      targets: (this.#active.comparing
+      targets: (this.#active.comparing || this.#active.comparisonInterrupted
         ? this.#active.draft.displays
         : [...this.#active.applied.values()]
       ).map((target) => ({
@@ -366,12 +366,7 @@ export class PreviewSessionController {
       active.comparing = false
       // A failed saved write must never replace the retained draft with saved colors.
       if (error instanceof PreviewRestoreError) {
-        active.applied = new Map(
-          active.draft.displays.map((target) => [
-            target.displayId.toLowerCase(),
-            structuredClone(target)
-          ])
-        )
+        active.comparisonInterrupted = true
         await this.#retainSessionForRecovery(error)
         throw error
       }
@@ -400,13 +395,12 @@ export class PreviewSessionController {
       if (!active?.comparing) return
       active.comparing = false
       active.comparisonInterrupted = true
-      active.applied = new Map(
-        active.draft.displays.map((target) => [
-          target.displayId.toLowerCase(),
-          structuredClone(target)
-        ])
+      await this.#retainSessionForRecovery(
+        new PreviewRestoreError(
+          ['Display ownership could not be validated during Hold to compare.'],
+          [...active.touched.values()]
+        )
       )
-      this.onStateChanged(this.state)
     })
   }
 
@@ -627,6 +621,11 @@ export class PreviewSessionController {
     const wasComparing = active.comparing || active.comparisonInterrupted
     if (active.comparing) {
       active.comparing = false
+      active.comparisonInterrupted = true
+    }
+    // A topology event must never reapply values whose rollback is unconfirmed.
+    if (this.#recovery !== null) return true
+    if (wasComparing) {
       active.applied = new Map(
         active.draft.displays.map((target) => [
           target.displayId.toLowerCase(),
@@ -634,9 +633,6 @@ export class PreviewSessionController {
         ])
       )
     }
-    // A topology event must never reapply values whose rollback is unconfirmed.
-    if (this.#recovery !== null) return true
-
     const displays = await this.native.getDisplays()
     await this.#restoreHdrDisplays(active.touched, displays)
     const connectedDisplayIds = new Set(
@@ -656,7 +652,6 @@ export class PreviewSessionController {
     if (active.kind !== 'override' || wasComparing) {
       await this.#holdOriginal(active.touched, [...active.applied.values()])
     }
-    active.comparisonInterrupted = false
     for (const target of targets) {
       if (!this.#isTargetValidated(target, active.validated)) continue
       try {
@@ -675,6 +670,7 @@ export class PreviewSessionController {
       displays: [...active.applied.values()].map((target) => structuredClone(target))
     }
     active.saved = await this.#clampSaved(active.saved)
+    active.comparisonInterrupted = false
     this.onStateChanged(this.state)
     return true
   }

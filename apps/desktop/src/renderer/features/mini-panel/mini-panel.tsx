@@ -228,6 +228,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
                 showingSaved={comparing}
                 onPress={pressCompare}
                 onRelease={releaseCompare}
+                size="2xs"
+                variant="subtle"
+                borderRadius="full"
                 pointerOnly
                 disabled={product.chromaShift.status !== 'active'}
               />
@@ -298,8 +301,6 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           )}
           {selectedDisplay === undefined || selectedDisplayId === null ? (
             <Empty title="No displays connected" />
-          ) : comparing && !findDisplayTarget(active, selectedDisplayId) ? (
-            <Text>Original settings</Text>
           ) : (
             <ColorControls
               displayId={selectedDisplayId}
@@ -415,6 +416,7 @@ function MiniPanelContent({
   return (
     <Flex position="relative" flex="1" minH="0" mx="3" direction="column">
       <Box
+        data-part="mini-panel-content"
         flex="1"
         minH="0"
         px={2.5}

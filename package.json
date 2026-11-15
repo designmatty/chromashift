@@ -27,6 +27,7 @@
     "test": "npm run build --workspace @chromashift/core && npm run build --workspace @chromashift/native-client && npm run test --workspaces --if-present && npm run test:repository && npm run native:test",
     "test:repository": "node --test scripts/*.test.mjs",
     "smoke:desktop": "npm run build && node apps/desktop/scripts/smoke.mjs",
+    "smoke:compare": "npm run build && npm run smoke:compare --workspace @chromashift/desktop",
     "smoke:desktop:crash": "npm run build && node apps/desktop/scripts/smoke.mjs --force-exit",
     "smoke:desktop:native-recovery": "npm run build && node apps/desktop/scripts/smoke.mjs --native-recovery",
     "measure:memory": "npm run build && npm run measure:memory --workspace @chromashift/desktop",

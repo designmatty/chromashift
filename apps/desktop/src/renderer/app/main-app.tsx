@@ -639,6 +639,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
             <Flex
               as="main"
               data-part="main-panel"
+              isolation="isolate"
               flex={1}
               gap={2}
               flexDir={'column'}

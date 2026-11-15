@@ -431,6 +431,7 @@ export class ProductController {
   ): Promise<void> {
     this.assertDisplayControlAvailable()
     if (this.activation.chromaShiftState.status !== 'active') {
+      if (!showing) return
       throw new ProductConflictError('Resume ChromaShift before comparing display colors.')
     }
     await this.preview.setCompare(profileId, showing, assertCurrent, sessionId)

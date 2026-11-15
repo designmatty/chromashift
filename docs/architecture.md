@@ -282,8 +282,14 @@ current draft on release, including captured-baseline restoration for missing
 saved targets. Neither request changes the session draft, saved reference, kind,
 or unsaved-change flag. Published targets describe the draft while held so panel
 hydration cannot mistake comparison output for an edit. Draft updates are rejected
-while comparing. Compare clears on restoration, session replacement, recovery and
-topology changes; minimize, override handoff and quit release it in main. Both
+while comparing. Compare clears on restoration, session replacement and recovery;
+validated topology changes reapply the draft. If refresh or ownership validation
+fails during a hold, main retains the touched displays and session for recovery,
+marks comparison interrupted and enters Safety blocked without a release write.
+Retry validates ownership, restores affected displays and reapplies the full draft,
+including Original settings for targets only the saved profile included. Draft
+targets remain retained intent while blocked, not confirmation of applied output.
+Minimize, override handoff and quit release compare in main. Both
 panels share the pointer-release state machine and semantic pressed styling. The
 app also supports Space and Enter; the mini panel stays non-activating.
 Renderer dialogs guard navigation and activation changes

@@ -162,6 +162,19 @@ function capabilityReport(supported: boolean): DisplayCapabilityReport {
 }
 
 describe('ProductController settings ownership', () => {
+  it.each(['paused', 'safetyBlocked'] as const)(
+    'quietly accepts a compare release while %s without reaching preview',
+    async (status) => {
+      const { product, activation } = controller()
+      activation.chromaShiftState.status = status
+      const assertCurrent = vi.fn()
+      // No preview is active, so reaching setCompare would reject this release.
+      await expect(product.setPreviewCompare('game', false, assertCurrent)).resolves.toBeUndefined()
+      expect(assertCurrent).not.toHaveBeenCalled()
+      await expect(product.setPreviewCompare('game', true)).rejects.toBeInstanceOf(ProductConflictError)
+    }
+  )
+
   it('rejects a start whose panel closes while the saved profile lookup is pending', async () => {
     const { product, repository } = controller()
     const saved = await product.createProfile('Game')

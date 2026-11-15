@@ -106,8 +106,19 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       as="section"
       data-part="profile-detail"
       data-display-target-count={profile.displays.length}
+      flexShrink={0}
     >
-      <Flex as="header" align="center" gap={3}>
+      {/* main-panel owns scrolling; no overflow ancestor separates it from this header. */}
+      <Flex
+        as="header"
+        position="sticky"
+        top="0"
+        zIndex="1"
+        bg={{ base: 'bg', _dark: 'bg.muted' }}
+        minH="10"
+        align="center"
+        gap={3}
+      >
         <Stack gap="1" flex="1" minW="0">
           <Flex align="center" gap="3" minW="0">
             {!naming && (
@@ -298,7 +309,6 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           Select the display you would like to change
         </SectionHeading>
         <DisplayControls
-          comparing={comparing}
           profile={
             comparing && props.compare
               ? { ...profile, displays: props.compare.savedProfile.displays }

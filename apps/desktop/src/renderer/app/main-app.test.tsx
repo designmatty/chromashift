@@ -259,6 +259,51 @@ function setup(withLimits = true, Surface = MainApp) {
   }
 }
 
+it('preserves an open rename when pointer-down starts compare', async () => {
+  // Reviewer renderer proof, using the button event so browser focus movement is modeled.
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  const renamed = 'Renamed while comparing'
+  const commitRename = () => detail().onChange({ ...detail().profile, name: renamed })
+  const button = CompareButton(detail().compare!)
+  const preventDefault = vi.fn()
+  button.props.onPointerDown({
+    button: 0,
+    pointerId: 1,
+    preventDefault,
+    currentTarget: { setPointerCapture: vi.fn() }
+  })
+  // Browser order: pointerdown, then blur/commit only if focus movement was allowed.
+  if (preventDefault.mock.calls.length === 0) commitRename()
+  await f.settle()
+  await detail().compare!.onRelease('pointer')
+  await f.settle()
+  if (preventDefault.mock.calls.length > 0) commitRename()
+  await f.settle()
+  expect(preventDefault).toHaveBeenCalledOnce()
+  expect(detail().profile.name).toBe(renamed)
+})
+
 it.each(['blur', 'pointerup', 'minimize', 'navigation', 'endPreview', 'unmount'])(
   'releases saved comparison on %s while keeping the local dirty draft',
   async (reason) => {
@@ -422,6 +467,7 @@ it.each(['pointerup', 'pointercancel', 'blur', 'close', 'handoff', 'picker', 'un
     button().onPress('pointer')
     await f.settle()
     expect(button().pointerOnly).toBe(true)
+    expect(button()).toMatchObject({ size: '2xs', variant: 'subtle', borderRadius: 'full' })
     expect(button().showingSaved).toBe(true)
     expect(find<Parameters<typeof ColorControls>[0]>(f.tree, ColorControls)!.props).toMatchObject({
       color: saved.displays[0]!.color,
@@ -443,6 +489,67 @@ it.each(['pointerup', 'pointercancel', 'blur', 'close', 'handoff', 'picker', 'un
     expect(f.startPreview).not.toHaveBeenCalled()
     expect(f.updatePreview).not.toHaveBeenCalled()
     if (reason !== 'picker') expect(button().showingSaved).toBe(false)
+  }
+)
+
+it.each([MainApp, MiniPanel])(
+  'keeps disabled controls for a missing saved target in %s',
+  async (Surface) => {
+    const f = setup(true, Surface)
+    connectDisplay(f)
+    const saved = f.product.configuration.profiles[0]!
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'override',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    f.render()
+    if (Surface === MiniPanel) {
+      const button = find<Parameters<typeof CompareButton>[0]>(f.tree, CompareButton)!.props
+      const pointerButton = CompareButton(button)
+      const preventDefault = vi.fn()
+      pointerButton.props.onPointerDown({
+        button: 0,
+        pointerId: 1,
+        preventDefault,
+        currentTarget: { setPointerCapture: vi.fn() }
+      })
+      expect(preventDefault).toHaveBeenCalledOnce()
+    } else {
+      find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.compare!.onPress(
+        'pointer'
+      )
+    }
+    await f.settle()
+    if (Surface === MiniPanel) {
+      expect(find<Parameters<typeof ColorControls>[0]>(f.tree, ColorControls)!.props).toMatchObject(
+        {
+          color: createNeutralColorSettings(),
+          editable: false,
+          compact: true
+        }
+      )
+    } else {
+      expect(
+        find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.compare
+      ).toMatchObject({
+        showingSaved: true,
+        savedProfile: saved
+      })
+    }
   }
 )
 
