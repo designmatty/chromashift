@@ -27,7 +27,8 @@ using var foregroundWatcher = new ForegroundWindowWatcher(
             ["Executable"] = application.Executable,
             ["Path"] = application.Path,
             ["Title"] = application.Title,
-            ["MonitorDeviceName"] = application.MonitorDeviceName
+            ["MonitorDeviceName"] = application.MonitorDeviceName,
+            ["WindowClass"] = application.WindowClass
         });
     });
 await foregroundWatcher.StartAsync();

@@ -9,6 +9,7 @@ import {
 } from '@chromashift/core'
 import {
   foregroundApplicationChangedDataSchema,
+  foregroundApplicationSchema,
   type ForegroundApplication as NativeForegroundApplication,
   type NativeEvent
 } from '@chromashift/native-client'
@@ -39,7 +40,7 @@ export class AutomaticActivationController {
     private readonly logger: StructuredLogger,
     private readonly ignoreApplication: (
       application: NativeForegroundApplication
-    ) => boolean = () => false
+    ) => boolean | string = () => false
   ) {}
 
   public get enabled(): boolean {
@@ -89,7 +90,8 @@ export class AutomaticActivationController {
         context: ActivationContext
       }> = [
         {
-          application: currentApplication,
+          // An ignored snapshot (ChromaShift or a shell surface) means no app yet.
+          application: this.#isIgnored(currentApplication) ? null : currentApplication,
           context: { source: 'automatic', origin: 'startup' }
         },
         ...this.#pendingApplications.splice(0).map((application) => ({
@@ -172,12 +174,16 @@ export class AutomaticActivationController {
       return Promise.resolve()
     }
 
-    if (this.ignoreApplication(parsed.data.application)) {
+    const ignored = this.ignoreApplication(parsed.data.application)
+    if (ignored) {
       this.logger.write({
         level: 'information',
         eventName: 'ForegroundApplicationIgnored',
         pid: parsed.data.application.pid,
-        executable: parsed.data.application.executable
+        executable: parsed.data.application.executable,
+        path: parsed.data.application.path,
+        windowClass: parsed.data.application.windowClass,
+        reason: typeof ignored === 'string' ? ignored : 'applicationPolicy'
       })
       return Promise.resolve()
     }
@@ -342,11 +348,21 @@ export class AutomaticActivationController {
     currentApplication: ForegroundApplication | null | undefined,
     context: ActivationContext = { source: 'manual', origin: 'resume' }
   ): Promise<CompletedActivationOutcome> {
-    if (currentApplication !== undefined) this.#currentApplication = currentApplication
+    // Resuming from the tray reads the tray or ChromaShift's own window as the
+    // foreground. Keep the remembered app instead of resolving it to Default.
+    if (currentApplication !== undefined && !this.#isIgnored(currentApplication)) {
+      this.#currentApplication = currentApplication
+    }
     // ChromaShiftController has validated a fresh topology before resuming.
     this.#systemTransitioning = false
     this.#writesSuspended = false
     return this.#activateCurrentApplication(context, true)
+  }
+
+  #isIgnored(application: ForegroundApplication | null | undefined): boolean {
+    // Core callers may provide only matching fields; the policy needs native metadata.
+    const parsed = foregroundApplicationSchema.safeParse(application)
+    return parsed.success && Boolean(this.ignoreApplication(parsed.data))
   }
 
   public async handleNativeServiceExit(): Promise<void> {

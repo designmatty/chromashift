@@ -3,6 +3,7 @@ import type { ApplicationRule, ColorProfile } from '../profiles/model.js'
 export interface ForegroundApplication {
   executable: string | null
   path: string | null
+  windowClass?: string | null
 }
 
 export type ApplicationMatchType = 'path' | 'filename'
