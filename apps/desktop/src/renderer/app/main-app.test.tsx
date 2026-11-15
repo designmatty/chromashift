@@ -90,6 +90,82 @@ it('reserves the sticky profile header height when scrolling keyboard focus into
   expect(panel().scrollPaddingTop).toBeUndefined()
 })
 
+it('flushes a held rename before a second hold inside the debounce window', async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  const saved = addProfile(f)
+  const id = 'display:one'
+  saved.displays = [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 50 } }]
+  const draft = {
+    ...saved,
+    displays: [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 61 } }]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  const setCompare = vi.fn(async () => ({ ok: true as const, value: null }))
+  window.chromaShift.setPreviewCompare = setCompare
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  const button = () => CompareButton(detail().compare!)
+  button().props.onPointerDown({
+    button: 0,
+    pointerId: 1,
+    preventDefault: vi.fn(),
+    currentTarget: { setPointerCapture: vi.fn() }
+  })
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  detail().onChange({ ...detail().profile, name: 'Renamed during the hold' })
+  await f.settle()
+  expect(window.chromaShift.updatePreview).not.toHaveBeenCalled()
+  // A release away from the button uses the window capture listener.
+  f.events.dispatchEvent(new Event('pointerup'))
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(false)
+  expect(vi.getTimerCount()).toBe(1)
+  await vi.advanceTimersByTimeAsync(20)
+  expect(window.chromaShift.updatePreview).not.toHaveBeenCalled()
+
+  button().props.onKeyDown({ key: ' ', repeat: false, preventDefault: vi.fn() })
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  expect(window.chromaShift.updatePreview).toHaveBeenCalledExactlyOnceWith(
+    saved.id,
+    draft.displays,
+    { ...draft, name: 'Renamed during the hold' },
+    1
+  )
+  expect(f.updatePreview.mock.invocationCallOrder[0]).toBeLessThan(
+    setCompare.mock.invocationCallOrder[2]!
+  )
+  expect(vi.getTimerCount()).toBe(0)
+  await vi.advanceTimersByTimeAsync(500)
+  await f.settle()
+  expect(detail().profile).toEqual({ ...draft, name: 'Renamed during the hold' })
+  expect(detail().compare!.showingSaved).toBe(true)
+  expect(window.chromaShift.updatePreview).toHaveBeenCalledTimes(1)
+  expect(f.startPreview).not.toHaveBeenCalled()
+  f.events.dispatchEvent(Object.assign(new Event('keyup'), { key: ' ' }))
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(false)
+  expect(setCompare.mock.calls).toEqual([
+    [saved.id, true, 7, 1],
+    [saved.id, false, 7, 1],
+    [saved.id, true, 7, 1],
+    [saved.id, false, 7, 1]
+  ])
+})
+
 // Based on the RR96-3 rename proof: Enter and input blur can commit before
 // window blur releases compare. The same guarantee applies while release drains.
 it.each(['held', 'blur', 'releasing', 'quit flush'] as const)(

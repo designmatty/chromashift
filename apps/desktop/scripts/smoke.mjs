@@ -1904,8 +1904,14 @@ async function verifyAppComparison(
         })()`,
         `Hold to compare did not show disabled saved values (${theme}, ${JSON.stringify(input)}).`
       )
+      // Main marks comparing before awaiting the native write/read-back. The UI
+      // predicate confirms the hold, so wait separately for its actual output.
       const held = displayStateFingerprint(
-        await restorationGuard.getDisplayState(guardedDisplay.id)
+        await waitForRestoredDisplayState(
+          restorationGuard,
+          guardedDisplay.id,
+          savedCompareFingerprint
+        )
       )
       if (held !== savedCompareFingerprint) {
         throw new Error(
@@ -1957,8 +1963,13 @@ async function verifyAppComparison(
         })()`,
         `Hold to compare did not release back to the draft (${theme}, ${JSON.stringify(input)}).`
       )
+      // Release also updates main's compare flag before its draft write drains.
       const released = displayStateFingerprint(
-        await restorationGuard.getDisplayState(guardedDisplay.id)
+        await waitForRestoredDisplayState(
+          restorationGuard,
+          guardedDisplay.id,
+          draftCompareFingerprint
+        )
       )
       if (released !== draftCompareFingerprint) {
         throw new Error(

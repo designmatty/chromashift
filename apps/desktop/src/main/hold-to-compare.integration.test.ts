@@ -190,6 +190,66 @@ it('serializes release behind an in-flight saved write and cancels the old debou
   expect(f.schemaFailures).toEqual([])
 })
 
+it.each(['edit', 'override'] as const)(
+  'drains a held rename before re-holding in %s, and confirms output only after native completion',
+  async (kind) => {
+    vi.useFakeTimers()
+    const f = await fixture(false, kind)
+    await f.sync.flush(f.draft, f.controller.state)
+    f.compare.press('pointer', () => f.sync.beginComparison(f.draft, f.controller.state))
+    for (let turn = 0; turn < 80; turn++) await Promise.resolve()
+    const renamed = { ...f.draft, name: 'Renamed during the hold' }
+    await f.compare.release('pointer')
+    f.sync.schedule(renamed, f.controller.state)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(f.port.updatePreview).toHaveBeenCalledTimes(1)
+
+    let finishWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => {
+      finishWrite = resolve
+    })
+    const apply = f.native.applyDisplaySettings.bind(f.native)
+    vi.spyOn(f.native, 'applyDisplaySettings').mockImplementationOnce(async (id, settings) => {
+      await writeGate
+      return apply(id, settings)
+    })
+    f.compare.press(' ', () => f.sync.beginComparison(renamed, f.controller.state))
+    for (let turn = 0; turn < 80; turn++) await Promise.resolve()
+    // The getter used by getState reports the hold before native apply/read-back
+    // completes. This reproduces the smoke's early one-shot fingerprint read.
+    expect(f.controller.state).toMatchObject({
+      comparing: true,
+      draft: renamed,
+      unsavedChanges: true
+    })
+    expect(f.compare.showingSaved).toBe(true)
+    expect(f.native.currentSettings.get(f.id)).toEqual(f.draft.displays[0]!.color)
+    expect(f.port.updatePreview).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+    finishWrite()
+    for (let turn = 0; turn < 80; turn++) await Promise.resolve()
+    expect(f.native.currentSettings.get(f.id)).toEqual(f.saved.displays[0]!.color)
+    const calls = f.native.calls.length
+    await vi.advanceTimersByTimeAsync(500)
+    expect(f.native.calls).toHaveLength(calls)
+    expect(f.native.currentSettings.get(f.id)).toEqual(f.saved.displays[0]!.color)
+    expect(f.controller.state).toMatchObject({
+      comparing: true,
+      draft: renamed,
+      unsavedChanges: true
+    })
+    await f.compare.release(' ')
+    expect(f.native.currentSettings.get(f.id)).toEqual(f.draft.displays[0]!.color)
+    expect(f.native.applied.map((call) => call.settings.brightness)).toEqual([
+      54, 61, 54, 61, 54, 61
+    ])
+    expect(f.port.updatePreview).toHaveBeenCalledTimes(2)
+    expect(f.port.setPreviewCompare).toHaveBeenCalledTimes(4)
+    expect(f.schemaFailures).toEqual([])
+    expect(f.errors.mock.calls.every(([error]) => error === null)).toBe(true)
+  }
+)
+
 it('panel hide invalidates queued compare writes and leaves prior-target rollback to main', async () => {
   const f = await fixture()
   await f.sync.flush(f.draft, f.controller.state)
