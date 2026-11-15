@@ -223,6 +223,7 @@ export class ProductRuntime {
       recovery: () => this.#nativeRecoveryController,
       isExiting: () => this.#shutdownCoordinator?.exiting === true,
       broadcastProductState: () => this.ports.shell.broadcastProductState(),
+      invalidateHardwareState: () => this.#productController?.invalidateHardwareCache(),
       logger
     })
     try {
@@ -572,7 +573,6 @@ export class ProductRuntime {
       logger,
       750,
       () => {
-        this.#productController?.invalidateHardwareCache()
         shell.broadcastProductState()
         if (chromaShiftController.chromaShiftState.status === 'safetyBlocked') {
           void chromaShiftController.retrySafetyCheck('automatic').catch((error: unknown) => {
@@ -591,7 +591,9 @@ export class ProductRuntime {
             ? 'ChromaShift kept your preview and unsaved changes. Use Retry to restore display control. Check Diagnostics for details.'
             : 'ChromaShift ended the preview after a display change. Check Diagnostics for details.'
         )
-      }
+      },
+      // Failed refreshes invalidate too, so the panels never keep pre-change hardware.
+      () => this.#productController?.invalidateHardwareCache()
     )
     this.#powerEventAdapter = new PowerEventAdapter(system.powerMonitor)
     this.#powerEventAdapter.start((event) =>

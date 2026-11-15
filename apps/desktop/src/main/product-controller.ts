@@ -73,11 +73,17 @@ export interface ProductRefreshPort {
   stateChanged(): void
 }
 
+interface HardwareSnapshot {
+  displays: Display[]
+  capabilityReports: Record<string, DisplayCapabilityReport>
+}
+
 export class ProductController {
-  #hardwareCache: {
-    displays: Display[]
-    capabilityReports: Record<string, DisplayCapabilityReport>
-  } | null = null
+  // Capabilities change only with topology, HDR, or a helper restart, and each
+  // of those invalidates this snapshot. Display writes still read capabilities.
+  #hardwareCache: HardwareSnapshot | null = null
+  #hardwareRead: { generation: number; snapshot: Promise<HardwareSnapshot> } | null = null
+  #hardwareGeneration = 0
   #applicationIconCache = new Map<string, Promise<string | null>>()
 
   public constructor(
@@ -102,33 +108,8 @@ export class ProductController {
   }
 
   public async getState(): Promise<ProductState> {
-    const displays = await this.native.getDisplays()
-    const capabilityReports = Object.fromEntries(
-      await Promise.all(
-        displays.map(async (display) => [
-          display.id,
-          await this.native.getDisplayCapabilityReport(display.id)
-        ])
-      )
-    )
-    this.#hardwareCache = { displays, capabilityReports }
-    return this.#composeState(displays, capabilityReports)
-  }
-
-  public async getStateForBroadcast(): Promise<ProductState> {
-    if (this.#hardwareCache === null) return this.getState()
-    return this.#composeState(this.#hardwareCache.displays, this.#hardwareCache.capabilityReports)
-  }
-
-  public invalidateHardwareCache(): void {
-    this.#hardwareCache = null
-  }
-
-  async #composeState(
-    displays: Display[],
-    capabilityReports: Record<string, DisplayCapabilityReport>
-  ): Promise<ProductState> {
-    await this.limits?.refreshApplicability()
+    const { displays, capabilityReports } = await this.#hardware()
+    this.limits?.observeDisplays(displays, capabilityReports)
     const configuration = await this.#configurationWithApplicationIcons()
     return {
       version: this.version,
@@ -142,6 +123,49 @@ export class ProductController {
       settings: await this.settings.get(),
       gammaLimits: this.limits?.applicable
     }
+  }
+
+  /** Topology transitions, helper exit, and helper recovery call this. */
+  public invalidateHardwareCache(): void {
+    this.#hardwareGeneration += 1
+    this.#hardwareCache = null
+    this.#hardwareRead = null
+  }
+
+  /** Reads displays and capabilities once per hardware generation. */
+  #hardware(): Promise<HardwareSnapshot> {
+    if (this.#hardwareCache !== null) return Promise.resolve(this.#hardwareCache)
+    const generation = this.#hardwareGeneration
+    if (this.#hardwareRead?.generation === generation) return this.#hardwareRead.snapshot
+    const snapshot = this.#readHardware().then(
+      (value) => {
+        // An invalidation during the read means this snapshot may predate the change.
+        if (this.#hardwareGeneration === generation) {
+          this.#hardwareCache = value
+          this.#hardwareRead = null
+        }
+        return value
+      },
+      (error: unknown) => {
+        if (this.#hardwareRead?.generation === generation) this.#hardwareRead = null
+        throw error
+      }
+    )
+    this.#hardwareRead = { generation, snapshot }
+    return snapshot
+  }
+
+  async #readHardware(): Promise<HardwareSnapshot> {
+    const displays = await this.native.getDisplays()
+    const capabilityReports = Object.fromEntries(
+      await Promise.all(
+        displays.map(async (display) => [
+          display.id,
+          await this.native.getDisplayCapabilityReport(display.id)
+        ])
+      )
+    )
+    return { displays, capabilityReports }
   }
 
   async #configurationWithApplicationIcons(): Promise<ProfileConfiguration> {
@@ -199,7 +223,10 @@ export class ProductController {
   }
 
   public async saveProfile(profile: ColorProfile, removeShortcut = false): Promise<ColorProfile> {
-    await this.limits?.refreshApplicability()
+    if (this.limits !== undefined) {
+      const { displays, capabilityReports } = await this.#hardware()
+      this.limits.observeDisplays(displays, capabilityReports)
+    }
     profile = this.limits?.clampProfile(profile) ?? profile
     const isDefault = profile.id.toLowerCase() === DEFAULT_PROFILE_ID
     const normalized = isDefault

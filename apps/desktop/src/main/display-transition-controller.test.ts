@@ -53,7 +53,10 @@ describe('DisplayTransitionController', () => {
         }
       },
       logger,
-      60_000
+      60_000,
+      () => calls.push('refreshed'),
+      undefined,
+      () => calls.push('settled')
     )
 
     controller.handlePowerEvent('suspend')
@@ -61,7 +64,15 @@ describe('DisplayTransitionController', () => {
     controller.handlePowerEvent('resume')
     await controller.flush()
 
-    expect(calls).toEqual(['begin', 'begin', 'refresh', 'preview', 'complete:true:true'])
+    expect(calls).toEqual([
+      'begin',
+      'begin',
+      'refresh',
+      'preview',
+      'complete:true:true',
+      'settled',
+      'refreshed'
+    ])
     expect(logger.events).toContainEqual(
       expect.objectContaining({
         eventName: 'DisplayTransitionCompleted',
@@ -90,13 +101,17 @@ describe('DisplayTransitionController', () => {
         }
       },
       logger,
-      60_000
+      60_000,
+      () => calls.push('refreshed'),
+      undefined,
+      () => calls.push('settled')
     )
 
     controller.handleDisplayEvent('displayRemoved')
     await controller.flush()
 
-    expect(calls).toEqual(['begin', 'complete:false:false'])
+    // A failed refresh still settles, so cached hardware state is dropped.
+    expect(calls).toEqual(['begin', 'complete:false:false', 'settled'])
     expect(logger.events).toContainEqual(
       expect.objectContaining({
         eventName: 'DisplayTransitionFailed'

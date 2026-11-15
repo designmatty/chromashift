@@ -41,7 +41,9 @@ export class DisplayTransitionController {
     private readonly logger: StructuredLogger,
     private readonly debounceMs = 750,
     private readonly onRefreshed: () => void = () => undefined,
-    private readonly onPreviewFailed: (error: unknown) => void = () => undefined
+    private readonly onPreviewFailed: (error: unknown) => void = () => undefined,
+    /** Runs after every refresh attempt, including failures, before onRefreshed. */
+    private readonly onSettled: () => void = () => undefined
   ) {}
 
   public handlePowerEvent(event: PowerTransitionEvent): void {
@@ -138,6 +140,7 @@ export class DisplayTransitionController {
     } finally {
       if (!topologyValidated) await this.preview.invalidateComparison?.()
       await this.activation.completeSystemTransition(refreshed && !previewActive, topologyValidated)
+      this.onSettled()
       if (refreshed) this.onRefreshed()
     }
   }

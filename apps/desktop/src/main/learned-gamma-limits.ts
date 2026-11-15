@@ -70,10 +70,26 @@ export class LearnedGammaLimits {
       return
     }
     const displays = await this.#displaySource.getDisplays()
-    const support = new Map<string, boolean>()
+    const reports: Record<string, DisplayCapabilityReport> = {}
     for (const display of displays) {
       if (display.hdr) continue
-      const report = await this.#displaySource.getDisplayCapabilityReport(display.id)
+      reports[display.id] = await this.#displaySource.getDisplayCapabilityReport(display.id)
+    }
+    this.observeDisplays(displays, reports)
+  }
+
+  /**
+   * Same result as refreshApplicability, from physical displays and capability
+   * reports the caller already read. Avoids repeated helper capability reads.
+   */
+  public observeDisplays(
+    displays: readonly Display[],
+    reports: Readonly<Record<string, DisplayCapabilityReport>>
+  ): void {
+    const support = new Map<string, boolean>()
+    for (const display of displays) {
+      const report = reports[display.id]
+      if (display.hdr || report === undefined) continue
       if (report.capabilities.gamma.supported)
         support.set(display.id.toLowerCase(), report.capabilities.brightness.supported)
     }

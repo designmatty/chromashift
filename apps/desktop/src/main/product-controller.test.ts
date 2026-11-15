@@ -454,7 +454,7 @@ describe('ProductController application icons', () => {
     })
 
     const first = await product.getState()
-    const second = await product.getStateForBroadcast()
+    const second = await product.getState()
 
     expect(
       first.configuration.profiles.find((profile) => profile.id === 'tarkov')?.applications[0]
@@ -483,9 +483,9 @@ describe('ProductController hardware snapshots', () => {
 
     const initial = await product.getState()
     hdr = true
-    const cached = await product.getStateForBroadcast()
+    const cached = await product.getState()
     product.invalidateHardwareCache()
-    const refreshed = await product.getStateForBroadcast()
+    const refreshed = await product.getState()
 
     expect(initial.displays[0]?.hdr).toBe(false)
     expect(cached.displays[0]?.hdr).toBe(false)
@@ -494,6 +494,47 @@ describe('ProductController hardware snapshots', () => {
       false
     )
     expect(hardwareReads).toBe(2)
+  })
+
+  it('shares one read across concurrent requests and never caches a read that an invalidation overtook', async () => {
+    let hdr = false
+    let capabilityReads = 0
+    const pending: Array<() => void> = []
+    const native: ProductNativePort = {
+      getDisplays: () => Promise.resolve([display(hdr)]),
+      getDisplayCapabilityReport: () => {
+        capabilityReads += 1
+        const report = capabilityReport(!hdr)
+        return new Promise((resolve) => pending.push(() => resolve(report)))
+      },
+      getForegroundApplication: () => Promise.resolve(null),
+      getVisibleApplications: () => Promise.resolve([])
+    }
+    const { product } = controller(undefined, undefined, native)
+    const settle = async (): Promise<void> => {
+      await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
+      pending.splice(0).forEach((resolve) => resolve())
+    }
+
+    const first = product.getState()
+    const second = product.getState()
+    await settle()
+    await Promise.all([first, second])
+    expect(capabilityReads).toBe(1)
+
+    product.invalidateHardwareCache()
+    const stale = product.getState()
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    hdr = true
+    product.invalidateHardwareCache()
+    await settle()
+    expect((await stale).displays[0]?.hdr).toBe(false)
+
+    const fresh = product.getState()
+    await settle()
+    expect((await fresh).displays[0]?.hdr).toBe(true)
+    expect((await product.getState()).displays[0]?.hdr).toBe(true)
+    expect(capabilityReads).toBe(3)
   })
 })
 

@@ -2735,3 +2735,86 @@ describe('native recovery while paused with a shell surface focused', () => {
     }
   })
 })
+
+describe('capability reads during profile switches (#102)', () => {
+  const game: ColorProfile = {
+    id: 'game',
+    name: 'Game',
+    enabled: true,
+    applications: [],
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 40 } }
+    ]
+  }
+
+  async function switchHarness(): Promise<{
+    h: Awaited<ReturnType<typeof createHarness>>
+    capabilityReads: () => string[]
+    resetReads: () => void
+  }> {
+    const h = await createHarness({}, { profiles: [game] })
+    h.client.displays = h.client.displays.slice(0, 2)
+    const reads: string[] = []
+    const read = h.client.getDisplayCapabilityReport.bind(h.client)
+    h.client.getDisplayCapabilityReport = (displayId) => {
+      reads.push(displayId)
+      return read(displayId)
+    }
+    await h.runtime.start()
+    await h.runtime.productController!.getState()
+    return { h, capabilityReads: () => [...reads], resetReads: () => reads.splice(0) }
+  }
+
+  it('reads capabilities for the write only, not for each renderer state refresh', async () => {
+    const { h, capabilityReads, resetReads } = await switchHarness()
+    try {
+      resetReads()
+      await h.invokeActivate('game')
+      // The renderer refreshes state several times after one switch; main broadcasts too.
+      for (let refresh = 0; refresh < 4; refresh++) await h.runtime.productController!.getState()
+
+      expect(h.client.applied.at(-1)).toMatchObject({
+        displayId: 'display:one',
+        settings: { brightness: 40 }
+      })
+      // Capture and apply each read the written display's capabilities before
+      // display.apply; the post-write gamma clamp checks both connected displays.
+      expect(capabilityReads()).toEqual([
+        'display:one',
+        'display:one',
+        'display:one',
+        'display:two'
+      ])
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+
+  it('rereads capabilities once after a display transition and after a helper restart', async () => {
+    const { h, capabilityReads, resetReads } = await switchHarness()
+    try {
+      resetReads()
+      h.client.hdrDisplayIds.add('display:two')
+      vi.useFakeTimers()
+      h.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      await vi.waitFor(() => expect(h.logger.has('DisplayTransitionCompleted')).toBe(true))
+      vi.useRealTimers()
+      resetReads()
+
+      const afterTransition = await h.runtime.productController!.getState()
+      await h.runtime.productController!.getState()
+      expect(afterTransition.displays.find((display) => display.id === 'display:two')?.hdr).toBe(
+        true
+      )
+      expect(capabilityReads()).toEqual(['display:one', 'display:two'])
+
+      resetReads()
+      h.client.emitExit()
+      const afterExit = await h.runtime.productController!.getState()
+      expect(afterExit.displays).toEqual([])
+    } finally {
+      h.runtime.dispose()
+    }
+  })
+})

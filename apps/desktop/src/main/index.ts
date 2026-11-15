@@ -584,7 +584,7 @@ function scheduleProductStateBroadcast(): void {
     )
     if (controller === undefined || windows.length === 0) return
     void controller
-      .getStateForBroadcast()
+      .getState()
       .then((state) => {
         for (const window of windows) {
           if (!window.webContents.isDestroyed()) {
