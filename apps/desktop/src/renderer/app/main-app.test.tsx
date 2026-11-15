@@ -12,6 +12,7 @@ import type { ColorProfile } from '@chromashift/core'
 import { ColorControls } from '@/features/profiles/color-controls'
 import { CompareButton } from '@/features/profiles/compare-button'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
 import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import { LatestEventRelay } from '@shared/latest-event-relay'
 import type { AppPanelView, EndPreviewRequest, ProductState } from '@shared/product-api'
@@ -74,6 +75,116 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
+
+it('reserves the sticky profile header height when scrolling keyboard focus into view', async () => {
+  const f = setup()
+  f.render()
+  const panel = () =>
+    findWhere<{ 'data-part'?: string; scrollPaddingTop?: string }>(
+      f.tree,
+      (props) => props['data-part'] === 'main-panel'
+    )!.props
+  expect(panel().scrollPaddingTop).toBe(`calc(${PROFILE_HEADER_HEIGHT} + {spacing.1})`)
+  f.navigation.publish('settings')
+  await f.settle()
+  expect(panel().scrollPaddingTop).toBeUndefined()
+})
+
+// Based on the RR96-3 rename proof: Enter and input blur can commit before
+// window blur releases compare. The same guarantee applies while release drains.
+it.each(['held', 'blur', 'releasing', 'quit flush'] as const)(
+  'retains a rename committed while compare is %s without writing colors during the hold',
+  async (phase) => {
+    vi.useFakeTimers()
+    const f = setup()
+    const saved = addProfile(f)
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'edit',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    let finishRelease!: () => void
+    const releaseGate = new Promise<void>((resolve) => {
+      finishRelease = resolve
+    })
+    window.chromaShift.setPreviewCompare = vi.fn(async (_id, showing) => {
+      if (!showing) await releaseGate
+      return { ok: true as const, value: null }
+    })
+    let flush!: () => Promise<void>
+    window.chromaShift.onFlushPreviewDraft = (listener) => {
+      flush = listener
+      return () => undefined
+    }
+    f.render()
+    const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    const renamed = 'Renamed during the hold'
+    const button = CompareButton(detail().compare!)
+    button.props.onPointerDown({
+      button: 0,
+      pointerId: 1,
+      preventDefault: vi.fn(),
+      currentTarget: { setPointerCapture: vi.fn() }
+    })
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    if (phase === 'releasing') {
+      void detail().compare!.onRelease()
+      await f.settle()
+    }
+    // finishNaming(true) commits on Enter or input blur. Color edits stay rejected.
+    detail().onChange({ ...detail().profile, name: renamed, displays: saved.displays })
+    await f.settle()
+    await vi.advanceTimersByTimeAsync(500)
+    await f.settle()
+    expect(detail().profile).toMatchObject({ name: renamed, displays: draft.displays })
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    expect(f.startPreview).not.toHaveBeenCalled()
+    if (phase === 'blur') f.events.dispatchEvent(new Event('blur'))
+    const release = phase === 'quit flush' ? flush() : detail().compare!.onRelease()
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    finishRelease()
+    await release
+    if (phase === 'quit flush') {
+      // A hydrated draft starts at revision zero. Quit must receive the held
+      // rename before acknowledging its flush, without waiting for another render.
+      expect(f.updatePreview).toHaveBeenCalledExactlyOnceWith(
+        saved.id,
+        draft.displays,
+        { ...draft, name: renamed },
+        1
+      )
+    }
+    await f.settle()
+    await vi.advanceTimersByTimeAsync(120)
+    await f.settle()
+    expect(detail().profile.name).toBe(renamed)
+    expect(detail().compare!.showingSaved).toBe(false)
+    expect(window.chromaShift.setPreviewCompare).toHaveBeenCalledTimes(2)
+    expect(f.updatePreview).toHaveBeenCalledExactlyOnceWith(
+      saved.id,
+      draft.displays,
+      { ...draft, name: renamed },
+      1
+    )
+    expect(f.startPreview).not.toHaveBeenCalled()
+  }
+)
 
 function find<P>(node: ReactNode, type: ReactElement<P>['type']): ReactElement<P> | undefined {
   if (Array.isArray(node)) {

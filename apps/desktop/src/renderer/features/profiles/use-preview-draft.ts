@@ -76,8 +76,17 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
   // changes schedule writes; main's session broadcasts must not echo them back.
   const [localRevision, setLocalRevision] = useState(0)
   const [comparing, setComparing] = useState(false)
+  const metadataChangedWhileHeld = useRef(false)
   const compareRef = useRef<HoldToCompare | null>(null)
-  if (compareRef.current === null) compareRef.current = new HoldToCompare(setComparing)
+  if (compareRef.current === null) {
+    compareRef.current = new HoldToCompare((showing) => {
+      setComparing(showing)
+      if (!showing && metadataChangedWhileHeld.current) {
+        metadataChangedWhileHeld.current = false
+        setLocalRevision((revision) => revision + 1)
+      }
+    })
+  }
   const compare = compareRef.current
   const dirty =
     options.savedProfile === undefined
@@ -171,8 +180,16 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
 
   useLayoutEffect(() => {
     return window.chromaShift.onFlushPreviewDraft(async () => {
+      const metadataPending = metadataChangedWhileHeld.current
+      // This flush sends the held metadata itself before acknowledging quit.
+      if (enabled && draft !== null) metadataChangedWhileHeld.current = false
       await compare.release()
-      if (localRevision !== 0 && enabled && draft !== null && (dirty || hasUnsavedSession(session)))
+      if (
+        (localRevision !== 0 || metadataPending) &&
+        enabled &&
+        draft !== null &&
+        (dirty || hasUnsavedSession(session))
+      )
         await sync.flush(draft, session)
     })
   })
@@ -194,15 +211,27 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     },
     releaseCompare: (input) => compare.release(input),
     updateDraft: (profile) => {
-      if (compare.showingSaved) return
+      if (compare.showingSaved) {
+        // Rename can commit before blur releases compare, or while release is
+        // draining. Keep metadata locally, reject colors, and sync only afterwards.
+        if (draft === null) return
+        const metadataDraft = { ...profile, displays: draft.displays }
+        if (!profilesDiffer(metadataDraft, draft)) return
+        setDraft(metadataDraft)
+        setDirty(true)
+        metadataChangedWhileHeld.current = true
+        return
+      }
       setDraft(profile)
       setDirty(true)
       setLocalRevision((revision) => revision + 1)
     },
     replaceDraft: (profile) => {
+      metadataChangedWhileHeld.current = false
       setDraft(profile)
     },
     resetTo: (source, resetOptions) => {
+      metadataChangedWhileHeld.current = false
       setDraft(source === null ? null : structuredClone(source))
       setDirty(resetOptions?.dirty ?? false)
       setLocalRevision(0)

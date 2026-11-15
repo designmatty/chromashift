@@ -316,9 +316,15 @@ The displays show the saved values and return to the draft exactly on release.
 Repeat with a profile that has no target for one display; that display shows
 Original settings while held, with disabled control rows and no on-screen hint.
 Keep a rename input open, type a name and press compare with the mouse; focus
-and the typed name must survive the hold. Scroll the app pane to the bottom;
-the entire header and its actions must stay visible, and compare must work there
-without a layout jump. Release by dragging off the button, Alt+Tab,
+and the typed name must survive the hold. Commit with Enter while still holding,
+or Alt+Tab so input blur commits before compare releases. The name must survive
+release without a color write during the hold. Scroll the app pane to the bottom;
+the entire profile header and its actions must stay visible. Bring the display
+tab bar into view while still scrolled and hold compare at its right edge.
+With many displays, scroll the tab list horizontally; compare stays visible
+outside the list, inside the same rounded bar. Rename must not change the header
+height, and focusing an earlier color slider must scroll it below the header.
+Release by dragging off the button, Alt+Tab,
 minimize, the End preview shortcut, a profile hotkey and caption close. Close
 must restore the exact prior target, and none may leave saved values applied
 under a draft editor. Repeat pointer holds in the mini panel, including pointer
@@ -334,8 +340,9 @@ After a build, use `mise.exe exec -- npm run smoke:compare -w @chromashift/deskt
 or `node apps/desktop/scripts/smoke.mjs --compare-only`. This early mode reuses
 the full smoke's isolated launch, restoration guard, compare helpers, native
 captures and exact exit-restoration check; it skips unrelated smoke fixtures.
-It covers saved and missing targets, pointer/Space/Enter in the app, rename focus,
-sticky-header holds after scrolling to the bottom, and mini pointer holds with
+It covers saved and missing targets, pointer/Space/Enter in the app, rename focus
+and commits during a hold, stable header height and unobscured slider focus,
+display-tab-bar holds from a scrolled pane, and mini pointer holds with
 unchanged panel height. Mini compare must match Update profile's size, pill shape
 and subtle surface. Both themes retain a clearly pressed state. The shared steps
 also run in the full suite. No smoke was run for this fix round.

@@ -33,6 +33,7 @@ import { DisplayControls } from '@/features/profiles/display-controls'
 import { profileShortcut } from '@/features/profiles/control-presentation'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
 import { CompareButton } from '@/features/profiles/compare-button'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
 import type { CompareInput } from '@/features/profiles/hold-to-compare'
 
 const DEFAULT_ID = 'default'
@@ -120,7 +121,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         pt="20px"
         zIndex="1"
         bg={{ base: 'bg', _dark: 'bg.muted' }}
-        minH="10"
+        minH={PROFILE_HEADER_HEIGHT}
         align="center"
         gap={3}
       >
@@ -204,14 +205,6 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           )}
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
-              {props.compare !== undefined && (
-                <CompareButton
-                  showingSaved={comparing}
-                  onPress={props.compare.onPress}
-                  onRelease={props.compare.onRelease}
-                  disabled={props.busy || props.product.chromaShift.status !== 'active'}
-                />
-              )}
               <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
                 Discard changes
               </Button>
@@ -321,6 +314,16 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           }
           product={props.product}
           editing={props.product.chromaShift.status === 'active' && !props.busy && !comparing}
+          compareButton={
+            props.dirty && props.compare !== undefined ? (
+              <CompareButton
+                showingSaved={comparing}
+                onPress={props.compare.onPress}
+                onRelease={props.compare.onRelease}
+                disabled={props.busy || props.product.chromaShift.status !== 'active'}
+              />
+            ) : undefined
+          }
           onChange={props.onChange}
         />
       </Stack>

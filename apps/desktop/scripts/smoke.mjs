@@ -1751,7 +1751,8 @@ async function verifyAppComparison(
   // #80: Hold to compare shows the saved neutral values on the guarded display,
   // disables the controls with a visible pressed state, then returns to the exact
   // unsaved draft output. Cover pointer, Space and Enter in dark and light.
-  const compareButton = `document.querySelector('[data-part="unsaved-changes-actions"] [aria-label="Hold to compare with saved"]')`
+  const compareButton = `document.querySelector('[data-part="display-tab-bar"] [aria-label="Hold to compare with saved"]')`
+  const originalName = await evaluateRenderer(`document.querySelector('[data-part="profile-title-text"]').textContent`)
   const draftCompareFingerprint = displayStateFingerprint(
     await restorationGuard.getDisplayState(guardedDisplay.id)
   )
@@ -1762,7 +1763,8 @@ async function verifyAppComparison(
   for (const theme of ['dark', 'light']) {
     await setTheme(debuggerClient, theme)
     for (const input of ['pointer', ' ', 'Enter']) {
-      // Scroll the actual product pane, then press the header without scrolling it into view.
+      // Start at the bottom and check the pinned header, then hold from the
+      // scrolled display bar. Compare scrolls with the tabs, outside their list.
       await evaluateRenderer(`(() => {
         const pane = document.querySelector('[data-part="main-panel"]')
         pane.scrollTop = pane.scrollHeight
@@ -1786,23 +1788,54 @@ async function verifyAppComparison(
       })()`,
         'The complete profile header did not remain visible at the bottom of the scroll pane.'
       )
+      await evaluateRenderer(`(() => {
+        const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-control="brightness"] [role="slider"]')
+        slider?.focus()
+      })()`)
+      await waitForExpression(debuggerClient, `(() => {
+        const header = document.querySelector('[data-part="profile-detail"] > header')
+        const focused = document.activeElement
+        return focused?.getAttribute('role') === 'slider' &&
+          focused.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
+      })()`, 'Keyboard focus scrolled beneath the sticky profile header.')
+      await evaluateRenderer(`document.querySelector('[data-part="display-tab-bar"]').scrollIntoView({ block: 'nearest' })`)
+      await waitForExpression(debuggerClient, `(() => {
+        const bar = document.querySelector('[data-part="display-tab-bar"]')
+        const list = bar.querySelector('[role="tablist"]')
+        const button = ${compareButton}
+        const before = button.getBoundingClientRect()
+        list.scrollLeft = list.scrollWidth
+        const after = button.getBoundingClientRect(), bounds = bar.getBoundingClientRect()
+        return !list.contains(button) && after.left === before.left &&
+          after.left >= bounds.left && after.right <= bounds.right
+      })()`, 'Compare did not stay visible outside the horizontally scrolling display list.')
       const key = {
         key: input,
         code: input === ' ' ? 'Space' : 'Enter',
         windowsVirtualKeyCode: input === ' ' ? 32 : 13
       }
       if (input === 'pointer') {
+        const headerHeight = await evaluateRenderer(`document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height`)
         await evaluateRenderer(`document.querySelector('[data-part="profile-title"]')?.click()`)
         await waitForExpression(
           debuggerClient,
           `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
           'The compare rename check could not focus the name input.'
         )
+        await waitForExpression(debuggerClient,
+          `document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height === ${headerHeight}`,
+          'Opening rename changed the pinned header height.')
         await debuggerClient.send('Input.insertText', { text: 'Pending compare rename' })
+        await evaluateRenderer(`document.querySelector('[data-part="display-tab-bar"]').scrollIntoView({ block: 'nearest' })`)
         const bounds = await debuggerClient.send('Runtime.evaluate', {
           expression: `(() => {
             const rect = ${compareButton}?.getBoundingClientRect()
-            return rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null
+            const header = document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect()
+            const pane = document.querySelector('[data-part="main-panel"]')
+            const viewport = pane.getBoundingClientRect()
+            return rect && rect.top >= header.bottom && rect.bottom <= viewport.bottom &&
+              (pane.scrollHeight <= pane.clientHeight || pane.scrollTop > 0)
+              ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null
           })()`,
           returnByValue: true
         })
@@ -1851,6 +1884,19 @@ async function verifyAppComparison(
         )
       }
       if (input === 'pointer') {
+        // Commit while the pointer is still held. The rename must survive and
+        // cannot turn the metadata change into a preview update during compare.
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13
+        })
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13
+        })
+        await waitForExpression(debuggerClient, `(async () => {
+          const state = await window.chromaShift.getState()
+          return document.querySelector('[data-part="profile-title-text"]')?.textContent === 'Pending compare rename' &&
+            state.ok && state.value.preview.comparing === true
+        })()`, 'A rename committed during the pointer hold was lost or ended compare.')
         await captureNativeWindow(
           electron.pid,
           join(screenshotDirectory, `hold-to-compare-${theme}-native.png`)
@@ -1891,18 +1937,27 @@ async function verifyAppComparison(
         )
       }
       if (input === 'pointer') {
-        // The local rename survived the hold. Cancel it so later full-suite steps keep their fixture name.
+        await waitForExpression(debuggerClient, `(async () => {
+          const state = await window.chromaShift.getState()
+          return state.ok && state.value.preview.draft?.name === 'Pending compare rename'
+        })()`, 'The held rename did not reach main after release.')
+        // Restore the fixture name through the editor for later full-suite steps.
+        await evaluateRenderer(`document.querySelector('[data-part="profile-title"]')?.click()`)
+        await waitForExpression(debuggerClient,
+          `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+          'Could not restore the compare fixture name.')
+        await debuggerClient.send('Input.insertText', { text: originalName })
         await debuggerClient.send('Input.dispatchKeyEvent', {
           type: 'keyDown',
-          key: 'Escape',
-          code: 'Escape',
-          windowsVirtualKeyCode: 27
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13
         })
         await debuggerClient.send('Input.dispatchKeyEvent', {
           type: 'keyUp',
-          key: 'Escape',
-          code: 'Escape',
-          windowsVirtualKeyCode: 27
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13
         })
       }
     }

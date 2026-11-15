@@ -1,10 +1,16 @@
-import { ChakraProvider } from '@chakra-ui/react'
+import { ChakraProvider, Flex } from '@chakra-ui/react'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api'
 import { system } from '@/theme/system'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
 
 // Keep tooltip content inspectable without opening a browser portal.
 vi.mock('@/components/ui/tooltip', () => ({
@@ -40,23 +46,22 @@ describe('profile detail', () => {
     id: string,
     bound = true,
     names: string[] = [],
-    comparison: 'clean' | 'draft' | 'saved' | 'saved-missing' = 'clean'
+    comparison: 'clean' | 'draft' | 'saved' | 'saved-missing' = 'clean',
+    displayCount = 1
   ): string {
     vi.stubGlobal('localStorage', { getItem: () => null })
     const product = {
       displays:
         comparison === 'clean'
           ? []
-          : [
-              {
-                id: 'display:one',
-                name: 'Display',
-                hdr: false,
-                primary: true,
-                adapter: { name: 'Test adapter' },
-                connection: 'DisplayPort'
-              }
-            ],
+          : Array.from({ length: displayCount }, (_, index) => ({
+              id: index === 0 ? 'display:one' : `display:${index}`,
+              name: `Display ${index + 1}`,
+              hdr: false,
+              primary: index === 0,
+              adapter: { name: 'Test adapter' },
+              connection: 'DisplayPort'
+            })),
       capabilityReports: {
         'display:one': {
           capabilities: Object.fromEntries(
@@ -168,25 +173,143 @@ describe('profile detail', () => {
   it('pins the whole header with an opaque panel surface and stable height', () => {
     for (const comparison of ['clean', 'draft'] as const) {
       const html = render('game', true, [], comparison)
-      expect(html).toContain('position:sticky;')
-      // The header covers main-panel's 20px top padding so nothing scrolls above it.
-      expect(html).toContain('top:-20px;')
-      expect(html).toContain('margin-top:-20px;')
-      expect(html).toContain('padding-top:20px;')
-      expect(html).toContain('z-index:1;')
-      expect(html).toContain('background:var(--chromashift-colors-bg)')
-      expect(html).toContain('background:var(--chromashift-colors-bg-muted)')
-      expect(html).toContain('min-height:var(--chromashift-sizes-10)')
       const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
+      const headerClass = header.match(/class="([^"]+)"/)![1]!
+      const rules = [...html.matchAll(new RegExp(`\\.${headerClass}\\{[^}]*\\}`, 'g'))]
+        .map(([rule]) => rule)
+        .join('\n')
+      expect(rules).toContain('position:sticky;')
+      // The header covers main-panel's 20px top padding so nothing scrolls above it.
+      expect(rules).toContain('top:-20px;')
+      expect(rules).toContain('margin-top:-20px;')
+      expect(rules).toContain('padding-top:20px;')
+      expect(rules).toContain('z-index:1;')
+      expect(rules).toContain('background:var(--chromashift-colors-bg)')
+      expect(rules).toContain('background:var(--chromashift-colors-bg-muted)')
+      expect(rules).toContain('min-height:calc(var(--chromashift-sizes-10) + 20px)')
       expect(header).toContain('profile-title')
       expect(header).toContain('Profile name')
       expect(header).toContain('More profile actions')
       if (comparison === 'draft') {
-        for (const action of ['Hold to compare', 'Discard changes', 'Update profile'])
-          expect(header).toContain(action)
+        for (const action of ['Discard changes', 'Update profile']) expect(header).toContain(action)
       }
+      expect(header).not.toContain('Hold to compare')
     }
   })
+
+  it('keeps compare inside the display bar after the scrolling tab list', () => {
+    const html = render('game', true, [], 'draft')
+    const bar = html.slice(html.indexOf('data-part="display-tab-bar"'))
+    const listStart = bar.indexOf('role="tablist"')
+    const listEnd = bar.indexOf('</div>', listStart)
+    const compare = bar.indexOf('aria-label="Hold to compare with saved"')
+    expect(listStart).toBeGreaterThan(0)
+    expect(compare).toBeGreaterThan(listEnd)
+    expect(compare).toBeLessThan(bar.indexOf('data-part="display-control"'))
+    expect(bar.slice(listEnd, compare)).toContain('flex-shrink:0')
+    const tabClass = bar
+      .slice(0, listEnd)
+      .match(/role="tablist"[^>]*class="([^"]+)"/)![1]!
+      .split(' ')
+      .find((name) => name.startsWith('css-'))!
+    const rules = [...html.matchAll(new RegExp(`\\.${tabClass}\\{[^}]*\\}`, 'g'))]
+      .map(([rule]) => rule)
+      .join('\n')
+    expect(rules).toContain('overflow-x:auto')
+    expect(rules).toContain('min-width:0')
+  })
+
+  it('keeps focus below the header, rename height stable and compare outside overflowing tabs in Chromium', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chromashift-profile-layout-'))
+    try {
+      // RR96-3 focus proof: real ProfileDetail SSR in an isolated scrollport.
+      // Electron stays hidden and offscreen, with no helper or display writes.
+      const body = renderToStaticMarkup(
+        <ChakraProvider value={system}>
+          <Flex
+            as="main"
+            data-part="main-panel"
+            isolation="isolate"
+            flexDir="column"
+            h="220px"
+            w="720px"
+            p="20px"
+            overflow="auto"
+            scrollPaddingTop={`calc(${PROFILE_HEADER_HEIGHT} + {spacing.1})`}
+            dangerouslySetInnerHTML={{ __html: render('game', true, [], 'draft', 8) }}
+          />
+        </ChakraProvider>
+      )
+      writeFileSync(
+        join(directory, 'fixture.html'),
+        `<!doctype html><body style="margin:0">${body}`
+      )
+      const script = join(directory, 'probe.cjs')
+      writeFileSync(
+        script,
+        `
+        const { app, BrowserWindow } = require('electron')
+        const assert = require('node:assert/strict')
+        app.disableHardwareAcceleration()
+        app.setPath('userData', ${JSON.stringify(directory)})
+        app.whenReady().then(async () => {
+          try {
+            const win = new BrowserWindow({ show: false, width: 760, height: 260,
+              webPreferences: { offscreen: true } })
+            await win.loadFile(${JSON.stringify(join(directory, 'fixture.html'))})
+            const result = await win.webContents.executeJavaScript(
+              ${JSON.stringify(`(() => {
+                const main = document.querySelector('[data-part="main-panel"]')
+                const header = main.querySelector('header')
+                const bar = main.querySelector('[data-part="display-tab-bar"]')
+                const list = bar.querySelector('[role="tablist"]')
+                const compare = bar.querySelector('[aria-label="Hold to compare with saved"]')
+                const before = compare.getBoundingClientRect()
+                list.scrollLeft = list.scrollWidth
+                const after = compare.getBoundingClientRect(), barRect = bar.getBoundingClientRect()
+                const thumb = [...main.querySelectorAll('[data-part="thumb"]')]
+                  .filter(t => t.getBoundingClientRect().height > 0)[1]
+                main.scrollTop = main.scrollHeight
+                thumb.focus()
+                const h = header.getBoundingClientRect(), t = thumb.getBoundingClientRect()
+                const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2)
+                const title = header.querySelector('[data-part="profile-title"]')
+                const input = header.querySelector('[data-part="profile-name"]')
+                const height = h.height
+                title.style.display = 'none'; input.hidden = false
+                return { focused: document.activeElement === thumb,
+                  belowHeader: t.top >= h.bottom, obscured: header.contains(hit),
+                  height, renameHeight: header.getBoundingClientRect().height,
+                  compareOutsideList: !list.contains(compare),
+                  tabsOverflow: list.scrollLeft > 0,
+                  compareStaysVisible: after.left === before.left && after.left >= barRect.left && after.right <= barRect.right,
+                  scrollPadding: getComputedStyle(main).scrollPaddingTop }
+              })()`)}
+            )
+            assert.equal(result.focused, true)
+            assert.equal(result.belowHeader, true, JSON.stringify(result))
+            assert.equal(result.obscured, false, JSON.stringify(result))
+            assert.equal(result.scrollPadding, '64px')
+            assert.equal(result.height, 60)
+            assert.equal(result.renameHeight, result.height)
+            assert.equal(result.compareOutsideList, true)
+            assert.equal(result.tabsOverflow, true)
+            assert.equal(result.compareStaysVisible, true)
+            app.quit()
+          } catch (error) { console.error(error); app.exit(1) }
+        })
+      `
+      )
+      const electron = createRequire(import.meta.url)('electron') as string
+      const env = { ...process.env }
+      delete env.ELECTRON_RUN_AS_NODE
+      const result = spawnSync(electron, [script], { encoding: 'utf8', timeout: 15000, env })
+      expect(result.error).toBeUndefined()
+      expect(result.status, result.stderr || result.stdout).toBe(0)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 20000)
 
   it('keeps disabled control rows without a hint for a missing saved target', () => {
     const html = render('game', true, [], 'saved-missing')

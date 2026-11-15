@@ -7,6 +7,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { DisplaysView } from '@/features/settings/displays-view'
 import { DiagnosticsPanel } from '@/features/settings/diagnostics-panel'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
 import { ProfileList } from '@/features/profiles/profile-list'
 import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import {
@@ -646,6 +647,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               minH={0}
               p="20px"
               overflow={pausedOverlay ? 'hidden' : 'auto'}
+              scrollPaddingTop={
+                view === 'profiles' ? `calc(${PROFILE_HEADER_HEIGHT} + {spacing.1})` : undefined
+              }
               rounded="xl"
               bg={{ base: 'bg', _dark: 'bg.muted' }}
               inert={pausedOverlay}

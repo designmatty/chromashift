@@ -281,8 +281,10 @@ in progress; release remains allowed. Main applies saved targets on press and th
 current draft on release, including captured-baseline restoration for missing
 saved targets. Neither request changes the session draft, saved reference, kind,
 or unsaved-change flag. Published targets describe the draft while held so panel
-hydration cannot mistake comparison output for an edit. Draft updates are rejected
-while comparing. Compare clears on restoration, session replacement and recovery;
+hydration cannot mistake comparison output for an edit. Main rejects draft updates
+while comparing. The renderer retains metadata commits locally and defers their
+synchronization until release drains, while rejecting color edits during the hold.
+Compare clears on restoration, session replacement and recovery;
 validated topology changes reapply the draft. If refresh or ownership validation
 fails during a hold, main retains the touched displays and session for recovery,
 marks comparison interrupted and enters Safety blocked without a release write.
@@ -292,6 +294,9 @@ targets remain retained intent while blocked, not confirmation of applied output
 Minimize, override handoff and quit release compare in main. Both
 panels share the pointer-release state machine and semantic pressed styling. The
 app also supports Space and Enter; the mini panel stays non-activating.
+In the app, compare sits at the right of the rounded display tab bar, outside
+the scrolling tab list. The profile header remains sticky with a shared minimum
+height used for focus scroll padding. The mini button stays in its unsaved row.
 Renderer dialogs guard navigation and activation changes
 with unsaved changes. End preview, live-profile selection, and close return to
 the live profile. Minimize ends only a clean preview; unsaved edits and overrides

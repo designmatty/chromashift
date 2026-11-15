@@ -148,8 +148,9 @@ targets remain persisted and resume when the same physical display returns.
   offers Update, Discard, or Cancel before leaving unsaved changes through
   profile selection, activation selection, or navigation; either choice then
   continues to that destination.
-- When a profile has unsaved color changes, `Hold to compare` sits before
-  `Discard changes` in the app header and beside the mini panel's unsaved actions.
+- When a profile has unsaved color changes, `Hold to compare` sits at the right
+  of the app's rounded display tab bar, outside the horizontally scrolling tab
+  list, and beside the mini panel's unsaved actions.
   Added or removed display targets count; name, trigger and other metadata changes
   alone do not. Carried-in overrides offer compare without promotion to Edit.
   Its accessible name is `Hold to compare with saved`.
@@ -160,11 +161,12 @@ targets remain persisted and resume when the same physical display returns.
   A polite status announces `Showing saved values`. Release returns to the draft.
   The mini panel remains pointer-oriented, non-activating and fixed in size.
   Its compare button matches Update profile's compact pill shape and subtle
-  surface. The app header keeps its existing compare style.
+  surface. The app's display bar keeps the xs outline compare style.
 - The whole profile header stays pinned inside the scrolling profile pane,
-  including rename, compare, Update/Discard and the overflow menu. Its opaque
+  including rename, Update/Discard and the overflow menu. Its opaque
   surface matches the pane in both themes, and its height stays stable when
-  unsaved actions appear. A pointer hold preserves an open rename input.
+  unsaved actions appear or rename opens. Scroll padding keeps keyboard-focused
+  controls below the header. A pointer hold preserves an open rename input.
 - Click the header title to rename a profile in place. Enter or blur records the
   name in the unsaved draft; Escape cancels the name input. New profiles open
   with naming focused. New profiles use `New profile`, `New profile 2`, and the
@@ -271,6 +273,8 @@ targets; release applies the session's current draft. Both use the existing nati
 baseline, read-back and full-display rollback paths. Pending draft writes drain
 first; compare requests bypass the 120 ms edit debounce. Main rejects draft edits
 while held rather than queueing edits that could unexpectedly land after release.
+The renderer retains name and other metadata commits locally during a hold and
+syncs them only after release finishes. Incoming color edits remain rejected.
 A press never starts or promotes a session itself.
 
 Pointer up anywhere, pointer cancel, lost capture, blur, unmount, navigation,
