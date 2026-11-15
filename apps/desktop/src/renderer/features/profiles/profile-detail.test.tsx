@@ -168,7 +168,12 @@ describe('profile detail', () => {
   it('pins the whole header with an opaque panel surface and stable height', () => {
     for (const comparison of ['clean', 'draft'] as const) {
       const html = render('game', true, [], comparison)
-      expect(html).toContain('position:sticky;top:0;z-index:1;')
+      expect(html).toContain('position:sticky;')
+      // The header covers main-panel's 20px top padding so nothing scrolls above it.
+      expect(html).toContain('top:-20px;')
+      expect(html).toContain('margin-top:-20px;')
+      expect(html).toContain('padding-top:20px;')
+      expect(html).toContain('z-index:1;')
       expect(html).toContain('background:var(--chromashift-colors-bg)')
       expect(html).toContain('background:var(--chromashift-colors-bg-muted)')
       expect(html).toContain('min-height:var(--chromashift-sizes-10)')

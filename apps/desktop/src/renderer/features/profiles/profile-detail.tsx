@@ -108,11 +108,16 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       data-display-target-count={profile.displays.length}
       flexShrink={0}
     >
-      {/* main-panel owns scrolling; no overflow ancestor separates it from this header. */}
+      {/* main-panel owns scrolling; no overflow ancestor separates it from this header.
+          main-panel has 20px top padding, and Chromium sticks below that padding, so
+          scrolled content showed through the gap. The header extends up over the
+          padding and sticks at the scrollport's top edge instead. */}
       <Flex
         as="header"
         position="sticky"
-        top="0"
+        top="-20px"
+        mt="-20px"
+        pt="20px"
         zIndex="1"
         bg={{ base: 'bg', _dark: 'bg.muted' }}
         minH="10"
