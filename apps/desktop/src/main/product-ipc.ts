@@ -22,6 +22,7 @@ import {
   commitSessionRequestSchema,
   startSessionRequestSchema,
   previewUpdateRequestSchema,
+  previewCompareRequestSchema,
   productIpcChannels,
   productStateResultSchema,
   profileIdRequestSchema,
@@ -63,6 +64,7 @@ export function registerProductIpcHandlers(
   previewLifetime: {
     get(event: IpcMainInvokeEvent): number | null
     assert(event: IpcMainInvokeEvent, lifetime: number): void
+    assertCompareAllowed?(event: IpcMainInvokeEvent): void
   },
   openExternalLink: (link: ExternalLink) => Promise<void> = async () => { throw new Error('External links are unavailable.') }
 ): void {
@@ -339,6 +341,24 @@ export function registerProductIpcHandlers(
     async ({ request, lifetime }, event) => {
       previewLifetime.assert(event, lifetime)
       await controller().updatePreview(request.profileId, request.targets, request.draft)
+      return null
+    }
+  )
+  register(
+    ipc,
+    productIpcChannels.setPreviewCompare,
+    scopedPreviewRequestSchema(previewCompareRequestSchema),
+    voidResultSchema,
+    assertTrustedRenderer,
+    async ({ request, lifetime }, event) => {
+      const assertCurrent = (): void => {
+        previewLifetime.assert(event, lifetime)
+        if (request.showing) previewLifetime.assertCompareAllowed?.(event)
+      }
+      assertCurrent()
+      await controller().setPreviewCompare(
+        request.profileId, request.showing, assertCurrent, request.sessionId
+      )
       return null
     }
   )

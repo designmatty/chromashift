@@ -31,6 +31,7 @@ import { resolveDisplayServicePath } from '@main/display-service-path.js'
 import { ElectronTrayMenu } from '@main/electron-tray-menu.js'
 import { MiniPanelController } from '@main/mini-panel-controller.js'
 import { PanelController } from '@main/panel-controller.js'
+import { ProductConflictError } from '@main/product-controller.js'
 import { registerProductIpcHandlers } from '@main/product-ipc.js'
 import { DiagnosticsService } from '@main/diagnostics-service.js'
 import { UpdateChecker } from '@main/update-checker.js'
@@ -133,6 +134,7 @@ const panelController = new PanelController(
   () => miniPanelController.hide(),
   'mini',
   {
+    releaseComparison: () => releasePanelComparison(),
     cancelForPanelHide: (reason, done) =>
       runtime.previewController?.cancelForPanelHide(reason, done) ?? Promise.resolve().then(done)
   },
@@ -264,6 +266,14 @@ const runtime = createProductRuntime({
     }
   }
 })
+
+async function releasePanelComparison(): Promise<void> {
+  try {
+    await runtime.previewController?.releaseComparison()
+  } catch (error) {
+    logger.write({ level: 'error', eventName: 'PreviewCompareReleaseFailed', ...describeError(error) })
+  }
+}
 
 function saveMiniPanelPosition(position: { x: number; y: number }): void {
   const currentPosition = settingsStores.windowState.current.miniPanelPosition
@@ -416,7 +426,10 @@ function createWindow(): BrowserWindow {
       Promise.resolve().then(onCancelled),
     waitForHandoffResponse: () => new Promise((resolve) => setTimeout(resolve, 250)),
     notifyClosed: () => window.webContents.send(productIpcChannels.appPanelClosed),
-    notifyMinimized: () => window.webContents.send(productIpcChannels.appPanelMinimized, {}),
+    notifyMinimized: () => {
+      void releasePanelComparison()
+      window.webContents.send(productIpcChannels.appPanelMinimized, {})
+    },
     releaseToTray: (event) => windowController.handleClose(event, window),
     errors: {
       show: () => panelController.openAppPanel(),
@@ -669,7 +682,13 @@ registerProductIpcHandlers(
       panelController.assertPanelLifetime(
         event.sender === miniWindow?.webContents ? 'mini' : 'app',
         lifetime
-      )
+      ),
+    assertCompareAllowed: (event) => {
+      const panel = BrowserWindow.fromWebContents(event.sender)
+      if (!panel?.isVisible() || panel.isMinimized() || runtime.shutdownCoordinator?.exiting) {
+        throw new ProductConflictError('Open a panel before comparing saved colors.')
+      }
+    }
   },
   (link) => openExternalLink(link, (url) => shell.openExternal(url))
 )

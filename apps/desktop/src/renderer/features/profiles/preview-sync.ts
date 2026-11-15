@@ -20,6 +20,12 @@ export interface PreviewSyncPort {
     lifetime?: number
   ): Promise<ProductResult<null>>
   cancelPreview(lifetime?: number): Promise<ProductResult<null>>
+  setPreviewCompare?(
+    profileId: string,
+    showing: boolean,
+    sessionId: number,
+    lifetime?: number
+  ): Promise<ProductResult<null>>
 }
 
 /**
@@ -116,6 +122,64 @@ export class PreviewSyncSession {
     this.cancelScheduled()
     send?.()
     await Promise.allSettled([...this.#pending])
+  }
+
+  /**
+   * Main applies saved colors without replacing its draft. Both requests join
+   * #pending behind any draft write, so they stay ordered, and rollback or a
+   * panel close invalidates and drains them like any other send. Neither write
+   * starts a session: a shortcut or a close may have ended this one. Returns
+   * null when nothing will be written, so the caller never shows saved values
+   * that the displays will not receive.
+   */
+  public beginComparison(
+    draft: ColorProfile,
+    session: PreviewState,
+    onRejected: () => void = () => undefined
+  ): (() => Promise<void>) | null {
+    // A rollback owns the session's ending, and comparing into it could land
+    // after the cancel. A revoked panel opening admits no writes either.
+    if (
+      this.#rollback !== undefined ||
+      this.port.setPreviewCompare === undefined ||
+      session.state !== 'active'
+    )
+      return null
+    const lifetime = this.port.getPanelLifetime?.()
+    if (lifetime === null) return null
+    const generation = this.#generation
+    const joinable =
+      !this.#needsStart &&
+      session.state === 'active' &&
+      (session.kind === 'edit' || session.kind === 'override') &&
+      session.profileId === draft.id
+    // Send a debounced edit now, and start or promote the edit session when
+    // needed, so the saved targets follow the latest draft in the same queue.
+    if (this.#scheduledSend !== undefined) {
+      const send = this.#scheduledSend
+      this.cancelScheduled()
+      send()
+    } else if (!joinable) return null
+    const update = (showing: boolean): Promise<void> => {
+      const previous = [...this.#pending]
+      const pending = (async () => {
+        await Promise.allSettled(previous)
+        if (generation !== this.#generation) return
+        const scope: [] | [number] = lifetime === undefined ? [] : [lifetime]
+        // Never start a new session here. A shortcut or close may have ended it.
+        const result = await run(
+          this.port.setPreviewCompare!(draft.id, showing, session.sessionId, ...scope),
+          this.onError
+        )
+        if (result !== undefined) this.onError(null)
+        else if (showing) onRejected()
+      })()
+      this.#pending.add(pending)
+      void pending.finally(() => this.#pending.delete(pending))
+      return pending
+    }
+    void update(true)
+    return () => update(false)
   }
 
   public cancelScheduled(): void {

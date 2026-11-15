@@ -558,6 +558,12 @@ describe('product runtime startup wiring', () => {
         }
         try {
           await product.startPreview(draft, kind)
+          await product.setPreviewCompare(saved.id, true)
+          expect((await product.getState()).preview).toMatchObject({
+            comparing: true,
+            draft,
+            unsavedChanges: true
+          })
           const stop = vi.spyOn(h.client, 'stop').mockImplementation(async () => {
             await h.client.restoreAllBaselines()
           })
@@ -571,6 +577,7 @@ describe('product runtime startup wiring', () => {
             expect((await product.getState()).preview).toMatchObject({
               state: 'active',
               kind,
+              comparing: false,
               draft
             })
             expect(h.client.currentSettings.get('display:one')?.brightness).toBe(40)
@@ -1353,6 +1360,86 @@ describe('unconfirmed preview restoration', () => {
       expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
     } finally {
       h.runtime.dispose()
+    }
+  })
+
+  it.each([false, true])(
+    'clears held compare on Pause, including restore failure=%s',
+    async (fails) => {
+      const h = await previewHarness('manual', 'edit')
+      try {
+        const draft = {
+          ...h.draft,
+          displays: [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 41 } }]
+        }
+        await h.product.updatePreview(draft.id, draft.displays, draft)
+        await h.product.setPreviewCompare(draft.id, true)
+        if (fails) h.client.failRestoreDisplayIds.add(id)
+        const pausing = h.product.controlChromaShift('pause')
+        if (fails) await expect(pausing).rejects.toBeInstanceOf(PreviewRestoreError)
+        else await pausing
+        expect((await h.product.getState()).preview).not.toMatchObject({ comparing: true })
+        expect(h.intent().chromaShiftStatus).toBe(fails ? 'safetyBlocked' : 'paused')
+        h.client.failRestoreDisplayIds.clear()
+      } finally {
+        await h.runtime.dispose()
+      }
+    }
+  )
+
+  it.each([
+    ['edit', 'refresh failure'],
+    ['override', 'refresh failure'],
+    ['edit', 'providerChanged'],
+    ['override', 'providerChanged']
+  ] as const)('recovers the full %s draft after %s mid-hold', async (kind, failure) => {
+    // Reviewer runtime proof: the draft must differ from saved to detect a lost write.
+    const h = await previewHarness('manual', kind)
+    try {
+      const draft = {
+        ...h.draft,
+        displays: [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 41 } }]
+      }
+      await h.product.updatePreview(draft.id, draft.displays, draft)
+      await h.product.setPreviewCompare(draft.id, true)
+      expect(h.client.currentSettings.get(id)?.brightness).toBe(35)
+      const refresh = vi.spyOn(h.client, 'refreshDisplayTopology')
+      if (failure === 'refresh failure') {
+        refresh.mockRejectedValueOnce(new Error('Ownership could not be validated'))
+      } else {
+        refresh.mockResolvedValueOnce({
+          generation: 2,
+          displays: await h.client.getDisplays(),
+          capabilityReports: [],
+          baselines: [{ displayId: id, state: 'connected', ownership: 'providerChanged' }]
+        })
+      }
+      const calls = [...h.client.calls]
+      vi.useFakeTimers()
+      h.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      await vi.waitFor(() => expect(h.logger.has('DisplayTransitionFailed')).toBe(true))
+      vi.useRealTimers()
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      expect((await h.product.getState()).preview).toMatchObject({
+        comparing: false,
+        draft,
+        targets: draft.displays,
+        unsavedChanges: true
+      })
+      expect(h.runtime.previewController!.sessionRecoveryPending).toBe(true)
+      await expect(h.product.updatePreview(draft.id, draft.displays, draft)).rejects.toThrow('Resume ChromaShift')
+      await expect(h.product.setPreviewCompare(draft.id, false)).resolves.toBeUndefined()
+      expect(h.client.calls).toEqual(calls)
+      expect(h.client.currentSettings.get(id)?.brightness).toBe(35)
+      await h.product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect(h.client.currentSettings.get(id)?.brightness).toBe(41)
+      expect((await h.product.getState()).preview).toMatchObject({ comparing: false, draft })
+      await h.product.updatePreview(draft.id, draft.displays, draft)
+      expect(h.client.currentSettings.get(id)?.brightness).toBe(41)
+    } finally {
+      await h.runtime.dispose()
     }
   })
 

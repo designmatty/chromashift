@@ -10,6 +10,7 @@ export type PanelKind = 'app' | 'mini'
 export type PanelHideReason = 'close' | 'handoff'
 
 export interface PanelPreviewPort {
+  releaseComparison?(): Promise<void>
   cancelForPanelHide(reason: PanelHideReason, onCancelled: () => void): Promise<void>
 }
 
@@ -36,6 +37,7 @@ export class PanelController {
   }
 
   public openAppPanel(): void {
+    if (this.#lifetimes.mini !== null) void this.preview?.releaseComparison?.()
     this.endPanelLifetime('mini')
     this.hideMiniPanel()
     this.#openLifetime('app')

@@ -32,6 +32,9 @@ import { ApplicationAssignments } from '@/features/profiles/application-assignme
 import { DisplayControls } from '@/features/profiles/display-controls'
 import { profileShortcut } from '@/features/profiles/control-presentation'
 import { ShortcutDisplay } from '@/components/ui/shortcut-display'
+import { CompareButton } from '@/features/profiles/compare-button'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
+import type { CompareInput } from '@/features/profiles/hold-to-compare'
 
 const DEFAULT_ID = 'default'
 
@@ -40,6 +43,12 @@ export interface ProfileDetailProps {
   product: ProductState
   busy: boolean
   dirty: boolean
+  compare?: {
+    showingSaved: boolean
+    savedProfile: ColorProfile
+    onPress(input: CompareInput): void
+    onRelease(input?: CompareInput): Promise<void>
+  }
   startNaming?: boolean
   onNamingEnded?(): void
   onChange(profile: ColorProfile): void
@@ -53,6 +62,7 @@ export interface ProfileDetailProps {
 
 export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
   const profile = props.profile
+  const comparing = props.compare?.showingSaved === true
   const isDefault = profile.id.toLowerCase() === DEFAULT_ID
   const shortcut = profileShortcut(profile, props.product.settings.shortcutBindings)
   const actionsTriggerId = useId()
@@ -97,8 +107,24 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
       as="section"
       data-part="profile-detail"
       data-display-target-count={profile.displays.length}
+      flexShrink={0}
     >
-      <Flex as="header" align="center" gap={3}>
+      {/* main-panel owns scrolling; no overflow ancestor separates it from this header.
+          main-panel has 20px top padding, and Chromium sticks below that padding, so
+          scrolled content showed through the gap. The header extends up over the
+          padding and sticks at the scrollport's top edge instead. */}
+      <Flex
+        as="header"
+        position="sticky"
+        top="-20px"
+        mt="-20px"
+        pt="20px"
+        zIndex="1"
+        bg={{ base: 'bg', _dark: 'bg.muted' }}
+        minH={PROFILE_HEADER_HEIGHT}
+        align="center"
+        gap={3}
+      >
         <Stack gap="1" flex="1" minW="0">
           <Flex align="center" gap="3" minW="0">
             {!naming && (
@@ -273,13 +299,31 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
         )}
       </Box>
       <Stack as="section" data-part="profile-color-controls" pt="10px" gap="10px">
+        {/* Always mounted so the change is announced; srOnly keeps it out of the layout. */}
+        <Text role="status" aria-live="polite" srOnly>
+          {comparing ? 'Showing saved values' : ''}
+        </Text>
         <SectionHeading title="Display color controls" icon={<Monitor size={20} />}>
           Select the display you would like to change
         </SectionHeading>
         <DisplayControls
-          profile={profile}
+          profile={
+            comparing && props.compare
+              ? { ...profile, displays: props.compare.savedProfile.displays }
+              : profile
+          }
           product={props.product}
-          editing={props.product.chromaShift.status === 'active' && !props.busy}
+          editing={props.product.chromaShift.status === 'active' && !props.busy && !comparing}
+          compareButton={
+            props.dirty && props.compare !== undefined ? (
+              <CompareButton
+                showingSaved={comparing}
+                onPress={props.compare.onPress}
+                onRelease={props.compare.onRelease}
+                disabled={props.busy || props.product.chromaShift.status !== 'active'}
+              />
+            ) : undefined
+          }
           onChange={props.onChange}
         />
       </Stack>
@@ -298,10 +342,12 @@ function ProfileBadge({ children }: { children: React.ReactNode }): React.JSX.El
 function SectionHeading({
   title,
   icon,
+  badge,
   children
 }: {
   title: string
   icon?: React.ReactNode
+  badge?: React.ReactNode
   children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -311,6 +357,7 @@ function SectionHeading({
         <Heading as="h2" fontSize="lg" fontWeight="500">
           {title}
         </Heading>
+        {badge}
       </Group>
       <Text fontSize="sm" color={'fg.muted'}>
         {children}

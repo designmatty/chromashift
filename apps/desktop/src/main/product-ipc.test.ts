@@ -19,6 +19,7 @@ function harness() {
   const clear = vi.fn()
   const write = vi.fn()
   const trusted = vi.fn()
+  const compareAllowed = vi.fn()
   const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json([]))
   const installUpdate = vi.fn(async () => true)
   const hideMiniPanel = vi.fn(async () => undefined)
@@ -61,7 +62,8 @@ function harness() {
     }),
     {
       get: () => panels.getPanelLifetime('mini'),
-      assert: (_event, lifetime) => panels.assertPanelLifetime('mini', lifetime)
+      assert: (_event, lifetime) => panels.assertPanelLifetime('mini', lifetime),
+      assertCompareAllowed: compareAllowed
     },
     openExternalLink
   )
@@ -73,6 +75,7 @@ function harness() {
     clear,
     write,
     trusted,
+    compareAllowed,
     invoke,
     fetch,
     installUpdate,
@@ -100,6 +103,66 @@ it('opens only a sender-checked, validated fixed link identifier', async () => {
 })
 
 describe('preview lifetime IPC', () => {
+  it('rejects a late compare press after minimize or quit while allowing release', async () => {
+    const h = harness()
+    const product = { setPreviewCompare: vi.fn(async () => undefined) }
+    h.getController.mockReturnValue(product as unknown as ProductController)
+    h.compareAllowed.mockImplementation(() => {
+      throw new Error('Panel is hidden or quitting')
+    })
+    const lifetime = h.panels.getPanelLifetime('mini')!
+    expect(
+      await h.invoke(productIpcChannels.setPreviewCompare, {
+        lifetime,
+        request: { profileId: 'game', showing: true, sessionId: 7 }
+      })
+    ).toMatchObject({ ok: false })
+    expect(product.setPreviewCompare).not.toHaveBeenCalled()
+    expect(
+      await h.invoke(productIpcChannels.setPreviewCompare, {
+        lifetime,
+        request: { profileId: 'game', showing: false, sessionId: 7 }
+      })
+    ).toEqual({ ok: true, value: null })
+    expect(product.setPreviewCompare).toHaveBeenCalledOnce()
+  })
+  it('validates compare requests, checks the sender, and scopes them to the current opening', async () => {
+    const h = harness()
+    const setPreviewCompare = vi.fn(async () => undefined)
+    h.getController.mockReturnValue({ setPreviewCompare } as unknown as ProductController)
+    const lifetime = h.panels.getPanelLifetime('mini')!
+    for (const request of [
+      {},
+      { profileId: 'game', showing: 1, sessionId: 7 },
+      { profileId: '', showing: true, sessionId: 7 },
+      { profileId: 'game', showing: true, sessionId: 7, targets: [] },
+      { profileId: 'game', showing: true, sessionId: 0 },
+      { profileId: 'game', showing: true }
+    ]) {
+      expect(
+        await h.invoke(productIpcChannels.setPreviewCompare, { lifetime, request })
+      ).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } })
+    }
+    for (const showing of [true, false]) {
+      expect(
+        await h.invoke(productIpcChannels.setPreviewCompare, {
+          lifetime,
+          request: { profileId: 'game', showing, sessionId: 7 }
+        })
+      ).toEqual({ ok: true, value: null })
+      expect(setPreviewCompare).toHaveBeenLastCalledWith('game', showing, expect.any(Function), 7)
+    }
+    h.trusted.mockImplementation(() => {
+      throw new Error('Untrusted renderer')
+    })
+    await expect(
+      h.invoke(productIpcChannels.setPreviewCompare, {
+        lifetime,
+        request: { profileId: 'game', showing: true, sessionId: 7 }
+      })
+    ).rejects.toThrow('Untrusted renderer')
+    expect(setPreviewCompare).toHaveBeenCalledTimes(2)
+  })
   it('sender-checks and validates editor-open and per-display learned-limit reset', async () => {
     const h = harness()
     const profile = { id: 'game', name: 'Game', enabled: true, applications: [], displays: [] }
@@ -141,6 +204,7 @@ describe('preview lifetime IPC', () => {
       activateProfile: vi.fn(async () => undefined),
       enableAutomatic: vi.fn(async () => undefined),
       updatePreview: vi.fn(async () => undefined),
+      setPreviewCompare: vi.fn(async () => undefined),
       confirmPreview: vi.fn(),
       cancelPreview: vi.fn(async () => undefined)
     }
@@ -152,6 +216,10 @@ describe('preview lifetime IPC', () => {
       [productIpcChannels.enableAutomatic, {}],
       [productIpcChannels.startPreview, { profile, kind: 'override' }],
       [productIpcChannels.updatePreview, { profileId: profile.id, targets: [] }],
+      [
+        productIpcChannels.setPreviewCompare,
+        { profileId: profile.id, showing: true, sessionId: 7 }
+      ],
       [productIpcChannels.confirmPreview, { profile, activation: 'preserve' }],
       [productIpcChannels.cancelPreview, {}],
       [productIpcChannels.hideMiniPanel, {}]

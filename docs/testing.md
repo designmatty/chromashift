@@ -7,6 +7,7 @@
 | `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget | Any supported Windows checkout |
 | `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                               | Interactive Windows hardware   |
 | `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                         | Interactive Windows desktop    |
+| `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration          | Interactive Windows desktop    |
 | `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                  | Interactive Windows desktop    |
 | `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                        | Interactive Windows desktop    |
 | `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                  | Windows                        |
@@ -264,6 +265,16 @@ fault is induced for these label and color checks.
 The smoke retains the neutral new-profile, persistent preview-strip,
 same-profile no-op, in-place header Update/Discard, truncated-name tooltip,
 mini-panel ellipsis, override-hydration and native quit-Cancel checks from main.
+After the first new-profile brightness edit, it holds Hold to compare by pointer,
+Space and Enter in dark and light. Each hold checks the saved neutral guard
+fingerprint, disabled saved sliders, the visible pressed state and the status text. Each
+release checks the exact draft fingerprint. A native capture is taken while held
+in each theme. Missing-target compare to Original settings is covered by the
+fake-native integration test. The real panel-lifecycle step also holds compare in
+the mini panel, checks saved and draft native fingerprints and retained unsaved
+override state, and captures the visible native mini window in both themes.
+The main-owned compare steps passed on hardware at ec829de in the app and mini
+panel, in dark and light. The current fix-round additions await owner validation.
 It explicitly dismisses any remaining profile menu before inline naming and
 waits for the unselected-profile delete dialog to focus Cancel before choosing
 an action. Intermittent assertions and native quit automation limits are tracked
@@ -292,6 +303,49 @@ smoke-owned window checks Windows outside-click behavior. The native quit
 warning checks Update / Discard / Cancel and cancels for both session kinds.
 The close-retry presentation fixture still fakes restoration failure; it does
 not establish hardware failure recovery.
+
+### Owner checks for Hold to compare
+
+For #80, main-owned compare passed on hardware at 5a2ebbe in both panels and
+both themes. This fix round has deterministic coverage only. On a
+supporting SDR display with a restoration guard, edit a
+saved profile, then hold `Hold to compare` with the mouse, Space and Enter.
+The displays show the saved values and return to the draft exactly on release.
+Repeat with a profile that has no target for one display; that display shows
+Original settings while held, with disabled control rows and no on-screen hint.
+Keep a rename input open, type a name and press compare with the mouse; focus
+and the typed name must survive the hold. Commit with Enter while still holding,
+or Alt+Tab so input blur commits before compare releases. The name must survive
+release without a color write during the hold. Scroll the app pane to the bottom;
+the entire profile header and its actions must stay visible. Bring the display
+tab bar into view while still scrolled and hold compare at its right edge.
+With many displays, scroll the tab list horizontally; compare stays visible
+outside the list, inside the same rounded bar. Rename must not change the header
+height, and focusing an earlier color slider must scroll it below the header.
+Release by dragging off the button, Alt+Tab,
+minimize, the End preview shortcut, a profile hotkey and caption close. Close
+must restore the exact prior target, and none may leave saved values applied
+under a draft editor. Repeat pointer holds in the mini panel, including pointer
+cancel, blur, close and the app handoff. A carried-in override offers compare in
+the app without changing its session kind. Check that metadata-only edits never
+show compare, color target additions/removals do, and both themes show a clear
+pressed state without a Saved badge. While held, verify the tray keeps its unsaved
+hold label and quitting still asks about changes, including when no renderer
+flush acknowledgement arrives.
+
+`mise.exe exec -- npm run smoke:compare` builds and runs only the compare flow.
+After a build, use `mise.exe exec -- npm run smoke:compare -w @chromashift/desktop`
+or `node apps/desktop/scripts/smoke.mjs --compare-only`. This early mode reuses
+the full smoke's isolated launch, restoration guard, compare helpers, native
+captures and exact exit-restoration check; it skips unrelated smoke fixtures.
+It covers saved and missing targets, pointer/Space/Enter in the app, rename focus
+and commits during a hold, stable header height and unobscured slider focus,
+display-tab-bar holds from a scrolled pane, and mini pointer holds with
+unchanged panel height. Mini compare must match Update profile's size, pill shape
+and subtle surface. Both themes retain a clearly pressed state. The shared steps
+also run in the full suite. The orchestrator reports `smoke:compare` passed at
+5a2ebbe in the app and mini panel, in dark and light. No smoke was run for the
+subsequent focus-ring fix.
 
 ### Owner checks for panel close and handoff
 

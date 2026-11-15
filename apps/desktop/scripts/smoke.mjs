@@ -1100,7 +1100,8 @@ $processId`
   return processId
 }
 
-await verifyLearnedGammaLimits({
+const compareOnly = globalThis.process.argv.includes('--compare-only')
+if (!compareOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
   environment: Object.fromEntries(Object.entries(globalThis.process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
   reservePort, waitForDebuggerTarget, connectToDebugger, waitForExpression, hoverElement
@@ -1607,6 +1608,496 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
   )
 }
 
+async function evaluateRenderer(expression) {
+  const result = await debuggerClient.send('Runtime.evaluate', {
+    expression,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
+  return result.result.value
+}
+
+async function attachPanel(mini) {
+  const target = await waitForDebuggerTarget(
+    debuggingPort,
+    (candidate) => candidate.url.includes('panel=mini') === mini
+  )
+  const previous = debuggerClient
+  debuggerClient = await connectToDebugger(target.webSocketDebuggerUrl)
+  for (const domain of ['Runtime', 'Page', 'Log']) await debuggerClient.send(`${domain}.enable`)
+  debuggerClient.events.push(...previous.events)
+  previous.close()
+  await waitForExpression(
+    debuggerClient,
+    `document.visibilityState === 'visible' && document.querySelector('[data-part="${mini ? 'mini-panel' : 'main-panel'}"]') !== null`,
+    `The ${mini ? 'mini' : 'app'} panel did not become visible.`
+  )
+}
+
+async function runCompare() {
+  await focusNativeApp(electron.pid)
+  for (const missingSavedTarget of [false, true]) {
+    const saved = await evaluateRenderer(`(async () => {
+      const created = await window.chromaShift.createProfile(${JSON.stringify(missingSavedTarget ? 'Compare smoke original' : 'Compare smoke saved')})
+      if (!created.ok) throw new Error(created.error.message)
+      const profile = {
+        ...created.value,
+        // Enough real trigger rows to exercise scrolling even on a tall desktop.
+        applications: Array.from({ length: 48 }, (_, index) => ({ executableName: 'compare-scroll-fixture-' + index + '.exe' })),
+        displays: ${missingSavedTarget} ? [] : [{ displayId: ${JSON.stringify(guardedProductDisplayId)}, color: ${JSON.stringify(neutralColorSettings)} }]
+      }
+      const saved = await window.chromaShift.saveProfile(profile)
+      if (!saved.ok) throw new Error(saved.error.message)
+      return saved.value
+    })()`)
+    await openProfileFromSidebar(debuggerClient, saved.name)
+    await evaluateRenderer(
+      `document.querySelector(${JSON.stringify(guardedDisplayTabSelector)})?.click()`
+    )
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' &&
+        state.value.preview.profileId === ${JSON.stringify(saved.id)} &&
+        !state.value.preview.unsavedChanges
+    })()`,
+      'The compare fixture did not start a clean preview.'
+    )
+    const prior = new Map()
+    for (const display of guardedDisplays)
+      prior.set(
+        display.id,
+        displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
+      )
+    const cleanHeaderHeight = await evaluateRenderer(
+      `document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height`
+    )
+    await evaluateRenderer(
+      `document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-control="brightness"] [role="slider"]')?.focus()`
+    )
+    for (const type of ['keyDown', 'keyUp'])
+      await debuggerClient.send('Input.dispatchKeyEvent', {
+        type,
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        windowsVirtualKeyCode: 39
+      })
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+      const state = await window.chromaShift.getState()
+      return state.ok && state.value.preview.state === 'active' && state.value.preview.kind === 'edit' &&
+        state.value.preview.draft.displays.find(target => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === 51 &&
+        document.querySelector('[aria-label="Hold to compare with saved"]') !== null &&
+        document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height === ${cleanHeaderHeight}
+    })()`,
+      'The compare edit did not hydrate without changing header height.'
+    )
+    const draft = await evaluateRenderer(
+      `(async () => (await window.chromaShift.getState()).value.preview.draft)()`
+    )
+    await verifyAppComparison(prior.get(guardedDisplay.id))
+    await evaluateRenderer(`(async () => {
+      const cancelled = await window.chromaShift.cancelPreview()
+      if (!cancelled.ok) throw new Error(cancelled.error.message)
+      const activated = await window.chromaShift.activateProfile(${JSON.stringify(saved.id)})
+      if (!activated.ok) throw new Error(activated.error.message)
+      const started = await window.chromaShift.startPreview(${JSON.stringify(draft)}, 'override')
+      if (!started.ok) throw new Error(started.error.message)
+    })()`)
+    const applied = new Map()
+    for (const display of guardedDisplays)
+      applied.set(
+        display.id,
+        displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
+      )
+    await evaluateRenderer('window.chromaShift.showMiniPanel()')
+    await waitForNoDebuggerTarget(
+      debuggingPort,
+      (candidate) => !candidate.url.includes('panel=mini')
+    )
+    await attachPanel(true)
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[aria-label="Hold to compare with saved"]') !== null`,
+      'The compare override did not hydrate in the mini panel.'
+    )
+    // Mini chooses the draft's first assigned display, which is the guarded target.
+    await waitForExpression(
+      debuggerClient,
+      `document.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '51'`,
+      'The mini panel did not select the guarded draft display.'
+    )
+    await verifyMiniComparison(prior, applied, 51)
+    await evaluateRenderer(`window.chromaShift.openAppPanel('profiles')`)
+    await attachPanel(false)
+    await evaluateRenderer(`(async () => {
+      for (const result of [await window.chromaShift.cancelPreview(), await window.chromaShift.enableAutomatic(), await window.chromaShift.deleteProfile(${JSON.stringify(saved.id)})])
+        if (!result.ok) throw new Error(result.error.message)
+    })()`)
+  }
+  await evaluateRenderer('window.chromaShift.cancelPreview()')
+  const failures = debuggerClient.events.filter(
+    (event) =>
+      event.method === 'Runtime.exceptionThrown' ||
+      (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error') ||
+      (event.method === 'Log.entryAdded' && event.params.entry.level === 'error')
+  )
+  if (failures.length)
+    throw new Error(`Compare smoke renderer errors: ${JSON.stringify(failures)}`)
+  if (
+    /preload script failed|unable to load preload/i.test(`${standardOutput}\n${standardError}`)
+  )
+    throw new Error(`Compare smoke preload failure: ${standardError}`)
+  globalThis.console.log(
+    'Hold-to-compare smoke passed in app and mini, dark and light. Exact restoration is checked on exit.'
+  )
+}
+
+async function verifyAppComparison(
+  savedCompareFingerprint,
+  draftBrightness = 51,
+  kind = 'edit'
+) {
+  // #80: Hold to compare shows the saved neutral values on the guarded display,
+  // disables the controls with a visible pressed state, then returns to the exact
+  // unsaved draft output. Cover pointer, Space and Enter in dark and light.
+  const compareButton = `document.querySelector('[data-part="display-tab-bar"] [aria-label="Hold to compare with saved"]')`
+  const originalName = await evaluateRenderer(`document.querySelector('[data-part="profile-title-text"]').textContent`)
+  const draftCompareFingerprint = displayStateFingerprint(
+    await restorationGuard.getDisplayState(guardedDisplay.id)
+  )
+  if (draftCompareFingerprint === savedCompareFingerprint) {
+    throw new Error('The unsaved brightness edit did not change the guarded display output.')
+  }
+  const compareTheme = await setTheme(debuggerClient, 'dark')
+  for (const theme of ['dark', 'light']) {
+    await setTheme(debuggerClient, theme)
+    for (const input of ['pointer', ' ', 'Enter']) {
+      // Start at the bottom and check the pinned header, then hold from the
+      // scrolled display bar. Compare scrolls with the tabs, outside their list.
+      await evaluateRenderer(`(() => {
+        const pane = document.querySelector('[data-part="main-panel"]')
+        pane.scrollTop = pane.scrollHeight
+      })()`)
+      await waitForExpression(
+        debuggerClient,
+        `(() => {
+        const pane = document.querySelector('[data-part="main-panel"]')
+        const header = document.querySelector('[data-part="profile-detail"] > header')
+        const rect = header?.getBoundingClientRect()
+        const viewport = pane?.getBoundingClientRect()
+        return (pane.scrollHeight <= pane.clientHeight ? !${compareOnly} : pane.scrollTop > 0) &&
+          pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1 &&
+          getComputedStyle(header).position === 'sticky' &&
+          getComputedStyle(header).backgroundColor === getComputedStyle(pane).backgroundColor &&
+          rect.top >= viewport.top && rect.bottom <= viewport.bottom &&
+          [...header.querySelectorAll('button:not([hidden])')].every(button => {
+            const bounds = button.getBoundingClientRect()
+            return bounds.top >= viewport.top && bounds.bottom <= viewport.bottom
+          })
+      })()`,
+        'The complete profile header did not remain visible at the bottom of the scroll pane.'
+      )
+      await evaluateRenderer(`(() => {
+        const slider = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})?.querySelector('[data-control="brightness"] [role="slider"]')
+        slider?.focus()
+      })()`)
+      await waitForExpression(debuggerClient, `(() => {
+        const header = document.querySelector('[data-part="profile-detail"] > header')
+        const focused = document.activeElement
+        return focused?.getAttribute('role') === 'slider' &&
+          focused.getBoundingClientRect().top >= header.getBoundingClientRect().bottom
+      })()`, 'Keyboard focus scrolled beneath the sticky profile header.')
+      await evaluateRenderer(`document.querySelector('[data-part="display-tab-bar"]').scrollIntoView({ block: 'nearest' })`)
+      await waitForExpression(debuggerClient, `(() => {
+        const bar = document.querySelector('[data-part="display-tab-bar"]')
+        const list = bar.querySelector('[role="tablist"]')
+        const button = ${compareButton}
+        const before = button.getBoundingClientRect()
+        list.scrollLeft = list.scrollWidth
+        const after = button.getBoundingClientRect(), bounds = bar.getBoundingClientRect()
+        return !list.contains(button) && after.left === before.left &&
+          after.left >= bounds.left && after.right <= bounds.right
+      })()`, 'Compare did not stay visible outside the horizontally scrolling display list.')
+      const key = {
+        key: input,
+        code: input === ' ' ? 'Space' : 'Enter',
+        windowsVirtualKeyCode: input === ' ' ? 32 : 13
+      }
+      if (input === 'pointer') {
+        const headerHeight = await evaluateRenderer(`document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height`)
+        await evaluateRenderer(`document.querySelector('[data-part="profile-title"]')?.click()`)
+        await waitForExpression(
+          debuggerClient,
+          `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+          'The compare rename check could not focus the name input.'
+        )
+        await waitForExpression(debuggerClient,
+          `document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect().height === ${headerHeight}`,
+          'Opening rename changed the pinned header height.')
+        await debuggerClient.send('Input.insertText', { text: 'Pending compare rename' })
+        await evaluateRenderer(`document.querySelector('[data-part="display-tab-bar"]').scrollIntoView({ block: 'nearest' })`)
+        const bounds = await debuggerClient.send('Runtime.evaluate', {
+          expression: `(() => {
+            const rect = ${compareButton}?.getBoundingClientRect()
+            const header = document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect()
+            const pane = document.querySelector('[data-part="main-panel"]')
+            const viewport = pane.getBoundingClientRect()
+            // The scrolled-pane hold is covered by the sticky-header step above; here the
+            // button only needs to be visible below the header. A short profile in the
+            // full suite leaves the pane at scrollTop 0 after scrollIntoView.
+            return rect && rect.top >= header.bottom && rect.bottom <= viewport.bottom
+              ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null
+          })()`,
+          returnByValue: true
+        })
+        if (!bounds.result.value) {
+          // Report the geometry, so a failure says which condition missed.
+          const detail = await evaluateRenderer(`JSON.stringify((() => {
+            const button = ${compareButton}
+            const pane = document.querySelector('[data-part="main-panel"]')
+            const header = document.querySelector('[data-part="profile-detail"] > header')
+            return {
+              button: button ? button.getBoundingClientRect().toJSON() : null,
+              header: header?.getBoundingClientRect().toJSON(),
+              viewport: pane?.getBoundingClientRect().toJSON(),
+              scrollTop: pane?.scrollTop, scrollHeight: pane?.scrollHeight, clientHeight: pane?.clientHeight
+            }
+          })())`)
+          throw new Error(`The Hold to compare button was missing or obscured: ${detail}`)
+        }
+        await debuggerClient.send('Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          button: 'left',
+          clickCount: 1,
+          ...bounds.result.value
+        })
+      } else {
+        await debuggerClient.send('Runtime.evaluate', {
+          expression: `${compareButton}?.focus()`
+        })
+        await debuggerClient.send('Input.dispatchKeyEvent', { type: 'keyDown', ...key })
+      }
+      await waitForExpression(
+        debuggerClient,
+        `(async () => {
+          const state = await window.chromaShift.getState()
+          const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+          return state.ok && state.value.preview.state === 'active' &&
+            state.value.preview.kind === ${JSON.stringify(kind)} &&
+            state.value.preview.comparing === true && state.value.preview.unsavedChanges &&
+            state.value.preview.draft.displays.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === ${draftBrightness} &&
+            ${compareButton}?.getAttribute('aria-pressed') === 'true' &&
+            ${compareButton}?.getAttribute('data-comparing') === 'true' &&
+            getComputedStyle(${compareButton}).backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+            !row?.textContent?.includes('Original settings') &&
+            (${JSON.stringify(input)} !== 'pointer' ||
+              (document.activeElement?.getAttribute('aria-label') === 'Profile name' &&
+                document.activeElement.value === 'Pending compare rename')) &&
+            document.querySelector('[data-part="compare-saved-indicator"]') === null &&
+            document.querySelector('[data-part="profile-color-controls"] [role="status"]')?.textContent === 'Showing saved values' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') === 'true' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '50'
+        })()`,
+        `Hold to compare did not show disabled saved values (${theme}, ${JSON.stringify(input)}).`
+      )
+      // Main marks comparing before awaiting the native write/read-back. The UI
+      // predicate confirms the hold, so wait separately for its actual output.
+      const held = displayStateFingerprint(
+        await waitForRestoredDisplayState(
+          restorationGuard,
+          guardedDisplay.id,
+          savedCompareFingerprint
+        )
+      )
+      if (held !== savedCompareFingerprint) {
+        throw new Error(
+          `Hold to compare did not write the saved output (${theme}, ${JSON.stringify(input)}).`
+        )
+      }
+      if (input === 'pointer') {
+        // Commit while the pointer is still held. The rename must survive and
+        // cannot turn the metadata change into a preview update during compare.
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13
+        })
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13
+        })
+        await waitForExpression(debuggerClient, `(async () => {
+          const state = await window.chromaShift.getState()
+          return document.querySelector('[data-part="profile-title-text"]')?.textContent === 'Pending compare rename' &&
+            state.ok && state.value.preview.comparing === true
+        })()`, 'A rename committed during the pointer hold was lost or ended compare.')
+        await captureNativeWindow(
+          electron.pid,
+          join(screenshotDirectory, `hold-to-compare-${theme}-native.png`)
+        )
+        // Release away from the button: pointer capture and the window listener
+        // must still end the comparison.
+        await debuggerClient.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          button: 'left',
+          clickCount: 1,
+          x: 8,
+          y: 80
+        })
+      } else {
+        await debuggerClient.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+      }
+      await waitForExpression(
+        debuggerClient,
+        `(async () => {
+          const state = await window.chromaShift.getState()
+          const row = document.querySelector(${JSON.stringify(guardedDisplayRowSelector)})
+          return state.ok && state.value.preview.state === 'active' &&
+            state.value.preview.comparing === false && state.value.preview.unsavedChanges &&
+            state.value.preview.targets.find((target) => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === ${draftBrightness} &&
+            ${compareButton}?.getAttribute('aria-pressed') === 'false' &&
+            document.querySelector('[data-part="compare-saved-indicator"]') === null &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') !== 'true' &&
+            row?.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '${draftBrightness}'
+        })()`,
+        `Hold to compare did not release back to the draft (${theme}, ${JSON.stringify(input)}).`
+      )
+      // Release also updates main's compare flag before its draft write drains.
+      const released = displayStateFingerprint(
+        await waitForRestoredDisplayState(
+          restorationGuard,
+          guardedDisplay.id,
+          draftCompareFingerprint
+        )
+      )
+      if (released !== draftCompareFingerprint) {
+        throw new Error(
+          `Hold to compare did not restore the exact draft output (${theme}, ${JSON.stringify(input)}).`
+        )
+      }
+      if (input === 'pointer') {
+        await waitForExpression(debuggerClient, `(async () => {
+          const state = await window.chromaShift.getState()
+          return state.ok && state.value.preview.draft?.name === 'Pending compare rename'
+        })()`, 'The held rename did not reach main after release.')
+        // Restore the fixture name through the editor for later full-suite steps.
+        await evaluateRenderer(`document.querySelector('[data-part="profile-title"]')?.click()`)
+        await waitForExpression(debuggerClient,
+          `document.activeElement?.getAttribute('aria-label') === 'Profile name'`,
+          'Could not restore the compare fixture name.')
+        await debuggerClient.send('Input.insertText', { text: originalName })
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13
+        })
+        await debuggerClient.send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: 'Enter',
+          code: 'Enter',
+          windowsVirtualKeyCode: 13
+        })
+      }
+    }
+  }
+  await setTheme(debuggerClient, compareTheme)
+  await evaluateRenderer(`document.querySelector('[data-part="main-panel"]').scrollTop = 0`)
+}
+
+async function verifyMiniComparison(prior, applied, draftBrightness = 56) {
+  const evaluate = evaluateRenderer
+  // Compare in the real non-activating mini window, with native captures.
+  const previousCompareTheme = await setTheme(debuggerClient, 'dark')
+  for (const theme of ['dark', 'light']) {
+    await setTheme(debuggerClient, theme)
+    await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+    const point = await evaluate(`(() => {
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        if (!button) return null
+        const update = [...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')]
+          .find(candidate => candidate.textContent.trim() === 'Update profile')
+        const style = getComputedStyle(button)
+        const neighbor = getComputedStyle(update)
+        if (style.height !== neighbor.height || style.borderRadius !== neighbor.borderRadius ||
+            Number.parseFloat(style.borderRadius) < Number.parseFloat(style.height) / 2 ||
+            style.backgroundColor !== neighbor.backgroundColor)
+          throw new Error('Mini compare must match the Update profile size, pill shape and subtle surface.')
+        window.__miniCompareIdleBackground = getComputedStyle(button).backgroundColor
+        window.__miniCompareHeight = document.querySelector('[data-part="mini-panel"]').getBoundingClientRect().height
+        const rect = button.getBoundingClientRect()
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      })()`)
+    if (!point) throw new Error('The mini-panel compare button was missing.')
+    await debuggerClient.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed',
+      button: 'left',
+      clickCount: 1,
+      ...point
+    })
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const state = await window.chromaShift.getState()
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        return state.ok && state.value.preview.state === 'active' &&
+          state.value.preview.kind === 'override' && state.value.preview.comparing && state.value.preview.unsavedChanges &&
+          state.value.preview.draft.displays.find(target => target.displayId === ${JSON.stringify(guardedProductDisplayId)})?.color.brightness === ${draftBrightness} &&
+          button?.getAttribute('aria-pressed') === 'true' &&
+          getComputedStyle(button).backgroundColor !== window.__miniCompareIdleBackground &&
+          document.querySelector('[data-part="mini-panel"]').getBoundingClientRect().height === window.__miniCompareHeight &&
+          !document.querySelector('[data-part="mini-panel-content"]').textContent.includes('Original settings') &&
+          document.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-disabled') === 'true' &&
+          document.querySelector('[role="status"]')?.textContent === 'Showing saved values' &&
+          document.querySelector('[data-part="compare-saved-indicator"]') === null
+      })()`,
+      'The mini-panel did not show disabled saved colors with its pressed state.'
+    )
+    for (const display of guardedDisplays) {
+      const held = await waitForRestoredDisplayState(
+        restorationGuard,
+        display.id,
+        prior.get(display.id)
+      )
+      if (displayStateFingerprint(held) !== prior.get(display.id))
+        throw new Error('Mini compare did not show saved output.')
+    }
+    await captureNativeWindow(
+      electron.pid,
+      join(screenshotDirectory, `mini-hold-to-compare-${theme}-native.png`)
+    )
+    await debuggerClient.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased',
+      button: 'left',
+      clickCount: 1,
+      x: 8,
+      y: 80
+    })
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        const state = await window.chromaShift.getState()
+        return state.ok && state.value.preview.state === 'active' &&
+          state.value.preview.kind === 'override' && state.value.preview.comparing === false && state.value.preview.unsavedChanges &&
+          document.querySelector('[aria-label="Hold to compare with saved"]')?.getAttribute('aria-pressed') === 'false' &&
+          document.querySelector('[data-control="brightness"] [role="slider"]')?.getAttribute('aria-valuenow') === '${draftBrightness}'
+      })()`,
+      'Mini compare did not return to its unsaved override.'
+    )
+    for (const display of guardedDisplays) {
+      const released = await waitForRestoredDisplayState(
+        restorationGuard,
+        display.id,
+        applied.get(display.id)
+      )
+      if (displayStateFingerprint(released) !== applied.get(display.id))
+        throw new Error('Mini compare did not restore the draft exactly.')
+    }
+  }
+  await setTheme(debuggerClient, previousCompareTheme)
+}
+
 // Exercise real panel lifecycles. Reloading a renderer cannot test close reasons.
 async function verifyPanelCloseLifecycle() {
   const evaluate = async (expression) => {
@@ -1632,22 +2123,7 @@ async function verifyPanelCloseLifecycle() {
       displayStateFingerprint(await restorationGuard.getDisplayState(display.id))
     )
   }
-  const attach = async (mini) => {
-    const target = await waitForDebuggerTarget(
-      debuggingPort,
-      (candidate) => candidate.url.includes('panel=mini') === mini
-    )
-    const previous = debuggerClient
-    debuggerClient = await connectToDebugger(target.webSocketDebuggerUrl)
-    for (const domain of ['Runtime', 'Page', 'Log']) await debuggerClient.send(`${domain}.enable`)
-    debuggerClient.events.push(...previous.events)
-    previous.close()
-    await waitForExpression(
-      debuggerClient,
-      `document.visibilityState === 'visible' && document.querySelector('[data-part="${mini ? 'mini-panel' : 'main-panel'}"]') !== null`,
-      `The ${mini ? 'mini' : 'app'} panel did not become visible.`
-    )
-  }
+  const attach = attachPanel
   const reopenApp = async () => {
     const reopen = spawn(electronPath, [`--user-data-dir=${userDataDirectory}`, '.'], {
       cwd: desktopDirectory,
@@ -1808,6 +2284,7 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
     })()`,
       'App to mini did not carry the temporary override.'
     )
+    await verifyMiniComparison(prior, applied)
     await clickOutside()
     await waitForExpression(
       debuggerClient,
@@ -1892,7 +2369,7 @@ async function runSmoke() {
   await loaded
 
   const ui = await waitForUi(debuggerClient)
-  await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
+  if (!compareOnly) await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
   const productState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',
     awaitPromise: true,
@@ -1905,6 +2382,11 @@ async function runSmoke() {
     throw new Error(`The product UI was incomplete:\n${ui.body}`)
   }
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
+
+  if (compareOnly) {
+    await runCompare()
+    return
+  }
 
   if (testNativeRecovery) {
     const killedProcessId = await killChildDisplayService(electron.pid)
@@ -2709,6 +3191,11 @@ async function runSmoke() {
     })()`,
     'A new profile did not start a neutral native Preview with the banner.'
   )
+  // #80: the saved new profile is neutral on every display. Record that native
+  // output so Hold to compare can be checked against it after the first edit.
+  const savedCompareFingerprint = displayStateFingerprint(
+    await restorationGuard.getDisplayState(guardedDisplay.id)
+  )
   // Record any frame in which the banner disappears while the first change
   // promotes Preview to Edit.
   await debuggerClient.send('Runtime.evaluate', {
@@ -2900,6 +3387,8 @@ async function runSmoke() {
     })()`,
     'Brightness could not be changed again after an individual reset.'
   )
+
+  await verifyAppComparison(savedCompareFingerprint)
 
   await debuggerClient.send('Runtime.evaluate', {
     expression: `[...document.querySelectorAll('[data-part="profile-detail"] header [data-part="unsaved-changes-actions"] button')]

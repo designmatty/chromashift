@@ -10,7 +10,9 @@ import { MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { createNeutralColorSettings } from '@chromashift/core'
 import type { ColorProfile } from '@chromashift/core'
 import { ColorControls } from '@/features/profiles/color-controls'
+import { CompareButton } from '@/features/profiles/compare-button'
 import { ProfileDetail } from '@/features/profiles/profile-detail'
+import { PROFILE_HEADER_HEIGHT } from '@/features/profiles/profile-layout'
 import { ProfileActionDialog } from '@/features/profiles/profile-action-dialog'
 import { LatestEventRelay } from '@shared/latest-event-relay'
 import type { AppPanelView, EndPreviewRequest, ProductState } from '@shared/product-api'
@@ -73,6 +75,192 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
+
+it('reserves the sticky profile header height when scrolling keyboard focus into view', async () => {
+  const f = setup()
+  f.render()
+  const panel = () =>
+    findWhere<{ 'data-part'?: string; scrollPaddingTop?: string }>(
+      f.tree,
+      (props) => props['data-part'] === 'main-panel'
+    )!.props
+  expect(panel().scrollPaddingTop).toBe(`calc(${PROFILE_HEADER_HEIGHT} + {spacing.1})`)
+  f.navigation.publish('settings')
+  await f.settle()
+  expect(panel().scrollPaddingTop).toBeUndefined()
+})
+
+it('flushes a held rename before a second hold inside the debounce window', async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  const saved = addProfile(f)
+  const id = 'display:one'
+  saved.displays = [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 50 } }]
+  const draft = {
+    ...saved,
+    displays: [{ displayId: id, color: { ...createNeutralColorSettings(), brightness: 61 } }]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  const setCompare = vi.fn(async () => ({ ok: true as const, value: null }))
+  window.chromaShift.setPreviewCompare = setCompare
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  const button = () => CompareButton(detail().compare!)
+  button().props.onPointerDown({
+    button: 0,
+    pointerId: 1,
+    preventDefault: vi.fn(),
+    currentTarget: { setPointerCapture: vi.fn() }
+  })
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  detail().onChange({ ...detail().profile, name: 'Renamed during the hold' })
+  await f.settle()
+  expect(window.chromaShift.updatePreview).not.toHaveBeenCalled()
+  // A release away from the button uses the window capture listener.
+  f.events.dispatchEvent(new Event('pointerup'))
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(false)
+  expect(vi.getTimerCount()).toBe(1)
+  await vi.advanceTimersByTimeAsync(20)
+  expect(window.chromaShift.updatePreview).not.toHaveBeenCalled()
+
+  button().props.onKeyDown({ key: ' ', repeat: false, preventDefault: vi.fn() })
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  expect(window.chromaShift.updatePreview).toHaveBeenCalledExactlyOnceWith(
+    saved.id,
+    draft.displays,
+    { ...draft, name: 'Renamed during the hold' },
+    1
+  )
+  expect(f.updatePreview.mock.invocationCallOrder[0]).toBeLessThan(
+    setCompare.mock.invocationCallOrder[2]!
+  )
+  expect(vi.getTimerCount()).toBe(0)
+  await vi.advanceTimersByTimeAsync(500)
+  await f.settle()
+  expect(detail().profile).toEqual({ ...draft, name: 'Renamed during the hold' })
+  expect(detail().compare!.showingSaved).toBe(true)
+  expect(window.chromaShift.updatePreview).toHaveBeenCalledTimes(1)
+  expect(f.startPreview).not.toHaveBeenCalled()
+  f.events.dispatchEvent(Object.assign(new Event('keyup'), { key: ' ' }))
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(false)
+  expect(setCompare.mock.calls).toEqual([
+    [saved.id, true, 7, 1],
+    [saved.id, false, 7, 1],
+    [saved.id, true, 7, 1],
+    [saved.id, false, 7, 1]
+  ])
+})
+
+// Based on the RR96-3 rename proof: Enter and input blur can commit before
+// window blur releases compare. The same guarantee applies while release drains.
+it.each(['held', 'blur', 'releasing', 'quit flush'] as const)(
+  'retains a rename committed while compare is %s without writing colors during the hold',
+  async (phase) => {
+    vi.useFakeTimers()
+    const f = setup()
+    const saved = addProfile(f)
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'edit',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    let finishRelease!: () => void
+    const releaseGate = new Promise<void>((resolve) => {
+      finishRelease = resolve
+    })
+    window.chromaShift.setPreviewCompare = vi.fn(async (_id, showing) => {
+      if (!showing) await releaseGate
+      return { ok: true as const, value: null }
+    })
+    let flush!: () => Promise<void>
+    window.chromaShift.onFlushPreviewDraft = (listener) => {
+      flush = listener
+      return () => undefined
+    }
+    f.render()
+    const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    const renamed = 'Renamed during the hold'
+    const button = CompareButton(detail().compare!)
+    button.props.onPointerDown({
+      button: 0,
+      pointerId: 1,
+      preventDefault: vi.fn(),
+      currentTarget: { setPointerCapture: vi.fn() }
+    })
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    if (phase === 'releasing') {
+      void detail().compare!.onRelease()
+      await f.settle()
+    }
+    // finishNaming(true) commits on Enter or input blur. Color edits stay rejected.
+    detail().onChange({ ...detail().profile, name: renamed, displays: saved.displays })
+    await f.settle()
+    await vi.advanceTimersByTimeAsync(500)
+    await f.settle()
+    expect(detail().profile).toMatchObject({ name: renamed, displays: draft.displays })
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    expect(f.startPreview).not.toHaveBeenCalled()
+    if (phase === 'blur') f.events.dispatchEvent(new Event('blur'))
+    const release = phase === 'quit flush' ? flush() : detail().compare!.onRelease()
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    finishRelease()
+    await release
+    if (phase === 'quit flush') {
+      // A hydrated draft starts at revision zero. Quit must receive the held
+      // rename before acknowledging its flush, without waiting for another render.
+      expect(f.updatePreview).toHaveBeenCalledExactlyOnceWith(
+        saved.id,
+        draft.displays,
+        { ...draft, name: renamed },
+        1
+      )
+    }
+    await f.settle()
+    await vi.advanceTimersByTimeAsync(120)
+    await f.settle()
+    expect(detail().profile.name).toBe(renamed)
+    expect(detail().compare!.showingSaved).toBe(false)
+    expect(window.chromaShift.setPreviewCompare).toHaveBeenCalledTimes(2)
+    expect(f.updatePreview).toHaveBeenCalledExactlyOnceWith(
+      saved.id,
+      draft.displays,
+      { ...draft, name: renamed },
+      1
+    )
+    expect(f.startPreview).not.toHaveBeenCalled()
+  }
+)
 
 function find<P>(node: ReactNode, type: ReactElement<P>['type']): ReactElement<P> | undefined {
   if (Array.isArray(node)) {
@@ -150,7 +338,10 @@ function setup(withLimits = true, Surface = MainApp) {
     return { ok: true as const, value: null }
   })
   const updatePreview = vi.fn(async () => ({ ok: true as const, value: null }))
+  const events = new EventTarget()
   vi.stubGlobal('window', {
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
     chromaShift: {
       getState,
       openAppPanel: vi.fn(async () => ({ ok: true, value: null })),
@@ -202,6 +393,7 @@ function setup(withLimits = true, Surface = MainApp) {
       onAppPanelMinimized: () => undefined,
       onPanelClosing: () => () => undefined,
       onFlushPreviewDraft: () => () => undefined,
+      setPreviewCompare: vi.fn(async () => ({ ok: true, value: null })),
       startPreview,
       updatePreview
     }
@@ -237,6 +429,7 @@ function setup(withLimits = true, Surface = MainApp) {
     updatePreview,
     navigation,
     endPreviewRequests,
+    events,
     storage,
     get product() {
       return product
@@ -250,6 +443,390 @@ function setup(withLimits = true, Surface = MainApp) {
     }
   }
 }
+
+it('preserves an open rename when pointer-down starts compare', async () => {
+  // Reviewer renderer proof, using the button event so browser focus movement is modeled.
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  const renamed = 'Renamed while comparing'
+  const commitRename = () => detail().onChange({ ...detail().profile, name: renamed })
+  const button = CompareButton(detail().compare!)
+  const preventDefault = vi.fn()
+  button.props.onPointerDown({
+    button: 0,
+    pointerId: 1,
+    preventDefault,
+    currentTarget: { setPointerCapture: vi.fn() }
+  })
+  // Browser order: pointerdown, then blur/commit only if focus movement was allowed.
+  if (preventDefault.mock.calls.length === 0) commitRename()
+  await f.settle()
+  await detail().compare!.onRelease('pointer')
+  await f.settle()
+  if (preventDefault.mock.calls.length > 0) commitRename()
+  await f.settle()
+  expect(preventDefault).toHaveBeenCalledOnce()
+  expect(detail().profile.name).toBe(renamed)
+})
+
+it.each(['blur', 'pointerup', 'minimize', 'navigation', 'endPreview', 'unmount'])(
+  'releases saved comparison on %s while keeping the local dirty draft',
+  async (reason) => {
+    const f = setup()
+    const saved = addProfile(f)
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'edit',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    let minimized = () => undefined as void
+    window.chromaShift.onAppPanelMinimized = (callback) => {
+      minimized = callback
+    }
+    f.render()
+    const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    detail().compare!.onPress('pointer')
+    f.render()
+    await f.settle()
+    expect(detail().compare!.showingSaved).toBe(true)
+    expect(detail().dirty).toBe(true)
+    expect(detail().profile).toEqual(draft)
+    // The joined edit session already holds the draft, so the press sends only
+    // the saved targets: no debounce and no redundant draft write first.
+    expect(window.chromaShift.setPreviewCompare).toHaveBeenCalledWith(saved.id, true, 7, 1)
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    expect(detail().compare).toBeDefined()
+    if (reason === 'minimize') minimized()
+    else if (reason === 'navigation') f.profiles()!.props.onOpenSettings()
+    else if (reason === 'endPreview')
+      f.endPreviewRequests.publish({ profileId: saved.id, sessionId: 7, lifetime: 1 })
+    else if (reason === 'unmount') {
+      for (const slot of hooks.slots) (slot as { cleanup?: () => void })?.cleanup?.()
+    } else f.events.dispatchEvent(new Event(reason))
+    await f.settle()
+    expect(
+      vi.mocked(window.chromaShift.setPreviewCompare).mock.calls.map((call) => call[1])
+    ).toEqual([true, false])
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    expect(detail().compare!.showingSaved).toBe(false)
+    expect(detail().profile).toEqual(draft)
+    expect(detail().dirty).toBe(true)
+    expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+  }
+)
+
+it('offers compare for a hydrated mini override without promoting it', async () => {
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'override',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  f.render()
+  const detail = find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  expect(detail.dirty).toBe(true)
+  expect(detail.compare).toBeDefined()
+  detail.compare!.onPress('pointer')
+  await f.settle()
+  expect(window.chromaShift.setPreviewCompare).toHaveBeenCalledWith(saved.id, true, 7, 1)
+  expect(f.startPreview).not.toHaveBeenCalled()
+  expect(f.updatePreview).not.toHaveBeenCalled()
+})
+
+it.each(['name', 'triggers', 'enabled', 'color', 'added', 'removed'] as const)(
+  'offers compare for %s only when the saved colors differ',
+  (change) => {
+    const f = setup()
+    const saved = addProfile(f)
+    saved.displays = [{ displayId: 'display:one', color: createNeutralColorSettings() }]
+    const draft = structuredClone(saved)
+    if (change === 'name') draft.name = 'Renamed'
+    if (change === 'triggers') draft.applications.push({ executableName: 'game.exe' })
+    if (change === 'enabled') draft.enabled = false
+    if (change === 'color') draft.displays[0]!.color.brightness = 61
+    if (change === 'added')
+      draft.displays.push({ displayId: 'display:two', color: createNeutralColorSettings() })
+    if (change === 'removed') draft.displays = []
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'edit',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    f.render()
+    const detail = find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    expect(detail.dirty).toBe(true)
+    expect(detail.compare !== undefined).toBe(['color', 'added', 'removed'].includes(change))
+  }
+)
+
+it.each(['pointerup', 'pointercancel', 'blur', 'close', 'handoff', 'picker', 'unmount'] as const)(
+  'releases mini compare on %s without promoting an override',
+  async (reason) => {
+    const f = setup(true, MiniPanel)
+    connectDisplay(f)
+    const saved = f.product.configuration.profiles[0]!
+    saved.displays = [{ displayId: 'display:one', color: createNeutralColorSettings() }]
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'override',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    const closing: Array<() => void> = []
+    window.chromaShift.onPanelClosing = (listener) => {
+      closing.push(listener)
+      return () => undefined
+    }
+    f.render()
+    const button = () => find<Parameters<typeof CompareButton>[0]>(f.tree, CompareButton)!.props
+    button().onPress('pointer')
+    await f.settle()
+    expect(button().pointerOnly).toBe(true)
+    expect(button()).toMatchObject({ size: '2xs', variant: 'subtle', borderRadius: 'full' })
+    expect(button().showingSaved).toBe(true)
+    expect(find<Parameters<typeof ColorControls>[0]>(f.tree, ColorControls)!.props).toMatchObject({
+      color: saved.displays[0]!.color,
+      editable: false
+    })
+    if (reason === 'close' || reason === 'handoff') closing.forEach((listener) => listener())
+    else if (reason === 'unmount') {
+      for (const slot of hooks.slots) (slot as { cleanup?: () => void })?.cleanup?.()
+    } else if (reason === 'picker') {
+      findWhere<{ 'data-part'?: string; onClick(): void }>(
+        f.tree,
+        (props) => props['data-part'] === 'active-profile'
+      )!.props.onClick()
+    } else f.events.dispatchEvent(new Event(reason))
+    await f.settle()
+    expect(
+      vi.mocked(window.chromaShift.setPreviewCompare).mock.calls.map((call) => call[1])
+    ).toEqual(reason === 'close' || reason === 'handoff' ? [true] : [true, false])
+    expect(f.startPreview).not.toHaveBeenCalled()
+    expect(f.updatePreview).not.toHaveBeenCalled()
+    if (reason !== 'picker') expect(button().showingSaved).toBe(false)
+  }
+)
+
+it.each([MainApp, MiniPanel])(
+  'keeps disabled controls for a missing saved target in %s',
+  async (Surface) => {
+    const f = setup(true, Surface)
+    connectDisplay(f)
+    const saved = f.product.configuration.profiles[0]!
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'override',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    f.render()
+    if (Surface === MiniPanel) {
+      const button = find<Parameters<typeof CompareButton>[0]>(f.tree, CompareButton)!.props
+      const pointerButton = CompareButton(button)
+      const preventDefault = vi.fn()
+      pointerButton.props.onPointerDown({
+        button: 0,
+        pointerId: 1,
+        preventDefault,
+        currentTarget: { setPointerCapture: vi.fn() }
+      })
+      expect(preventDefault).toHaveBeenCalledOnce()
+    } else {
+      find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.compare!.onPress(
+        'pointer'
+      )
+    }
+    await f.settle()
+    if (Surface === MiniPanel) {
+      expect(find<Parameters<typeof ColorControls>[0]>(f.tree, ColorControls)!.props).toMatchObject(
+        {
+          color: createNeutralColorSettings(),
+          editable: false,
+          compact: true
+        }
+      )
+    } else {
+      expect(
+        find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.compare
+      ).toMatchObject({
+        showingSaved: true,
+        savedProfile: saved
+      })
+    }
+  }
+)
+
+it.each([MainApp, MiniPanel])(
+  'clears the held UI when main rejects comparison in %s',
+  async (Surface) => {
+    const f = setup(true, Surface)
+    connectDisplay(f)
+    const saved = f.product.configuration.profiles[0]!
+    saved.displays = [{ displayId: 'display:one', color: createNeutralColorSettings() }]
+    const draft = {
+      ...saved,
+      displays: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ]
+    }
+    f.product = {
+      ...f.product,
+      preview: {
+        state: 'active',
+        sessionId: 7,
+        profileId: saved.id,
+        kind: 'override',
+        targets: draft.displays,
+        draft,
+        unsavedChanges: true
+      }
+    }
+    window.chromaShift.setPreviewCompare = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'CONFLICT' as const, message: 'Stale session' }
+    }))
+    f.render()
+    const state = () =>
+      Surface === MainApp
+        ? find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.compare!
+        : find<Parameters<typeof CompareButton>[0]>(f.tree, CompareButton)!.props
+    state().onPress('pointer')
+    await f.settle()
+    expect(state().showingSaved).toBe(false)
+    expect(window.chromaShift.setPreviewCompare).toHaveBeenCalledTimes(1)
+    expect(f.updatePreview).not.toHaveBeenCalled()
+  }
+)
+
+it('drops the compare release on panel close and leaves the prior-target rollback to main', async () => {
+  const f = setup()
+  const saved = addProfile(f)
+  const draft = {
+    ...saved,
+    displays: [
+      { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+    ]
+  }
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 7,
+      profileId: saved.id,
+      kind: 'edit',
+      targets: draft.displays,
+      draft,
+      unsavedChanges: true
+    }
+  }
+  let closing = () => undefined as void
+  window.chromaShift.onPanelClosing = (callback) => {
+    closing = callback
+    return () => undefined
+  }
+  f.render()
+  const detail = () => find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+  detail().compare!.onPress(' ')
+  f.render()
+  await f.settle()
+  expect(detail().compare!.showingSaved).toBe(true)
+  // Main revokes the opening first, then reports the close.
+  closing()
+  const closed = vi.mocked(window.chromaShift.onAppPanelClosed).mock.calls.at(-1)![0]
+  closed()
+  await f.settle()
+  // No draft write lands after the close: main restores the exact prior target.
+  expect(vi.mocked(window.chromaShift.setPreviewCompare).mock.calls.map((call) => call[1])).toEqual(
+    [true]
+  )
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledOnce()
+  f.render()
+  expect(
+    find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)?.props.compare?.showingSaved
+  ).not.toBe(true)
+})
 
 it.each([true, false])(
   'keeps Profiles rendered after About, a settings update and Back, gamma limits=%s',
@@ -605,7 +1182,9 @@ it('ignores an old mini save reply after choosing a different profile', async ()
       sessionId: 1,
       kind: 'override',
       profileId: 'default',
-      targets: [],
+      targets: [
+        { displayId: 'display:one', color: { ...createNeutralColorSettings(), brightness: 61 } }
+      ],
       unsavedChanges: true
     }
   }

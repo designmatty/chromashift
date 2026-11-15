@@ -346,7 +346,7 @@ export class ProductRuntime {
       () =>
         prepareUnsavedQuit({
           flushRendererDrafts: shell.flushRendererDrafts,
-          settle: () => this.#previewController?.waitForIdle() ?? Promise.resolve(),
+          settle: () => this.#previewController?.releaseComparison() ?? Promise.resolve(),
           state: () => this.#previewController?.state ?? { state: 'inactive' },
           decide: (name) => dialogs.confirmUnsavedQuit(name),
           confirm: (profile) => {
@@ -391,6 +391,8 @@ export class ProductRuntime {
         intendedTarget: settings.chromaShiftIntent.current().intendedTarget
       },
       async (state) => {
+        // This callback can run inside preview recovery. Queue without awaiting it.
+        if (state.status !== 'active') void previewController.invalidateComparison()
         await settings.chromaShiftIntent.update((intent) => ({
           ...intent,
           chromaShiftStatus: state.status,

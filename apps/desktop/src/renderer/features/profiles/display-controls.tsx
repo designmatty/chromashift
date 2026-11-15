@@ -17,11 +17,13 @@ export function DisplayControls({
   profile,
   product,
   editing,
+  compareButton,
   onChange
 }: {
   profile: ColorProfile
   product: ProductState
   editing: boolean
+  compareButton?: React.ReactNode
   onChange(profile: ColorProfile): void
 }): React.JSX.Element {
   const rows = buildDisplayRows(profile, product)
@@ -56,17 +58,15 @@ export function DisplayControls({
         '--tabs-trigger-radius': 'radii.md'
       }}
     >
-      <Flex align="center" gap="3">
-        <Tabs.List
-          flex="1"
-          minW="0"
-          overflowX="auto"
-          overflowY="hidden"
-          flexWrap="nowrap"
-          padding={'1'}
-          backgroundColor={{ base: 'bg.muted', _dark: 'bg' }}
-          rounded="md"
-        >
+      <Flex
+        data-part="display-tab-bar"
+        align="flex-start"
+        gap="3"
+        pe="1"
+        bg={{ base: 'bg.muted', _dark: 'bg' }}
+        rounded="md"
+      >
+        <Tabs.List flex="1" minW="0" p="1" overflowX="auto" overflowY="hidden" flexWrap="nowrap">
           {rows.map((row) => (
             <Tabs.Trigger
               key={row.displayId}
@@ -96,6 +96,11 @@ export function DisplayControls({
           ))}
           <Tabs.Indicator border={'1px solid {color.red.500}'} />
         </Tabs.List>
+        {compareButton && (
+          <Flex flexShrink="0" mt="1" h="var(--tabs-height)" align="center">
+            {compareButton}
+          </Flex>
+        )}
       </Flex>
       {rows.map((row) => {
         const color = row.target?.color ?? createNeutralColorSettings()

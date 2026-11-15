@@ -89,6 +89,8 @@ it('keeps a mini override unchanged on app hydration and only syncs subsequent u
   let flush = async () => undefined as void
   let closing = () => undefined as void
   vi.stubGlobal('window', {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
     chromaShift: {
       startPreview,
       updatePreview,

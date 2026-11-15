@@ -18,6 +18,15 @@ export function profilesDiffer(left: ColorProfile, right: ColorProfile): boolean
   return canonical(withoutIcons(left)) !== canonical(withoutIcons(right))
 }
 
+/** Target identity and complete colors, independent of target ordering or metadata. */
+export function profileColorsDiffer(left: ColorProfile, right: ColorProfile): boolean {
+  const targets = (profile: ColorProfile): unknown =>
+    profile.displays
+      .map((target) => ({ ...target, displayId: target.displayId.toLowerCase() }))
+      .sort((a, b) => a.displayId.localeCompare(b.displayId))
+  return canonical(targets(left)) !== canonical(targets(right))
+}
+
 function withoutIcons(profile: ColorProfile): ColorProfile {
   return {
     ...profile,
