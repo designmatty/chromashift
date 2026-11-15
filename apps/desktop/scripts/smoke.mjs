@@ -1846,8 +1846,10 @@ async function verifyAppComparison(
             const header = document.querySelector('[data-part="profile-detail"] > header').getBoundingClientRect()
             const pane = document.querySelector('[data-part="main-panel"]')
             const viewport = pane.getBoundingClientRect()
-            return rect && rect.top >= header.bottom && rect.bottom <= viewport.bottom &&
-              (pane.scrollHeight <= pane.clientHeight || pane.scrollTop > 0)
+            // The scrolled-pane hold is covered by the sticky-header step above; here the
+            // button only needs to be visible below the header. A short profile in the
+            // full suite leaves the pane at scrollTop 0 after scrollIntoView.
+            return rect && rect.top >= header.bottom && rect.bottom <= viewport.bottom
               ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null
           })()`,
           returnByValue: true
