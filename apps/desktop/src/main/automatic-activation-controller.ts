@@ -90,8 +90,11 @@ export class AutomaticActivationController {
         context: ActivationContext
       }> = [
         {
-          // An ignored snapshot (ChromaShift or a shell surface) means no app yet.
-          application: this.#isIgnored(currentApplication) ? null : currentApplication,
+          // An ignored snapshot (ChromaShift or a shell surface) keeps the remembered
+          // app; on first startup there is none, so it resolves with no app.
+          application: this.#isIgnored(currentApplication)
+            ? this.#currentApplication
+            : currentApplication,
           context: { source: 'automatic', origin: 'startup' }
         },
         ...this.#pendingApplications.splice(0).map((application) => ({
@@ -146,7 +149,11 @@ export class AutomaticActivationController {
       profileCount: configuration.profiles.length,
       defaultProfileId: configuration.settings.defaultProfileId
     })
-    this.#currentApplication = this.#pendingApplications.at(-1) ?? currentApplication
+    // Native recovery while Paused reads the taskbar or ChromaShift's own window;
+    // keep the remembered app so the next Resume returns to its profile.
+    this.#currentApplication =
+      this.#pendingApplications.at(-1) ??
+      (this.#isIgnored(currentApplication) ? this.#currentApplication : currentApplication)
     this.#pendingApplications.length = 0
     this.#mode = { ...mode }
     this.#currentTarget = intendedTarget === null ? null : { ...intendedTarget }

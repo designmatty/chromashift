@@ -2599,3 +2599,52 @@ describe('offline product lifecycle', () => {
     }
   })
 })
+
+// Regression from review-99: a helper recovery while Paused reads the taskbar as
+// the foreground. The remembered app must survive, so Resume returns to its profile.
+describe('native recovery while paused with a shell surface focused', () => {
+  const systemRoot = 'D:\\Windows'
+  const taskbar: ForegroundApplication = {
+    pid: 7,
+    executable: 'explorer.exe',
+    path: `${systemRoot}\\Explorer.EXE`,
+    title: '',
+    monitorDeviceName: null,
+    windowClass: 'Shell_TrayWnd'
+  }
+  const game: ForegroundApplication = {
+    pid: 42,
+    executable: 'game.exe',
+    path: 'E:\\Games\\game.exe',
+    title: 'Game',
+    monitorDeviceName: null
+  }
+
+  it('keeps the remembered game across recovery, so Resume returns to its profile', async () => {
+    vi.stubEnv('SystemRoot', systemRoot)
+    const h = await createHarness({}, { profiles: [reorderProfile('game')] })
+    try {
+      await h.runtime.start()
+      h.client.emitForegroundApplication(game)
+      await vi.waitFor(() =>
+        expect(h.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'game' })
+      )
+      await h.runtime.productController!.controlChromaShift('pause')
+      expect(h.intent().chromaShiftStatus).toBe('paused')
+      h.client.foregroundApplication = taskbar
+      h.client.emitExit()
+      await vi.waitFor(() => expect(h.logger.has('NativeServiceRecovered')).toBe(true), {
+        timeout: 3_000
+      })
+      await h.runtime.productController!.controlChromaShift('resume')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect((await h.runtime.productController!.getState()).activation.currentTarget).toEqual({
+        kind: 'profile',
+        profileId: 'game'
+      })
+    } finally {
+      h.runtime.dispose()
+      vi.unstubAllEnvs()
+    }
+  })
+})
