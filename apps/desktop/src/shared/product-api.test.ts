@@ -12,7 +12,8 @@ import {
   reorderProfilesRequestSchema,
   setMiniPanelViewRequestSchema,
   saveProfileRequestSchema,
-  userPreferencesSchema
+  userPreferencesSchema,
+  userPreferencesRequestSchema
 } from '@shared/product-api.js'
 
 describe('product API contracts', () => {
@@ -132,6 +133,10 @@ describe('product API contracts', () => {
     ).toBe(false)
     expect(userPreferencesSchema.safeParse({ ...validSettings(), notificationsEnabled: true }).success).toBe(false)
     expect(userPreferencesSchema.safeParse(validSettings()).success).toBe(true)
+    expect(userPreferencesRequestSchema.safeParse({ settings: validSettings() }).success).toBe(true)
+    expect(userPreferencesRequestSchema.safeParse({
+      settings: { ...validSettings(), notificationsEnabled: false }
+    }).success).toBe(false)
   })
 
   it('accepts independent per-display preview targets', () => {

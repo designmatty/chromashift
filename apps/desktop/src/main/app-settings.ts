@@ -51,12 +51,18 @@ const legacyUserPreferencesSchema = version2UserPreferencesSchema
   })
   .strict()
 
-// Ignore only the retired preference on disk. IPC and other slice fields remain strict.
+// Ignore only valid retired booleans on disk. IPC and other slice fields remain strict.
 const persistedUserPreferencesSchema = z.preprocess((value) => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const fields = { ...value } as Record<string, unknown>
-  if (fields.schemaVersion === 1) delete fields.profileChangeNotifications
-  else if (fields.schemaVersion === 2 || fields.schemaVersion === 3) delete fields.notificationsEnabled
+  if (fields.schemaVersion === 1 && typeof fields.profileChangeNotifications === 'boolean') {
+    delete fields.profileChangeNotifications
+  } else if (
+    (fields.schemaVersion === 2 || fields.schemaVersion === 3) &&
+    typeof fields.notificationsEnabled === 'boolean'
+  ) {
+    delete fields.notificationsEnabled
+  }
   return fields
 }, z.union([
   userPreferencesSchema,

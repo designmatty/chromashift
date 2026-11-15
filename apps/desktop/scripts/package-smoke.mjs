@@ -319,7 +319,34 @@ async function startApplicationForUninstall(executablePath, userDataDirectory) {
   }
 }
 
-async function smokeApplication(executablePath, userDataDirectory, label) {
+async function pressProfileShortcut() {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftPackageKeys {
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$keys = @(0x11, 0x12, 0x10, 0x78)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+[Array]::Reverse($keys)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+`
+  await runProcess(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    'installed global shortcut dispatch'
+  )
+}
+
+async function smokeApplication(executablePath, userDataDirectory, label, verifyInstalledShortcut = false) {
   const port = await reservePort()
   const environment = { ...globalThis.process.env }
   delete environment.ELECTRON_RUN_AS_NODE
@@ -411,6 +438,56 @@ async function smokeApplication(executablePath, userDataDirectory, label) {
     }
     if (security.result.value?.node !== 'undefined') {
       throw new Error(`${label} exposed Node in the sandboxed renderer.`)
+    }
+    if (verifyInstalledShortcut) {
+      const configured = await send('Runtime.evaluate', {
+        expression: `(async () => {
+          const state = await window.chromaShift.getState()
+          if (!state.ok) return null
+          const created = await window.chromaShift.createProfile('Installed shortcut gate')
+          if (!created.ok) return null
+          const result = await window.chromaShift.updateSettings({
+            ...state.value.settings,
+            shortcutBindings: [{
+              action: { kind: 'profile', profileId: created.value.id },
+              accelerator: 'CommandOrControl+Alt+Shift+F9'
+            }]
+          })
+          return result.ok ? created.value.id : null
+        })()`,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      const profileId = configured.result.value
+      if (typeof profileId !== 'string') {
+        throw new Error(`${label} could not configure its profile shortcut.`)
+      }
+      await pressProfileShortcut()
+      const activationDeadline = Date.now() + timeoutMilliseconds
+      let activated = false
+      while (Date.now() < activationDeadline) {
+        const activation = await send('Runtime.evaluate', {
+          expression: `(async () => {
+            const state = await window.chromaShift.getState()
+            if (!state.ok) return false
+            const { chromaShift, activation } = state.value
+            return chromaShift.status === 'active' && !chromaShift.transitionInProgress &&
+              chromaShift.pendingOperation === null &&
+              chromaShift.intendedMode.kind === 'manual' &&
+              chromaShift.intendedMode.profileId === ${JSON.stringify(profileId)} &&
+              activation.currentTarget?.kind === 'profile' &&
+              activation.currentTarget.profileId === ${JSON.stringify(profileId)}
+          })()`,
+          awaitPromise: true,
+          returnByValue: true
+        })
+        activated = activation.result.value === true
+        if (activated) break
+        await delay(100)
+      }
+      if (!activated) {
+        throw new Error(`${label} global shortcut did not activate profile ${profileId}.\n${output}`)
+      }
     }
     try {
       exitIssued = true
@@ -558,7 +635,7 @@ try {
     '{\n  "schemaVersion": 2,\n  "profiles": [],\n  "settings": { "defaultProfileId": null }\n}\n'
   await writeFile(configurationPath, configuration)
   await smokeService(installedService, 'installed')
-  await smokeApplication(installedApplication, installedUserData, 'installed app')
+  await smokeApplication(installedApplication, installedUserData, 'installed app', true)
   const configurationAfterSmoke = await readFile(configurationPath, 'utf8')
 
   await runProcess(installer, ['/S', `/D=${installedDirectory}`], 'NSIS upgrade')

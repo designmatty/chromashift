@@ -1192,8 +1192,12 @@ async function waitForLogCount(pattern, previousCount, failureMessage) {
 async function waitForPersistedControlStatus(status) {
   const deadline = Date.now() + timeoutMilliseconds
   while (Date.now() < deadline) {
-    const intent = JSON.parse(await readFile(join(userDataDirectory, 'chroma-shift.json'), 'utf8'))
-    if (intent.chromaShiftStatus === status && intent.pendingControlOperation === null) return
+    try {
+      const intent = JSON.parse(await readFile(join(userDataDirectory, 'chroma-shift.json'), 'utf8'))
+      if (intent.chromaShiftStatus === status && intent.pendingControlOperation === null) return
+    } catch {
+      // A transient read or parse failure retries within the same deadline.
+    }
     await delay(100)
   }
   throw new Error('The renderer-free shortcut did not persist display-control status ' + status + '.')

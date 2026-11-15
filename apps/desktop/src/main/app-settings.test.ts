@@ -52,6 +52,57 @@ describe('settings slice stores', () => {
     expect(await readFile(path, 'utf8')).toBe(original)
   })
 
+  describe.each([1, 2, 3])('retired preference in version %s', (schemaVersion) => {
+    const retiredField = schemaVersion === 1 ? 'profileChangeNotifications' : 'notificationsEnabled'
+
+    it.each([false, undefined])('loads %s without rewriting other preferences', async (value) => {
+      const directory = await temporaryDirectory()
+      const path = join(directory, 'preferences.json')
+      const expected = {
+        ...defaultUserPreferences,
+        launchAtStartup: true,
+        launchBehavior: 'app',
+        closeBehavior: 'shutdown',
+        theme: 'dark',
+        shortcutBindings: [{ action: { kind: 'automatic' }, accelerator: 'Ctrl+Shift+A' }]
+      }
+      const original = JSON.stringify({ ...expected, schemaVersion, [retiredField]: value })
+      await writeFile(path, original)
+      await expect(createSettingsStores(directory).preferences.load()).resolves.toEqual(expected)
+      expect(await readFile(path, 'utf8')).toBe(original)
+    })
+
+    it.each(['yes', null, 1, {}, []])('rejects malformed retired value %j and preserves the file', async (value) => {
+      const directory = await temporaryDirectory()
+      const path = join(directory, 'preferences.json')
+      const original = JSON.stringify({ ...defaultUserPreferences, schemaVersion, [retiredField]: value })
+      await writeFile(path, original)
+      const stores = createSettingsStores(directory)
+      await expect(stores.preferences.load()).rejects.toThrow()
+      await expect(stores.preferences.update(() => defaultUserPreferences)).rejects.toThrow()
+      expect(await readFile(path, 'utf8')).toBe(original)
+    })
+  })
+
+  it.each([
+    ['v3 retired field and an unknown field', { notificationsEnabled: true, windowMaximized: true }],
+    ['v3 retired field and an invalid theme', { notificationsEnabled: true, theme: 'purple' }],
+    ['v1 with the v2/v3 field name', { schemaVersion: 1, notificationsEnabled: true }],
+    ['v2 with the v1 field name', { schemaVersion: 2, profileChangeNotifications: true }],
+    ['v3 with the v1 field name', { profileChangeNotifications: true }],
+    ['unknown version with the retired field', { schemaVersion: 4, notificationsEnabled: true }],
+    ['v2 retired field and End preview', { schemaVersion: 2, notificationsEnabled: true, shortcutBindings: [{ action: { kind: 'endPreview' }, accelerator: 'Ctrl+E' }] }]
+  ])('rejects %s and preserves the file across load and update', async (_name, fields) => {
+    const directory = await temporaryDirectory()
+    const path = join(directory, 'preferences.json')
+    const original = JSON.stringify({ ...defaultUserPreferences, ...fields })
+    await writeFile(path, original)
+    const stores = createSettingsStores(directory)
+    await expect(stores.preferences.load()).rejects.toThrow()
+    await expect(stores.preferences.update(() => defaultUserPreferences)).rejects.toThrow()
+    expect(await readFile(path, 'utf8')).toBe(original)
+  })
+
   it('persists a new End preview binding at version 3', async () => {
     const directory = await temporaryDirectory()
     const expected = { ...defaultUserPreferences, shortcutBindings: [{ action: { kind: 'endPreview' as const }, accelerator: 'Ctrl+E' }] }

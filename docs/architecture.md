@@ -329,8 +329,9 @@ defensively guarded. A missing slice file yields defaults; the pre-slice
 Preferences schema version 3 adds the optional End preview shortcut action.
 Version 1 and 2 documents migrate explicitly, preserving all bindings and
 preferences; End preview starts unassigned. Invalid documents are preserved and
-reported. The disk reader ignores the retired alert preference for each known
-version while continuing to reject other unknown fields. Fixtures cover versions
+reported. The disk reader ignores the retired boolean `notificationsEnabled`
+in versions 2 and 3 and `profileChangeNotifications` in version 1, while continuing
+to reject malformed values and other unknown fields. Fixtures cover versions
 1, 2, and 3. Loading leaves the file intact; the next successful preferences
 update writes only current fields. Window and intent slices are untouched.
 Explicit launches still show the app panel. The permanent Default profile
@@ -366,8 +367,10 @@ logs. Details pretty-print valid JSON and preserve plain text. Clear logs uses a
 renderer confirmation dialog.
 Restoration and resume failures remain visible as Safety blocked in the app panel,
 mini panel, and tray status, with the existing retry actions. Background profile
-apply failures that leave display control Active are recorded in Diagnostics;
-they have no separate status indicator.
+apply failures that leave display control Active, tray-command failures that do
+not change product state, and tray-refresh failures are log-only, with no separate
+status indicator. Issue [#97](https://github.com/designmatty/chromashift/issues/97)
+tracks their visibility.
 
 Display control has three persisted states: Active, Paused, and Safety blocked.
 Pause suspends new writes, waits for in-flight activation, restores every owned
