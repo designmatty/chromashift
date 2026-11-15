@@ -85,8 +85,8 @@ export class EmergencyRestoreController {
   }
 
   // The emergency restore itself is already confirmed here. A failure while
-  // entering Paused is reported by the control path (Safety blocked plus its
-  // own notification), so it is logged rather than reported as a restore failure.
+  // entering Paused is visible through the control path as Safety blocked,
+  // so it is logged rather than reported as a restore failure.
   async #pause(pauseAfterRestore: () => Promise<ActivationOutcome>): Promise<void> {
     try {
       const outcome = await pauseAfterRestore()

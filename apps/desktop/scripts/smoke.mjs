@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -1189,6 +1189,19 @@ async function waitForLogCount(pattern, previousCount, failureMessage) {
     await delay(100)
   }
 }
+async function waitForPersistedControlStatus(status) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    try {
+      const intent = JSON.parse(await readFile(join(userDataDirectory, 'chroma-shift.json'), 'utf8'))
+      if (intent.chromaShiftStatus === status && intent.pendingControlOperation === null) return
+    } catch {
+      // A transient read or parse failure retries within the same deadline.
+    }
+    await delay(100)
+  }
+  throw new Error('The renderer-free shortcut did not persist display-control status ' + status + '.')
+}
 let standardError = ''
 const electron = spawn(
   electronPath,
@@ -2273,26 +2286,6 @@ async function runSmoke() {
   )
   await captureScreenshot(debuggerClient, settingsScreenshotPath)
 
-  const notificationPreference = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
-      const toggle = document.querySelector('[aria-label="Windows notifications"]')
-      toggle?.click()
-      return toggle !== null
-    })()`,
-    returnByValue: true
-  })
-  if (notificationPreference.result.value !== true) {
-    throw new Error('The notification preference was unavailable.')
-  }
-  await waitForExpression(
-    debuggerClient,
-    `(async () => {
-      const result = await window.chromaShift.getState()
-      return result.ok && result.value.settings.notificationsEnabled
-    })()`,
-    'The notification preference was not persisted.'
-  )
-
   const startupPreference = await debuggerClient.send('Runtime.evaluate', {
     expression: `(async () => {
       const state = await window.chromaShift.getState()
@@ -3054,7 +3047,6 @@ async function runSmoke() {
   const priorEmergencyRestoreCount = (
     standardOutput.match(/"eventName":"EmergencyRestoreCompleted"/g) ?? []
   ).length
-  const priorRestoredNotificationCount = countLogMatches(/"title":"Original settings restored"/g)
   await pressEmergencyRestoreShortcut()
   const emergencyRestoreDeadline = Date.now() + timeoutMilliseconds
   while (
@@ -3074,11 +3066,6 @@ async function runSmoke() {
     )
   }
   // A confirmed emergency restore leaves display control Paused (contract C3).
-  await waitForLogCount(
-    /"title":"Original settings restored"/g,
-    priorRestoredNotificationCount,
-    'The emergency restore did not report that ChromaShift is paused.'
-  )
   await waitForExpression(
     debuggerClient,
     `(async () => {
@@ -3098,20 +3085,22 @@ async function runSmoke() {
   await closeMainWindow(electron.pid)
   await waitForNoDebuggerTarget(debuggingPort, (candidate) => !candidate.url.includes('panel=mini'))
   // Renderer-free Toggle: resume from the emergency pause, then pause again.
-  const priorActiveNotificationCount = countLogMatches(/"title":"ChromaShift active"/g)
+  const priorActivatedCount = countLogMatches(/"eventName":"ProfileActivated"/g)
   await pressToggleShortcut()
   await waitForLogCount(
-    /"title":"ChromaShift active"/g,
-    priorActiveNotificationCount,
-    'The renderer-free toggle shortcut did not resume ChromaShift.'
+    /"eventName":"ProfileActivated"/g,
+    priorActivatedCount,
+    'The renderer-free toggle shortcut did not apply the resumed profile.'
   )
-  const priorPausedNotificationCount = countLogMatches(/"title":"ChromaShift paused"/g)
+  await waitForPersistedControlStatus('active')
+  const priorRestoreCount = countLogMatches(/"eventName":"TrayBaselineResetCompleted","status":"activated"/g)
   await pressToggleShortcut()
   await waitForLogCount(
-    /"title":"ChromaShift paused"/g,
-    priorPausedNotificationCount,
-    'The renderer-free toggle shortcut did not pause ChromaShift.'
+    /"eventName":"TrayBaselineResetCompleted","status":"activated"/g,
+    priorRestoreCount,
+    'The renderer-free toggle shortcut did not restore original settings.'
   )
+  await waitForPersistedControlStatus('paused')
   const priorEvents = debuggerClient.events
   const reopen = spawn(electronPath, [`--user-data-dir=${userDataDirectory}`, '.'], {
     cwd: desktopDirectory,

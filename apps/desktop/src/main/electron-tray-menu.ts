@@ -104,10 +104,6 @@ export class ElectronTrayMenu implements TrayMenuPort {
     )
   }
 
-  public showError(title: string, message: string): void {
-    this.#tray.displayBalloon({ title, content: message, iconType: 'error' })
-  }
-
   public destroy(): void {
     this.#tray.destroy()
   }

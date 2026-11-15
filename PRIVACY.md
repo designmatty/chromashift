@@ -23,7 +23,7 @@ ChromaShift stores its application data under `%APPDATA%\ChromaShift`:
 
 - `profiles.json` contains profile names, display identifiers, color settings,
   and assigned application names and executable paths.
-- `preferences.json` contains user preferences, notification settings, and
+- `preferences.json` contains user preferences and
   shortcut bindings.
 - `window-state.json` contains app-panel geometry and the mini-panel position.
 - `chroma-shift.json` contains the display-control state and intended activation
@@ -32,7 +32,7 @@ ChromaShift stores its application data under `%APPDATA%\ChromaShift`:
   display identifiers, foreground application names, paths and window titles,
   activation decisions, native-service status, and errors.
 
-Electron and Windows may also create ordinary application cache, notification,
+Electron and Windows may also create ordinary application cache
 and runtime files in the application-data directory. Uninstalling ChromaShift
 does not delete the data above. A user can remove it by deleting
 `%APPDATA%\ChromaShift` after ChromaShift has exited.

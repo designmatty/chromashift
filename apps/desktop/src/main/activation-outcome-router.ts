@@ -12,10 +12,6 @@ export interface OutcomeControlSource {
   syncActiveIntent(): Promise<unknown>
 }
 
-export interface OutcomeNotificationPort {
-  handle(outcome: CompletedActivationOutcome): Promise<unknown>
-}
-
 // Control-operation outcomes are dropped from the activation stream because
 // their pause/resume/retry/restore operation has not finalized yet; the
 // control source re-emits each one operationally once it has.
@@ -29,13 +25,12 @@ const finalizedControlOrigins = new Set<CompletedActivationOutcome['origin']>([
 /**
  * Routes activation state changes into persisted ChromaShift intent and a
  * product-state refresh, and every completed activation outcome into intent
- * persistence and user-facing notifications. Returns one detach
+ * persistence. Returns one detach
  * function covering all three subscriptions.
  */
 export function attachActivationOutcomeRouter(
   activation: OutcomeActivationSource,
   control: OutcomeControlSource,
-  notifications: OutcomeNotificationPort,
   broadcastProductState: () => void,
   logger: StructuredLogger
 ): () => void {
@@ -55,13 +50,6 @@ export function attachActivationOutcomeRouter(
         level: 'error',
         eventName: 'ChromaShiftIntentPersistenceFailed',
         ...describeError(error)
-      })
-    })
-    void notifications.handle(outcome).catch((error: unknown) => {
-      logger.write({
-        level: 'error',
-        eventName: 'ProfileNotificationFailed',
-        message: describeError(error)
       })
     })
   }

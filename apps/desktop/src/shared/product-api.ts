@@ -56,7 +56,6 @@ export const productIpcChannels = {
   flushPreviewDraft: 'application:flush-preview-draft',
   previewDraftFlushed: 'application:preview-draft-flushed',
   navigateAppPanel: 'application:navigate-app-panel',
-  selectAppPanelProfile: 'application:select-app-panel-profile',
   stateChanged: 'product:state-changed'
 } as const
 
@@ -158,7 +157,6 @@ export const userPreferencesSchema = z
     launchBehavior: z.enum(['tray', 'app']),
     closeBehavior: z.enum(['tray', 'shutdown']),
     theme: z.enum(['system', 'light', 'dark']),
-    notificationsEnabled: z.boolean(),
     shortcutBindings: z.array(shortcutBindingSchema)
   })
   .strict()
@@ -427,5 +425,4 @@ export interface ChromaShiftApi {
   onAppPanelMinimized(listener: () => void): void
   onFlushPreviewDraft(listener: () => Promise<void>): () => void
   onAppPanelNavigation(listener: (view: AppPanelView) => void): void
-  onAppPanelProfileSelection(listener: (profileId: string) => void): void
 }

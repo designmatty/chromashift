@@ -27,7 +27,6 @@ function product(launchAtStartup: boolean): ProductState {
       launchBehavior: 'app',
       closeBehavior: 'tray',
       theme: 'system',
-      notificationsEnabled: false,
       shortcutBindings: []
     },
     configuration: {

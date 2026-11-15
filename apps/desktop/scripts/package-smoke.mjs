@@ -125,79 +125,6 @@ async function runProcess(executable, args, description, timeout = 120_000) {
   return { stdout, stderr }
 }
 
-async function pressNotificationShortcut() {
-  const command = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class ChromaShiftPackageKeys {
-  [DllImport("user32.dll")]
-  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
-}
-'@
-$keys = @(0x11, 0x12, 0x10, 0x78)
-foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
-[Array]::Reverse($keys)
-foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
-`
-  await runProcess(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-EncodedCommand',
-      globalThis.Buffer.from(command, 'utf16le').toString('base64')
-    ],
-    'installed global shortcut dispatch'
-  )
-}
-
-async function clickNewestWindowsNotification(expectedText) {
-  const command = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class ChromaShiftPackagePointer {
-  [DllImport("user32.dll")]
-  public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")]
-  public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
-  [DllImport("user32.dll")]
-  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
-}
-'@
-$expected = ${JSON.stringify(expectedText)}
-$primary = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-[ChromaShiftPackagePointer]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
-[ChromaShiftPackagePointer]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 250
-$clockX = $primary.Right - 40
-$taskbarY = $primary.Bottom - 24
-[ChromaShiftPackagePointer]::SetCursorPos($clockX, $taskbarY) | Out-Null
-[ChromaShiftPackagePointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
-[ChromaShiftPackagePointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 750
-$notificationX = $primary.Right - 220
-$notificationY = $primary.Top + 115
-[ChromaShiftPackagePointer]::SetCursorPos($notificationX, $notificationY) | Out-Null
-[ChromaShiftPackagePointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
-[ChromaShiftPackagePointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
-Write-Output "Clicked newest notification '$expected' at $notificationX,$notificationY."
-`
-  await runProcess(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-EncodedCommand',
-      globalThis.Buffer.from(command, 'utf16le').toString('base64')
-    ],
-    'installed notification click',
-    30_000
-  )
-}
-
 async function smokeService(servicePath, label, { verifyExactRestoration = false } = {}) {
   const child = spawn(servicePath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   child.stdin.setDefaultEncoding('utf8')
@@ -392,12 +319,34 @@ async function startApplicationForUninstall(executablePath, userDataDirectory) {
   }
 }
 
-async function smokeApplication(
-  executablePath,
-  userDataDirectory,
-  label,
-  verifyInstalledNotification = false
-) {
+async function pressProfileShortcut() {
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ChromaShiftPackageKeys {
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+}
+'@
+$keys = @(0x11, 0x12, 0x10, 0x78)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 0, [UIntPtr]::Zero) }
+[Array]::Reverse($keys)
+foreach ($key in $keys) { [ChromaShiftPackageKeys]::keybd_event($key, 0, 2, [UIntPtr]::Zero) }
+`
+  await runProcess(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand',
+      globalThis.Buffer.from(command, 'utf16le').toString('base64')
+    ],
+    'installed global shortcut dispatch'
+  )
+}
+
+async function smokeApplication(executablePath, userDataDirectory, label, verifyInstalledShortcut = false) {
   const port = await reservePort()
   const environment = { ...globalThis.process.env }
   delete environment.ELECTRON_RUN_AS_NODE
@@ -490,114 +439,54 @@ async function smokeApplication(
     if (security.result.value?.node !== 'undefined') {
       throw new Error(`${label} exposed Node in the sandboxed renderer.`)
     }
-    if (verifyInstalledNotification) {
+    if (verifyInstalledShortcut) {
       const configured = await send('Runtime.evaluate', {
         expression: `(async () => {
           const state = await window.chromaShift.getState()
           if (!state.ok) return null
-          const created = await window.chromaShift.createProfile('Notification gate')
+          const created = await window.chromaShift.createProfile('Installed shortcut gate')
           if (!created.ok) return null
           const result = await window.chromaShift.updateSettings({
             ...state.value.settings,
-            notificationsEnabled: false,
-            shortcutBindings: [
-              {
-                action: { kind: 'profile', profileId: created.value.id },
-                accelerator: 'CommandOrControl+Alt+Shift+F9'
-              },
-              { action: { kind: 'previousProfile' }, accelerator: 'Shift+F23' },
-              { action: { kind: 'automatic' }, accelerator: 'Super+Shift+F24' }
-            ]
+            shortcutBindings: [{
+              action: { kind: 'profile', profileId: created.value.id },
+              accelerator: 'CommandOrControl+Alt+Shift+F9'
+            }]
           })
-          return result.ok ? { id: created.value.id, name: created.value.name } : null
+          return result.ok ? created.value.id : null
         })()`,
         awaitPromise: true,
         returnByValue: true
       })
-      const notificationProfile = configured.result.value
-      if (
-        typeof notificationProfile?.id !== 'string' ||
-        notificationProfile.name !== 'Notification gate'
-      ) {
-        throw new Error(`${label} could not configure its notification shortcut.`)
+      const profileId = configured.result.value
+      if (typeof profileId !== 'string') {
+        throw new Error(`${label} could not configure its profile shortcut.`)
       }
-      const notificationRequestsBeforeOptOut = (
-        output.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
-      ).length
-      await pressNotificationShortcut()
-      const optOutDeadline = Date.now() + timeoutMilliseconds
-      let optedOutSelection = false
-      while (Date.now() < optOutDeadline) {
-        const selected = await send('Runtime.evaluate', {
+      await pressProfileShortcut()
+      const activationDeadline = Date.now() + timeoutMilliseconds
+      let activated = false
+      while (Date.now() < activationDeadline) {
+        const activation = await send('Runtime.evaluate', {
           expression: `(async () => {
             const state = await window.chromaShift.getState()
-            return state.ok && state.value.chromaShift.intendedMode.kind === 'manual' &&
-              state.value.chromaShift.intendedMode.profileId === ${JSON.stringify(notificationProfile.id)}
+            if (!state.ok) return false
+            const { chromaShift, activation } = state.value
+            return chromaShift.status === 'active' && !chromaShift.transitionInProgress &&
+              chromaShift.pendingOperation === null &&
+              chromaShift.intendedMode.kind === 'manual' &&
+              chromaShift.intendedMode.profileId === ${JSON.stringify(profileId)} &&
+              activation.currentTarget?.kind === 'profile' &&
+              activation.currentTarget.profileId === ${JSON.stringify(profileId)}
           })()`,
           awaitPromise: true,
           returnByValue: true
         })
-        optedOutSelection = selected.result.value === true
-        if (optedOutSelection) break
+        activated = activation.result.value === true
+        if (activated) break
         await delay(100)
       }
-      if (!optedOutSelection) {
-        throw new Error(`${label} opted-out shortcut did not select its profile.`)
-      }
-      await delay(300)
-      const notificationRequestsAfterOptOut = (
-        output.match(/"eventName":"ProfileNotificationRequested"/g) ?? []
-      ).length
-      if (notificationRequestsAfterOptOut !== notificationRequestsBeforeOptOut) {
-        throw new Error(`${label} showed a notification while notifications were off.`)
-      }
-      const optedIn = await send('Runtime.evaluate', {
-        expression: `(async () => {
-          const automatic = await window.chromaShift.enableAutomatic()
-          if (!automatic.ok) return false
-          const state = await window.chromaShift.getState()
-          if (!state.ok) return false
-          const updated = await window.chromaShift.updateSettings({
-            ...state.value.settings,
-            notificationsEnabled: true
-          })
-          return updated.ok
-        })()`,
-        awaitPromise: true,
-        returnByValue: true
-      })
-      if (optedIn.result.value !== true) {
-        throw new Error(`${label} could not enable notifications.`)
-      }
-      await pressNotificationShortcut()
-      const notificationDeadline = Date.now() + timeoutMilliseconds
-      while (!output.includes('"eventName":"ProfileNotificationShown"')) {
-        if (output.includes('"eventName":"ProfileNotificationFailed"')) {
-          throw new Error(`${label} native notification delivery failed.\n${output}`)
-        }
-        if (Date.now() >= notificationDeadline) {
-          throw new Error(`${label} native notification was not confirmed as shown.\n${output}`)
-        }
-        await delay(100)
-      }
-      await clickNewestWindowsNotification(`${notificationProfile.name} activated`)
-      const selectionDeadline = Date.now() + timeoutMilliseconds
-      let selectedProfile = ''
-      while (Date.now() < selectionDeadline) {
-        const selection = await send('Runtime.evaluate', {
-          expression: `document.querySelector(
-            '[data-part="profile-item"][data-selected] [data-part="profile-select"] strong'
-          )?.textContent?.trim() ?? ''`,
-          returnByValue: true
-        })
-        selectedProfile = selection.result.value
-        if (selectedProfile === notificationProfile.name) break
-        await delay(100)
-      }
-      if (selectedProfile !== notificationProfile.name) {
-        throw new Error(
-          `${label} notification click did not select ${notificationProfile.name}; selected ${selectedProfile}.`
-        )
+      if (!activated) {
+        throw new Error(`${label} global shortcut did not activate profile ${profileId}.\n${output}`)
       }
     }
     try {
@@ -789,7 +678,7 @@ try {
   globalThis.console.log(`Unpacked layout: ${unpackedDirectory}`)
   globalThis.console.log(`Installer: ${installer}`)
   globalThis.console.log(
-    'External sidecar launch, IPC, native notification delivery and click routing, baseline restoration, upgrade, uninstall cleanup, and retained data: verified'
+    'External sidecar launch, IPC, baseline restoration, upgrade, uninstall cleanup, and retained data: verified'
   )
 } finally {
   await rm(temporaryRoot, {

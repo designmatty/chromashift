@@ -26,7 +26,6 @@ import { AppPanelCloseController } from '@main/app-panel-close-controller.js'
 import { confirmRestoreRetry } from '@main/restore-retry-dialog.js'
 import { createSettingsStores } from '@main/app-settings.js'
 import { findGitWorktreeRoot, resolveApplicationDataPaths } from '@main/application-data-path.js'
-import { ElectronNotificationPort } from '@main/electron-notification.js'
 import { createDevelopmentShortcutCleanup } from '@main/development-shortcut-cleanup.js'
 import { resolveDisplayServicePath } from '@main/display-service-path.js'
 import { ElectronTrayMenu } from '@main/electron-tray-menu.js'
@@ -53,6 +52,7 @@ import { WindowController } from '@main/window-controller.js'
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('disable-software-rasterizer')
 if (process.platform === 'win32') {
+  // Match the installer appId for Windows app identity and taskbar grouping.
   app.setAppUserModelId(
     app.isPackaged ? 'com.chromashift.desktop' : 'com.chromashift.desktop.development'
   )
@@ -194,7 +194,6 @@ const runtime = createProductRuntime({
         assertTrustedRenderer
       ),
     openWindow: () => openWindow(),
-    openProfile: (profileId) => openProfile(profileId),
     openAppPanel: () => panelController.openAppPanel(),
     openMiniPanel: () => panelController.openMiniPanel(),
     createTrayMenu: async () =>
@@ -263,8 +262,7 @@ const runtime = createProductRuntime({
       screen.on('display-removed', () => listener('displayRemoved'))
       screen.on('display-metrics-changed', () => listener('displayMetricsChanged'))
     }
-  },
-  notifications: new ElectronNotificationPort(logger)
+  }
 })
 
 function saveMiniPanelPosition(position: { x: number; y: number }): void {
@@ -533,17 +531,6 @@ function openWindow(view: AppPanelView = 'profiles'): void {
   const navigate = (): void => window.webContents.send(productIpcChannels.navigateAppPanel, view)
   if (window.webContents.isLoading()) window.webContents.once('did-finish-load', navigate)
   else navigate()
-}
-
-function openProfile(profileId: string | null): void {
-  openWindow('profiles')
-  if (profileId === null) return
-  const window = mainWindow
-  if (window === undefined || window.webContents.isDestroyed()) return
-  const select = (): void =>
-    window.webContents.send(productIpcChannels.selectAppPanelProfile, { profileId })
-  if (window.webContents.isLoading()) window.webContents.once('did-finish-load', select)
-  else select()
 }
 
 if (ownsSingleInstanceLock) {
