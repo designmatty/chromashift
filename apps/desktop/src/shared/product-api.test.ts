@@ -130,6 +130,7 @@ describe('product API contracts', () => {
         windowBounds: { x: 0, y: 0, width: 800, height: 600 }
       }).success
     ).toBe(false)
+    expect(userPreferencesSchema.safeParse({ ...validSettings(), notificationsEnabled: true }).success).toBe(false)
     expect(userPreferencesSchema.safeParse(validSettings()).success).toBe(true)
   })
 
@@ -223,7 +224,6 @@ function validSettings() {
     launchBehavior: 'tray',
     closeBehavior: 'tray',
     theme: 'system',
-    notificationsEnabled: false,
     shortcutBindings: []
   }
 }

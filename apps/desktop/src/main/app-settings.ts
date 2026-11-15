@@ -45,25 +45,24 @@ const version2UserPreferencesSchema = userPreferencesSchema.extend({
 }).strict()
 
 const legacyUserPreferencesSchema = version2UserPreferencesSchema
-  .omit({ schemaVersion: true, notificationsEnabled: true })
+  .omit({ schemaVersion: true })
   .extend({
-    schemaVersion: z.literal(1),
-    profileChangeNotifications: z.boolean()
+    schemaVersion: z.literal(1)
   })
   .strict()
 
-const persistedUserPreferencesSchema = z
-  .union([userPreferencesSchema, version2UserPreferencesSchema, legacyUserPreferencesSchema])
-  .transform((preferences): UserPreferences => {
-    if (preferences.schemaVersion === 3) return preferences
-    if (preferences.schemaVersion === 2) return { ...preferences, schemaVersion: 3 }
-    const { profileChangeNotifications, ...unchanged } = preferences
-    return {
-      ...unchanged,
-      schemaVersion: 3,
-      notificationsEnabled: profileChangeNotifications
-    }
-  })
+// Ignore only the retired preference on disk. IPC and other slice fields remain strict.
+const persistedUserPreferencesSchema = z.preprocess((value) => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const fields = { ...value } as Record<string, unknown>
+  if (fields.schemaVersion === 1) delete fields.profileChangeNotifications
+  else if (fields.schemaVersion === 2 || fields.schemaVersion === 3) delete fields.notificationsEnabled
+  return fields
+}, z.union([
+  userPreferencesSchema,
+  version2UserPreferencesSchema,
+  legacyUserPreferencesSchema
+]).transform((preferences): UserPreferences => ({ ...preferences, schemaVersion: 3 })))
 
 export const defaultUserPreferences: UserPreferences = {
   schemaVersion: 3,
@@ -71,7 +70,6 @@ export const defaultUserPreferences: UserPreferences = {
   launchBehavior: 'tray',
   closeBehavior: 'tray',
   theme: 'system',
-  notificationsEnabled: false,
   shortcutBindings: []
 }
 

@@ -115,8 +115,7 @@ targets remain persisted and resume when the same physical display returns.
   checkbox. A connected display without saved settings starts from the neutral
   values, and the first change creates its complete display target.
 - Without an unsaved session, opening the app selects the Intended target's
-  profile, or Default, and scrolls it into view. Non-profile views remain remembered;
-  profile requests from main win. An unsaved session opens directly in Profiles
+  profile, or Default, and scrolls it into view. Non-profile views remain remembered. An unsaved session opens directly in Profiles
   with its draft selected, including when Settings was the last view.
 - Clicking a profile previews its saved values unless it is already live, so a
   new profile opens as a native Preview at neutral values. Connected displays
@@ -211,7 +210,7 @@ targets remain persisted and resume when the same physical display returns.
   show a shield alert icon left of the gamma value. Its tooltip gives the
   allowed range, `Min … , max …`, followed by `at brightness …%` only when the
   display supports brightness, because only then does brightness change the
-  limit. Learning produces no notification. Limits
+  limit. Limits
   persist per stable display, brightness and color mode, bound to captured
   Original settings. Changed captured baselines invalidate them. SDR is the
   only active mode; HDR remains restore-only.
@@ -295,7 +294,7 @@ their existing meanings, with Paused and Safety blocked taking precedence over
 the hold indicator.
 
 Main exposes the latest blocked automatic target through validated ProductState.
-There is no separate toast for it: the profile's `Update profile` and
+The profile's `Update profile` and
 `Discard changes` actions finish the session through the existing path that
 resolves the latest queued foreground application. Update preserves the
 activation mode. A later foreground change replaces the queued target; returning

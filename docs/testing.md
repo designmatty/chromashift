@@ -6,11 +6,11 @@
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget | Any supported Windows checkout |
 | `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                               | Interactive Windows hardware   |
-| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, notifications, display writes, restoration          | Interactive Windows desktop    |
+| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                         | Interactive Windows desktop    |
 | `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                  | Interactive Windows desktop    |
 | `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                        | Interactive Windows desktop    |
 | `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                  | Windows                        |
-| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, notifications, and retained data                                         | Interactive Windows desktop    |
+| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, and retained data                                                        | Interactive Windows desktop    |
 | `npm run measure:performance`           | Packaged latency, memory, CPU, renderer release, and footprint budgets                                                       | Reference Windows host         |
 
 `npm run verify` is the canonical non-interactive gate and the command used by
@@ -81,7 +81,7 @@ The TypeScript and native test suites cover these contracts:
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
   persistence, including atomic writes and concurrent update queues
 - Pause, Resume, Safety blocked, restore-and-pause, emergency restore,
-  notification policy, global-shortcut replacement, tray commands, and
+  global-shortcut replacement, tray commands, and
   renderer-free operation
 - Main-process composition, startup buffering, helper handshake and heartbeat,
   bounded helper recovery, renderer recovery circuits, shutdown ordering, and
@@ -274,10 +274,8 @@ fixed `Ctrl+Alt+Windows+R` emergency restore shortcut, and verifies exact displa
 restoration before exit. Renderer and visible native-window screenshots are
 written under `apps/desktop/out/smoke` for visual inspection. Native captures
 include the app's Windows caption controls and the actual paused mini-panel
-window without activating it. Electron creates a development
-Start menu shortcut when a development notification initializes. Development
-ChromaShift uses a separate development notification identity and removes its bare
-`Electron.lnk` at startup and on normal exit. The development launcher, desktop
+window without activating it. Development ChromaShift removes legacy bare
+`Electron.lnk` shortcuts at startup and on normal exit. The development launcher, desktop
 smoke, and development performance runner also clean it up after their child exits.
 Cleanup checks the shortcut's target, arguments,
 and application ID; packaged-app shortcuts and other Electron apps are preserved.
@@ -404,9 +402,7 @@ fuses and CSP, helper handshake, baseline capture and restoration, unpacked and
 installed Electron launches, silent install, in-place upgrade, restore-safe exit,
 and uninstall while the installed app is running. Uninstall must stop that process
 and remove the application directory and Start menu shortcut while preserving
-profile data. The smoke also creates a disposable profile,
-dispatches its global shortcut, verifies native notification delivery, clicks the
-notification in Windows Notification Center, and checks profile routing.
+profile data.
 
 Also inspect the visible Start menu after uninstall. Windows 11 24H2 and 25H2
 can retain a dead entry after the shortcut and shell app registration are gone.
@@ -451,8 +447,8 @@ Owner manual checks, when desktop and hardware runs resume:
    starting values. Do not force extreme gamma to manufacture a rejection.
 2. If normal editing encounters a real rejection, verify 0.05 steps toward
    neutral, the first accepted value in the slider, hatched limits, and the
-   note's explanation on hover. Check both panels and both themes. Confirm no
-   notification, and that other unsaved edits survive. Diagnostic logs must
+   note's explanation on hover. Check both panels and both themes. Confirm
+   that other unsaved edits survive. Diagnostic logs must
    identify the request, display, accepted bound, and captured baseline.
 3. Restart after confirmed restoration. Apply and open a previously saved
    out-of-range profile, including an imported profile. Before normal capture
@@ -506,7 +502,7 @@ Verified on this host:
 - active Edit during DisplayPort disconnect, cancel while absent, reconnect, and
   reapply to the same stable display
 - HDMI disconnect and reconnect with stable identity and exact restoration
-- packaged install, upgrade, notification click routing, restore-safe exit,
+- packaged install, upgrade, restore-safe exit,
   uninstall, retained profiles, and performance budgets
 
 The exact initial hardware values, hashes, provider limits, and identifiers live

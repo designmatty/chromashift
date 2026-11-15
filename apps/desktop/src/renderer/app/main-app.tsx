@@ -354,17 +354,9 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       if (dirty && isCurrentAction()) setView(nextView)
     })
   }
-  // Main's buffered navigation and profile requests win over initial selection.
+  // Main's buffered navigation wins over initial selection.
   useLayoutEffect(() => {
     window.chromaShift.onAppPanelNavigation(navigate)
-  })
-  useLayoutEffect(() => {
-    window.chromaShift.onAppPanelProfileSelection((profileId) => {
-      const profile = product.configuration.profiles.find(
-        (item) => item.id.toLowerCase() === profileId.toLowerCase()
-      )
-      if (profile !== undefined) selectProfile(profile)
-    })
   })
   useEffect(() => {
     const endAppPreview = (includeOverride = false) => {

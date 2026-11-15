@@ -26,10 +26,10 @@ afterEach(async () => {
 })
 
 describe('settings slice stores', () => {
-  it.each([1, 2])('migrates the v%s fixture without adding an End preview binding', async (version) => {
+  it.each([1, 2, 3])('loads the legacy v%s fixture preserving every remaining preference', async (version) => {
     const directory = await temporaryDirectory()
     const original = await readFile(new URL(`../../../../fixtures/preferences/v${version}.json`, import.meta.url), 'utf8')
-    const expected = JSON.parse(await readFile(new URL('../../../../fixtures/preferences/v3.json', import.meta.url), 'utf8'))
+    const expected = JSON.parse(await readFile(new URL('../../../../fixtures/preferences/v3-without-notifications.json', import.meta.url), 'utf8'))
     const path = join(directory, 'preferences.json')
     await writeFile(path, original)
     const stores = createSettingsStores(directory)
@@ -117,27 +117,6 @@ describe('settings slice stores', () => {
       blocked
     )
     await expect(createSettingsStores(directory).chromaShiftIntent.load()).resolves.toEqual(blocked)
-  })
-
-  it('migrates the profile notification preference into the global notification switch', async () => {
-    const directory = await temporaryDirectory()
-    await writeFile(
-      join(directory, 'preferences.json'),
-      JSON.stringify({
-        schemaVersion: 1,
-        launchAtStartup: false,
-        launchBehavior: 'tray',
-        closeBehavior: 'tray',
-        theme: 'system',
-        profileChangeNotifications: true,
-        shortcutBindings: []
-      })
-    )
-
-    await expect(createSettingsStores(directory).preferences.load()).resolves.toEqual({
-      ...defaultUserPreferences,
-      notificationsEnabled: true
-    })
   })
 
   it('rejects malformed persisted slices rather than silently changing behavior', async () => {

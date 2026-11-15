@@ -28,7 +28,7 @@ Repository workflows:
 ## Product and process boundaries
 
 - Electron owns product behavior. Keep profiles, matching, activation precedence,
-  preview, settings, tray behavior, notifications, and user-facing errors in
+  preview, settings, tray behavior, and user-facing errors in
   TypeScript.
 - `ChromaShift.DisplayService.exe` owns Windows and GPU interaction only. Keep
   native handles, display enumeration, foreground hooks, capability discovery,
