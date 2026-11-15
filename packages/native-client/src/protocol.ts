@@ -125,7 +125,8 @@ export const foregroundApplicationSchema = z.object({
   executable: z.string().nullable(),
   path: z.string().nullable(),
   title: z.string(),
-  monitorDeviceName: z.string().nullable()
+  monitorDeviceName: z.string().nullable(),
+  windowClass: z.string().nullable().optional()
 })
 
 export const foregroundCurrentResultSchema = z.object({

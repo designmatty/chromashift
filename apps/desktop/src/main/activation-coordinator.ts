@@ -517,7 +517,8 @@ export class ActivationCoordinator {
         eventName: 'ProfileMatchMiss',
         reason: resolution.reason,
         executable: foregroundApplication?.executable,
-        path: foregroundApplication?.path
+        path: foregroundApplication?.path,
+        windowClass: foregroundApplication?.windowClass
       })
       return
     }
@@ -533,7 +534,8 @@ export class ActivationCoordinator {
       reason: resolution.reason,
       matchType: foregroundMatch?.type,
       executable: foregroundApplication?.executable,
-      path: foregroundApplication?.path
+      path: foregroundApplication?.path,
+      windowClass: foregroundApplication?.windowClass
     })
   }
 
