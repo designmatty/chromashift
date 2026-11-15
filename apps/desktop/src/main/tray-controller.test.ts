@@ -152,16 +152,11 @@ class FakeActivation implements TrayActivationPort {
 class FakeMenu implements TrayMenuPort {
   public model: TrayReadModel | undefined
   public commands: TrayCommands | undefined
-  public readonly errors: Array<{ title: string; message: string }> = []
   public destroyed = false
 
   public update(model: TrayReadModel, commands: TrayCommands): void {
     this.model = model
     this.commands = commands
-  }
-
-  public showError(title: string, message: string): void {
-    this.errors.push({ title, message })
   }
 
   public destroy(): void {

@@ -17,7 +17,6 @@ import { registerProductIpcHandlers } from '@main/product-ipc.js'
 import { DiagnosticsService } from '@main/diagnostics-service.js'
 import { AppUpdateService } from '@main/app-update-service.js'
 import { UpdateChecker } from '@main/update-checker.js'
-import type { ProductNotification } from '@main/profile-notification-controller.js'
 import {
   defaultChromaShiftIntent,
   defaultUserPreferences,
@@ -163,7 +162,6 @@ async function createHarness(
   openAppPanel: ReturnType<typeof vi.fn>
   requestEndPreview: ReturnType<typeof vi.fn>
   configurationPath: string
-  notifications: Array<ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }>
   invokeRestore: () => Promise<unknown>
   invokeActivate: (profileId: string) => Promise<unknown>
   invokeAutomatic: () => Promise<unknown>
@@ -198,7 +196,6 @@ async function createHarness(
   const logger = new RecordingLogger()
   let preferences: UserPreferences = {
     ...defaultUserPreferences,
-    notificationsEnabled: true,
     ...options.preferences
   }
   let intent: ChromaShiftIntent = { ...defaultChromaShiftIntent, ...intentOverrides }
@@ -212,9 +209,6 @@ async function createHarness(
   const openAppPanel = vi.fn()
   const requestEndPreview = vi.fn()
   const shortcutHandlers = new Map<string, () => void>()
-  const notifications: Array<
-    ProductNotification & { status: ChromaShiftIntent['chromaShiftStatus'] }
-  > = []
   const ports: ProductRuntimePorts = {
     logger,
     configuration: {
@@ -245,7 +239,6 @@ async function createHarness(
       getAppPanelLifetime: () => 21,
       requestEndPreview,
       openWindow: () => undefined,
-      openProfile: () => undefined,
       openAppPanel,
       openMiniPanel: () => undefined,
       createTrayMenu: () => {
@@ -255,7 +248,6 @@ async function createHarness(
             trayModel = model
             trayCommands = commands
           },
-          showError: () => undefined,
           destroy: () => undefined
         })
       },
@@ -290,10 +282,6 @@ async function createHarness(
       onDisplayEvent: (listener) => {
         displayEventListener = listener
       }
-    },
-    notifications: {
-      isSupported: () => true,
-      show: (message) => notifications.push({ ...message, status: intent.chromaShiftStatus })
     }
   }
   const runtime = createProductRuntime(ports)
@@ -348,7 +336,6 @@ async function createHarness(
     openAppPanel,
     requestEndPreview,
     configurationPath: join(directory, 'profiles.json'),
-    notifications,
     invokeRestore: () =>
       handlers.get(productIpcChannels.restoreBaseline)!({} as IpcMainInvokeEvent, {}),
     invokeActivate: (profileId) =>
@@ -1008,7 +995,6 @@ describe('unconfirmed preview restoration', () => {
       for (const kind of ['edit', 'override'] as const) {
         const h = await panelHarness(mode, kind)
         try {
-          const notifications = [...h.notifications]
           await h.close.handleClose({ preventDefault: () => undefined })
           expect((await h.product.getState()).preview).toEqual({ state: 'inactive' })
           expect(h.client.currentSettings.get(id)?.brightness).toBe(65)
@@ -1017,7 +1003,6 @@ describe('unconfirmed preview restoration', () => {
           )
           expect(h.client.calls.filter((call) => call.operation === 'restore')).toHaveLength(1)
           expect(h.client.maxConcurrentCalls).toBe(1)
-          expect(h.notifications).toEqual(notifications)
         } finally {
           h.runtime.dispose()
         }
@@ -1736,63 +1721,40 @@ describe('product runtime display-control wiring', () => {
     }
   })
 
-  it.each([true, false])(
-    'handles Paused shortcut selection with notificationsEnabled=%s',
-    async (notificationsEnabled) => {
-      const harness = await createHarness(
-        { chromaShiftStatus: 'paused' },
-        {
-          preferences: {
-            notificationsEnabled,
-            shortcutBindings: [
-              { accelerator: 'CommandOrControl+Alt+1', action: { kind: 'defaultProfile' } },
-              { accelerator: 'CommandOrControl+Alt+2', action: { kind: 'automatic' } }
-            ]
-          }
+  it('handles Paused shortcut selection without display writes', async () => {
+    const harness = await createHarness(
+      { chromaShiftStatus: 'paused' },
+      {
+        preferences: {
+          shortcutBindings: [
+            { accelerator: 'CommandOrControl+Alt+1', action: { kind: 'defaultProfile' } },
+            { accelerator: 'CommandOrControl+Alt+2', action: { kind: 'automatic' } }
+          ]
         }
-      )
-      await harness.runtime.start()
-      try {
-        harness.pressShortcut('CommandOrControl+Alt+1')
-        await vi.waitFor(() =>
-          expect(harness.intent().intendedActivationMode).toEqual({
-            kind: 'manual',
-            profileId: 'default'
-          })
-        )
-        harness.pressShortcut('CommandOrControl+Alt+2')
-        await vi.waitFor(() =>
-          expect(harness.intent().intendedActivationMode).toEqual({ kind: 'automatic' })
-        )
-        await vi.waitFor(() =>
-          expect(harness.notifications).toHaveLength(notificationsEnabled ? 2 : 0)
-        )
-        expect(harness.notifications).toMatchObject(
-          notificationsEnabled
-            ? [
-                {
-                  title: 'ChromaShift paused',
-                  body: 'Default applies when you resume.',
-                  status: 'paused'
-                },
-                {
-                  title: 'ChromaShift paused',
-                  body: 'Automatic applies when you resume.',
-                  status: 'paused'
-                }
-              ]
-            : []
-        )
-        expect(harness.client.calls).toEqual([])
-        expect(harness.intent()).toMatchObject({
-          chromaShiftStatus: 'paused',
-          intendedActivationMode: { kind: 'automatic' }
-        })
-      } finally {
-        harness.runtime.dispose()
       }
+    )
+    await harness.runtime.start()
+    try {
+      harness.pressShortcut('CommandOrControl+Alt+1')
+      await vi.waitFor(() =>
+        expect(harness.intent().intendedActivationMode).toEqual({
+          kind: 'manual',
+          profileId: 'default'
+        })
+      )
+      harness.pressShortcut('CommandOrControl+Alt+2')
+      await vi.waitFor(() =>
+        expect(harness.intent().intendedActivationMode).toEqual({ kind: 'automatic' })
+      )
+      expect(harness.client.calls).toEqual([])
+      expect(harness.intent()).toMatchObject({
+        chromaShiftStatus: 'paused',
+        intendedActivationMode: { kind: 'automatic' }
+      })
+    } finally {
+      harness.runtime.dispose()
     }
-  )
+  })
   it('runs a fresh direct emergency restore on a second press while Resume is held', async () => {
     const harness = await createHarness({ chromaShiftStatus: 'paused' })
     await harness.runtime.start()
@@ -1964,7 +1926,6 @@ describe('product runtime display-control wiring', () => {
         )
         expect(harness.client.calls).toEqual(callsBefore)
         expect(refresh).not.toHaveBeenCalled()
-        expect(harness.notifications).toEqual([])
       } finally {
         harness.runtime.dispose()
       }
@@ -2044,12 +2005,7 @@ describe('product runtime display-control wiring', () => {
       })
       expect(harness.client.calls.some((call) => call.operation === 'restoreAll')).toBe(true)
       expect(harness.errors).toEqual([])
-      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
-      expect(harness.notifications[0]).toMatchObject({
-        title: 'Original settings restored',
-        body: 'ChromaShift is paused.',
-        status: 'paused'
-      })
+      await vi.waitFor(() => expect(harness.trayModel().chromaShiftStatusLabel).toBe('Paused'))
     } finally {
       harness.runtime.dispose()
     }
@@ -2077,7 +2033,6 @@ describe('product runtime display-control wiring', () => {
         chromaShiftStatus: 'active',
         pendingControlOperation: null
       })
-      expect(harness.notifications).toEqual([])
     } finally {
       harness.runtime.dispose()
     }
@@ -2108,14 +2063,13 @@ describe('product runtime display-control wiring', () => {
         expect(cancel).toHaveBeenCalledOnce()
         expect(harness.intent()).toEqual(before)
         expect(harness.errors).toEqual([])
-        expect(harness.notifications).toEqual([])
       } finally {
         harness.runtime.dispose()
       }
     }
   )
 
-  it('persists the pending pause before IPC restoration and announces completion only afterwards', async () => {
+  it('persists the pending pause before IPC restoration and marks Paused only afterwards', async () => {
     const harness = await createHarness(restorableIntent)
     await harness.runtime.start()
     try {
@@ -2136,18 +2090,48 @@ describe('product runtime display-control wiring', () => {
         chromaShiftStatus: 'safetyBlocked',
         pendingControlOperation: 'pause'
       })
-      expect(harness.notifications).toEqual([])
       release()
       expect(await restore).toMatchObject({ ok: true })
-      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
-      expect(harness.notifications[0]).toMatchObject({
-        title: 'Original settings restored',
-        status: 'paused'
-      })
+      expect(harness.intent().chromaShiftStatus).toBe('paused')
     } finally {
       harness.runtime.dispose()
     }
   })
+
+  it.each(['restoreFailure', 'restoreDeferred', 'resumeFailure'] as const)(
+    'keeps %s visible in product state and the tray without a renderer',
+    async (failure) => {
+      const h = await createHarness(restorableIntent)
+      await h.runtime.start()
+      const product = h.runtime.productController!
+      try {
+        if (failure === 'resumeFailure') {
+          await product.controlChromaShift('pause')
+          h.client.failApplyDisplayIds.add('display:one')
+          await product.controlChromaShift('resume')
+        } else {
+          if (failure === 'restoreFailure') h.client.failRestoreAllDisplayIds.add('display:one')
+          else h.client.disconnectedDisplayIds.add('display:one')
+          await h.invokeRestore()
+        }
+        if (failure === 'restoreDeferred') expect(h.logger.has('BaselineRestoreDeferred')).toBe(true)
+        expect((await product.getState()).chromaShift).toMatchObject({
+          status: 'safetyBlocked',
+          transitionInProgress: false
+        })
+        await vi.waitFor(() => expect(h.trayModel()).toMatchObject({
+          chromaShiftStatusLabel: 'Safety blocked',
+          controlAction: 'retry'
+        }))
+        // Retry failures must continue to expose the same status and action.
+        await product.controlChromaShift('retry')
+        expect((await product.getState()).chromaShift.status).toBe('safetyBlocked')
+        expect(h.openAppPanel).not.toHaveBeenCalled()
+      } finally {
+        h.runtime.dispose()
+      }
+    }
+  )
 
   it('pauses after the tray restores original settings', async () => {
     const harness = await createHarness(restorableIntent)
@@ -2176,12 +2160,7 @@ describe('product runtime display-control wiring', () => {
         pendingControlOperation: null,
         intendedTarget: { kind: 'profile', profileId: 'default' }
       })
-      await vi.waitFor(() => expect(harness.notifications).toHaveLength(1))
-      expect(harness.notifications[0]).toMatchObject({
-        title: 'Original settings restored',
-        body: 'ChromaShift is paused.',
-        status: 'paused'
-      })
+      expect(harness.intent().chromaShiftStatus).toBe('paused')
     } finally {
       harness.runtime.dispose()
     }

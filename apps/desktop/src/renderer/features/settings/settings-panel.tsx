@@ -71,23 +71,6 @@ export function SettingsPanel({
         </SettingsRow>
       </Stack>
       <Stack direction="column" gap={0.5}>
-        <Heading as="h2" size="lg">
-          Notifications
-        </Heading>
-        <SettingsRow
-          title="Windows notifications"
-          description="Show notifications from ChromaShift"
-        >
-          <Switch
-            checked={settings.notificationsEnabled}
-            onCheckedChange={(details) =>
-              update({ ...settings, notificationsEnabled: details.checked })
-            }
-            aria-label="Windows notifications"
-          />
-        </SettingsRow>
-      </Stack>
-      <Stack direction="column" gap={0.5}>
         <Heading as="h1" size="lg">
           Appearance
         </Heading>

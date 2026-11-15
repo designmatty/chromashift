@@ -46,7 +46,6 @@ import { LatestEventRelay } from '@shared/latest-event-relay.js'
 // listener (a fresh renderer waits for DisplayService and the lazy app chunk).
 // Listen from preload time and keep the latest request until the app subscribes.
 const appPanelNavigation = new LatestEventRelay<AppPanelView>()
-const appPanelProfileSelection = new LatestEventRelay<string>()
 const endPreviewRequests = new LatestEventRelay<EndPreviewRequest>()
 let panelLifetime: number | null = null
 ipcRenderer.on(productIpcChannels.endPreviewRequested, (_event, input: unknown) => {
@@ -62,12 +61,6 @@ ipcRenderer.on(productIpcChannels.navigateAppPanel, (_event, input: unknown) => 
   const view = appPanelViewSchema.safeParse(input)
   if (view.success) appPanelNavigation.publish(view.data)
   else console.error('Rejected invalid app-panel navigation event.', view.error)
-})
-
-ipcRenderer.on(productIpcChannels.selectAppPanelProfile, (_event, input: unknown) => {
-  const request = profileIdRequestSchema.safeParse(input)
-  if (request.success) appPanelProfileSelection.publish(request.data.profileId)
-  else console.error('Rejected invalid app-panel profile selection event.', request.error)
 })
 
 async function invoke<TRequest, TResult>(
@@ -304,8 +297,7 @@ const api: ChromaShiftApi = {
     ipcRenderer.on(productIpcChannels.flushPreviewDraft, receive)
     return () => ipcRenderer.removeListener(productIpcChannels.flushPreviewDraft, receive)
   },
-  onAppPanelNavigation: (listener) => appPanelNavigation.subscribe(listener),
-  onAppPanelProfileSelection: (listener) => appPanelProfileSelection.subscribe(listener)
+  onAppPanelNavigation: (listener) => appPanelNavigation.subscribe(listener)
 }
 
 contextBridge.exposeInMainWorld('chromaShift', api)

@@ -58,7 +58,7 @@ invalidates limits after a changed captured baseline, clamps after capability pr
 and converges simultaneous endpoints to their common accepted gamma. It never
 uses current modified output as a baseline. Main's `LearnedGammaLimits` merges
 learned ends with the unchanged starting envelope. The serialized profile writer
-quietly clamps saved gamma on apply or editor opening, without a notification.
+quietly clamps saved gamma on apply or editor opening.
 Persisted limits remain inactive until normal capture-before-mutation confirms
 their baseline hash in the current session. Restoration that releases a baseline
 or a helper exit revokes that confirmation. Quiet updates and renderer feedback
@@ -85,7 +85,7 @@ including native event routing (`native-event-router.ts`) and activation
 outcome routing (`activation-outcome-router.ts`). `index.ts` is Electron shell
 only: windows, panels, IPC registration, and app lifecycle. It supplies the
 runtime's grouped ports (settings accessor, dialogs, icons, panel commands,
-system registrations, notifications). The shell reaches product behavior
+system registrations). The shell reaches product behavior
 through the runtime's `productController`, `shutdownCoordinator`, and
 `previewController` getters plus `start()` and `dispose()`; the runtime reaches
 the shell only through its ports. The DisplayService connection enters through
@@ -161,7 +161,7 @@ with read-back. No provider's profile setters are enabled under HDR. Restore und
 HDR still requires owner NVIDIA hardware verification; AMD remains unverified.
 
 Display and power transitions use a second coordinator around that same activation
-queue. Electron lock/suspend notifications pause new writes immediately; unlock,
+queue. Electron lock/suspend events pause new writes immediately; unlock,
 resume, Electron screen changes, and the native Windows display-settings event are
 debounced into one `display.topology.refresh`. The helper re-enumerates active
 displays, reacquires provider handles, resolves current capabilities/HDR, and
@@ -342,7 +342,7 @@ native-caption-controlled app panel.
 
 App settings persist as three slice files under the user-data directory, one
 per owner: `preferences.json` (renderer-editable user preferences: login
-launch, launch/close behavior, theme, notifications, shortcut bindings),
+launch, launch/close behavior, theme, shortcut bindings),
 `window-state.json` (Electron-shell window geometry and mini-panel position),
 and `chroma-shift.json` (runtime-owned display-control status and intended
 activation target). Each slice has one store with a serialized update queue,
@@ -354,14 +354,17 @@ defensively guarded. A missing slice file yields defaults; the pre-slice
 Preferences schema version 3 adds the optional End preview shortcut action.
 Version 1 and 2 documents migrate explicitly, preserving all bindings and
 preferences; End preview starts unassigned. Invalid documents are preserved and
-reported. Migration is written on the next successful preferences update.
+reported. The disk reader ignores the retired boolean `notificationsEnabled`
+in versions 2 and 3 and `profileChangeNotifications` in version 1, while continuing
+to reject malformed values and other unknown fields. Fixtures cover versions
+1, 2, and 3. Loading leaves the file intact; the next successful preferences
+update writes only current fields. Window and intent slices are untouched.
 Explicit launches still show the app panel. The permanent Default profile
 remains the only catch-all, cannot be disabled or deleted, and cannot receive
 triggers.
 
-Electron main owns native notifications and global shortcut registration, so
-both remain available with no renderer alive. One user preference enables or
-suppresses every native notification type. Shortcut replacement is atomic:
+Electron main owns global shortcut registration, which remains available with no
+renderer alive. Shortcut replacement is atomic:
 validation, reserved-key and duplicate checks, and operating-system registration
 must all succeed before the new bindings are persisted, otherwise the last valid
 set is restored. Profile bindings follow profile rename, disable, and deletion;
@@ -382,15 +385,17 @@ window while it is off. Settings Back sits beside the sidebar collapse control;
 bare Escape goes back only outside inputs, shortcut recorders, menus and dialogs.
 Displays reports each capability's Controlled by source and rounds refresh rates
 with the precise value available on hover. Successful Restore displays a paused
-notification with Resume, after confirming Paused through the product API.
+banner with Resume, after confirming Paused through the product API.
 Diagnostics filters and searches only the validated tail of at most 250 entries
 already received through preload. Filtering does not change copied or downloaded
 logs. Details pretty-print valid JSON and preserve plain text. Clear logs uses a
 renderer confirmation dialog.
-Notification wording is derived from completed activation outcomes and
-distinguishes full, partial, deferred, failed, paused, resumed, retry, restore,
-and no-op results. Clicking a profile notification opens that profile in the app
-panel.
+Restoration and resume failures remain visible as Safety blocked in the app panel,
+mini panel, and tray status, with the existing retry actions. Background profile
+apply failures that leave display control Active, tray-command failures that do
+not change product state, and tray-refresh failures are log-only, with no separate
+status indicator. Issue [#97](https://github.com/designmatty/chromashift/issues/97)
+tracks their visibility.
 
 Display control has three persisted states: Active, Paused, and Safety blocked.
 Pause suspends new writes, waits for in-flight activation, restores every owned

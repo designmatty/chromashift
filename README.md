@@ -28,7 +28,7 @@ known limits.
 - Brightness, contrast, gamma, saturation, hue, and AMD color temperature where
   the active provider reports support
 - Automatic foreground-application matching and a permanent Default profile
-- App panel, non-activating mini panel, system tray, notifications, and global
+- App panel, non-activating mini panel, system tray, and global
   shortcuts
 - Pause, one-shot restore, emergency restore, preview rollback, and fail-closed
   recovery when baseline ownership is uncertain

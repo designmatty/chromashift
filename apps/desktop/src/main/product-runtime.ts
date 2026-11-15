@@ -34,10 +34,6 @@ import { ProductController } from '@main/product-controller.js'
 import { migrateLegacyProfileConfiguration } from '@main/profile-configuration-migration.js'
 import { AppDataProfileConfigurationStorage } from '@main/profile-configuration-storage.js'
 import {
-  ProfileNotificationController,
-  type ProductNotificationPort
-} from '@main/profile-notification-controller.js'
-import {
   EMERGENCY_RESTORE_ACCELERATOR,
   ShortcutController,
   type ShortcutRegistrationPort
@@ -89,7 +85,6 @@ export interface ProductRuntimePorts {
   }
   shell: {
     openWindow: () => void
-    openProfile: (profileId: string | null) => void
     openAppPanel: () => void
     openMiniPanel: () => void
     createTrayMenu: () => Promise<TrayMenuPort>
@@ -117,7 +112,6 @@ export interface ProductRuntimePorts {
       listener: (event: 'displayAdded' | 'displayRemoved' | 'displayMetricsChanged') => void
     ) => void
   }
-  notifications: ProductNotificationPort
 }
 
 /**
@@ -312,7 +306,7 @@ export class ProductRuntime {
   }
 
   async #configureProductLifecycle(): Promise<void> {
-    const { logger, settings, shell, dialogs, icons, system, notifications, configuration } =
+    const { logger, settings, shell, dialogs, icons, system, configuration } =
       this.ports
     const nativeClient = this.#nativeClient
     const gate = this.#nativeGate
@@ -439,16 +433,9 @@ export class ProductRuntime {
       () => gate.unavailableReason
     )
     this.#trayController = trayController
-    const profileNotifications = new ProfileNotificationController(
-      profileRepository,
-      () => settings.preferences.current(),
-      notifications,
-      (profileId) => shell.openProfile(profileId)
-    )
     this.#unsubscribeOutcomeRouter = attachActivationOutcomeRouter(
       automaticActivation,
       chromaShiftController,
-      profileNotifications,
       () => shell.broadcastProductState(),
       logger
     )

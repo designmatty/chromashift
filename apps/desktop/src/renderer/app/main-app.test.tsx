@@ -222,7 +222,6 @@ function setup(withLimits = true, Surface = MainApp) {
       launchBehavior: 'tray',
       closeBehavior: 'tray',
       theme: 'system',
-      notificationsEnabled: false,
       shortcutBindings: []
     },
     displays: [],
@@ -314,7 +313,6 @@ function setup(withLimits = true, Surface = MainApp) {
       }),
       onAppPanelNavigation: (listener: (view: AppPanelView) => void) =>
         navigation.subscribe(listener),
-      onAppPanelProfileSelection: () => undefined,
       onAppPanelClosed: vi.fn(),
       onAppPanelMinimized: () => undefined,
       onPanelClosing: () => () => undefined,

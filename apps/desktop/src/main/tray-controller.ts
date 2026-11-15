@@ -40,7 +40,6 @@ export interface TrayCommands {
 
 export interface TrayMenuPort {
   update(model: TrayReadModel, commands: TrayCommands): void
-  showError(title: string, message: string): void
   destroy(): void
 }
 
@@ -240,9 +239,5 @@ export class TrayController {
       title,
       ...details
     })
-    this.menu.showError(
-      title,
-      `${details.message}\n\nOpen ChromaShift for diagnostics, then retry.`
-    )
   }
 }

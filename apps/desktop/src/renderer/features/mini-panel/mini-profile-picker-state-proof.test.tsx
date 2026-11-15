@@ -30,7 +30,6 @@ function state(status: ProductState['chromaShift']['status'] = 'active'): Produc
       launchBehavior: 'app',
       closeBehavior: 'tray',
       theme: 'system',
-      notificationsEnabled: false,
       shortcutBindings: []
     },
     activation: { enabled: true, mode: { kind: 'automatic' }, currentTarget: null },

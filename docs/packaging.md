@@ -210,9 +210,8 @@ and display enumeration, captures a baseline, requests service shutdown, and
 checks the per-display restoration acknowledgement. It also starts the Electron
 app with isolated user data and invokes the shared restore-safe exit path. The
 installed-app path creates a disposable profile, dispatches its registered global
-shortcut, requires native notification delivery, physically clicks the newest
-card in Windows Notification Center, and verifies that the app panel routes to
-that profile. Finally, it silently installs, reinstalls over the same directory,
+shortcut, and verifies the manual selection and confirmed active profile through
+product state. Finally, it silently installs, reinstalls over the same directory,
 starts the installed app, uninstalls it while it is running, verifies that the
 process exits and the application directory and Start menu shortcut are removed,
 and verifies that the profile configuration survives.

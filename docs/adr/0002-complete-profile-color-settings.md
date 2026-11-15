@@ -22,5 +22,4 @@ and restoration.
 
 Schema version 3 completes legacy partial vectors with neutral values, removes
 `lastColorValues`, and clamps gamma to the brightness-dependent safety envelope.
-Migration changes are recorded in structured diagnostics without an in-app
-notification.
+Migration changes are recorded in structured diagnostics.
