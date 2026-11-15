@@ -1101,7 +1101,8 @@ $processId`
 }
 
 const compareOnly = globalThis.process.argv.includes('--compare-only')
-if (!compareOnly) await verifyLearnedGammaLimits({
+const capabilityLogOnly = globalThis.process.argv.includes('--capability-log-only')
+if (!compareOnly && !capabilityLogOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
   environment: Object.fromEntries(Object.entries(globalThis.process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
   reservePort, waitForDebuggerTarget, connectToDebugger, waitForExpression, hoverElement
@@ -1756,6 +1757,67 @@ async function runCompare() {
   )
 }
 
+// #102: a profile switch logs its decision, writes and outcome. The renderer's
+// state refreshes and each write's capability check must not log capabilities
+// again. The renderer's first getState already resolved every connected display.
+async function runCapabilityLog() {
+  const capabilityPattern = /"eventName":"DisplayCapabilityResolved"/g
+  const appliedPattern = /"eventName":"DisplaySettingApplied"/g
+  const profile = await evaluateRenderer(`(async () => {
+    const created = await window.chromaShift.createProfile('Capability log smoke')
+    if (!created.ok) throw new Error(created.error.message)
+    const saved = await window.chromaShift.saveProfile({
+      ...created.value,
+      displays: [{ displayId: ${JSON.stringify(guardedProductDisplayId)}, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 53 } }]
+    })
+    if (!saved.ok) throw new Error(saved.error.message)
+    return saved.value
+  })()`)
+  // Let startup activation and the save's broadcast settle before counting.
+  await delay(1_000)
+  const capabilityEntriesBefore = countLogMatches(capabilityPattern)
+  const appliedBefore = countLogMatches(appliedPattern)
+  const switches = 2
+  for (let round = 0; round < switches; round++) {
+    await evaluateRenderer(`(async () => {
+      const refresh = async () => {
+        for (let index = 0; index < 3; index++) {
+          const state = await window.chromaShift.getState()
+          if (!state.ok) throw new Error(state.error.message)
+        }
+      }
+      const activated = await window.chromaShift.activateProfile(${JSON.stringify(profile.id)})
+      if (!activated.ok) throw new Error(activated.error.message)
+      await refresh()
+      const automatic = await window.chromaShift.enableAutomatic()
+      if (!automatic.ok) throw new Error(automatic.error.message)
+      await refresh()
+    })()`)
+  }
+  await waitForLogCount(
+    appliedPattern,
+    appliedBefore + switches - 1,
+    'The capability-log smoke switches did not write the guarded display.'
+  )
+  // Diagnostics reach stdout asynchronously; give trailing entries time to land.
+  await delay(1_000)
+  const capabilityEntries = countLogMatches(capabilityPattern) - capabilityEntriesBefore
+  const applied = countLogMatches(appliedPattern) - appliedBefore
+  await evaluateRenderer(`(async () => {
+    const deleted = await window.chromaShift.deleteProfile(${JSON.stringify(profile.id)})
+    if (!deleted.ok) throw new Error(deleted.error.message)
+  })()`)
+  if (capabilityEntriesBefore === 0)
+    throw new Error('DisplayService never logged a first DisplayCapabilityResolved entry.')
+  if (capabilityEntries !== 0)
+    throw new Error(
+      `${switches * 2} profile switches logged ${capabilityEntries} DisplayCapabilityResolved entries; expected none after first resolution.`
+    )
+  globalThis.console.log(
+    `Capability-log smoke passed: ${switches * 2} switches, ${applied} display writes, no repeated DisplayCapabilityResolved entries.`
+  )
+}
+
 async function verifyAppComparison(
   savedCompareFingerprint,
   draftBrightness = 51,
@@ -2369,7 +2431,7 @@ async function runSmoke() {
   await loaded
 
   const ui = await waitForUi(debuggerClient)
-  if (!compareOnly) await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
+  if (!compareOnly && !capabilityLogOnly) await verifyCloseRetryGuidance({ desktopDirectory, screenshotDirectory, electronPath, environment })
   const productState = await debuggerClient.send('Runtime.evaluate', {
     expression: 'window.chromaShift.getState()',
     awaitPromise: true,
@@ -2385,6 +2447,11 @@ async function runSmoke() {
 
   if (compareOnly) {
     await runCompare()
+    return
+  }
+
+  if (capabilityLogOnly) {
+    await runCapabilityLog()
     return
   }
 
@@ -2406,6 +2473,8 @@ async function runSmoke() {
       'Product state did not recover after the baseline-free DisplayService crash.'
     )
   }
+
+  await runCapabilityLog()
 
   if (globalThis.process.argv.includes('--profile-reorder-only')) {
     await runProfileReorder()

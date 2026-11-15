@@ -17,6 +17,7 @@ internal sealed class CommandProcessor(
 {
     internal bool ShutdownRequested { get; private set; }
     private int _topologyGeneration;
+    private readonly CapabilityLogDeduplicator _capabilityLog = new();
 
     internal async Task ProcessLineAsync(string line)
     {
@@ -156,18 +157,21 @@ internal sealed class CommandProcessor(
                     var display = displays.List().SingleOrDefault(candidate => candidate.Id == displayId)
                         ?? throw new DisplayOperationException("DISPLAY_NOT_FOUND", $"Display not found: {displayId}");
                     var amdState = capabilities.GetAmdState(display);
-                    var resolvedCapabilities = capabilities.Get(display);
-                    await NativeLog.WriteAsync(new JsonObject
+                    var resolvedCapabilities = NativeJson.ToNode(capabilities.Get(display));
+                    if (_capabilityLog.ShouldLog(displayId, resolvedCapabilities))
                     {
-                        ["level"] = "information",
-                        ["eventName"] = "DisplayCapabilityResolved",
-                        ["displayId"] = displayId,
-                        ["capabilities"] = NativeJson.ToNode(resolvedCapabilities)
-                    });
+                        await NativeLog.WriteAsync(new JsonObject
+                        {
+                            ["level"] = "information",
+                            ["eventName"] = "DisplayCapabilityResolved",
+                            ["displayId"] = displayId,
+                            ["capabilities"] = resolvedCapabilities?.DeepClone()
+                        });
+                    }
                     await protocol.WriteSuccessAsync(request.Id!, new JsonObject
                     {
                         ["displayId"] = displayId,
-                        ["capabilities"] = NativeJson.ToNode(resolvedCapabilities),
+                        ["capabilities"] = resolvedCapabilities,
                         ["nativeState"] = NativeStateNode(capabilities.GetNvidiaState(display), amdState)
                     });
                     break;

@@ -4,6 +4,11 @@ Electron launches `ChromaShift.DisplayService.exe` as a child process. Requests 
 are UTF-8 newline-delimited JSON over stdin/stdout. Structured diagnostic logs use
 stderr and cannot corrupt the protocol stream. Protocol version: `2`.
 
+Electron reads `display.capabilities` before each write and caches product
+state reads until a topology transition, helper exit, or helper recovery. The
+helper logs `DisplayCapabilityResolved` only for a display's first result in the
+process and when that result changes, such as an HDR transition.
+
 ## Lifecycle
 
 The service first emits:

@@ -32,6 +32,8 @@ export interface NativeEventRouterPorts {
   recovery: () => NativeEventRecoveryPort | undefined
   isExiting: () => boolean
   broadcastProductState: () => void
+  /** Drops cached displays and capabilities that the exited helper reported. */
+  invalidateHardwareState?: () => void
   logger: StructuredLogger
 }
 
@@ -67,6 +69,7 @@ export function attachNativeEventRouter(
     })
   })
   client.on('exit', () => {
+    ports.invalidateHardwareState?.()
     const recovery = ports.recovery()
     const handling =
       recovery === undefined

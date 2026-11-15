@@ -8,6 +8,7 @@
 | `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                               | Interactive Windows hardware   |
 | `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                         | Interactive Windows desktop    |
 | `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration          | Interactive Windows desktop    |
+| `npm run smoke:capability-log`          | Manual/Automatic switches with state refreshes write the display without repeated `DisplayCapabilityResolved` entries        | Interactive Windows desktop    |
 | `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                  | Interactive Windows desktop    |
 | `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                        | Interactive Windows desktop    |
 | `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                  | Windows                        |
@@ -346,6 +347,14 @@ and subtle surface. Both themes retain a clearly pressed state. The shared steps
 also run in the full suite. The orchestrator reports `smoke:compare` passed at
 5a2ebbe in the app and mini panel, in dark and light. No smoke was run for the
 subsequent focus-ring fix.
+
+`mise.exe exec -- npm run smoke:capability-log` builds and runs only the #102
+check (`--capability-log-only`). It saves a mild profile for the guarded display,
+then switches Manual and Automatic twice with three `getState()` refreshes after
+each switch. The helper must log `DisplayCapabilityResolved` for the first
+resolution of each display, then not again while capabilities stay unchanged,
+while the switches still write the display. The same check runs early in the full
+suite. HDR or topology changes during the run log new entries and fail it.
 
 ### Owner checks for panel close and handoff
 
