@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Microsoft Store submission automation after GitHub release publication, with
+  account validation and a dry run. Automatic submissions require initial Store
+  setup and explicit enablement.
+
 ## [0.1.0-preview.15] - 2026-11-07
 
 ### Added
