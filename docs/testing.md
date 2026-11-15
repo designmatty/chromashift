@@ -308,7 +308,7 @@ not establish hardware failure recovery.
 
 ### Owner checks for Hold to compare
 
-For #80, main-owned compare passed on hardware at ec829de in both panels and
+For #80, main-owned compare passed on hardware at 5a2ebbe in both panels and
 both themes. This fix round has deterministic coverage only. On a
 supporting SDR display with a restoration guard, edit a
 saved profile, then hold `Hold to compare` with the mouse, Space and Enter.
@@ -345,7 +345,9 @@ and commits during a hold, stable header height and unobscured slider focus,
 display-tab-bar holds from a scrolled pane, and mini pointer holds with
 unchanged panel height. Mini compare must match Update profile's size, pill shape
 and subtle surface. Both themes retain a clearly pressed state. The shared steps
-also run in the full suite. No smoke was run for this fix round.
+also run in the full suite. The orchestrator reports `smoke:compare` passed at
+5a2ebbe in the app and mini panel, in dark and light. No smoke was run for the
+subsequent focus-ring fix.
 
 ### Owner checks for panel close and handoff
 

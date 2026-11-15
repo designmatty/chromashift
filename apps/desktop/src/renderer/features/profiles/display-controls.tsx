@@ -60,13 +60,13 @@ export function DisplayControls({
     >
       <Flex
         data-part="display-tab-bar"
-        align="center"
+        align="flex-start"
         gap="3"
-        p="1"
+        pe="1"
         bg={{ base: 'bg.muted', _dark: 'bg' }}
         rounded="md"
       >
-        <Tabs.List flex="1" minW="0" overflowX="auto" overflowY="hidden" flexWrap="nowrap">
+        <Tabs.List flex="1" minW="0" p="1" overflowX="auto" overflowY="hidden" flexWrap="nowrap">
           {rows.map((row) => (
             <Tabs.Trigger
               key={row.displayId}
@@ -96,7 +96,11 @@ export function DisplayControls({
           ))}
           <Tabs.Indicator border={'1px solid {color.red.500}'} />
         </Tabs.List>
-        {compareButton && <Box flexShrink="0">{compareButton}</Box>}
+        {compareButton && (
+          <Flex flexShrink="0" mt="1" h="var(--tabs-height)" align="center">
+            {compareButton}
+          </Flex>
+        )}
       </Flex>
       {rows.map((row) => {
         const color = row.target?.color ?? createNeutralColorSettings()

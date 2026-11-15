@@ -1,6 +1,6 @@
 import { ChakraProvider, Flex } from '@chakra-ui/react'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -310,6 +310,145 @@ describe('profile detail', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   }, 20000)
+
+  // Based on the RR96-4 layout proof. Only hidden offscreen Electron windows
+  // render the real Chakra styles; no helper or visible desktop is involved.
+  it('keeps first and last tab focus rings inside the scroller and compare aligned in both themes', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'chromashift-tab-focus-'))
+    try {
+      const fixtures: string[] = []
+      for (const theme of ['light', 'dark']) {
+        for (const count of [1, 8]) {
+          const name = theme + '-' + count
+          fixtures.push(name)
+          const body = renderToStaticMarkup(
+            <ChakraProvider value={system}>
+              <Flex
+                as="main"
+                data-part="main-panel"
+                flexDir="column"
+                h="420px"
+                w="720px"
+                p="20px"
+                overflow="auto"
+                bg={{ base: 'bg', _dark: 'bg.muted' }}
+                dangerouslySetInnerHTML={{ __html: render('game', true, [], 'draft', count) }}
+              />
+            </ChakraProvider>
+          )
+          writeFileSync(
+            join(directory, name + '.html'),
+            `<!doctype html><html class="${theme}" style="color-scheme:${theme}"><body style="margin:0">${body}`
+          )
+        }
+      }
+      const script = join(directory, 'probe.cjs')
+      writeFileSync(
+        script,
+        `
+        const { app, BrowserWindow } = require('electron')
+        const fs = require('node:fs'), path = require('node:path')
+        app.disableHardwareAcceleration()
+        app.setPath('userData', ${JSON.stringify(directory)})
+        app.whenReady().then(async () => {
+          const results = {}; app.on('window-all-closed', () => undefined)
+          try {
+            for (const name of ${JSON.stringify(fixtures)}) {
+              const win = new BrowserWindow({ show: false, width: 760, height: 460,
+                webPreferences: { offscreen: true } })
+              await win.loadFile(path.join(${JSON.stringify(directory)}, name + '.html'))
+              await win.webContents.executeJavaScript(${JSON.stringify(`(() => {
+                const list = document.querySelector('[data-part="display-tab-bar"] [role="tablist"]')
+                const pre = document.createElement('button')
+                pre.style.cssText = 'position:fixed;left:-100px'
+                list.parentElement.before(pre); pre.focus()
+              })()`)})
+              win.webContents.focus()
+              win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' })
+              win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' })
+              await new Promise((resolve) => setTimeout(resolve, 100))
+              results[name] = await win.webContents.executeJavaScript(${JSON.stringify(`(() => {
+                const bar = document.querySelector('[data-part="display-tab-bar"]')
+                const list = bar.querySelector('[role="tablist"]')
+                const tabs = [...list.querySelectorAll('[role="tab"]')]
+                if (document.activeElement !== tabs[0]) throw new Error('Tab did not reach the first display tab')
+                const compare = bar.querySelector('[aria-label="Hold to compare with saved"]')
+                const first = tabs[0].getBoundingClientRect(), button = compare.getBoundingClientRect()
+                const before = button.left
+                // :focus-visible does not match in hidden windows; use Chakra's equivalent attribute.
+                const rings = [tabs[0], tabs[tabs.length - 1]].map((tab, index) => {
+                  tab.focus(); tab.setAttribute('data-focus-visible', '')
+                  list.scrollLeft = index === 0 ? 0 : list.scrollWidth
+                  const style = getComputedStyle(tab)
+                  const ring = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset || '0')
+                  const l = list.getBoundingClientRect(), t = tab.getBoundingClientRect()
+                  return {
+                    shown: style.outlineStyle !== 'none' && ring > 0,
+                    top: t.top - ring < l.top,
+                    bottom: t.bottom + ring > l.top + list.clientHeight,
+                    left: t.left - ring < l.left,
+                    right: t.right + ring > l.left + list.clientWidth
+                  }
+                })
+                const b = bar.getBoundingClientRect(), after = compare.getBoundingClientRect()
+                return {
+                  rings, padding: getComputedStyle(list).padding,
+                  overflowing: list.scrollWidth > list.clientWidth,
+                  compareOffset: Math.abs((first.top + first.bottom - button.top - button.bottom) / 2),
+                  compareOutsideList: !list.contains(compare),
+                  compareStaysVisible: after.left === before && after.left >= b.left && after.right <= b.right
+                }
+              })()`)})
+              win.destroy()
+            }
+            fs.writeFileSync(path.join(${JSON.stringify(directory)}, 'result.json'), JSON.stringify(results))
+            app.quit()
+          } catch (error) { console.error(error); app.exit(1) }
+        })
+      `
+      )
+      const electron = createRequire(import.meta.url)('electron') as string
+      const env = { ...process.env }
+      delete env.ELECTRON_RUN_AS_NODE
+      const result = spawnSync(electron, [script], { encoding: 'utf8', timeout: 30000, env })
+      expect(result.error).toBeUndefined()
+      expect(result.status, result.stderr || result.stdout).toBe(0)
+      const results = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8')) as Record<
+        string,
+        {
+          rings: Array<{
+            shown: boolean
+            top: boolean
+            bottom: boolean
+            left: boolean
+            right: boolean
+          }>
+          padding: string
+          overflowing: boolean
+          compareOffset: number
+          compareOutsideList: boolean
+          compareStaysVisible: boolean
+        }
+      >
+      for (const [name, item] of Object.entries(results)) {
+        expect(item.padding, name).toBe('4px')
+        expect(item.overflowing, name).toBe(name.endsWith('-8'))
+        expect(item.compareOffset, name).toBeLessThan(1)
+        expect(item.compareOutsideList, name).toBe(true)
+        expect(item.compareStaysVisible, name).toBe(true)
+        for (const ring of item.rings)
+          expect(ring, name).toEqual({
+            shown: true,
+            top: false,
+            bottom: false,
+            left: false,
+            right: false
+          })
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 40000)
 
   it('keeps disabled control rows without a hint for a missing saved target', () => {
     const html = render('game', true, [], 'saved-missing')
