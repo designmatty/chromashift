@@ -1852,7 +1852,21 @@ async function verifyAppComparison(
           })()`,
           returnByValue: true
         })
-        if (!bounds.result.value) throw new Error('The Hold to compare button was missing.')
+        if (!bounds.result.value) {
+          // Report the geometry, so a failure says which condition missed.
+          const detail = await evaluateRenderer(`JSON.stringify((() => {
+            const button = ${compareButton}
+            const pane = document.querySelector('[data-part="main-panel"]')
+            const header = document.querySelector('[data-part="profile-detail"] > header')
+            return {
+              button: button ? button.getBoundingClientRect().toJSON() : null,
+              header: header?.getBoundingClientRect().toJSON(),
+              viewport: pane?.getBoundingClientRect().toJSON(),
+              scrollTop: pane?.scrollTop, scrollHeight: pane?.scrollHeight, clientHeight: pane?.clientHeight
+            }
+          })())`)
+          throw new Error(`The Hold to compare button was missing or obscured: ${detail}`)
+        }
         await debuggerClient.send('Input.dispatchMouseEvent', {
           type: 'mousePressed',
           button: 'left',
