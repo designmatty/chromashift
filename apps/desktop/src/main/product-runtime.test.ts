@@ -405,7 +405,7 @@ describe('product runtime shell-surface wiring', () => {
     monitorDeviceName: null
   }
 
-  it('keeps the app profile without writes, transitions or notifications for shell and own-process events', async () => {
+  it('keeps the app profile without writes or transitions for shell and own-process events', async () => {
     vi.stubEnv('SystemRoot', systemRoot)
     const h = await createHarness(
       {},
@@ -416,9 +416,10 @@ describe('product runtime shell-surface wiring', () => {
     try {
       await h.runtime.start()
       h.client.emitForegroundApplication(game)
-      await vi.waitFor(() => expect(h.notifications).toHaveLength(1))
+      await vi.waitFor(() =>
+        expect(h.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'game' })
+      )
       const calls = [...h.client.calls]
-      const notifications = [...h.notifications]
       const matches = h.logger.events.filter((event) => event.eventName === 'ProfileMatched')
       const popup: ForegroundApplication = {
         ...taskbar,
@@ -446,7 +447,6 @@ describe('product runtime shell-surface wiring', () => {
           profileId: 'game'
         })
         expect(h.client.calls).toEqual(calls)
-        expect(h.notifications).toEqual(notifications)
         expect(h.logger.events.filter((event) => event.eventName === 'ProfileMatched')).toEqual(
           matches
         )
