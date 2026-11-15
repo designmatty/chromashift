@@ -103,6 +103,18 @@ Each rule stores an executable filename and may store a preferred full path.
 - Exact path matches outrank filename-only matches; ties preserve profile order.
 - Disabled profiles never match.
 
+Windows notification popups and Notification Center (`ShellExperienceHost.exe`),
+Start (`StartMenuExperienceHost.exe`), Search (`SearchHost.exe`), and Quick Settings
+(`ShellHost.exe`) keep the current profile, as do ChromaShift's own windows.
+These hosts are recognized by their exact installation paths under `%SystemRoot%`.
+Windows `explorer.exe` is ignored only for `Shell_TrayWnd`,
+`Shell_SecondaryTrayWnd`, `NotifyIconOverflowWindow`, and
+`TopLevelWindowForOverflowXamlIsland`. Clicking the taskbar, tray, Start, Search,
+Quick Settings, or Notification Center keeps the current profile. File Explorer
+(`CabinetWClass`), the desktop (`Progman`, `WorkerW`), and Explorer events without
+a window class remain normal, matchable applications. Ignored events are logged
+as `ForegroundApplicationIgnored` with their reason and available window class.
+
 ## Activation
 
 `selectActivation` implements this precedence:

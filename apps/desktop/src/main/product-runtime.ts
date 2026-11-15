@@ -11,6 +11,7 @@ import type { ChromaShiftIntent } from '@main/app-settings.js'
 import { attachActivationOutcomeRouter } from '@main/activation-outcome-router.js'
 import { applicationFriendlyName } from '@main/application-friendly-name.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { isShellSurface } from '@main/shell-surface.js'
 import { ChromaShiftController } from '@main/chroma-shift-controller.js'
 import { DisplayTransitionController } from '@main/display-transition-controller.js'
 import { EmergencyRestoreController } from '@main/emergency-restore-controller.js'
@@ -204,7 +205,12 @@ export class ProductRuntime {
       this.#profileRepository,
       coordinator,
       logger,
-      (application) => application?.pid === process.pid
+      (application) =>
+        application.pid === process.pid
+          ? 'ownProcess'
+          : isShellSurface(application, process.env.SystemRoot)
+            ? 'windowsShellSurface'
+            : false
     )
     nativeClient.on('exit', () => {
       gate.disconnected()

@@ -69,7 +69,7 @@ version change.
 | `baseline.capture`         | `displayId`             | Idempotently captures all controllable provider state; refuses capture while HDR is active                                                                                       |
 | `baseline.restore`         | `displayId`             | Alias of `display.restore`                                                                                                                                                       |
 | `baseline.restoreAll`      | none                    | Attempts every captured display, including HDR displays, and returns per-display results; failed restores retain their captured baseline for retry                               |
-| `foreground.current`       | none                    | Current PID, executable/path, title, and transient monitor source                                                                                                                |
+| `foreground.current`       | none                    | Current PID, executable/path, title, optional window class, and transient monitor source                                                                                         |
 | `service.shutdown`         | none                    | Restores connected baselines, returns disconnected entries as `reason: "displayDisconnected", discarded: true`, acknowledges, and exits; other restore failures remain retryable |
 
 `display.apply.settings` accepts optional `brightness`, `contrast`, `gamma`,
@@ -118,8 +118,11 @@ requires independent restoration.
 
 `foregroundApplicationChanged` originates from an out-of-context
 `EVENT_SYSTEM_FOREGROUND` hook. It carries PID, executable filename, executable
-path when accessible, window title, and transient GDI monitor source. Matching is
-not performed in the native helper.
+path when accessible, window title, optional `windowClass` from `GetClassNameW`,
+and transient GDI monitor source. `foreground.current` and `applications.list`
+use the same application fields. An unavailable class is omitted; older helpers
+without this field still parse in TypeScript. Matching and shell-window filtering
+are not performed in the native helper.
 
 `displayTopologyChanged` originates from the Windows display-settings event and
 is only a refresh signal. Electron debounces it with screen and power events;

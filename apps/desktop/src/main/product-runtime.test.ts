@@ -387,6 +387,141 @@ it('reports invalid learned-limit configuration before any automatic display wri
   }
 })
 
+describe('product runtime shell-surface wiring', () => {
+  const systemRoot = 'D:\\Windows'
+  const taskbar: ForegroundApplication = {
+    pid: 7,
+    executable: 'explorer.exe',
+    path: `${systemRoot}\\Explorer.EXE`,
+    title: '',
+    monitorDeviceName: null,
+    windowClass: 'Shell_TrayWnd'
+  }
+  const game: ForegroundApplication = {
+    pid: 42,
+    executable: 'game.exe',
+    path: 'E:\\Games\\game.exe',
+    title: 'Game',
+    monitorDeviceName: null
+  }
+
+  it('keeps the app profile without writes or transitions for shell and own-process events', async () => {
+    vi.stubEnv('SystemRoot', systemRoot)
+    const h = await createHarness(
+      {},
+      {
+        profiles: [reorderProfile('game')]
+      }
+    )
+    try {
+      await h.runtime.start()
+      h.client.emitForegroundApplication(game)
+      await vi.waitFor(() =>
+        expect(h.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'game' })
+      )
+      const calls = [...h.client.calls]
+      const matches = h.logger.events.filter((event) => event.eventName === 'ProfileMatched')
+      const popup: ForegroundApplication = {
+        ...taskbar,
+        executable: 'ShellExperienceHost.exe',
+        path: `${systemRoot}\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe`,
+        title: 'New notification',
+        windowClass: undefined
+      }
+      for (const [application, reason] of [
+        [taskbar, 'windowsShellSurface'],
+        [popup, 'windowsShellSurface'],
+        [{ ...taskbar, pid: process.pid }, 'ownProcess'],
+        [{ ...game, pid: process.pid }, 'ownProcess']
+      ] as const) {
+        h.client.emitForegroundApplication(application)
+        expect(h.logger.events.at(-1)).toMatchObject({
+          eventName: 'ForegroundApplicationIgnored',
+          pid: application.pid,
+          path: application.path,
+          windowClass: application.windowClass,
+          reason
+        })
+        expect((await h.runtime.productController!.getState()).activation.currentTarget).toEqual({
+          kind: 'profile',
+          profileId: 'game'
+        })
+        expect(h.client.calls).toEqual(calls)
+        expect(h.logger.events.filter((event) => event.eventName === 'ProfileMatched')).toEqual(
+          matches
+        )
+      }
+
+      // A real File Explorer window still resolves normally, with its class in diagnostics.
+      h.client.emitForegroundApplication({ ...taskbar, windowClass: 'CabinetWClass' })
+      await vi.waitFor(() =>
+        expect(h.intent().intendedTarget).toEqual({
+          kind: 'profile',
+          profileId: 'default'
+        })
+      )
+      expect(h.logger.events).toContainEqual(
+        expect.objectContaining({
+          eventName: 'ProfileMatched',
+          path: taskbar.path,
+          windowClass: 'CabinetWClass'
+        })
+      )
+      expect(h.client.calls.length).toBeGreaterThan(calls.length)
+    } finally {
+      h.runtime.dispose()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    ['shell', taskbar],
+    ['own process', { ...taskbar, pid: process.pid }]
+  ] as const)(
+    'filters a %s startup snapshot and keeps the remembered app on tray Resume',
+    async (_kind, snapshot) => {
+      vi.stubEnv('SystemRoot', systemRoot)
+      const h = await createHarness(
+        {},
+        {
+          profiles: [
+            reorderProfile('game'),
+            {
+              ...reorderProfile('explorer'),
+              applications: [{ executableName: 'explorer.exe' }]
+            }
+          ],
+          foregroundApplication: snapshot
+        }
+      )
+      try {
+        await h.runtime.start()
+        expect((await h.runtime.productController!.getState()).activation.currentTarget).toEqual({
+          kind: 'profile',
+          profileId: 'default'
+        })
+        h.client.emitForegroundApplication(game)
+        await vi.waitFor(() =>
+          expect(h.intent().intendedTarget).toEqual({
+            kind: 'profile',
+            profileId: 'game'
+          })
+        )
+        await h.runtime.productController!.controlChromaShift('pause')
+        await h.runtime.productController!.controlChromaShift('resume')
+        expect(h.intent().chromaShiftStatus).toBe('active')
+        expect((await h.runtime.productController!.getState()).activation.currentTarget).toEqual({
+          kind: 'profile',
+          profileId: 'game'
+        })
+      } finally {
+        h.runtime.dispose()
+        vi.unstubAllEnvs()
+      }
+    }
+  )
+})
+
 describe('product runtime startup wiring', () => {
   it('saves the main-owned override draft before restore-safe quit without a renderer', async () => {
     const decide = vi.fn(async () => 'update' as const)
@@ -2548,6 +2683,55 @@ describe('offline product lifecycle', () => {
       await expect(h.runtime.shutdownCoordinator!.request('tray')).resolves.toBe(true)
     } finally {
       h.runtime.dispose()
+    }
+  })
+})
+
+// Regression from review-99: a helper recovery while Paused reads the taskbar as
+// the foreground. The remembered app must survive, so Resume returns to its profile.
+describe('native recovery while paused with a shell surface focused', () => {
+  const systemRoot = 'D:\\Windows'
+  const taskbar: ForegroundApplication = {
+    pid: 7,
+    executable: 'explorer.exe',
+    path: `${systemRoot}\\Explorer.EXE`,
+    title: '',
+    monitorDeviceName: null,
+    windowClass: 'Shell_TrayWnd'
+  }
+  const game: ForegroundApplication = {
+    pid: 42,
+    executable: 'game.exe',
+    path: 'E:\\Games\\game.exe',
+    title: 'Game',
+    monitorDeviceName: null
+  }
+
+  it('keeps the remembered game across recovery, so Resume returns to its profile', async () => {
+    vi.stubEnv('SystemRoot', systemRoot)
+    const h = await createHarness({}, { profiles: [reorderProfile('game')] })
+    try {
+      await h.runtime.start()
+      h.client.emitForegroundApplication(game)
+      await vi.waitFor(() =>
+        expect(h.intent().intendedTarget).toEqual({ kind: 'profile', profileId: 'game' })
+      )
+      await h.runtime.productController!.controlChromaShift('pause')
+      expect(h.intent().chromaShiftStatus).toBe('paused')
+      h.client.foregroundApplication = taskbar
+      h.client.emitExit()
+      await vi.waitFor(() => expect(h.logger.has('NativeServiceRecovered')).toBe(true), {
+        timeout: 3_000
+      })
+      await h.runtime.productController!.controlChromaShift('resume')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect((await h.runtime.productController!.getState()).activation.currentTarget).toEqual({
+        kind: 'profile',
+        profileId: 'game'
+      })
+    } finally {
+      h.runtime.dispose()
+      vi.unstubAllEnvs()
     }
   })
 })

@@ -82,7 +82,8 @@ internal sealed class ForegroundApplicationService
             executable,
             path,
             GetWindowTitle(window),
-            GetMonitorDeviceName(window));
+            GetMonitorDeviceName(window),
+            GetWindowClass(window));
     }
 
     private static string? GetProcessPath(uint processId)
@@ -119,6 +120,13 @@ internal sealed class ForegroundApplicationService
         {
             return null;
         }
+    }
+
+    private static string? GetWindowClass(IntPtr window)
+    {
+        // Windows limits a window class name to 256 characters including null.
+        var name = new StringBuilder(256);
+        return GetClassName(window, name, name.Capacity) > 0 ? name.ToString() : null;
     }
 
     private static string GetWindowTitle(IntPtr window)
@@ -187,6 +195,9 @@ internal sealed class ForegroundApplicationService
 
     [DllImport("user32.dll", EntryPoint = "GetWindowTextW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int GetWindowText(IntPtr window, StringBuilder text, int maximumCount);
+
+    [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maximumCount);
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
