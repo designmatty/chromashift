@@ -39,7 +39,7 @@ export class AutomaticActivationController {
     private readonly logger: StructuredLogger,
     private readonly ignoreApplication: (
       application: NativeForegroundApplication
-    ) => boolean = () => false
+    ) => boolean | string = () => false
   ) {}
 
   public get enabled(): boolean {
@@ -172,12 +172,16 @@ export class AutomaticActivationController {
       return Promise.resolve()
     }
 
-    if (this.ignoreApplication(parsed.data.application)) {
+    const ignored = this.ignoreApplication(parsed.data.application)
+    if (ignored) {
       this.logger.write({
         level: 'information',
         eventName: 'ForegroundApplicationIgnored',
         pid: parsed.data.application.pid,
-        executable: parsed.data.application.executable
+        executable: parsed.data.application.executable,
+        path: parsed.data.application.path,
+        windowClass: parsed.data.application.windowClass,
+        reason: typeof ignored === 'string' ? ignored : 'applicationPolicy'
       })
       return Promise.resolve()
     }

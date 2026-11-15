@@ -74,6 +74,16 @@ function activation(
 }
 
 describe('ElectronNotificationPort', () => {
+  it('logs the exact toast options supplied to Electron with its show event', () => {
+    const { notification, options, write } = setup()
+    notification.emit('show')
+    expect(write).toHaveBeenCalledWith({
+      level: 'information',
+      eventName: 'ProfileNotificationShown',
+      title: 'Gaming activated',
+      toastXml: options.toastXml
+    })
+  })
   it('handles the Windows Close instance action without opening a window or profile, even with a stray click', () => {
     const { notification, openProfile, onClick } = setup()
     notification.emit('action', { actionIndex: 0 }, 0)

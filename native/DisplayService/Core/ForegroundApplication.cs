@@ -5,4 +5,5 @@ internal sealed record ForegroundApplication(
     string? Executable,
     string? Path,
     string Title,
-    string? MonitorDeviceName);
+    string? MonitorDeviceName,
+    string? WindowClass = null);

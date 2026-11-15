@@ -10,6 +10,9 @@ import type { NativeEvent } from '@chromashift/native-client'
 import { describe, expect, it, vi } from 'vitest'
 import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
+import { isShellSurface } from '@main/shell-surface.js'
+import { ProfileNotificationController } from '@main/profile-notification-controller.js'
+import { defaultUserPreferences } from '@main/app-settings.js'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
 import { activationStateSchema } from '@shared/product-api.js'
 import { FakeNativeDisplayPort as FakeNativeActivationPort } from '@main/testing/fake-native-display.js'
@@ -695,6 +698,76 @@ function foregroundEvent(executable: string, pid = 42): NativeEvent {
 }
 
 describe('AutomaticActivationController', () => {
+  it('keeps the application profile through notification and taskbar focus without a transition or notification', async () => {
+    const native = new FakeNativeActivationPort()
+    const logger = new RecordingLogger()
+    const repo = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const controller = new AutomaticActivationController(
+      repo,
+      new ActivationCoordinator(repo, native, logger),
+      logger,
+      (foreground) => (isShellSurface(foreground, 'C:\\Windows') ? 'windowsShellSurface' : false)
+    )
+    const show = vi.fn()
+    const notifications = new ProfileNotificationController(
+      repo,
+      () => ({ ...defaultUserPreferences, notificationsEnabled: true }),
+      { isSupported: () => true, show },
+      () => undefined
+    )
+    const notify = vi.fn((outcome) => notifications.handle(outcome))
+    controller.subscribeOutcomes(notify)
+    await controller.start(application('Browser.exe'))
+    await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
+    await Promise.all(notify.mock.results.map((result) => result.value))
+    expect(show).toHaveBeenCalledOnce()
+    const calls = [...native.calls]
+    const outcomeCount = notify.mock.calls.length
+    const matchCount = logger.events.filter((event) => event.eventName === 'ProfileMatched').length
+    for (const [executable, path, windowClass] of [
+      [
+        'ShellExperienceHost.exe',
+        'C:\\Windows\\SystemApps\\ShellExperienceHost_cw5n1h2txyewy\\ShellExperienceHost.exe',
+        'Windows.UI.Core.CoreWindow'
+      ],
+      ['explorer.exe', 'C:\\Windows\\explorer.exe', 'Shell_TrayWnd'],
+      ['explorer.exe', 'C:\\Windows\\explorer.exe', 'TopLevelWindowForOverflowXamlIsland']
+    ]) {
+      await controller.handleNativeEvent({
+        event: 'foregroundApplicationChanged',
+        data: {
+          application: {
+            pid: 42,
+            executable,
+            path,
+            windowClass,
+            title: 'New notification',
+            monitorDeviceName: null
+          }
+        }
+      })
+    }
+    expect(controller.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-a' })
+    expect(native.calls).toEqual(calls)
+    expect(notify).toHaveBeenCalledTimes(outcomeCount)
+    expect(show).toHaveBeenCalledOnce()
+    expect(logger.events.filter((event) => event.eventName === 'ProfileMatched')).toHaveLength(
+      matchCount
+    )
+    expect(
+      logger.events.filter((event) => event.eventName === 'ForegroundApplicationIgnored')
+    ).toHaveLength(3)
+    expect(logger.events).toContainEqual(
+      expect.objectContaining({
+        eventName: 'ForegroundApplicationIgnored',
+        reason: 'windowsShellSurface',
+        windowClass: 'Shell_TrayWnd'
+      })
+    )
+    // Ignoring the shell must also preserve the remembered app for a later reapply.
+    await controller.refreshAfterConfigurationChange()
+    expect(controller.state.currentTarget).toEqual({ kind: 'profile', profileId: 'game-a' })
+  })
   it.each([
     { kind: 'manual', surface: 'panel' },
     { kind: 'automatic', surface: 'panel' },

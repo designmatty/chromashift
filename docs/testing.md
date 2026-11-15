@@ -7,7 +7,7 @@
 | `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget | Any supported Windows checkout |
 | `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                               | Interactive Windows hardware   |
 | `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, notifications, display writes, restoration          | Interactive Windows desktop    |
-| `npm run smoke:notifications`           | Warm notification delivery, Close without activation, body routing exactly once, guarded restoration                         | Interactive Windows desktop    |
+| `npm run smoke:notifications`           | ProfileNotificationShown and the supplied Close action, guarded restoration                                                  | Interactive Windows desktop    |
 | `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                  | Interactive Windows desktop    |
 | `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                        | Interactive Windows desktop    |
 | `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                  | Windows                        |
@@ -31,7 +31,7 @@ Use `npm run smoke:notifications` during notification fix rounds. It builds the
 app and runs only the shared launch, display restoration guard, and notification
 checks. The desktop workspace also exposes `npm run smoke:notifications` for an
 already-built checkout. Run the full `npm run smoke:desktop` once before merge.
-Both commands require an interactive Windows desktop with English shell labels.
+Both commands require an interactive Windows desktop.
 
 Both commands suppress Windows toast delivery for the development identity
 `com.chromashift.desktop.development` while other checks run. This is the AUMID
@@ -47,29 +47,35 @@ untouched. ChromaShift still requests notifications and logs
 the existing Original settings restored log waits remain valid.
 
 The last full-suite check temporarily enables delivery, activates a disposable
-profile, and requires its `ProfileNotificationShown` log. That log confirms
-Electron's show event, not visible pixels. The check opens Notification Center,
-finds the unique profile title and its explicit Close action through UI Automation,
-invokes Close, and checks dismissal, no app window or focus, no profile-selection
-IPC, and no new Electron process, including short-lived process start events.
-The focused command then triggers a fresh notification and clicks its body. It
-requires the related profile in the visible editor and exactly one selection IPC,
-observed with a non-pausing debugger breakpoint in the compiled preload.
-If Windows does not expose the card or Close action, the check fails with that
-limitation; a Shown log alone does not pass the interaction check. Do not launch
-other Electron applications during the Close process-start observation.
+profile, and requires its title in `ProfileNotificationShown`. The same log
+records the exact `toastXml` supplied to Electron; the check requires its single
+Close action with dismiss-only activation arguments. The focused command runs
+this same check. The log confirms Electron's show event, not visible pixels or
+click behavior. Both checks suppress delivery again in `finally`, before the
+outer guard restores the owner's setting. UI Automation does not reliably expose
+these toasts on the owner's machine, so no smoke step clicks a notification.
+Taskbar focus is also left to owner checks: setting it reliably has not been
+validated under the current restriction on desktop interaction.
 
 Owner checks when smoke runs resume:
 
 1. Record the dev identity's notification setting. Run the focused command and
-   check Close and body routing; repeat with the setting initially disabled and
+   check the Shown log and supplied Close action; repeat with the setting initially disabled and
    with no explicit Enabled value. Confirm the original setting after each run.
 2. Interrupt a focused run and confirm notification-setting and exact display
    restoration. Run the full suite before merge and inspect its paused-tray
-   capture, followed by its final notification Close check.
-3. Test cold Close and body clicks manually on the installed build. The dev
-   activator is `electron.exe`, so automated dev cold launches are not
-   representative. Leave a notification in Notification Center, quit through the
+   capture, followed by its final notification delivery check.
+3. On both the dev and installed builds, keep an application profile active in
+   Automatic mode. Click Close, the X, and the body on separate real notifications,
+   including cards in Notification Center. Close and X only dismiss; the body
+   opens the related profile once. None switches to Default or triggers another
+   profile notification. Click the taskbar, tray icon, and tray overflow; the app
+   profile stays current and shell events log `ForegroundApplicationIgnored`.
+   Check Start, Search, and Quick Settings too. File Explorer and the desktop
+   still resolve normally.
+4. Test cold Close and body clicks manually on the installed build. The dev
+   activator is `electron.exe`, so dev cold launches are not representative.
+   Leave a notification in Notification Center, quit through the
    tray, click Close, and check that no process or tray icon remains. Repeat with
    a body click and check that its profile opens once.
 

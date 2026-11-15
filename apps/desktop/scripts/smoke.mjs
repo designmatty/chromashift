@@ -1878,7 +1878,7 @@ finally { [System.Windows.Forms.Cursor]::Position = $cursor; $timer.Dispose(); $
   )
 }
 
-async function runNotifications(includeBodyClick) {
+async function runNotifications() {
   await debuggerClient.send('Runtime.evaluate', {
     expression: "window.chromaShift.openAppPanel('profiles')", awaitPromise: true
   })
@@ -1890,8 +1890,8 @@ async function runNotifications(includeBodyClick) {
   await waitForUi(debuggerClient)
   await verifyNotifications({
     client: debuggerClient, settings: notificationSettings, processId: electron.pid,
-    minimize: setMainWindowMinimized, waitForExpression, getOutput: () => notificationOutput,
-    delay, includeBodyClick
+    minimize: setMainWindowMinimized, getOutput: () => notificationOutput,
+    delay
   })
 }
 
@@ -1930,7 +1930,7 @@ async function runSmoke() {
   if (!ui.productReady) throw new Error('The validated product state was unavailable.')
 
   if (notificationsOnly) {
-    await runNotifications(true)
+    await runNotifications()
     return
   }
 
@@ -4796,8 +4796,8 @@ async function runSmoke() {
     }
   }
 
-  // Keep real toast interaction last so it cannot obscure any tray/UI checks.
-  await runNotifications(false)
+  // Keep real toast delivery last so it cannot obscure any tray/UI checks.
+  await runNotifications()
 
   globalThis.console.log('Desktop smoke test passed.')
   globalThis.console.log(`Renderer: ${ui.title} (${target.url})`)

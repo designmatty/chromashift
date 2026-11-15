@@ -63,9 +63,8 @@ export class ElectronNotificationPort implements ProductNotificationPort {
   public show(message: ProductNotification): void {
     const target = { id: randomUUID(), profileId: message.profileId }
     const windows = process.platform === 'win32'
-    const notification = new Notification(
-      buildNotificationOptions(message, process.platform, target)
-    )
+    const options = buildNotificationOptions(message, process.platform, target)
+    const notification = new Notification(options)
     const release = (): void => {
       this.#active.delete(notification)
       this.#windows.delete(target.id)
@@ -96,7 +95,8 @@ export class ElectronNotificationPort implements ProductNotificationPort {
       this.logger.write({
         level: 'information',
         eventName: 'ProfileNotificationShown',
-        title: message.title
+        title: message.title,
+        toastXml: options.toastXml
       })
     })
     notification.on('close', release)

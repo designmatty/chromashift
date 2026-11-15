@@ -8,6 +8,7 @@ import {
   displayRestoreResultSchema,
   displayStateSchema,
   foregroundCurrentResultSchema,
+  foregroundApplicationChangedDataSchema,
   foregroundApplicationsResultSchema,
   nativeMessageSchema,
   nativeRequestSchema,
@@ -16,6 +17,26 @@ import {
 } from './protocol.js'
 
 describe('native protocol', () => {
+  it.each([undefined, null, 'Shell_TrayWnd'])(
+    'accepts optional windowClass %s on foreground snapshots and events',
+    (windowClass) => {
+      const application = {
+        pid: 42,
+        executable: 'explorer.exe',
+        path: 'C:\\Windows\\explorer.exe',
+        title: '',
+        monitorDeviceName: null,
+        ...(windowClass === undefined ? {} : { windowClass })
+      }
+      expect(foregroundCurrentResultSchema.parse({ application }).application).toEqual(application)
+      expect(foregroundApplicationChangedDataSchema.parse({ application }).application).toEqual(
+        application
+      )
+      expect(
+        foregroundApplicationsResultSchema.parse({ applications: [application] }).applications
+      ).toEqual([application])
+    }
+  )
   it('validates accepted gamma and a baseline-bound learned limit in protocol v2', () => {
     const result = {
       displayId: 'display:one',

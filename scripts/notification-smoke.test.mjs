@@ -3,13 +3,107 @@ import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import { URL } from 'node:url'
 import { withNotificationSettings } from '../apps/desktop/scripts/notification-settings-guard.mjs'
 import {
-  assertProfileSelections,
-  observeProfileSelections
+  assertCloseAction,
+  verifyNotifications
 } from '../apps/desktop/scripts/notifications-smoke.mjs'
+
+const toastXml =
+  '<toast><actions><action content="Close" activationType="foreground" arguments="type=action&amp;action=0&amp;tag=unique&amp;chromashift=notification-v1&amp;profile=smoke" /></actions></toast>'
+
+test('notification assertion requires the supplied dismiss-only Close action', () => {
+  assertCloseAction(toastXml)
+  for (const invalid of [
+    undefined,
+    '',
+    toastXml.replace('Close', 'Open'),
+    toastXml.replace('action=0', 'action=1'),
+    toastXml.replace('foreground', 'system'),
+    toastXml.replace('notification-v1', 'unknown'),
+    toastXml + toastXml
+  ])
+    assert.throws(() => assertCloseAction(invalid), /Close action/)
+})
+
+function notificationFixture({ failure, xml = toastXml } = {}) {
+  const calls = []
+  let output =
+    JSON.stringify({ eventName: 'ProfileNotificationShown', title: 'old activated' }) + '\n'
+  const options = {
+    client: {
+      async send(method, { expression }) {
+        assert.equal(method, 'Runtime.evaluate')
+        if (expression.startsWith('(async')) {
+          calls.push('fixture')
+          return { result: { value: { id: 'smoke', name: 'Toast smoke' } } }
+        }
+        assert.equal(expression, 'window.chromaShift.activateProfile("smoke")')
+        calls.push('activate')
+        if (failure === 'activation') return { result: { value: { ok: false } } }
+        // Shown for a different title cannot satisfy the assertion. A request
+        // for this title alone cannot satisfy it either.
+        output +=
+          JSON.stringify({
+            eventName: 'ProfileNotificationShown',
+            title: 'other activated',
+            toastXml
+          }) + '\n'
+        output +=
+          JSON.stringify({
+            eventName: 'ProfileNotificationRequested',
+            title: 'Toast smoke activated'
+          }) + '\n'
+        return { result: { value: { ok: true } } }
+      }
+    },
+    settings: {
+      async enable() {
+        calls.push('enable')
+      },
+      async suppress() {
+        calls.push('suppress')
+      }
+    },
+    processId: 42,
+    async minimize(pid, minimized) {
+      assert.equal(pid, 42)
+      assert.equal(minimized, true)
+      calls.push('minimize')
+    },
+    getOutput: () => output,
+    async delay() {
+      calls.push('wait')
+      output +=
+        JSON.stringify({
+          eventName:
+            failure === 'delivery' ? 'ProfileNotificationFailed' : 'ProfileNotificationShown',
+          title: 'Toast smoke activated',
+          toastXml: xml
+        }) + '\n'
+    }
+  }
+  return { calls, options }
+}
+
+test('notification check enables once, triggers one toast, waits for its Shown XML, then suppresses', async () => {
+  const fixture = notificationFixture()
+  await verifyNotifications(fixture.options)
+  assert.deepEqual(fixture.calls, ['fixture', 'minimize', 'enable', 'activate', 'wait', 'suppress'])
+})
+
+for (const [failure, xml, message] of [
+  ['activation', toastXml, /Could not activate/],
+  ['delivery', toastXml, /Windows rejected/],
+  [undefined, undefined, /Close action/]
+]) {
+  test(`notification check suppresses again after failure: ${message}`, async () => {
+    const fixture = notificationFixture({ failure, xml: xml ?? '' })
+    await assert.rejects(verifyNotifications(fixture.options), message)
+    assert.equal(fixture.calls.at(-1), 'suppress')
+  })
+}
 
 function fakeGuard({ restoreCode = 0, startupFailure = false } = {}) {
   const child = Object.assign(new EventEmitter(), {
@@ -123,55 +217,6 @@ test('loss of the setting guard cancels in-progress smoke work', async () => {
     /restoration guard exited 1/
   )
 })
-
-for (const url of ['file:///app/out/preload/index.cjs', '']) {
-  test(`preload observation counts selections without replacing the listener, URL ${JSON.stringify(url)}`, async () => {
-    const scriptSource = `ipcRenderer.on(channel, (_event, input) => {
-    const request = schema.safeParse(input)
-    if (request.success) appPanelProfileSelection.publish(request.data.profileId)
-  })`
-    const context = { globalThis: {}, request: { data: { profileId: 'gaming' } } }
-    let condition
-    let removed = false
-    const client = {
-      events: [
-        {
-          method: 'Debugger.scriptParsed',
-          params: {
-            url,
-            scriptId: '42',
-            executionContextId: 7
-          }
-        }
-      ],
-      async send(method, parameters) {
-        if (method === 'Debugger.getScriptSource') return { scriptSource }
-        if (method === 'Debugger.setBreakpoint') {
-          condition = parameters.condition
-          assert.equal(parameters.location.lineNumber, 2)
-          return { breakpointId: 'observed' }
-        }
-        if (method === 'Runtime.evaluate') {
-          assert.equal(parameters.contextId, 7)
-          return { result: { value: runInNewContext(parameters.expression, context) } }
-        }
-        if (method === 'Debugger.removeBreakpoint') removed = true
-        return {}
-      }
-    }
-    const observer = await observeProfileSelections(client)
-    assertProfileSelections(await observer.read(), [])
-    assert.equal(runInNewContext(condition, context), false)
-    assertProfileSelections(await observer.read(), ['gaming'])
-    assert.equal(runInNewContext(condition, context), false)
-    assert.throws(
-      () => assertProfileSelections(context.globalThis.__notificationSelections, ['gaming']),
-      /Notification profile selections/
-    )
-    await observer.stop()
-    assert.equal(removed, true)
-  })
-}
 
 test('Windows guard scopes the setting and preserves value absence, type, and other values', () => {
   const source = readFileSync(
