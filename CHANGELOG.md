@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.16] - 2026-11-16
+
+### Added
+
+- Hold to compare: while a profile has unsaved color changes, hold the button
+  to see the saved profile on your displays. Release it to return to your
+  changes.
+- ChromaShift learns each display's gamma limits. When a display rejects a
+  gamma value, it steps toward neutral, keeps the first value the display
+  accepts, and remembers that limit. Settings → Displays can reset learned
+  limits.
+- An End preview shortcut, unassigned by default.
+- Diagnostics has a level filter and search, and shows details as formatted
+  JSON.
+- About links to the release notes, the repository and the license.
+- The mini panel's picker shows a Live badge on the profile in use, profile
+  icons and hotkeys, and a count of disabled profiles.
+
+### Changed
+
+- Switching between previews goes straight from one profile to the next,
+  without showing the live profile in between.
+- Closing a panel with unsaved changes reverts them, the same as Discard
+  changes. Minimizing still keeps them.
+- Applications are now called Triggers and sit above the color controls. The
+  profile hotkey shows in the profile header, which stays pinned while the
+  profile scrolls.
+- Settings pages have a Back button, and Esc goes back. Shortcuts are grouped
+  into Safety, Control, Navigation and Profiles. Startup window is disabled
+  while Launch at startup is off.
+- After Restore original settings, a message offers Resume.
+- Buttons, inputs and panels have a subtle raised and recessed look in both
+  themes.
+
+### Removed
+
+- Windows notifications and tray balloons. Clicking one took focus from your
+  app, which could switch profiles. Status stays visible in the app, the mini
+  panel and the tray.
+- The Saved badge.
+
+### Fixed
+
+- Clicking the taskbar, the tray, Start, Search, Quick Settings or
+  Notification Center no longer switches your displays to the Default profile.
+- Turning on HDR during a preview or edit restores original settings right
+  away, keeps your changes, and reapplies them when HDR turns off.
+- If ChromaShift can't confirm that a preview was restored, it stays Safety
+  blocked with Retry instead of reporting success.
+- Diagnostics no longer repeats display capability entries on every profile
+  switch.
+
 ## [0.1.0-preview.15] - 2026-11-07
 
 ### Added
@@ -227,7 +279,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.12...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.16...HEAD
+[0.1.0-preview.16]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.15...v0.1.0-preview.16
+[0.1.0-preview.15]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.14...v0.1.0-preview.15
+[0.1.0-preview.14]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.12...v0.1.0-preview.14
 [0.1.0-preview.12]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.11...v0.1.0-preview.12
 [0.1.0-preview.11]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.10...v0.1.0-preview.11
 [0.1.0-preview.10]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.9...v0.1.0-preview.10
