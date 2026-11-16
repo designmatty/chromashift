@@ -89,7 +89,8 @@ export function PanelViewToggle({
       borderWidth="1px"
       borderColor="border"
       rounded="l3"
-      bg="bg.panel"
+      bg={{ base: 'bg.muted', _dark: 'bg' }}
+      shadow="recessed"
       css={{ WebkitAppRegion: 'no-drag' }}
     >
       <Tooltip content="App view">
@@ -99,7 +100,7 @@ export function PanelViewToggle({
           aria-label="App view"
           aria-pressed={!mini}
           onClick={() => void window.chromaShift.openAppPanel('profiles')}
-          _pressed={{ bg: 'control.active' }}
+          _pressed={{ bg: { base: 'bg.panel', _dark: 'bg.muted' } }}
         >
           <PanelsTopLeft size={16} />
         </IconButton>
@@ -111,7 +112,7 @@ export function PanelViewToggle({
           aria-label="Mini view"
           aria-pressed={mini}
           onClick={onShowMiniPanel ?? (() => void window.chromaShift.showMiniPanel())}
-          _pressed={{ bg: 'control.active' }}
+          _pressed={{ bg: { base: 'bg.panel', _dark: 'bg.muted' } }}
         >
           <PanelTop size={16} />
         </IconButton>
@@ -145,6 +146,7 @@ export function NavButton({
       gap={3}
       rounded="full"
       bg={active ? 'bg.panel' : 'transparent'}
+      shadow={active ? 'raised' : undefined}
       borderWidth={active ? '1px' : '0'}
       borderColor="border"
       color="inherit"

@@ -60,15 +60,6 @@ const config = defineConfig({
     },
     semanticTokens: {
       colors: {
-        'control.red': { value: '{colors.red.solid}' },
-        'control.yellow': { value: '{colors.yellow.solid}' },
-        'control.green': { value: '{colors.green.solid}' },
-        'control.cyan': { value: '{colors.cyan.solid}' },
-        'control.blue': { value: '{colors.blue.solid}' },
-        'control.magenta': { value: '{colors.purple.solid}' },
-        'control.saturation': {
-          value: { base: '{colors.orange.solid}', _dark: '{colors.pink.500}' }
-        },
         'profile.previewFg': {
           value: { base: '{colors.orange.700}', _dark: '{colors.pink.300}' }
         },
@@ -87,6 +78,48 @@ const config = defineConfig({
           800: { value: '#34343D' },
           900: { value: '#1C1C21' },
           950: { value: '#111114' }
+        }
+      },
+      shadows: {
+        // A lit 1px top edge, a hairline ring, and a soft lift. Light mode uses
+        // a white edge and a faint dark ring rather than inverting dark mode.
+        raised: {
+          value: {
+            base: 'inset 0 1px 0 0 {colors.white/30}, 0 0 0 1px {colors.gray.900/6}, 0 1px 2px 0 {colors.gray.900/8}',
+            _dark:
+              'inset 0 1px 0 0 {colors.white/8}, 0 0 0 1px {colors.black/30}, 0 1px 2px 0 {colors.black/30}'
+          }
+        },
+        // A faint shadow inside the top edge so a field reads as a well.
+        recessed: {
+          value: {
+            base: 'inset 0 1px 2px 0 {colors.gray.900/6}',
+            _dark: 'inset 0 1px 2px 0 {colors.black/32}'
+          }
+        }
+      }
+    },
+    recipes: {
+      button: {
+        variants: {
+          variant: {
+            solid: { shadow: 'raised' },
+            subtle: { shadow: 'raised' },
+            // Light mode matches the Select border; `gray.muted` equals `border`.
+            surface: {
+              shadow: 'raised',
+              borderColor: { base: 'colorPalette.muted', _dark: 'transparent' }
+            },
+            outline: { shadow: 'raised' }
+          }
+        }
+      },
+      input: {
+        variants: {
+          variant: {
+            outline: { bg: { base: 'blackAlpha.50', _dark: 'blackAlpha.400' }, shadow: 'recessed' },
+            subtle: { shadow: 'recessed' }
+          }
         }
       }
     }

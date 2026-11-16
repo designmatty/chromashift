@@ -221,7 +221,6 @@ function FixedShortcutGroup({
                 aria-label="Fixed safety shortcut"
               >
                 <LockKeyhole size={12} />
-                <Text fontSize="xs">Fixed</Text>
               </Flex>
             </Tooltip>
             <ShortcutDisplay label={label} accelerator={accelerator} />

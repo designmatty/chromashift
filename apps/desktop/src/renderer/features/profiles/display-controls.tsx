@@ -55,6 +55,7 @@ export function DisplayControls({
       css={{
         '--tabs-indicator-fg': 'colors.fg.error',
         '--tabs-indicator-bg': { base: 'colors.bg.panel', _dark: 'colors.bg.muted' },
+        '--tabs-indicator-shadow': 'shadows.raised',
         '--tabs-trigger-radius': 'radii.md'
       }}
     >
@@ -64,6 +65,7 @@ export function DisplayControls({
         gap="3"
         pe="1"
         bg={{ base: 'bg.muted', _dark: 'bg' }}
+        shadow="recessed"
         rounded="md"
       >
         <Tabs.List flex="1" minW="0" p="1" overflowX="auto" overflowY="hidden" flexWrap="nowrap">
@@ -94,7 +96,7 @@ export function DisplayControls({
               )}
             </Tabs.Trigger>
           ))}
-          <Tabs.Indicator border={'1px solid {color.red.500}'} />
+          <Tabs.Indicator />
         </Tabs.List>
         {compareButton && (
           <Flex flexShrink="0" mt="1" h="var(--tabs-height)" align="center">

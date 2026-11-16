@@ -84,9 +84,12 @@ export function Slider(props: SliderProps): React.JSX.Element {
               bgColor={{ base: 'bg.muted', _dark: 'bg' }}
               backgroundImage={
                 props.track === 'hue'
-                  ? 'linear-gradient(to right, {colors.control.red}, {colors.control.yellow}, {colors.control.green}, {colors.control.cyan}, {colors.control.blue}, {colors.control.magenta}, {colors.control.red})'
+                  ? 'linear-gradient(to right, {colors.red.solid}, {colors.yellow.solid}, {colors.green.solid}, {colors.cyan.solid}, {colors.blue.solid}, {colors.purple.solid}, {colors.red.solid})'
                   : props.track === 'saturation'
-                    ? 'linear-gradient(to right, {colors.fg.muted}, {colors.control.saturation})'
+                    ? {
+                        base: 'linear-gradient(to right, {colors.fg.muted}, {colors.orange.solid})',
+                        _dark: 'linear-gradient(to right, {colors.fg.muted}, {colors.pink.500})'
+                      }
                     : undefined
               }
             >
@@ -95,6 +98,11 @@ export function Slider(props: SliderProps): React.JSX.Element {
                   props.track === undefined
                     ? { base: 'bg.inverted', _dark: 'colorPalette.600' }
                     : 'transparent'
+                }
+                // A lit top edge on the plain fill. Hue and saturation keep their
+                // gradients untouched.
+                shadow={
+                  props.track === undefined ? 'inset 0 1px 0 0 {colors.whiteAlpha.300}' : undefined
                 }
               />
               {lowerDisabled > 0 && (
@@ -151,6 +159,8 @@ export function Slider(props: SliderProps): React.JSX.Element {
               borderColor={{ base: 'bg.inverted', _dark: 'transparent' }}
               rounded="sm"
               bg={{ base: 'bg', _dark: 'fg' }}
+              // Chakra's focus-visible ring replaces this shadow while focused.
+              shadow="raised"
               _disabled={{
                 borderColor: {
                   base: 'colorPalette.400',

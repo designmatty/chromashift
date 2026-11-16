@@ -42,20 +42,22 @@ export function ProfileActionDialog(props: {
             </Dialog.Header>
             <Dialog.Body>
               <Dialog.Description asChild>
-                <Text color="fg.muted">{props.description}</Text>
+                <Text color="fg.muted" m={0}>
+                  {props.description}
+                </Text>
               </Dialog.Description>
             </Dialog.Body>
-            <Dialog.Footer flexWrap="wrap">
+            <Dialog.Footer flexWrap="wrap" gap={2}>
               <Button
                 ref={cancelRef}
-                variant="outline"
+                variant="surface"
                 disabled={props.busy}
                 onClick={props.onCancel}
               >
                 Cancel
               </Button>
               {props.onDiscard && (
-                <Button variant="outline" disabled={props.busy} onClick={props.onDiscard}>
+                <Button variant="surface" disabled={props.busy} onClick={props.onDiscard}>
                   Discard changes
                 </Button>
               )}

@@ -2814,7 +2814,8 @@ async function runSmoke() {
     shellBorder: 'rgb(200, 200, 208)',
     panelBackground: 'rgba(0, 0, 0, 0)',
     rowBackground: 'rgb(241, 241, 243)',
-    selectBackground: 'rgb(255, 255, 255)',
+    // Subtle Select variant: the trigger fills with bg.muted.
+    selectBackground: 'rgb(227, 227, 232)',
     foreground: 'rgb(9, 9, 11)'
   }
   if (JSON.stringify(lightVisuals.result.value) !== JSON.stringify(expectedLightVisuals)) {
@@ -3822,8 +3823,10 @@ async function runSmoke() {
       })()`, `The mini-panel trigger did not truncate the long name (${theme}).`)
       await hoverElement(pausedMiniDebugger, '[data-part="active-profile-name"]')
       await delay(600)
-      await waitForExpression(pausedMiniDebugger, `document.querySelector('[role="tooltip"]') === null`,
-        'The mini-panel profile name unexpectedly showed a tooltip.')
+      // The trigger may show its "Switch profile" hint, but never the full name.
+      await waitForExpression(pausedMiniDebugger, `![...document.querySelectorAll('[role="tooltip"]')]
+        .some((tooltip) => tooltip.textContent?.includes(${JSON.stringify(longMiniName)}))`,
+        'The mini-panel profile name unexpectedly showed a name tooltip.')
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-long-name-${theme}-native.png`))
       await pausedMiniDebugger.send('Runtime.evaluate', {
         expression: `document.querySelector('[data-part="active-profile"]')?.click()`

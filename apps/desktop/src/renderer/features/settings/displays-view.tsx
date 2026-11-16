@@ -58,7 +58,7 @@ export function DisplaysView({
           Displays
         </Heading>
         <Button
-          variant="outline"
+          variant="surface"
           size={'xs'}
           borderRadius={'full'}
           loading={busy}
@@ -180,6 +180,7 @@ export function DisplaysView({
           p="3"
           borderWidth="1px"
           borderColor="border"
+          borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
           rounded="lg"
           bg="bg.panel"
           shadow="md"

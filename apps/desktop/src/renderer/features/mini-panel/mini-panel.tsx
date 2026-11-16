@@ -178,9 +178,9 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             minH="0"
             minW="0"
             mx="3"
-
             borderWidth="1px"
             borderColor="border"
+            borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
             rounded="2xl"
             bg="bg.panel"
             overflowY="auto"
@@ -197,7 +197,7 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
               padding={0}
               w="full"
               justifyContent="flex-start"
-              gap={3}
+              gap={2}
               textAlign="left"
               onClick={() => {
                 choiceVersion.current += 1
@@ -326,49 +326,53 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
             />
           )}
         </MiniPanelContent>
-        <Flex as="footer" mx="5" py="3" align="center" gap="2">
-          <Button
-            data-part="active-profile"
-            variant="plain"
-            padding={0}
-            width="210px"
-            minW="0"
-            mr="auto"
-            gap={3}
-            textAlign="left"
-            size={'sm'}
-            _hover={{
-              color: 'fg'
-            }}
-            onClick={() => {
-              choiceVersion.current += 1
-              setPicker(true)
-            }}
-          >
-            <Stack gap="0" flex={1} minW="0">
-              <Text color="fg.muted" fontSize="md" truncate>
-                {product.chromaShift.intendedMode.kind === 'automatic'
-                  ? 'Automatic'
-                  : 'Manually selected'}
-              </Text>
-              <Text
-                data-part="active-profile-name"
-                overflow="hidden"
-                fontSize="lg"
-                fontWeight="700"
-                textOverflow="ellipsis"
-                whiteSpace="nowrap"
-              >
-                {active.name}
-              </Text>
-            </Stack>
-            <Icon size={'sm'} flexShrink="0">
-              <ChevronsUpDown />
-            </Icon>
-          </Button>
+        <Flex as="footer" align="center" gap="2" py={1.5}>
+          <Tooltip content="Switch profile" positioning={{ placement: 'top-start' }}>
+            <Button
+              data-part="active-profile"
+              variant="ghost"
+              paddingY={1}
+              height={'auto'}
+              ml={2}
+              flex={1}
+              gap={2}
+              textAlign="left"
+              size={'sm'}
+              borderRadius={'lg'}
+              _hover={{
+                color: 'fg'
+              }}
+              onClick={() => {
+                choiceVersion.current += 1
+                setPicker(true)
+              }}
+            >
+              <Stack gap="0" flex={1} minW="0">
+                <Text color="fg.muted" fontSize="md" truncate>
+                  {product.chromaShift.intendedMode.kind === 'automatic'
+                    ? 'Automatic'
+                    : 'Manually selected'}
+                </Text>
+                <Text
+                  data-part="active-profile-name"
+                  overflow="hidden"
+                  fontSize="lg"
+                  fontWeight="700"
+                  textOverflow="ellipsis"
+                  whiteSpace="nowrap"
+                >
+                  {active.name}
+                </Text>
+              </Stack>
+              <Icon size={'sm'} flexShrink="0">
+                <ChevronsUpDown />
+              </Icon>
+            </Button>
+          </Tooltip>
           <Tooltip content="Open settings">
             <IconButton
-              size={'md'}
+              size={'lg'}
+              borderRadius={'lg'}
               variant="ghost"
               onClick={() => void window.chromaShift.openAppPanel('settings')}
               aria-label="Open settings"
@@ -378,11 +382,13 @@ export function MiniPanel({ product }: { product: ProductState }): React.JSX.Ele
           </Tooltip>
           <Tooltip content="Restore original display settings">
             <IconButton
-              size={'md'}
+              size={'lg'}
+              borderRadius={'lg'}
               variant="ghost"
               onClick={() => void run(window.chromaShift.restoreBaseline(), setError)}
               aria-label="Restore original display settings"
               disabled={product.chromaShift.status !== 'active'}
+              mr={2}
             >
               <RefreshCcwDot />
             </IconButton>
@@ -423,6 +429,7 @@ function MiniPanelContent({
         py={4}
         borderWidth="1px"
         borderColor="border"
+        borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
         rounded="2xl"
         bg={{ base: 'bg.panel', _dark: 'bg.muted' }}
         overflow={covered ? 'hidden' : 'auto'}
@@ -467,6 +474,7 @@ function MiniPausedOverlay({
         py="4"
         bg="bg.panel"
         borderWidth="1px"
+        borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
         rounded="lg"
         shadow="md"
       >
@@ -492,6 +500,7 @@ function MiniPanelFrame({ children }: { children: React.ReactNode }): React.JSX.
       rounded="2xl"
       borderWidth="1px"
       borderColor="border"
+      borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
       bg={'bg.subtle/80'}
       height={'full'}
     >
@@ -621,6 +630,7 @@ function MiniDisplaySelect({
 
   return (
     <Select.Root
+      variant="subtle"
       collection={collection}
       value={selected === undefined ? [] : [selected.id]}
       positioning={{ sameWidth: true }}
@@ -636,7 +646,13 @@ function MiniDisplaySelect({
       <Select.HiddenSelect />
       <Select.Label srOnly>Select display</Select.Label>
       <Select.Control>
-        <Select.Trigger aria-label="Select display" gap={3} bg="bg.subtle" borderRadius={'md'}>
+        <Select.Trigger
+          aria-label="Select display"
+          gap={3}
+          shadow="raised"
+          borderColor={{ base: 'border', _dark: 'transparent' }}
+          borderRadius={'md'}
+        >
           <HStack>
             <Icon size={'sm'}>
               <Monitor />

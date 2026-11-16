@@ -197,7 +197,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
             {!profile.enabled && <ProfileBadge>Disabled</ProfileBadge>}
           </Flex>
         </Stack>
-        <Flex data-part="profile-header-actions" ml="auto" align="center" gap="5">
+        <Flex data-part="profile-header-actions" ml="auto" align="center" gap="2">
           {shortcut !== undefined && (
             <Box data-part="profile-hotkey">
               <ShortcutDisplay label={profile.name} accelerator={shortcut} />
@@ -205,7 +205,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           )}
           {props.dirty && (
             <Flex data-part="unsaved-changes-actions" gap="2" align="center">
-              <Button size="xs" variant="outline" disabled={props.busy} onClick={props.onCancel}>
+              <Button size="xs" variant="surface" disabled={props.busy} onClick={props.onCancel}>
                 Discard changes
               </Button>
               <Button
@@ -216,6 +216,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
                   props.product.chromaShift.status !== 'active'
                 }
                 onClick={props.onSave}
+                variant={'solid'}
               >
                 Update profile
               </Button>
@@ -224,13 +225,7 @@ export function ProfileDetail(props: ProfileDetailProps): React.JSX.Element {
           <Menu.Root ids={{ trigger: actionsTriggerId }}>
             <Tooltip ids={{ trigger: actionsTriggerId }} content="More profile actions">
               <Menu.Trigger asChild>
-                <IconButton
-                  boxSize="20px"
-                  minW="20px"
-                  p="0"
-                  variant="ghost"
-                  aria-label="More profile actions"
-                >
+                <IconButton size={'xs'} variant="ghost" aria-label="More profile actions">
                   <Ellipsis />
                 </IconButton>
               </Menu.Trigger>

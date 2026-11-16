@@ -47,7 +47,7 @@ export function DeleteProfileDialog(props: DeleteProfileDialogProps): React.JSX.
             <Dialog.Footer>
               <Button
                 ref={cancelButtonRef}
-                variant="outline"
+                variant="surface"
                 disabled={props.busy}
                 onClick={props.onCancel}
               >
