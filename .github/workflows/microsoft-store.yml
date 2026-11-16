@@ -1,0 +1,57 @@
+name: Submit Microsoft Store update
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to submit
+        required: true
+        type: string
+      dry_run:
+        description: Validate account and package without changing Partner Center
+        default: true
+        type: boolean
+
+concurrency:
+  group: microsoft-store-submission
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    if: vars.MICROSOFT_STORE_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: microsoft-store
+    steps:
+      - name: Check out current submission tools
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+      - name: Install submission tools
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Validate submission tools
+        run: node --test scripts/microsoft-store.test.mjs
+      - name: Submit published installer for certification
+        run: node scripts/submit-microsoft-store.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STORE_RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          STORE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+          STORE_TENANT_ID: ${{ vars.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ vars.STORE_CLIENT_ID }}
+          STORE_SELLER_ID: ${{ vars.STORE_SELLER_ID }}
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
