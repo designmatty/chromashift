@@ -177,6 +177,12 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
    * (failRestoreDisplayIds), apply reports BASELINE_RESTORE_FAILED.
    */
   public readonly failApplyWriteDisplayIds = new Set<string>()
+  /**
+   * A transient NVIDIA read fails at capture, so the baseline holds the ramp but
+   * no NVIDIA state. Like the helper, an HDR saturation/hue apply against that
+   * baseline is refused with CAPABILITY_UNSUPPORTED before any write.
+   */
+  public readonly captureWithoutNvidiaDisplayIds = new Set<string>()
   public readonly disconnectedDisplayIds = new Set<string>()
   public readonly disconnectOnApplyDisplayIds = new Set<string>()
   public maxConcurrentCalls = 0
@@ -186,6 +192,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public readonly baselineHashes = new Map<string, string>()
   readonly #capturedHashes = new Map<string, string>()
   readonly #captureModes = new Map<string, 'sdr' | 'hdr'>()
+  readonly #baselinesWithoutNvidia = new Set<string>()
   readonly #capturedDisplayIds = new Set<string>()
   readonly #baselineSettings = new Map<string, DisplaySettings>()
   #activeCalls = 0
@@ -250,7 +257,12 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       }
       this.#capturedDisplayIds.add(displayId)
       this.captured.push(displayId)
-      if (!alreadyCaptured) this.#captureModes.set(displayId, this.#isHdr(displayId) ? 'hdr' : 'sdr')
+      if (!alreadyCaptured) {
+        this.#captureModes.set(displayId, this.#isHdr(displayId) ? 'hdr' : 'sdr')
+        if (this.captureWithoutNvidiaDisplayIds.has(displayId))
+          this.#baselinesWithoutNvidia.add(displayId)
+        else this.#baselinesWithoutNvidia.delete(displayId)
+      }
       return {
         displayId,
         state: alreadyCaptured ? 'alreadyCaptured' : 'captured',
@@ -265,7 +277,17 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     return this.#call({ operation: 'apply', displayId, settings }, async () => {
-      if (this.#isHdr(displayId)) this.#ensureHdrApply(displayId, settings)
+      if (this.#isHdr(displayId)) {
+        this.#ensureHdrApply(displayId, settings)
+        if (this.#baselinesWithoutNvidia.has(displayId)) {
+          throw new NativeServiceError(
+            'CAPABILITY_UNSUPPORTED',
+            'NVIDIA saturation is unavailable for this display.',
+            'display.apply',
+            'test-request'
+          )
+        }
+      }
       if (this.disconnectOnApplyDisplayIds.delete(displayId)) {
         this.disconnectedDisplayIds.add(displayId)
       }

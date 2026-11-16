@@ -73,6 +73,11 @@ The TypeScript and native test suites cover these contracts:
   cleanup entering recovery and Retry, and untargeted HDR displays during an
   override (kept when HDR-projected, restored when they may carry SDR ramp
   values). The #88 cases run on AMD displays, where nothing applies under HDR.
+  A refused HDR projection against a baseline captured without NVIDIA state,
+  over a transformed SDR ramp, restores and holds the display in activation,
+  mid-Edit and at override start. The draft stays, an unconfirmed restore
+  enters Safety blocked or recovery, and the next attempt applies from a
+  fresh capture.
 - Panel close and handoff reasons with the shared fake native: app close rolls
   back dirty Edit and Temporary override to the exact prior automatic/manual
   target; mini close (and Escape where the panel can take focus) roll back overrides; both handoffs carry an

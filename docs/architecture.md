@@ -150,7 +150,16 @@ Electron projects each HDR target through one function,
 always withholds brightness, contrast, and gamma under HDR. A non-empty request
 is captured and applied through the normal restore-then-apply path. A display
 whose request is empty, such as AMD, Intel, or NVIDIA without vibrance, is
-restored and held at Original settings, as #88 did. For a physical display
+restored and held at Original settings, as #88 did. If native refuses a
+non-empty HDR request before writing, the display may still show earlier SDR
+output. One example is `CAPABILITY_UNSUPPORTED` when a transient NVIDIA read at
+capture left the baseline without NVIDIA state. Activation and the preview
+session then record the failure, restore the display explicitly and hold it at
+Original settings; the session and draft stay. An unconfirmed restore follows
+the restoration-failure path into Safety blocked. Restoration failures,
+disconnects and `HDR_UNSAFE` keep their own handling. The display retries on the
+next activation or transition from a fresh capture of the restored original.
+For a physical display
 with several endpoints, any HDR endpoint makes the whole target HDR, and the
 intersection of endpoint capabilities decides the rest, so an AMD endpoint in
 HDR restores every endpoint. HDR on and off reuse the existing topology

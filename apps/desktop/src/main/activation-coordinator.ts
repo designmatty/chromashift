@@ -323,52 +323,13 @@ export class ActivationCoordinator {
         )
         continue
       }
-      try {
-        const result = await this.native.restoreDisplay(displayId)
-        if (!result.restored) {
-          if (result.code === 'DISPLAY_NOT_FOUND') {
-            this.#deferDisplay(
-              profile.id,
-              displayId,
-              'restore',
-              'displayDisconnected',
-              deferredDisplayIds
-            )
-            continue
-          }
-          if (result.reason !== 'baselineNotCaptured') {
-            failures.push(
-              this.#failureFromDetails(
-                'restore',
-                result.error ?? `Display was not restored: ${result.reason ?? 'unknown reason'}.`,
-                displayId,
-                result.code
-              )
-            )
-            continue
-          }
-        }
-        this.#capturedDisplayIds.delete(displayId)
-        this.#hdrProjectedDisplayIds.delete(key)
-        this.logger.write({
-          level: 'information',
-          eventName: result.restored ? 'BaselineRestored' : 'BaselineRestoreSkipped',
-          displayId,
-          reason: result.restored ? 'profileTargetChanged' : result.reason
-        })
-      } catch (error) {
-        if (this.#isDisplayDisconnected(error)) {
-          this.#deferDisplay(
-            profile.id,
-            displayId,
-            'restore',
-            'displayDisconnected',
-            deferredDisplayIds
-          )
-        } else {
-          failures.push(this.#failure('restore', error, displayId))
-        }
-      }
+      await this.#restoreTracked(
+        profile.id,
+        displayId,
+        'profileTargetChanged',
+        failures,
+        deferredDisplayIds
+      )
     }
 
     for (const target of desiredTargets) {
@@ -428,8 +389,10 @@ export class ActivationCoordinator {
       }
       // Until this write is confirmed, the display may show any earlier output.
       this.#hdrProjectedDisplayIds.delete(key)
+      let applied = false
       try {
         await this.native.applyDisplaySettings(target.displayId, hdrRequest ?? target.color)
+        applied = true
         if (hdrRequest !== undefined) this.#hdrProjectedDisplayIds.set(key, target.displayId)
         await this.limits?.clampSavedProfile(this.repository, profile.id)
       } catch (error) {
@@ -447,6 +410,22 @@ export class ActivationCoordinator {
           )
         } else {
           failures.push(this.#failure('apply', error, target.displayId))
+          // A refused HDR projection writes nothing, so the display may still show
+          // earlier SDR output, including a transformed ramp. Hold it at Original
+          // settings; an unconfirmed restore blocks the remaining and queued writes.
+          if (
+            hdrRequest !== undefined &&
+            !applied &&
+            describeError(error).code !== 'BASELINE_RESTORE_FAILED'
+          ) {
+            await this.#restoreTracked(
+              profile.id,
+              target.displayId,
+              'hdrProjectionRefused',
+              failures,
+              deferredDisplayIds
+            )
+          }
         }
       }
     }
@@ -608,6 +587,60 @@ export class ActivationCoordinator {
     return code === undefined
       ? { operation, displayId, message }
       : { operation, displayId, code, message }
+  }
+
+  /**
+   * Restores one tracked display through native restore. A disconnect defers it
+   * with its baseline retained; any other unconfirmed restore is a restore
+   * failure, which stops every later write in this transition and queued work.
+   */
+  async #restoreTracked(
+    profileId: string,
+    displayId: string,
+    reason: 'profileTargetChanged' | 'hdrProjectionRefused',
+    failures: ActivationFailure[],
+    deferredDisplayIds: Set<string>
+  ): Promise<void> {
+    try {
+      const result = await this.native.restoreDisplay(displayId)
+      if (!result.restored) {
+        if (result.code === 'DISPLAY_NOT_FOUND') {
+          this.#deferDisplay(
+            profileId,
+            displayId,
+            'restore',
+            'displayDisconnected',
+            deferredDisplayIds
+          )
+          return
+        }
+        if (result.reason !== 'baselineNotCaptured') {
+          failures.push(
+            this.#failureFromDetails(
+              'restore',
+              result.error ?? `Display was not restored: ${result.reason ?? 'unknown reason'}.`,
+              displayId,
+              result.code
+            )
+          )
+          return
+        }
+      }
+      this.#capturedDisplayIds.delete(displayId)
+      this.#hdrProjectedDisplayIds.delete(displayId.toLowerCase())
+      this.logger.write({
+        level: 'information',
+        eventName: result.restored ? 'BaselineRestored' : 'BaselineRestoreSkipped',
+        displayId,
+        reason: result.restored ? reason : result.reason
+      })
+    } catch (error) {
+      if (this.#isDisplayDisconnected(error)) {
+        this.#deferDisplay(profileId, displayId, 'restore', 'displayDisconnected', deferredDisplayIds)
+      } else {
+        failures.push(this.#failure('restore', error, displayId))
+      }
+    }
   }
 
   /** Unknown HDR capabilities fail closed: hold Original settings and surface the error. */

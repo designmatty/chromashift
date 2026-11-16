@@ -324,7 +324,9 @@ captured baseline and applies the target's saturation and hue, and every edit,
 Discard, compare, and profile switch does the same from the same baseline. A
 display with nothing applicable under HDR, such as AMD, Intel, or NVIDIA
 without vibrance, restores its captured Original settings immediately, as in
-#88. An untargeted HDR display keeps the live target's saturation and hue
+#88. So does an NVIDIA display whose HDR request native refuses before
+writing; the failure is recorded, the draft stays, and an unconfirmed restore
+enters Safety blocked. An untargeted HDR display keeps the live target's saturation and hue
 during an override unless its output may still carry SDR ramp values; then it
 is restored. The session and full draft stay intact, SDR displays keep the
 draft, and HDR-off reapplies the full current draft or target. Both panels show

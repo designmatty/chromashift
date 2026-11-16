@@ -1566,3 +1566,106 @@ describe('untargeted HDR displays during an override (#89 Q3)', () => {
     expect(native.restored).toEqual([secondDisplay.id])
   })
 })
+
+describe('a refused HDR projection (#89 final review)', () => {
+  // A transient NVIDIA read failed at capture, so the retained baseline lacks
+  // NVIDIA state and the helper refuses HDR saturation/hue before any write.
+  function refusingNative(): FakeNative {
+    const native = new FakeNative()
+    native.reports.set(display.id, nvidiaCapabilityReport(display.id, false))
+    native.captureWithoutNvidiaDisplayIds.add(display.id)
+    native.currentSettings.set(display.id, { brightness: 48 })
+    return native
+  }
+  function turnHdrOn(native: FakeNative): void {
+    native.captureWithoutNvidiaDisplayIds.clear()
+    native.reports.set(display.id, nvidiaCapabilityReport(display.id))
+    native.hdrDisplayIds.add(display.id)
+  }
+  const draft = profile(
+    targets([display.id, { brightness: 30, saturation: 85 }], [secondDisplay.id, { brightness: 35 }])
+  )
+
+  it('restores the display, holds it and keeps the draft when HDR turns on mid-Edit', async () => {
+    const native = refusingNative()
+    const events: StructuredLogEvent[] = []
+    const controller = new PreviewSessionController(
+      native,
+      new FakeActivation(),
+      () => undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => false,
+      { write: (event) => events.push(event) }
+    )
+    await controller.start(draft, 'edit', profile())
+    // A transformed SDR ramp is on screen.
+    expect(native.currentSettings.get(display.id)?.brightness).toBe(30)
+
+    turnHdrOn(native)
+    await expect(controller.reapplyAfterDisplayTransition()).resolves.toBe(true)
+    expect(native.restored).toEqual([display.id])
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48 })
+    expect(native.currentSettings.get(secondDisplay.id)?.brightness).toBe(35)
+    expect(controller.unsavedDraft).toEqual(draft)
+    expect(controller.state).toMatchObject({ state: 'active', kind: 'edit', draft })
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventName: 'DisplaySettingFailed',
+        displayId: display.id,
+        code: 'CAPABILITY_UNSUPPORTED'
+      })
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({ eventName: 'HdrProjectionHeld', displayId: display.id })
+    )
+
+    // The next transition retries from a fresh capture of the restored original.
+    await controller.reapplyAfterDisplayTransition()
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+    expect(controller.unsavedDraft).toEqual(draft)
+  })
+
+  it('enters recovery with the draft kept when that restore cannot be confirmed', async () => {
+    const native = refusingNative()
+    const failed = vi.fn(async () => undefined)
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined, {
+      restoreFailed: failed,
+      restored: async () => undefined
+    })
+    await controller.start(draft, 'edit', profile())
+    turnHdrOn(native)
+    native.failRestoreDisplayIds.add(display.id)
+    await expect(controller.reapplyAfterDisplayTransition()).rejects.toBeInstanceOf(
+      PreviewRestoreError
+    )
+    expect(failed).toHaveBeenCalledOnce()
+    expect(controller.sessionRecoveryPending).toBe(true)
+    expect(controller.unsavedDraft).toEqual(draft)
+    expect(native.currentSettings.get(display.id)?.brightness).toBe(30)
+
+    native.failRestoreDisplayIds.clear()
+    await expect(controller.retryRestoration()).resolves.toBe(true)
+    expect(controller.sessionRecoveryPending).toBe(false)
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+  })
+
+  it('holds an activation-owned display when an override start is refused under HDR', async () => {
+    const native = refusingNative()
+    // The activation captured and wrote the display in SDR, then HDR turned on.
+    await native.captureBaseline(display.id)
+    await native.applyDisplaySettings(display.id, { brightness: 30 })
+    turnHdrOn(native)
+    const activation = new FakeActivation()
+    activation.owned = [display.id]
+    const controller = new PreviewSessionController(native, activation, () => undefined)
+    const override = profile(targets([display.id, { saturation: 80 }]))
+    await controller.start(override, 'override')
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48 })
+    expect(controller.state).toMatchObject({ state: 'active', kind: 'override' })
+    await controller.cancel()
+    // The restored display is no longer owned and is not handed back as retained.
+    expect(activation.retainedDisplayIds.at(-1)).toEqual({ operation: 'cancel', displayIds: [] })
+  })
+})

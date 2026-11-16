@@ -15,7 +15,7 @@ import type {
 } from '@chromashift/native-client'
 import type { PreviewState } from '@shared/product-api.js'
 import { profilesDiffer } from '@shared/unsaved-changes.js'
-import { describeError } from '@main/structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 import type { PanelHideReason } from '@main/panel-controller.js'
 import type { ProfileRepository } from '@chromashift/core'
 import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
@@ -138,7 +138,8 @@ export class PreviewSessionController {
     private readonly limits?: LearnedGammaLimits,
     private readonly repository?: ProfileRepository,
     /** A display or power transition is pending or settling; replacement then restores first. */
-    private readonly transitionPending: () => boolean = () => false
+    private readonly transitionPending: () => boolean = () => false,
+    private readonly logger?: StructuredLogger
   ) {}
 
   public get state(): PreviewState {
@@ -276,7 +277,7 @@ export class PreviewSessionController {
         if (!disconnected.has(key)) {
           activationHdrSafe.delete(key)
           try {
-            await this.#applyTarget(target, hdrWrites.get(key))
+            if (!(await this.#applyOrHold(target, hdrWrites.get(key), touched))) disconnected.add(key)
           } catch (error) {
             if (!this.#isDisplayDeferred(error)) throw error
             disconnected.add(key)
@@ -550,7 +551,8 @@ export class PreviewSessionController {
       if (!active.disconnected.has(key)) {
         active.activationHdrSafe.delete(key)
         try {
-          await this.#applyTarget(target, hdrWrites.get(key))
+          if (!(await this.#applyOrHold(target, hdrWrites.get(key), active.touched)))
+            active.disconnected.add(key)
         } catch (error) {
           if (!this.#isDisplayDeferred(error)) throw error
           active.disconnected.add(key)
@@ -765,7 +767,8 @@ export class PreviewSessionController {
         await this.native.captureBaseline(target.displayId)
         active.touched.set(key, target.displayId)
         active.activationHdrSafe.delete(key)
-        await this.#applyTarget(target, hdrWrite)
+        if (!(await this.#applyOrHold(target, hdrWrite, active.touched)))
+          active.disconnected.add(key)
       } catch (error) {
         if (!this.#isDisplayDeferred(error)) throw error
         const key = target.displayId.toLowerCase()
@@ -1053,6 +1056,51 @@ export class PreviewSessionController {
   #isDisplayDeferred(error: unknown): boolean {
     const code = describeError(error).code
     return code === 'DISPLAY_NOT_FOUND' || code === 'HDR_UNSAFE'
+  }
+
+  /**
+   * Applies a target; returns false when an HDR projection was refused and the
+   * display is now held at Original settings. A refused HDR apply writes
+   * nothing, so the display may still show earlier SDR output, including a
+   * transformed ramp: restore it explicitly and keep the session and draft. An
+   * unconfirmed restore throws PreviewRestoreError, which enters recovery.
+   * Restoration failures, disconnects and HDR_UNSAFE keep their own handling.
+   */
+  async #applyOrHold(
+    target: DisplayColorTarget,
+    hdrWrite: DisplaySettings | undefined,
+    touched: Map<string, string>
+  ): Promise<boolean> {
+    try {
+      await this.#applyTarget(target, hdrWrite)
+      return true
+    } catch (error) {
+      if (
+        hdrWrite === undefined ||
+        error instanceof PreviewRestoreError ||
+        this.#isDisplayDeferred(error)
+      )
+        throw error
+      this.logger?.write({
+        level: 'error',
+        eventName: 'DisplaySettingFailed',
+        operation: 'apply',
+        displayId: target.displayId,
+        ...describeError(error)
+      })
+      const result = await this.#restoreDisplayIds([target.displayId])
+      if (result.failures.length > 0)
+        throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+      const key = target.displayId.toLowerCase()
+      if (!result.retainedDisplayIds.some((id) => id.toLowerCase() === key)) touched.delete(key)
+      this.logger?.write({
+        level: 'warning',
+        eventName: 'HdrProjectionHeld',
+        displayId: target.displayId,
+        reason: 'hdrProjectionRefused'
+      })
+      return false
+    }
   }
 
   /** An HDR display gets its capability-filtered request; the target keeps every value. */

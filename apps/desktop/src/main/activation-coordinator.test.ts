@@ -742,6 +742,111 @@ describe('ActivationCoordinator', () => {
     }
   )
 
+  it.each([false, true])(
+    'holds an HDR display at Original settings when native refuses its projection, restore fails=%s',
+    async (restoreFails) => {
+      const one = 'display:one'
+      const two = 'display:two'
+      const native = new FakeNativeActivationPort()
+      // A transient NVIDIA read fails at capture: the baseline holds the ramp only.
+      native.reports.set(one, nvidiaCapabilityReport(one, false))
+      native.captureWithoutNvidiaDisplayIds.add(one)
+      native.currentSettings.set(one, { brightness: 48 })
+      const logger = new RecordingLogger()
+      const both = profile('default', { brightness: 30, saturation: 85 }, [one, two])
+      const next = profile('next', { saturation: 60 }, [two])
+      const coordinator = new ActivationCoordinator(
+        repository(configuration([both, next], 'default')),
+        native,
+        logger
+      )
+      await coordinator.activate(null)
+      // A transformed SDR ramp is on screen.
+      expect(native.currentSettings.get(one)?.brightness).toBe(30)
+
+      // NVIDIA reads recover and HDR turns on; the retained baseline still lacks NVIDIA state.
+      native.captureWithoutNvidiaDisplayIds.clear()
+      native.reports.set(one, nvidiaCapabilityReport(one))
+      native.hdrDisplayIds.add(one)
+      if (restoreFails) native.failRestoreDisplayIds.add(one)
+      await coordinator.resetForDisplayTransition()
+      const before = native.calls.length
+      const failing = coordinator.activate(null)
+      const queued = coordinator.activate(null, manualActivationMode('next'))
+      const outcome = await failing
+      expect(outcome.failures).toContainEqual(
+        expect.objectContaining({ operation: 'apply', displayId: one, code: 'CAPABILITY_UNSUPPORTED' })
+      )
+      expect(logger.events).toContainEqual(
+        expect.objectContaining({
+          eventName: 'DisplaySettingFailed',
+          displayId: one,
+          code: 'CAPABILITY_UNSUPPORTED'
+        })
+      )
+      expect(native.calls.slice(before).filter((call) => call.displayId === one)).toEqual([
+        { operation: 'capture', displayId: one },
+        { operation: 'apply', displayId: one, settings: { saturation: 85, hue: 0 } },
+        { operation: 'restore', displayId: one }
+      ])
+
+      if (restoreFails) {
+        // The SDR ramp stays until a confirmed restore; nothing else may write.
+        expect(outcome.failures).toContainEqual(
+          expect.objectContaining({ operation: 'restore', displayId: one })
+        )
+        expect(coordinator.restorationBlocked).toBe(true)
+        expect((await queued).failures).toContainEqual(
+          expect.objectContaining({ code: 'RESTORE_PENDING' })
+        )
+        expect(native.calls.slice(before).filter((call) => call.displayId === two)).toEqual([])
+        expect(native.currentSettings.get(one)?.brightness).toBe(30)
+        return
+      }
+
+      expect(native.currentSettings.get(one)).toEqual({ brightness: 48 })
+      expect(coordinator.restorationBlocked).toBe(false)
+      expect(coordinator.hdrProjectedDisplayIds).toEqual([])
+      expect(logger.events).toContainEqual(
+        expect.objectContaining({
+          eventName: 'BaselineRestored',
+          displayId: one,
+          reason: 'hdrProjectionRefused'
+        })
+      )
+      await queued
+      // The failed target stays retryable: a fresh capture of the restored
+      // original now includes NVIDIA state, and saturation applies.
+      await coordinator.activate(null, manualActivationMode('default'))
+      expect(native.currentSettings.get(one)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+      expect(
+        native.baselineCaptures.filter((capture) => capture.displayId === one).map((c) => c.settings)
+      ).toEqual([{ brightness: 48 }, { brightness: 48 }])
+    }
+  )
+
+  it('blocks when an HDR apply and its hold both meet an ownership change', async () => {
+    const native = new FakeNativeActivationPort()
+    native.hdrDisplayIds.add('display:one')
+    const ownershipChanged = (command: string) =>
+      new NativeServiceError('BASELINE_OWNERSHIP_CHANGED', 'Adapter owner changed.', command, 'test')
+    // Native refuses both the cleanup and the explicit restore without writing.
+    vi.spyOn(native, 'applyDisplaySettings').mockRejectedValue(ownershipChanged('display.apply'))
+    vi.spyOn(native, 'restoreDisplay').mockRejectedValue(ownershipChanged('display.restore'))
+    const both = profile('both', { saturation: 85 }, ['display:one', 'display:two'])
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([both], 'both')),
+      native,
+      new RecordingLogger()
+    )
+    const outcome = await coordinator.activate(null)
+    expect(outcome.failures).toContainEqual(
+      expect.objectContaining({ operation: 'restore', code: 'BASELINE_OWNERSHIP_CHANGED' })
+    )
+    expect(coordinator.restorationBlocked).toBe(true)
+    expect(native.calls.filter((call) => call.displayId === 'display:two')).toEqual([])
+  })
+
   it('never deduplicates a target that native refused with HDR_UNSAFE', async () => {
     const native = new FakeNativeActivationPort()
     const coordinator = new ActivationCoordinator(
