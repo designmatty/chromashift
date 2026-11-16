@@ -22,6 +22,7 @@
     "smoke:package": "node scripts/package-smoke.mjs",
     "smoke:compare": "node scripts/smoke.mjs --compare-only",
     "smoke:capability-log": "node scripts/smoke.mjs --capability-log-only",
+    "smoke:hdr": "node scripts/smoke.mjs --hdr-only",
     "test": "install-electron --no && vitest run src/main src/shared src/renderer",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
