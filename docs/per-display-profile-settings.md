@@ -276,8 +276,11 @@ or keeps the destination for Retry after a native baseline-restore error.
 Unconfirmed restoration uses the existing Safety blocked recovery. Switches from
 or to a Temporary override, to an Edit, to the same profile, or while a display
 or power transition is pending keep the full teardown before starting. The
-renderer drains debounced writes before the switch and, after a rejected start,
-ends the first session only if main still has it active.
+renderer drains debounced writes before the switch. If the destination's start
+is never sent or is rejected, the renderer ends the first session only while
+main still has that same session active under Active control. A session main
+keeps for Retry stays, and the editor shows it again. A newer profile switch
+may take the first session over and replace it; any other newer action ends it.
 
 Main owns Hold to compare through the narrow `setPreviewCompare(profileId,
 showing, sessionId, lifetime)` preload call. Its strict Zod request and response contracts,

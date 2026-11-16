@@ -1597,27 +1597,59 @@ it('lets a newer switch replace a clean session that an older switch had handed 
   expect(f.product.preview).toMatchObject({ state: 'active', profileId: gamma.id })
 })
 
-it('still drops the draft after Discard when a newer action supersedes the switch', async () => {
-  const { f, beta, gamma, dialog } = swapSetup(true)
-  f.profiles()!.props.onSelect(beta)
-  await f.settle()
+it.each(['profile switch', 'profile toggle'] as const)(
+  'still drops the draft after Discard when a newer %s supersedes the switch',
+  async (newer) => {
+    const { f, alpha, beta, gamma, dialog } = swapSetup(true)
+    f.profiles()!.props.onSelect(beta)
+    await f.settle()
+    const opening = delayed<{ ok: true; value: ColorProfile }>()
+    vi.mocked(window.chromaShift.openProfile).mockImplementation(async (id) =>
+      id === beta.id ? opening.promise : { ok: true, value: gamma }
+    )
+    dialog().onDiscard!()
+    await f.settle()
+    if (newer === 'profile switch') f.profiles()!.props.onSelect(gamma)
+    else f.profiles()!.props.onToggleEnabled(gamma)
+    opening.resolve({ ok: true, value: beta })
+    await f.settle()
+
+    expect(window.chromaShift.saveProfile).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: alpha.id })
+    )
+    if (newer === 'profile switch') {
+      // The newer switch takes the session over and replaces it in place.
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+      expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(gamma, 'preview')
+      expect(f.product.preview).toMatchObject({ state: 'active', profileId: gamma.id })
+    } else {
+      // Nothing replaces it, so the superseded switch ends it as before.
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledWith(1)
+      expect(f.startPreview).not.toHaveBeenCalled()
+      expect(f.product.preview).toEqual({ state: 'inactive' })
+    }
+  }
+)
+
+it('ends a handed-off session when a newer switch is itself superseded by another action', async () => {
+  const { f, beta, gamma } = swapSetup()
   const opening = delayed<{ ok: true; value: ColorProfile }>()
   vi.mocked(window.chromaShift.openProfile).mockImplementation(async (id) =>
-    id === beta.id ? opening.promise : { ok: true, value: beta }
+    id === beta.id ? opening.promise : { ok: true, value: gamma }
   )
-  dialog().onDiscard!()
+  f.profiles()!.props.onSelect(beta)
   await f.settle()
+  // A → B → C quickly, then a profile toggle supersedes C before it starts.
   f.profiles()!.props.onSelect(gamma)
+  f.profiles()!.props.onToggleEnabled(beta)
   opening.resolve({ ok: true, value: beta })
   await f.settle()
-  // The superseded switch ends the unsaved session before the newer one starts fresh.
-  // (The fresh start's own rollback-first cancel then finds no session.)
+  expect(f.startPreview).not.toHaveBeenCalled()
   expect(window.chromaShift.cancelPreview).toHaveBeenCalledWith(1)
-  expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(gamma, 'preview')
-  expect(vi.mocked(window.chromaShift.cancelPreview).mock.invocationCallOrder[0]).toBeLessThan(
-    f.startPreview.mock.invocationCallOrder[0]!
-  )
-  expect(window.chromaShift.saveProfile).not.toHaveBeenCalled()
+  expect(f.product.preview).toEqual({ state: 'inactive' })
+  expect(
+    findWhere<{ 'data-part'?: string }>(f.tree, (props) => props['data-part'] === 'preview-banner')
+  ).toBeUndefined()
 })
 
 it.each(['paused', 'safetyBlocked'] as const)(
@@ -1640,5 +1672,59 @@ it.each(['paused', 'safetyBlocked'] as const)(
       expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
     }
     expect(f.startPreview).not.toHaveBeenCalled()
+  }
+)
+
+it('ends a handed-off clean session when a profile toggle supersedes the switch', async () => {
+  const { f, alpha, beta } = swapSetup()
+  const opening = delayed<{ ok: true; value: ColorProfile }>()
+  vi.mocked(window.chromaShift.openProfile).mockImplementation(async (id) =>
+    id === beta.id ? opening.promise : { ok: true, value: beta }
+  )
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  // Profile menu actions stay reachable while the switch is busy.
+  f.profiles()!.props.onToggleEnabled(beta)
+  opening.resolve({ ok: true, value: beta })
+  await f.settle()
+  expect(window.chromaShift.saveProfile).toHaveBeenCalledWith({ ...beta, enabled: false })
+  expect(find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.profile.id).toBe(
+    beta.id
+  )
+  expect(f.startPreview).not.toHaveBeenCalled()
+  // Nothing replaced A, so it ends as it did before in-place switching.
+  expect(f.product.preview).not.toMatchObject({ state: 'active', profileId: alpha.id })
+})
+
+it.each(['discard', 'update'] as const)(
+  'keeps A for Retry after %s when admission rejects with A in continuation recovery',
+  async (choice) => {
+    const { f, alpha, beta, dialog } = swapSetup(true)
+    f.startPreview.mockImplementationOnce(async () => {
+      // An HDR restoration failure can retain A while B waits for admission.
+      f.product = {
+        ...f.product,
+        chromaShift: { ...f.product.chromaShift, status: 'safetyBlocked' }
+      }
+      return {
+        ok: false as const,
+        error: {
+          code: 'CONFLICT',
+          message: 'Restore the pending displays before starting a preview.'
+        }
+      } as unknown as { ok: true; value: null }
+    })
+    f.profiles()!.props.onSelect(beta)
+    await f.settle()
+    if (choice === 'discard') dialog().onDiscard!()
+    else dialog().onPrimary()
+    await f.settle()
+    expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(beta, 'preview')
+    expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+    expect(f.product.preview).toMatchObject({ state: 'active', sessionId: 1, profileId: alpha.id })
+    // The editor shows the session main kept for Retry, not the destination.
+    expect(find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.profile.id).toBe(
+      alpha.id
+    )
   }
 )

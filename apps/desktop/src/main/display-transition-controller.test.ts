@@ -215,3 +215,111 @@ describe('DisplayTransitionController', () => {
     expect(calls).toEqual(['begin', 'preview', 'complete:false:true'])
   })
 })
+
+describe('DisplayTransitionController pending across overlapping work', () => {
+  function deferred() {
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+
+  function gatedController() {
+    const refreshes: ReturnType<typeof deferred>[] = []
+    const completions: ReturnType<typeof deferred>[] = []
+    const controller = new DisplayTransitionController(
+      {
+        refreshDisplayTopology: async () => {
+          const gate = deferred()
+          refreshes.push(gate)
+          await gate.promise
+          return { generation: 1, displays: [], capabilityReports: [], baselines: [] }
+        }
+      },
+      {
+        beginSystemTransition: async () => undefined,
+        completeSystemTransition: async () => {
+          const gate = deferred()
+          completions.push(gate)
+          await gate.promise
+        }
+      },
+      { reapplyAfterDisplayTransition: async () => false },
+      new Logger(),
+      60_000
+    )
+    return { controller, refreshes, completions }
+  }
+
+  async function settleMicrotasks(): Promise<void> {
+    for (let turn = 0; turn < 30; turn++) await Promise.resolve()
+  }
+
+  it('stays pending through a lock that arrives while an earlier refresh runs', async () => {
+    const { controller, refreshes, completions } = gatedController()
+    controller.handleDisplayEvent('displayAdded')
+    const first = controller.flush()
+    await settleMicrotasks()
+    controller.handlePowerEvent('lock')
+    refreshes[0]!.resolve()
+    await settleMicrotasks()
+    expect(controller.pending).toBe(true)
+    completions[0]!.resolve()
+    await first
+    // The earlier refresh settled, but the newer lock still awaits its own refresh.
+    await controller.flush()
+    expect(controller.pending).toBe(true)
+    controller.handlePowerEvent('unlock')
+    const second = controller.flush()
+    await settleMicrotasks()
+    refreshes[1]!.resolve()
+    await settleMicrotasks()
+    expect(controller.pending).toBe(true)
+    completions[1]!.resolve()
+    await second
+    expect(controller.pending).toBe(false)
+    controller.dispose()
+  })
+
+  it('counts both queued refreshes until each activation completion settles', async () => {
+    const { controller, refreshes, completions } = gatedController()
+    controller.handleDisplayEvent('displayAdded')
+    const first = controller.flush()
+    await settleMicrotasks()
+    controller.handleDisplayEvent('displayMetricsChanged')
+    const second = controller.flush()
+    refreshes[0]!.resolve()
+    await settleMicrotasks()
+    completions[0]!.resolve()
+    await first
+    await settleMicrotasks()
+    expect(controller.pending).toBe(true)
+    refreshes[1]!.resolve()
+    await settleMicrotasks()
+    expect(controller.pending).toBe(true)
+    completions[1]!.resolve()
+    await second
+    expect(controller.pending).toBe(false)
+    controller.dispose()
+  })
+
+  it('keeps a refresh in flight across dispose, and a bare suspend pending without refreshing', async () => {
+    const { controller, refreshes, completions } = gatedController()
+    controller.handlePowerEvent('suspend')
+    await controller.flush()
+    expect(refreshes).toHaveLength(0)
+    expect(controller.pending).toBe(true)
+    controller.handlePowerEvent('resume')
+    const refresh = controller.flush()
+    await settleMicrotasks()
+    controller.dispose()
+    expect(controller.pending).toBe(true)
+    refreshes[0]!.resolve()
+    await settleMicrotasks()
+    expect(controller.pending).toBe(true)
+    completions[0]!.resolve()
+    await refresh
+    expect(controller.pending).toBe(false)
+  })
+})

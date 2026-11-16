@@ -1627,14 +1627,18 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
         window.__smokeSwitchObserver.observe(document.body, { childList: true, subtree: true })
       })()`
     })
+    // Record the source before the click, and keep sampling until the sampler
+    // itself has recorded the destination: the UI can be ready before the next
+    // poll, and a sample sequence ending on the source would be misleading.
     let sampling = true
-    const samples = []
+    const samples = [await readGuarded()]
     const sampler = (async () => {
       while (sampling) {
         samples.push(await readGuarded())
         await delay(10)
       }
     })()
+    let destinationState
     try {
       await openProfileFromSidebar(debuggerClient, fixtureName)
       await waitForExpression(
@@ -1649,11 +1653,20 @@ async function verifyPreviewToPreviewBanner(debuggerClient) {
         })()`,
         'Switching previews did not start the destination Preview with its banner.'
       )
+      destinationState = await readGuarded()
+      const deadline = Date.now() + timeoutMilliseconds
+      while (samples.at(-1) !== destinationState) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            'The switch sampler did not record the destination state after the destination Preview started.'
+          )
+        }
+        await delay(10)
+      }
     } finally {
       sampling = false
       await sampler
     }
-    const destinationState = await readGuarded()
     const gap = await debuggerClient.send('Runtime.evaluate', {
       expression: `(() => {
         window.__smokeSwitchObserver?.disconnect()
