@@ -2075,17 +2075,27 @@ async function verifyMiniComparison(prior, applied, draftBrightness = 56) {
   for (const theme of ['dark', 'light']) {
     await setTheme(debuggerClient, theme)
     await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+    // The previous pass leaves the pointer on Compare, and the theme switch fades
+    // both buttons. Wait for the hover-out and theme transitions to settle before
+    // comparing; a single read can land mid-transition.
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        const update = [...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')]
+          .find(candidate => candidate.textContent.trim() === 'Update profile')
+        if (!button || !update) return false
+        const style = getComputedStyle(button)
+        const neighbor = getComputedStyle(update)
+        return style.height === neighbor.height && style.borderRadius === neighbor.borderRadius &&
+          Number.parseFloat(style.borderRadius) >= Number.parseFloat(style.height) / 2 &&
+          style.backgroundColor === neighbor.backgroundColor
+      })()`,
+      `Mini compare must match the Update profile size, pill shape and subtle surface (${theme}).`
+    )
     const point = await evaluate(`(() => {
         const button = document.querySelector('[aria-label="Hold to compare with saved"]')
         if (!button) return null
-        const update = [...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')]
-          .find(candidate => candidate.textContent.trim() === 'Update profile')
-        const style = getComputedStyle(button)
-        const neighbor = getComputedStyle(update)
-        if (style.height !== neighbor.height || style.borderRadius !== neighbor.borderRadius ||
-            Number.parseFloat(style.borderRadius) < Number.parseFloat(style.height) / 2 ||
-            style.backgroundColor !== neighbor.backgroundColor)
-          throw new Error('Mini compare must match the Update profile size, pill shape and subtle surface.')
         window.__miniCompareIdleBackground = getComputedStyle(button).backgroundColor
         window.__miniCompareHeight = document.querySelector('[data-part="mini-panel"]').getBoundingClientRect().height
         const rect = button.getBoundingClientRect()
