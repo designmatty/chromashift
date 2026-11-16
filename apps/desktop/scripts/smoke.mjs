@@ -5216,7 +5216,7 @@ async function runSmoke() {
     debuggerClient,
     `
     document.querySelector('[data-part="chromashift-control"]')?.textContent?.includes('Auto-switching on hold') &&
-    document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-valuenow') === '56' &&
+    document.querySelector(${JSON.stringify(`[data-part="profile-detail"] [data-part="display-control"][data-display-id="${guardedProductDisplayId}"] [role="slider"]`)})?.getAttribute('aria-valuenow') === '56' &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Update profile') &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Discard changes') &&
     document.querySelector('[data-part="override-banner"]') === null &&
