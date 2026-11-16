@@ -31,9 +31,9 @@ npm run smoke --workspace @chromashift/website
   `object-fit: contain`, stands in for the monitor and a copy of the mini panel
   floats above it. Drag the panel by its title bar. The bottom row switches the
   foreground app (Escape from Tarkov, Rust, Blender, Figma) and the time of
-  day, beside **Hold to compare**.
+  day, beside **Hold to see original**.
 - A guided tour (`src/demo-tour.ts`) spotlights the panel, its sliders, the app
-  switcher, day and night, and **Hold to compare**. It starts on the first open,
+  switcher, day and night, and **Hold to see original**. It starts on the first open,
   is remembered in `localStorage`, and never blocks the demo. Escape, its close
   button, or **Skip tour** dismiss it; **Tour** restarts it.
 - The demo follows the app's activation rules in memory. Automatic mode
@@ -42,9 +42,12 @@ npm run smoke --workspace @chromashift/website
   also have night profiles that the demo selects for their night scenes. This
   is a demo-only refinement: the desktop app matches profiles by executable
   alone.
-  The picker makes a manual selection. Slider changes show **Reset changes**
-  and **Update profile**. Power pauses, the restore button shows the original
-  until the next change, and **Hold to compare** shows it while pressed.
+  The picker makes a manual selection; it shows each profile's app icon and
+  marks the live profile. Slider changes show **Hold to compare**, which shows
+  the saved profile while pressed, **Discard changes**, and **Update profile**,
+  and turn the power icon yellow while auto-switching is on hold. Power
+  pauses, the restore button shows the original until the next change, and
+  **Hold to see original** shows the original while pressed.
   Updating the Escape from Tarkov profile also updates the hero replica.
 - `src/demo-model.ts` mirrors the app's control ranges and brightness-dependent
   gamma envelope. Brightness, contrast, and gamma use a port of the display

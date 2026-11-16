@@ -15,6 +15,16 @@ shows its credit inside the demo.
 | `blender.jpg`      | Blender, Blender Foundation. 2560 × 1440 frame from [What's New in Blender 5.1! Official Overview](https://www.youtube.com/watch?v=8r3xoRwwN6I) on the official [Blender](https://www.youtube.com/@BlenderOfficial) channel.                                        |
 | `figma.jpg`        | Figma, showing ChromaShift's own design file. 2560 × 1440 capture by the ChromaShift project.                                                                                                                                                                       |
 
+The hero replica's profile and trigger icons in `public/media/app-icons` are the
+32 × 32 Windows shell icons of each executable, as the desktop app captures
+them:
+
+| File          | Executable                                      |
+| ------------- | ----------------------------------------------- |
+| `tarkov.png`  | `EscapeFromTarkov.exe`, Battlestate Games       |
+| `rust.png`    | `RustClient.exe`, Facepunch Studios             |
+| `blender.png` | `blender.exe` (Blender 4.5), Blender Foundation |
+
 Original sources:
 
 - [Rust day](https://images.squarespace-cdn.com/content/v1/627cb6fa4355783e5e375440/dab6271e-d1a5-42e0-bc82-ae36f3018deb/rust_01_huntingbow.jpg?format=1500w)

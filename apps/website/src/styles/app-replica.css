@@ -83,28 +83,31 @@
   width: 245px;
 }
 
-.cs-selection {
+.cs-mode {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  padding: 4px;
+  border-bottom: 1px solid var(--cs-border-muted);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 11%);
+  box-shadow: var(--cs-recessed);
 }
 
-.cs-selection__label {
-  font-size: 12px;
+.cs-mode__item {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--cs-fg-muted);
   font-weight: 500;
 }
 
-.cs-selection__trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--cs-border);
-  border-radius: 6px;
+.cs-mode__item.is-selected {
+  background: var(--cs-bg-muted);
+  box-shadow: var(--cs-raised);
+  color: var(--cs-fg);
 }
 
-.cs-selection__trigger .i,
 .cs-sidebar__footer .i {
   font-size: 16px;
 }
@@ -142,6 +145,7 @@
   border: 1px solid var(--cs-border);
   border-radius: 999px;
   background: var(--cs-bg-muted);
+  box-shadow: var(--cs-raised);
   color: var(--cs-fg);
   font-weight: 500;
 }
@@ -168,6 +172,7 @@
 
 .cs-profile.is-selected {
   background: var(--cs-bg-muted);
+  box-shadow: var(--cs-raised);
 }
 
 .cs-profile__icon {
@@ -179,6 +184,14 @@
   border-radius: 999px;
   background: var(--cs-bg-muted);
   font-size: 18px;
+}
+
+.cs-profile__icon img {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--cs-border-muted);
+  border-radius: 999px;
+  object-fit: cover;
 }
 
 .cs-profile.is-selected .cs-profile__icon {
@@ -218,6 +231,8 @@
   min-width: 0;
   padding: 20px;
   overflow: hidden;
+  border: 1px solid var(--cs-border-muted);
+  border-top-color: rgb(255 255 255 / 12%);
   border-radius: 12px;
   background: var(--cs-bg-muted);
 }
@@ -266,6 +281,7 @@
   padding: 4px;
   border-radius: 6px;
   background: var(--cs-bg);
+  box-shadow: var(--cs-recessed);
 }
 
 .cs-tab {
@@ -281,14 +297,84 @@
 
 .cs-tab.is-selected {
   background: var(--cs-bg-muted);
+  box-shadow: var(--cs-raised);
   color: var(--cs-fg);
 }
 
+.cs-tab .cs-badge {
+  background: var(--cs-bg-muted);
+  color: var(--cs-fg);
+}
+
+/* Triggers puts its buttons to the right of the heading. */
+.cs-section--actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 4px;
+}
+
+.cs-section__actions {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  gap: 12px;
+}
+
+/* Chakra's 2xs subtle button, raised. */
+.cs-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--cs-bg-emphasized);
+  box-shadow: var(--cs-raised);
+  color: var(--cs-fg);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cs-button .i {
+  font-size: 14px;
+}
+
+.cs-button--outline {
+  border: 1px solid var(--cs-border);
+  background: none;
+}
+
 .cs-adapter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
   margin: 8px 0;
   color: var(--cs-fg-muted);
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.cs-row__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-row__reset {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cs-row__reset[hidden] {
+  display: none;
 }
 
 .cs-rows {
@@ -299,7 +385,7 @@
 
 .cs-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 88px calc(50% - 4px);
+  grid-template-columns: 26px minmax(0, 1fr) 84px 421px;
   align-items: center;
   height: 32px;
 }
@@ -309,44 +395,40 @@
   font-size: 18px;
 }
 
-/* Read-only number inputs and sliders use the app's disabled opacity. */
+/* The app shows the value as a plain label; it becomes an input on click. */
 .cs-number {
-  display: grid;
-  grid-template-columns: 1fr 20px;
-  grid-template-rows: 1fr 1fr;
-  align-items: center;
-  width: 80px;
-  height: 30px;
-  border-radius: 4px;
-  background: var(--cs-bg-emphasized);
+  margin-right: 8px;
+  color: #c8c8d0;
   font-family: var(--font-mono);
   font-size: 12px;
-  opacity: 0.5;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.cs-number [data-value] {
-  grid-row: 1 / 3;
-  padding-left: 12px;
-}
-
-.cs-number .i {
-  width: 100%;
-  height: 100%;
-  padding: 2px 5px;
-  border-left: 1px solid var(--cs-border);
-}
-
+/* A plain fill to the thumb, a neutral marker, and a 16 × 26 thumb. */
 .cs-track {
   --p: 0;
+  --n: 0.5;
   position: relative;
   height: 20px;
   border-radius: 4px;
-  background: linear-gradient(
-    to right,
-    #4b4b58 calc(8px + var(--p) * (100% - 16px)),
-    var(--cs-bg) 0
-  );
-  opacity: 0.7;
+  /* The plain fill has a 1px lit top edge, as in the app. */
+  background:
+    linear-gradient(rgb(255 255 255 / 16%) 0 1px, transparent 1px) left /
+      calc(8px + var(--p) * (100% - 16px)) 100% no-repeat,
+    linear-gradient(to right, var(--cs-range) calc(8px + var(--p) * (100% - 16px)), var(--cs-bg) 0);
+}
+
+.cs-track::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(8px + var(--n) * (100% - 16px) - 1px);
+  width: 2px;
+  background: var(--cs-fg);
+  box-shadow: 0 0 0 1px var(--cs-bg);
+  content: '';
 }
 
 .cs-track::after {
@@ -357,6 +439,7 @@
   height: 26px;
   border-radius: 4px;
   background: var(--cs-fg);
+  box-shadow: var(--cs-raised);
   content: '';
 }
 
@@ -370,43 +453,56 @@
 
 .cs-row[data-control='gamma'] .cs-track {
   --p: 0.24;
+  --n: 0.28;
 }
 
 .cs-row[data-control='saturation'] .cs-track {
   --p: 0.84;
+  background: linear-gradient(to right, var(--cs-fg-muted), var(--cs-pink));
 }
 
+.cs-row[data-control='hue'] .cs-track {
+  --n: 0;
+  background: linear-gradient(
+    to right,
+    #dc2626,
+    #fde047,
+    #16a34a,
+    #0891b2,
+    #2563eb,
+    #9333ea,
+    #dc2626
+  );
+}
+
+/* A trigger chip, as in the app's Triggers section. */
 .cs-rule {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 4px 12px;
+  align-self: flex-start;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 4px 8px;
   border-radius: 6px;
   background: var(--cs-bg-subtle);
 }
 
-.cs-rule .i {
-  font-size: 24px;
+.cs-rule img {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  object-fit: cover;
 }
 
-.cs-rule span {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+/* The remove button's 14px X in a 20px box. */
+.cs-rule .i {
+  box-sizing: content-box;
+  padding: 3px;
+  font-size: 14px;
 }
 
 .cs-rule strong {
-  font-size: 16px;
   font-weight: 500;
-}
-
-.cs-rule small {
-  overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

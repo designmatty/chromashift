@@ -34,6 +34,10 @@
   --cs-blue-bg: #14204a;
   --cs-blue-fg: #a3cfff;
   --cs-pink: #ec4899;
+  /* The app's `raised` and `recessed` dark shadows. */
+  --cs-raised:
+    inset 0 1px 0 0 rgb(255 255 255 / 8%), 0 0 0 1px rgb(0 0 0 / 30%), 0 1px 2px 0 rgb(0 0 0 / 30%);
+  --cs-recessed: inset 0 1px 2px 0 rgb(0 0 0 / 32%);
 
   color: var(--cs-fg);
   font-family: var(--font-sans);
@@ -68,8 +72,9 @@
   height: 32px;
   padding: 3px;
   border: 1px solid var(--cs-border);
-  border-radius: 8px;
-  background: var(--cs-bg-subtle);
+  border-radius: 6px;
+  background: var(--cs-bg);
+  box-shadow: var(--cs-recessed);
   translate: -50% -50%;
 }
 
@@ -85,6 +90,7 @@
 
 .cs-panel-toggle__button.is-pressed {
   background: var(--cs-bg-muted);
+  box-shadow: var(--cs-raised);
 }
 
 .cs-ui button.cs-panel-toggle__button:not(.is-pressed):hover,

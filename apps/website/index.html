@@ -111,14 +111,6 @@
         <path d="M18 6 6 18" />
         <path d="m6 6 12 12" />
       </symbol>
-      <symbol id="i-list-video" viewBox="0 0 24 24">
-        <path d="M21 5H3" />
-        <path d="M10 12H3" />
-        <path d="M10 19H3" />
-        <path
-          d="M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z"
-        />
-      </symbol>
       <symbol id="i-plus" viewBox="0 0 24 24">
         <path d="M5 12h14" />
         <path d="M12 5v14" />
@@ -143,22 +135,6 @@
         <path d="M9 3v18" />
         <path d="m16 15-3-3 3-3" />
       </symbol>
-      <symbol id="i-scan-eye" viewBox="0 0 24 24">
-        <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-        <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-        <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-        <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-        <circle cx="12" cy="12" r="1" />
-        <path
-          d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"
-        />
-      </symbol>
-      <symbol id="i-square-pen" viewBox="0 0 24 24">
-        <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-        <path
-          d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"
-        />
-      </symbol>
       <symbol id="i-ellipsis" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="1" />
         <circle cx="19" cy="12" r="1" />
@@ -175,7 +151,18 @@
         <path d="M2 8h20" />
         <path d="M6 4v4" />
       </symbol>
-      <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6" /></symbol>
+      <symbol id="i-shield-alert" viewBox="0 0 24 24">
+        <path
+          d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+        />
+        <path d="M12 8v4" />
+        <path d="M12 16h.01" />
+      </symbol>
+      <symbol id="i-folder-open" viewBox="0 0 24 24">
+        <path
+          d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
+        />
+      </symbol>
       <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
       <symbol id="i-chevrons-up-down" viewBox="0 0 24 24">
         <path d="m7 15 5 5 5-5" />
@@ -328,7 +315,7 @@
                       alt=""
                     />
                     <span class="cs-status"
-                      ><svg class="i"><use href="#i-power" /></svg>Status: Active</span
+                      ><svg class="i"><use href="#i-power" /></svg>Active · Automatic</span
                     >
                     <span class="cs-panel-toggle">
                       <span class="cs-panel-toggle__button is-pressed"
@@ -346,12 +333,9 @@
                   </div>
                   <div class="cs-app__body">
                     <div class="cs-sidebar">
-                      <div class="cs-selection">
-                        <span class="cs-selection__label">Profile selection</span>
-                        <span class="cs-selection__trigger"
-                          >Automatic: Escape from Tarkov<svg class="i">
-                            <use href="#i-list-video" /></svg
-                        ></span>
+                      <div class="cs-mode">
+                        <span class="cs-mode__item is-selected">Automatic</span
+                        ><span class="cs-mode__item">Manual</span>
                       </div>
                       <div class="cs-sidebar__header">
                         <span class="cs-count">6</span
@@ -368,30 +352,50 @@
                         </li>
                         <li class="cs-profile is-selected is-current">
                           <span class="cs-profile__icon"
-                            ><svg class="i"><use href="#i-palette" /></svg></span
+                            ><img
+                              src="/media/app-icons/tarkov.png"
+                              width="30"
+                              height="30"
+                              alt="" /></span
                           ><span class="cs-profile__text"
                             ><span class="cs-profile__name">Escape from Tarkov</span
-                            ><small>Current · Automatic</small></span
+                            ><small>Live · Automatic</small></span
                           >
                         </li>
                         <li class="cs-profile">
                           <span class="cs-profile__icon"
-                            ><svg class="i"><use href="#i-palette" /></svg></span
+                            ><img
+                              src="/media/app-icons/tarkov.png"
+                              width="30"
+                              height="30"
+                              alt="" /></span
                           ><span class="cs-profile__name">Tarkov night</span>
                         </li>
                         <li class="cs-profile">
                           <span class="cs-profile__icon"
-                            ><svg class="i"><use href="#i-palette" /></svg></span
+                            ><img
+                              src="/media/app-icons/rust.png"
+                              width="30"
+                              height="30"
+                              alt="" /></span
                           ><span class="cs-profile__name">Rust</span>
                         </li>
                         <li class="cs-profile">
                           <span class="cs-profile__icon"
-                            ><svg class="i"><use href="#i-palette" /></svg></span
+                            ><img
+                              src="/media/app-icons/rust.png"
+                              width="30"
+                              height="30"
+                              alt="" /></span
                           ><span class="cs-profile__name">Rust night</span>
                         </li>
                         <li class="cs-profile">
                           <span class="cs-profile__icon"
-                            ><svg class="i"><use href="#i-palette" /></svg></span
+                            ><img
+                              src="/media/app-icons/blender.png"
+                              width="30"
+                              height="30"
+                              alt="" /></span
                           ><span class="cs-profile__name">Blender</span>
                         </li>
                       </ul>
@@ -404,10 +408,28 @@
                       <div class="cs-detail__header">
                         <span class="cs-detail__name">Escape from Tarkov</span>
                         <span class="cs-detail__actions">
-                          <svg class="i"><use href="#i-scan-eye" /></svg>
-                          <svg class="i"><use href="#i-square-pen" /></svg>
                           <svg class="i"><use href="#i-ellipsis" /></svg>
                         </span>
+                      </div>
+                      <div class="cs-section cs-section--actions">
+                        <span class="cs-section__title"
+                          ><svg class="i"><use href="#i-app-window" /></svg>Triggers</span
+                        >
+                        <span class="cs-section__hint"
+                          >Apps that trigger this profile in automatic mode</span
+                        >
+                        <span class="cs-section__actions"
+                          ><span class="cs-button"
+                            >Browse<svg class="i"><use href="#i-folder-open" /></svg></span
+                          ><span class="cs-button"
+                            >Select from open apps<svg class="i">
+                              <use href="#i-chevron-down" /></svg></span
+                        ></span>
+                      </div>
+                      <div class="cs-rule">
+                        <img src="/media/app-icons/tarkov.png" width="16" height="16" alt="" />
+                        <strong>EscapeFromTarkov.exe</strong>
+                        <svg class="i"><use href="#i-x" /></svg>
                       </div>
                       <div class="cs-section">
                         <span class="cs-section__title"
@@ -423,70 +445,48 @@
                           >Odyssey G60SD<span class="cs-badge">Primary</span></span
                         ><span class="cs-tab">VG278</span>
                       </div>
-                      <p class="cs-adapter">NVIDIA GeForce RTX 5090 • DisplayPort</p>
+                      <div class="cs-adapter">
+                        NVIDIA GeForce RTX 5090 • DisplayPort<span
+                          class="cs-button cs-button--outline"
+                          >Copy to VG278</span
+                        >
+                      </div>
                       <div class="cs-rows" data-hero-controls>
                         <div class="cs-row" data-control="brightness">
                           <svg class="i"><use href="#i-brightness" /></svg
-                          ><span class="cs-row__label">Brightness</span
-                          ><span class="cs-number"
-                            ><span data-value>50</span
-                            ><svg class="i"><use href="#i-chevron-up" /></svg
-                            ><svg class="i"><use href="#i-chevron-down" /></svg></span
+                          ><span class="cs-row__label"
+                            >Brightness<span class="cs-row__reset" data-reset hidden>↺</span></span
+                          ><span class="cs-number"><span data-value>50%</span></span
                           ><span class="cs-track" data-track></span>
                         </div>
                         <div class="cs-row" data-control="contrast">
                           <svg class="i"><use href="#i-contrast" /></svg
-                          ><span class="cs-row__label">Contrast</span
-                          ><span class="cs-number"
-                            ><span data-value>63</span
-                            ><svg class="i"><use href="#i-chevron-up" /></svg
-                            ><svg class="i"><use href="#i-chevron-down" /></svg></span
+                          ><span class="cs-row__label"
+                            >Contrast<span class="cs-row__reset" data-reset>↺</span></span
+                          ><span class="cs-number"><span data-value>63%</span></span
                           ><span class="cs-track" data-track></span>
                         </div>
                         <div class="cs-row" data-control="gamma">
                           <svg class="i"><use href="#i-gauge" /></svg
-                          ><span class="cs-row__label">Gamma</span
-                          ><span class="cs-number"
-                            ><span data-value>0.9</span
-                            ><svg class="i"><use href="#i-chevron-up" /></svg
-                            ><svg class="i"><use href="#i-chevron-down" /></svg></span
+                          ><span class="cs-row__label"
+                            >Gamma<span class="cs-row__reset" data-reset>↺</span></span
+                          ><span class="cs-number"><span data-value>0.90</span></span
                           ><span class="cs-track" data-track></span>
                         </div>
                         <div class="cs-row" data-control="saturation">
                           <svg class="i"><use href="#i-saturation" /></svg
-                          ><span class="cs-row__label">Saturation</span
-                          ><span class="cs-number"
-                            ><span data-value>84</span
-                            ><svg class="i"><use href="#i-chevron-up" /></svg
-                            ><svg class="i"><use href="#i-chevron-down" /></svg></span
+                          ><span class="cs-row__label"
+                            >Saturation<span class="cs-row__reset" data-reset>↺</span></span
+                          ><span class="cs-number"><span data-value>84%</span></span
                           ><span class="cs-track" data-track></span>
                         </div>
                         <div class="cs-row" data-control="hue">
                           <svg class="i"><use href="#i-palette" /></svg
-                          ><span class="cs-row__label">Hue</span
-                          ><span class="cs-number"
-                            ><span data-value>0</span
-                            ><svg class="i"><use href="#i-chevron-up" /></svg
-                            ><svg class="i"><use href="#i-chevron-down" /></svg></span
+                          ><span class="cs-row__label"
+                            >Hue<span class="cs-row__reset" data-reset hidden>↺</span></span
+                          ><span class="cs-number"><span data-value>0°</span></span
                           ><span class="cs-track" data-track></span>
                         </div>
-                      </div>
-                      <div class="cs-section">
-                        <span class="cs-section__title"
-                          ><svg class="i"><use href="#i-app-window" /></svg>Triggers</span
-                        >
-                        <span class="cs-section__hint"
-                          >Apps that trigger this profile in automatic mode</span
-                        >
-                      </div>
-                      <div class="cs-rule">
-                        <svg class="i"><use href="#i-app-window" /></svg>
-                        <span
-                          ><strong>EscapeFromTarkov.exe</strong
-                          ><small
-                            >C:\Battlestate Games\Escape from Tarkov\EscapeFromTarkov.exe</small
-                          ></span
-                        >
                       </div>
                     </div>
                   </div>
@@ -747,24 +747,29 @@
               data-demo-apps
             ></div>
             <div class="demo__times" role="group" aria-label="Time of day">
-              <button type="button" data-demo-variant="day" aria-label="Day" title="Day">
+              <button type="button" data-demo-variant="day" aria-label="Day" data-tooltip="Day">
                 <svg class="i" aria-hidden="true"><use href="#i-sun" /></svg>
               </button>
-              <button type="button" data-demo-variant="night" aria-label="Night" title="Night">
+              <button
+                type="button"
+                data-demo-variant="night"
+                aria-label="Night"
+                data-tooltip="Night"
+              >
                 <svg class="i" aria-hidden="true"><use href="#i-moon" /></svg>
               </button>
             </div>
           </nav>
           <button class="demo-button demo__compare" type="button" data-demo-compare>
             <svg class="i" aria-hidden="true"><use href="#i-eye" /></svg
-            ><span class="demo-button__label">Hold to compare</span>
+            ><span class="demo-button__label">Hold to see original</span>
           </button>
         </div>
         <p class="demo__credit" data-demo-credit></p>
 
         <div class="mini-dock" data-mini-dock>
           <section class="cs-ui mini" aria-label="ChromaShift mini panel" data-mini>
-            <header class="mini__titlebar" data-mini-drag title="Drag to move">
+            <header class="mini__titlebar" data-mini-drag data-tooltip="Drag to move">
               <img
                 class="mini__mark"
                 src="/icons/mark-darkmode.png"
@@ -780,7 +785,7 @@
                   class="cs-panel-toggle__button"
                   type="button"
                   aria-label="App view"
-                  title="App view"
+                  data-tooltip="App view"
                   aria-pressed="false"
                   data-demo-close
                 >
@@ -790,7 +795,7 @@
                   class="cs-panel-toggle__button is-pressed"
                   type="button"
                   aria-label="Mini view"
-                  title="Mini view"
+                  data-tooltip="Mini view"
                   aria-pressed="true"
                 >
                   <svg class="i" aria-hidden="true"><use href="#i-panel-top" /></svg>
@@ -799,8 +804,8 @@
               <button
                 class="cs-icon-button mini__close"
                 type="button"
-                aria-label="Close mini panel"
-                title="Close mini panel"
+                aria-label="Close demo"
+                data-tooltip="Close demo"
                 data-demo-close
               >
                 <svg class="i" aria-hidden="true"><use href="#i-x" /></svg>
@@ -809,16 +814,34 @@
 
             <div class="mini__view" data-mini-controls-view>
               <div class="mini__override" data-mini-override hidden>
+                <button class="cs-pill cs-pill--subtle" type="button" data-mini-compare>
+                  Hold to compare
+                </button>
                 <button class="cs-pill cs-pill--solid" type="button" data-mini-reset>
-                  Reset changes
+                  Discard changes
                 </button>
                 <button class="cs-pill cs-pill--subtle" type="button" data-mini-update>
                   Update profile
                 </button>
               </div>
-              <div class="mini__content" data-mini-controls></div>
+              <div class="mini__content" data-mini-controls>
+                <div class="mini-display">
+                  <svg class="i" aria-hidden="true"><use href="#i-monitor" /></svg>Odyssey G60SD<svg
+                    class="i mini-display__chevron"
+                    aria-hidden="true"
+                  >
+                    <use href="#i-chevron-down" />
+                  </svg>
+                </div>
+              </div>
               <footer class="mini__footer">
-                <button class="mini__profile" type="button" data-mini-picker-open>
+                <button
+                  class="mini__profile"
+                  type="button"
+                  data-tooltip="Switch profile"
+                  data-tooltip-placement="top-start"
+                  data-mini-picker-open
+                >
                   <span class="mini__profile-text"
                     ><small data-mini-mode>Automatic</small
                     ><strong data-mini-profile>Default profile</strong></span
@@ -829,7 +852,7 @@
                   class="cs-icon-button cs-icon-button--md"
                   type="button"
                   aria-label="Open settings"
-                  title="Open settings"
+                  data-tooltip="Open settings"
                   data-demo-close
                 >
                   <svg class="i" aria-hidden="true"><use href="#i-settings" /></svg>
@@ -838,7 +861,7 @@
                   class="cs-icon-button cs-icon-button--md"
                   type="button"
                   aria-label="Restore original display settings"
-                  title="Restore original display settings"
+                  data-tooltip="Restore original display settings"
                   data-mini-restore
                 >
                   <svg class="i" aria-hidden="true"><use href="#i-refresh-ccw-dot" /></svg>
@@ -877,7 +900,7 @@
                 class="tour__close"
                 type="button"
                 aria-label="Close tour"
-                title="Close tour"
+                data-tooltip="Close tour"
                 data-tour-skip
               >
                 <svg class="i" aria-hidden="true"><use href="#i-x" /></svg>
