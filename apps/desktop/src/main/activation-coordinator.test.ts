@@ -825,6 +825,32 @@ describe('ActivationCoordinator', () => {
     }
   )
 
+  it('retries a held HDR display on the next activation of the same target', async () => {
+    const one = 'display:one'
+    const native = new FakeNativeActivationPort()
+    native.reports.set(one, nvidiaCapabilityReport(one, false))
+    native.captureWithoutNvidiaDisplayIds.add(one)
+    native.currentSettings.set(one, { brightness: 48 })
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([profile('default', { saturation: 85 }, [one])], 'default')),
+      native,
+      new RecordingLogger()
+    )
+    await coordinator.activate(null)
+    native.captureWithoutNvidiaDisplayIds.clear()
+    native.reports.set(one, nvidiaCapabilityReport(one))
+    native.hdrDisplayIds.add(one)
+    await coordinator.resetForDisplayTransition()
+    await expect(coordinator.activate(null)).resolves.toMatchObject({ status: 'partialFailure' })
+    expect(native.currentSettings.get(one)).toEqual({ brightness: 48 })
+    // The failed outcome reset deduplication, so the same target retries at once.
+    await expect(coordinator.activate(null)).resolves.toMatchObject({
+      status: 'activated',
+      failures: []
+    })
+    expect(native.currentSettings.get(one)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+  })
+
   it('blocks when an HDR apply and its hold both meet an ownership change', async () => {
     const native = new FakeNativeActivationPort()
     native.hdrDisplayIds.add('display:one')

@@ -73,6 +73,20 @@ export class PreviewRestoreError extends Error {
   }
 }
 
+/**
+ * An update kept the session and draft, but native refused the HDR projection
+ * for these displays, so they show Original settings. The next update retries.
+ */
+export class PreviewDisplayHeldError extends Error {
+  public constructor(public readonly displayNames: readonly string[]) {
+    super(
+      `ChromaShift couldn't apply saturation and hue to ${displayNames.join(', ')} while HDR is on, ` +
+        'so it shows its original settings. Your changes are kept, and the next change tries again.'
+    )
+    this.name = 'PreviewDisplayHeldError'
+  }
+}
+
 interface ActivePreview {
   /** Stable across draft updates and in-place Preview to Edit promotion. */
   sessionId: number
@@ -91,6 +105,11 @@ interface ActivePreview {
   validated: Map<string, Set<ColorSettingName>>
   /** Desired targets currently not written: disconnected, or held by HDR. */
   disconnected: Set<string>
+  /**
+   * Connected HDR displays whose projected apply native refused. They show
+   * Original settings and retry on every update and session reapply.
+   */
+  held: Set<string>
   /**
    * Activation-owned displays whose output is HDR-safe: the activation's last
    * write was HDR-projected and this session has not written them since.
@@ -251,6 +270,7 @@ export class PreviewSessionController {
 
     const applied = new Map<string, DisplayColorTarget>()
     const writableDisplayIds = this.#writableDisplayIds(displays, hdrWrites)
+    const held = new Set<string>()
     const disconnected = new Set(
       targets
         .filter((target) => !writableDisplayIds.has(target.displayId.toLowerCase()))
@@ -277,7 +297,7 @@ export class PreviewSessionController {
         if (!disconnected.has(key)) {
           activationHdrSafe.delete(key)
           try {
-            if (!(await this.#applyOrHold(target, hdrWrites.get(key), touched))) disconnected.add(key)
+            if (!(await this.#applyOrHold(target, hdrWrites.get(key), touched))) held.add(key)
           } catch (error) {
             if (!this.#isDisplayDeferred(error)) throw error
             disconnected.add(key)
@@ -299,6 +319,7 @@ export class PreviewSessionController {
         touched,
         validated,
         disconnected,
+        held,
         activationHdrSafe
       }
       if (error instanceof PreviewRestoreError) {
@@ -324,6 +345,7 @@ export class PreviewSessionController {
       touched,
       validated,
       disconnected,
+      held,
       activationHdrSafe
     }
     this.onStateChanged(this.state)
@@ -383,8 +405,9 @@ export class PreviewSessionController {
       // Reject rather than buffer edits: a delayed edit must not change held output.
       if (active.comparing)
         throw new PreviewValidationError('Release Hold to compare before editing.')
+      let held: string[]
       try {
-        await this.#update(profileId, targets)
+        held = await this.#update(profileId, targets)
         const active = this.#requireActive(profileId)
         active.draft = structuredClone({
           ...(draft ?? active.draft),
@@ -406,6 +429,9 @@ export class PreviewSessionController {
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
       }
+      // The update and draft stand. Report the held display through the normal
+      // request error so both panels show it; the next update retries it.
+      if (held.length > 0) throw new PreviewDisplayHeldError(held)
     })
   }
 
@@ -490,7 +516,8 @@ export class PreviewSessionController {
     })
   }
 
-  async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
+  /** Returns the names of displays held at Original settings by this update. */
+  async #update(profileId: string, targets: DisplayColorTarget[]): Promise<string[]> {
     const active = this.#requireActive(profileId)
     const displays = await this.native.getDisplays()
     const hdrWrites = await this.#hdrWrites(targets, displays)
@@ -529,17 +556,26 @@ export class PreviewSessionController {
         throw new PreviewRestoreError(restored.failures, restored.retainedDisplayIds)
       active.applied.delete(key)
       active.disconnected.delete(key)
+      active.held.delete(key)
     }
 
+    const heldNow: string[] = []
     for (const target of desired) {
       const key = target.displayId.toLowerCase()
       const current = active.applied.get(key)
-      if (current !== undefined && sameColorSettings(current.color, target.color)) continue
+      // A held display retries on every update, even when its target is unchanged.
+      if (
+        current !== undefined &&
+        sameColorSettings(current.color, target.color) &&
+        !active.held.has(key)
+      )
+        continue
       if (active.disconnected.has(key)) {
         active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
         continue
       }
-      if (current === undefined) {
+      // A confirmed hold released the baseline, so this captures Original output.
+      if (current === undefined || !active.touched.has(key)) {
         try {
           await this.native.captureBaseline(target.displayId)
           active.touched.set(key, target.displayId)
@@ -551,8 +587,13 @@ export class PreviewSessionController {
       if (!active.disconnected.has(key)) {
         active.activationHdrSafe.delete(key)
         try {
-          if (!(await this.#applyOrHold(target, hdrWrites.get(key), active.touched)))
-            active.disconnected.add(key)
+          if (await this.#applyOrHold(target, hdrWrites.get(key), active.touched)) {
+            active.held.delete(key)
+          } else {
+            active.held.add(key)
+            const display = displays.find((candidate) => candidate.id.toLowerCase() === key)
+            heldNow.push(display?.name ?? target.displayId)
+          }
         } catch (error) {
           if (!this.#isDisplayDeferred(error)) throw error
           active.disconnected.add(key)
@@ -560,6 +601,7 @@ export class PreviewSessionController {
       }
       active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
     }
+    return heldNow
   }
 
   public async confirm(profileId: string): Promise<void> {
@@ -746,6 +788,7 @@ export class PreviewSessionController {
     )
     const connectedDisplayIds = this.#writableDisplayIds(displays, hdrWrites)
     active.disconnected.clear()
+    active.held.clear()
     for (const target of active.applied.values()) {
       if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
         active.disconnected.add(target.displayId.toLowerCase())
@@ -768,7 +811,7 @@ export class PreviewSessionController {
         active.touched.set(key, target.displayId)
         active.activationHdrSafe.delete(key)
         if (!(await this.#applyOrHold(target, hdrWrite, active.touched)))
-          active.disconnected.add(key)
+          active.held.add(key)
       } catch (error) {
         if (!this.#isDisplayDeferred(error)) throw error
         const key = target.displayId.toLowerCase()

@@ -15,6 +15,7 @@ import { NativeServiceError } from '@chromashift/native-client'
 import type { DisplayApplyResult, DisplaySettings } from '@chromashift/native-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  PreviewDisplayHeldError,
   PreviewRestoreError,
   PreviewSessionController,
   type PreviewActivationPort
@@ -1649,6 +1650,82 @@ describe('a refused HDR projection (#89 final review)', () => {
     await expect(controller.retryRestoration()).resolves.toBe(true)
     expect(controller.sessionRecoveryPending).toBe(false)
     expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+  })
+
+  it('retries a held display on the next edit, from a fresh capture, once the refusal clears', async () => {
+    const native = refusingNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(draft, 'edit', profile())
+    turnHdrOn(native)
+    await controller.reapplyAfterDisplayTransition()
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48 })
+    const capturesBefore = native.baselineCaptures.length
+
+    // No display transition: the next draft edit alone reaches the HDR display.
+    const edited = profile(
+      targets([display.id, { brightness: 30, saturation: 95 }], [secondDisplay.id, { brightness: 35 }])
+    )
+    await controller.update(edited.id, edited.displays, edited)
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 95, hue: 0 })
+    // The confirmed hold released ownership; the new capture is of Original output.
+    expect(native.baselineCaptures.slice(capturesBefore)).toEqual([
+      { displayId: display.id, settings: { brightness: 48 } }
+    ])
+    expect(controller.unsavedDraft).toEqual(edited)
+
+    // Once applied, an unrelated edit leaves the display alone.
+    const applies = native.applied.length
+    const other = profile(
+      targets([display.id, { brightness: 30, saturation: 95 }], [secondDisplay.id, { brightness: 40 }])
+    )
+    await controller.update(other.id, other.displays, other)
+    expect(native.applied.slice(applies).map((entry) => entry.displayId)).toEqual([secondDisplay.id])
+  })
+
+  it('retries, holds again and reports each edit while the refusal persists', async () => {
+    const native = refusingNative()
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(draft, 'edit', profile())
+    turnHdrOn(native)
+    // The refusal persists: every fresh capture still lacks NVIDIA state.
+    native.captureWithoutNvidiaDisplayIds.add(display.id)
+    await controller.reapplyAfterDisplayTransition()
+
+    for (const [saturation, brightness] of [
+      [95, 40],
+      [90, 45]
+    ] as const) {
+      const edited = profile(
+        targets([display.id, { brightness: 30, saturation }], [secondDisplay.id, { brightness }])
+      )
+      const calls = native.calls.length
+      const update = controller.update(edited.id, edited.displays, edited)
+      await expect(update).rejects.toBeInstanceOf(PreviewDisplayHeldError)
+      // Both panels show it through the normal request error banner.
+      expect(mapProductError(await update.catch((error: unknown) => error))).toEqual({
+        code: 'OPERATION_FAILED',
+        message:
+          "ChromaShift couldn't apply saturation and hue to Test display while HDR is on, " +
+          'so it shows its original settings. Your changes are kept, and the next change tries again.'
+      })
+      // Retried: fresh capture, refused apply, confirmed restore.
+      expect(native.calls.slice(calls).filter((call) => call.displayId === display.id)).toEqual([
+        { operation: 'capture', displayId: display.id },
+        { operation: 'apply', displayId: display.id, settings: { saturation, hue: 0 } },
+        { operation: 'restore', displayId: display.id }
+      ])
+      expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48 })
+      // The other display, the draft and the session are unaffected.
+      expect(native.currentSettings.get(secondDisplay.id)?.brightness).toBe(brightness)
+      expect(controller.unsavedDraft).toEqual(edited)
+      expect(controller.state).toMatchObject({ state: 'active', kind: 'edit', draft: edited })
+      expect(controller.sessionRecoveryPending).toBe(false)
+    }
+
+    // Ending the session restores normally and hands nothing back for the held display.
+    await controller.cancel()
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48 })
   })
 
   it('holds an activation-owned display when an override start is refused under HDR', async () => {

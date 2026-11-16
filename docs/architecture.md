@@ -157,8 +157,13 @@ capture left the baseline without NVIDIA state. Activation and the preview
 session then record the failure, restore the display explicitly and hold it at
 Original settings; the session and draft stay. An unconfirmed restore follows
 the restoration-failure path into Safety blocked. Restoration failures,
-disconnects and `HDR_UNSAFE` keep their own handling. The display retries on the
-next activation or transition from a fresh capture of the restored original.
+disconnects and `HDR_UNSAFE` keep their own handling. A held display is not
+treated as disconnected. Activation retries it on its next activation, because
+the failed outcome resets deduplication. A preview session retries it on every
+draft update and on each reapply. Each retry starts from a fresh capture of the
+restored original. While the refusal persists, each update keeps the session
+and draft but rejects with a message that both panels show through their
+normal error banner.
 For a physical display
 with several endpoints, any HDR endpoint makes the whole target HDR, and the
 intersection of endpoint capabilities decides the rest, so an AMD endpoint in
