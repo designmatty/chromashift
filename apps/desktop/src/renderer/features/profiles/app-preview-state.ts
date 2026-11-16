@@ -64,10 +64,11 @@ export function isProfileClickNoop(
 
 /**
  * Switching from a Preview or Edit session to another profile that will start
- * its own native Preview rolls the first session back before starting the
- * next. The banner stays mounted for the destination during that gap.
+ * its own native Preview replaces the session in place (#78): main goes from the
+ * first profile's values to the next without restoring the live target, and
+ * the banner stays mounted for the destination throughout.
  */
-export function keepsPreviewBannerWhileSwitching(
+export function replacesPreviewInPlace(
   before: AppPreviewState & Pick<ProductState, 'preview'>,
   destination: ColorProfile
 ): boolean {

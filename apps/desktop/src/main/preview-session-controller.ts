@@ -30,6 +30,12 @@ export interface PreviewNativePort {
 export interface PreviewActivationPort {
   /** Drains activation writes and returns the baselines it may still own. */
   beginPreview(): Promise<readonly string[]>
+  /**
+   * Keeps the current hold for a session that replaces the active one in place.
+   * Drains activation writes, rejects wherever beginPreview would, and returns
+   * the baselines activation may still own.
+   */
+  continuePreview(): Promise<readonly string[]>
   cancelPreview(retainedDisplayIds?: readonly string[]): Promise<void>
   confirmPreview(profileId: string, retainedDisplayIds?: readonly string[]): Promise<void>
 }
@@ -116,7 +122,9 @@ export class PreviewSessionController {
       restored: async () => undefined
     },
     private readonly limits?: LearnedGammaLimits,
-    private readonly repository?: ProfileRepository
+    private readonly repository?: ProfileRepository,
+    /** A display or power transition is pending or settling; replacement then restores first. */
+    private readonly transitionPending: () => boolean = () => false
   ) {}
 
   public get state(): PreviewState {
@@ -186,31 +194,46 @@ export class PreviewSessionController {
     if (this.#recovery !== null) {
       throw new PreviewValidationError('Restore the pending displays before starting a preview.')
     }
-    await this.limits?.refreshApplicability()
-    profile = this.limits?.clampProfile(profile) ?? profile
-    const targets = activeColorTargets(profile)
-    if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
-      const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
-      this.#active.version = version
-      this.#active.draft = structuredClone(profile)
-      if (this.#active.kind !== 'edit' && kind === 'edit') {
-        this.#active.kind = 'edit'
-      }
-      if (changed) this.onStateChanged(this.state)
-      return
-    }
-    if (this.#active !== null) {
-      const rollback = await this.#teardown()
-      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
-    }
-
+    // Decided before any step that can throw, so a replacement's preparation
+    // fails inside the guard that still owns the session it replaces.
+    const replaced = this.#canReplaceSession(profile.id, kind) ? this.#active : null
     const validated = new Map<string, Set<ColorSettingName>>()
-    const displays = await this.native.getDisplays()
-    await this.#validateTargets(targets, validated, displays, true)
-    const ownedDisplayIds = await this.activation.beginPreview()
+    let targets: DisplayColorTarget[]
+    let displays: Display[]
+    let touched: Map<string, string>
+    if (replaced === null) {
+      await this.limits?.refreshApplicability()
+      profile = this.limits?.clampProfile(profile) ?? profile
+      targets = activeColorTargets(profile)
+      if (this.#active !== null && this.#canReuseSession(profile.id, targets, kind)) {
+        const changed = this.#active.kind !== kind || profilesDiffer(this.#active.draft, profile)
+        this.#active.version = version
+        this.#active.draft = structuredClone(profile)
+        if (this.#active.kind !== 'edit' && kind === 'edit') {
+          this.#active.kind = 'edit'
+        }
+        if (changed) this.onStateChanged(this.state)
+        return
+      }
+      if (this.#active !== null) {
+        const rollback = await this.#teardown()
+        if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      }
+      displays = await this.native.getDisplays()
+      await this.#validateTargets(targets, validated, displays, true)
+      const ownedDisplayIds = await this.activation.beginPreview()
+      touched = new Map(ownedDisplayIds.map((id) => [id.toLowerCase(), id]))
+    } else {
+      ;({ profile, targets, displays } = await this.#releaseForReplacement(
+        replaced,
+        profile,
+        validated
+      ))
+      // Restored entries are harmless; retained and unconfirmed ones must stay tracked.
+      touched = new Map(replaced.touched)
+    }
 
     const applied = new Map<string, DisplayColorTarget>()
-    const touched = new Map(ownedDisplayIds.map((id) => [id.toLowerCase(), id]))
     const writableDisplayIds = new Set(
       displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
     )
@@ -220,8 +243,10 @@ export class PreviewSessionController {
         .map((target) => target.displayId.toLowerCase())
     )
     try {
-      await this.#restoreHdrDisplays(touched, displays)
-      if (kind !== 'override') await this.#holdOriginal(touched, targets)
+      if (replaced === null) {
+        await this.#restoreHdrDisplays(touched, displays)
+        if (kind !== 'override') await this.#holdOriginal(touched, targets)
+      }
       for (const target of targets) {
         const key = target.displayId.toLowerCase()
         if (disconnected.has(key)) continue
@@ -285,6 +310,39 @@ export class PreviewSessionController {
       disconnected
     }
     this.onStateChanged(this.state)
+  }
+
+  /**
+   * Releases the active session for an in-place replacement without passing
+   * through the live target: the activation hold and its baselines stay owned,
+   * and only displays the next session does not target return to Original
+   * settings. Displays it does target keep their baselines, so the next apply
+   * is computed from the same immutable captured state. Any failure, including
+   * the replacement's own preparation, restores the active session completely,
+   * as rolling it back before starting would.
+   */
+  async #releaseForReplacement(
+    active: ActivePreview,
+    requested: ColorProfile,
+    validated: Map<string, Set<ColorSettingName>>
+  ): Promise<{ profile: ColorProfile; targets: DisplayColorTarget[]; displays: Display[] }> {
+    try {
+      await this.limits?.refreshApplicability()
+      const profile = this.limits?.clampProfile(requested) ?? requested
+      const targets = activeColorTargets(profile)
+      const displays = await this.native.getDisplays()
+      await this.#validateTargets(targets, validated, displays, true)
+      for (const id of await this.activation.continuePreview()) {
+        active.touched.set(id.toLowerCase(), id)
+      }
+      await this.#restoreHdrDisplays(active.touched, displays)
+      await this.#holdOriginal(active.touched, targets)
+      return { profile, targets, displays }
+    } catch (error) {
+      const rollback = await this.#teardown()
+      if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
+      throw error
+    }
   }
 
   public async update(
@@ -932,6 +990,23 @@ export class PreviewSessionController {
       const current = this.#active?.applied.get(target.displayId.toLowerCase())
       return current !== undefined && sameColorSettings(current.color, target.color)
     })
+  }
+
+  /**
+   * Switching from a Preview or Edit to another profile's Preview replaces the
+   * session in place. Overrides hold no Original settings, so they and every
+   * other combination keep the full teardown before starting. So does a
+   * pending display transition: a new endpoint can share a source that still
+   * shows the active session's output, so restoration must come first.
+   */
+  #canReplaceSession(profileId: string, kind: ActivePreview['kind']): boolean {
+    return (
+      this.#active !== null &&
+      this.#active.kind !== 'override' &&
+      kind === 'preview' &&
+      this.#active.profileId.toLowerCase() !== profileId.toLowerCase() &&
+      !this.transitionPending()
+    )
   }
 }
 

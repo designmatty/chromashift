@@ -69,6 +69,7 @@ async function setup() {
     physical,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },

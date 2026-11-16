@@ -199,6 +199,19 @@ export class PreviewSyncSession {
     await Promise.allSettled([...this.#pending])
   }
 
+  /**
+   * Give up this session for a start that replaces it in place, without
+   * cancelling it. Scheduled sends are dropped and in-flight ones drain first,
+   * so none can land in the replacing session. Like rollback, the next draft
+   * starts or promotes its own session instead of joining this one.
+   */
+  public async handOff(): Promise<void> {
+    this.invalidate()
+    this.#needsStart = true
+    this.#promotedProfileId = null
+    await Promise.allSettled([this.#rollback, ...this.#pending])
+  }
+
   public async rollback(throwOnError = false): Promise<boolean> {
     this.invalidate()
     this.#needsStart = true

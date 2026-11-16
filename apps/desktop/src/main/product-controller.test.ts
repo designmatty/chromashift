@@ -86,6 +86,7 @@ function controller(
     },
     {
       beginPreview: () => Promise.resolve([]),
+      continuePreview: () => Promise.resolve([]),
       cancelPreview: () => Promise.resolve(),
       confirmPreview: () => Promise.resolve()
     },

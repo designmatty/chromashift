@@ -33,6 +33,7 @@ async function twoDisplays(kind: 'edit' | 'override' = 'edit') {
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -88,6 +89,7 @@ it('override Retry after a failed saved write returns every display to the draft
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },

@@ -50,6 +50,7 @@ function setup() {
   const native = new FakeNativeDisplayPort()
   const activation = {
     beginPreview: vi.fn(async () => []),
+    continuePreview: vi.fn(async () => []),
     cancelPreview: vi.fn(async () => undefined),
     confirmPreview: vi.fn(async () => undefined)
   }

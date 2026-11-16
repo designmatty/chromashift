@@ -206,6 +206,38 @@ describe('preview sync session', () => {
     expect(port.calls[port.calls.length - 1]).toBe('cancel')
   })
 
+  it('hands off for a replacing start: drops scheduled sends and drains in-flight ones without cancelling', async () => {
+    port.deferStart = () => undefined
+    session.schedule(profile, inactive)
+    vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+    session.schedule({ ...profile, name: 'Still debouncing' }, inactive)
+    let handedOff = false
+    const handOff = session.handOff().then(() => {
+      handedOff = true
+    })
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(handedOff).toBe(false)
+    port.deferStart()
+    await handOff
+    expect(port.calls).toEqual([`start:edit:${profile.id}`])
+  })
+
+  it('promotes again after a hand-off when the replacing session returns to the same profile', async () => {
+    const preview = { ...activeSession('preview'), targets: profile.displays } as PreviewState
+    session.schedule(profile, preview)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    await session.handOff()
+    // A → B → A: main now holds a fresh, unpromoted Preview of the same profile.
+    session.schedule(profile, { ...preview, sessionId: 3 } as PreviewState)
+    await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS)
+    expect(port.calls).toEqual([
+      `start:edit:${profile.id}`,
+      `update:${profile.id}`,
+      `start:edit:${profile.id}`,
+      `update:${profile.id}`
+    ])
+  })
+
   it('rollback discards a still-debouncing send entirely', async () => {
     session.schedule(profile, inactive)
     const rollback = session.rollback()

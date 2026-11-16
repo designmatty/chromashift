@@ -17,6 +17,7 @@ function controller() {
     new FakeNativeDisplayPort(),
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },

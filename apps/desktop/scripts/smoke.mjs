@@ -1508,105 +1508,250 @@ async function verifyLongProfileName(debuggerClient, name) {
   )
 }
 
-// Switching from one previewed profile to another keeps the banner mounted for
-// the destination. The guarded display is sampled during the switch to report,
-// without failing, whether it visibly returns to the live target in between.
+// #78: switching from one previewed profile to another replaces the session in
+// place. The banner stays mounted for the destination, and the guarded display
+// goes from the source's values to the destination's without the live target.
+// The live profile first gets its own guarded value. That measured live state
+// must differ from both previews and Original settings, so a live sample is
+// unambiguous. Native Apply restores the captured baseline inside each write,
+// so a baseline sample between the two previews is tolerated.
 async function verifyPreviewToPreviewBanner(debuggerClient) {
   // The 65-character editor maximum also covers long-name truncation.
   const fixtureName = 'Preview switch check with a long profile name that keeps on going'
-  const created = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(async () => {
-      const created = await window.chromaShift.createProfile(${JSON.stringify(fixtureName)})
-      if (!created.ok) return null
-      const saved = await window.chromaShift.saveProfile({
-        ...created.value,
-        displays: created.value.displays.map((target) =>
-          target.displayId === ${JSON.stringify(guardedProductDisplayId)}
-            ? { ...target, color: { ...${JSON.stringify(neutralColorSettings)}, brightness: 60 } }
-            : target
-        )
-      })
-      return saved.ok ? saved.value.id : null
-    })()`,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  const fixtureId = created.result.value
-  if (typeof fixtureId !== 'string') throw new Error('Could not create the preview-switch fixture.')
-  await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
-      window.__smokeSwitchBannerGap = false
-      window.__smokeSwitchObserver = new MutationObserver(() => {
-        if (document.querySelector('[data-part="preview-banner"]') === null)
-          window.__smokeSwitchBannerGap = true
-      })
-      window.__smokeSwitchObserver.observe(document.body, { childList: true, subtree: true })
-    })()`
-  })
   const baseline = guardedBaselines.get(guardedDisplay.id)
-  const before = displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
-  let sampling = true
-  const samples = []
-  const sampler = (async () => {
-    while (sampling) {
-      samples.push(
-        displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
-      )
-      await delay(10)
-    }
-  })()
-  try {
-    await openProfileFromSidebar(debuggerClient, fixtureName)
-    await waitForExpression(
-      debuggerClient,
-      `(async () => {
-        const result = await window.chromaShift.getState()
-        return result.ok && result.value.preview.state === 'active' &&
-          result.value.preview.kind === 'preview' &&
-          result.value.preview.profileId === ${JSON.stringify(fixtureId)} &&
-          document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
-            ?.textContent?.includes(${JSON.stringify(`Previewing: ${fixtureName}`)}) === true
-      })()`,
-      'Switching previews did not start the destination Preview with its banner.'
-    )
-  } finally {
-    sampling = false
-    await sampler
-  }
-  const after = samples.at(-1)
-  const gap = await debuggerClient.send('Runtime.evaluate', {
-    expression: `(() => {
-      window.__smokeSwitchObserver?.disconnect()
-      return window.__smokeSwitchBannerGap === true
-    })()`,
-    returnByValue: true
-  })
-  if (gap.result.value !== false) {
-    throw new Error('The preview banner disappeared while switching between previewed profiles.')
-  }
-  globalThis.console.log(
-    `Preview switch observation: ${JSON.stringify({
-      samples: samples.length,
-      sourceDiffersFromLive: before !== baseline,
-      destinationDiffersFromLive: after !== baseline,
-      liveStateObservedBetweenPreviews: samples.some((sample) => sample === baseline)
-    })}`
-  )
-  await verifyLongProfileName(debuggerClient, fixtureName)
-  await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+  const readGuarded = async () =>
+    displayStateFingerprint(await restorationGuard.getDisplayState(guardedDisplay.id))
+  const smokePreviewActive = `(async () => {
+    const result = await window.chromaShift.getState()
+    if (!result.ok || result.value.preview.state !== 'active' ||
+      result.value.preview.kind !== 'preview') return false
+    const previewed = result.value.configuration.profiles.find((item) => item.name === 'Smoke profile')
+    return result.value.preview.profileId === previewed?.id &&
+      document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
+        ?.textContent?.includes('Previewing: Smoke profile') === true
+  })()`
+
+  // Measure the live state first: leave the Smoke profile preview, then give
+  // the live profile a distinct guarded value while nothing holds its writes.
+  await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
   await waitForExpression(
     debuggerClient,
     `(async () => {
       const result = await window.chromaShift.getState()
-      if (!result.ok || result.value.preview.state !== 'active' ||
-        result.value.preview.kind !== 'preview') return false
-      const previewed = result.value.configuration.profiles.find((item) => item.name === 'Smoke profile')
-      if (result.value.preview.profileId !== previewed?.id) return false
-      const deleted = await window.chromaShift.deleteProfile(${JSON.stringify(fixtureId)})
-      return deleted.ok
+      return result.ok && result.value.preview.state === 'inactive'
     })()`,
-    'Could not return to the Smoke profile preview and remove the preview-switch fixture.'
+    'End preview did not end the Smoke profile preview before the switch check.'
   )
+  const prepared = await debuggerClient.send('Runtime.evaluate', {
+    expression: `(async () => {
+      const guarded = ${JSON.stringify(guardedProductDisplayId)}
+      const neutral = ${JSON.stringify(neutralColorSettings)}
+      const state = await window.chromaShift.getState()
+      if (!state.ok || state.value.preview.state !== 'inactive') return null
+      const target = state.value.chromaShift.intendedTarget
+      const profiles = state.value.configuration.profiles
+      const live = profiles.find((item) => target?.kind === 'profile' && item.id === target.profileId)
+      const source = profiles.find((item) => item.name === 'Smoke profile')
+      if (live === undefined || source === undefined) return null
+      const brightnessOf = (profile) =>
+        profile.displays.find((item) => item.displayId === guarded)?.color.brightness
+      const used = [brightnessOf(source), brightnessOf(live), neutral.brightness]
+      const destinationBrightness = [60, 70, 80].find((value) => !used.includes(value))
+      const liveBrightness = [45, 40, 35].find((value) => !used.includes(value))
+      const withGuarded = (profile, brightness) => ({
+        ...profile,
+        displays: [
+          ...profile.displays.filter((item) => item.displayId !== guarded),
+          { displayId: guarded, color: { ...neutral, brightness } }
+        ]
+      })
+      const created = await window.chromaShift.createProfile(${JSON.stringify(fixtureName)})
+      if (!created.ok) return null
+      const saved = await window.chromaShift.saveProfile(
+        withGuarded(created.value, destinationBrightness)
+      )
+      if (!saved.ok) return null
+      // Saving resolves after activation has applied the changed live profile.
+      const distinctLive = await window.chromaShift.saveProfile(withGuarded(live, liveBrightness))
+      if (!distinctLive.ok) return null
+      return {
+        fixtureId: saved.value.id,
+        live
+      }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true
+  })
+  const fixtureId = prepared.result.value?.fixtureId
+  const originalLive = prepared.result.value?.live
+  if (typeof fixtureId !== 'string' || originalLive === undefined) {
+    throw new Error('Could not create the preview-switch fixture and distinct live target.')
+  }
+  // The live profile now differs from its saved original. Restore it only while
+  // a preview holds activation writes: a configuration refresh outside a hold
+  // drops activation's baseline ownership without restoring the display.
+  let liveProfileRestored = false
+  const restoreLiveProfile = async () => {
+    const restored = await debuggerClient.send('Runtime.evaluate', {
+      expression: `window.chromaShift.saveProfile(${JSON.stringify(originalLive)})`,
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (restored.result.value?.ok !== true) {
+      throw new Error('Could not restore the live profile after the preview-switch check.')
+    }
+    liveProfileRestored = true
+  }
+  try {
+    const liveState = await readGuarded()
+
+    await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+    await waitForExpression(
+      debuggerClient,
+      smokePreviewActive,
+      'The Smoke profile did not preview before the switch check.'
+    )
+    const sourceState = await readGuarded()
+    if (new Set([liveState, sourceState, baseline]).size !== 3) {
+      throw new Error(
+        'The preview-switch check needs live, source and Original states that differ on the guarded display.'
+      )
+    }
+    await debuggerClient.send('Runtime.evaluate', {
+      expression: `(() => {
+        window.__smokeSwitchBannerGap = false
+        window.__smokeSwitchObserver = new MutationObserver(() => {
+          if (document.querySelector('[data-part="preview-banner"]') === null)
+            window.__smokeSwitchBannerGap = true
+        })
+        window.__smokeSwitchObserver.observe(document.body, { childList: true, subtree: true })
+      })()`
+    })
+    // Record the source before the click, and keep sampling until the sampler
+    // itself has recorded the destination: the UI can be ready before the next
+    // poll, and a sample sequence ending on the source would be misleading.
+    let sampling = true
+    const samples = [await readGuarded()]
+    const sampler = (async () => {
+      while (sampling) {
+        samples.push(await readGuarded())
+        await delay(10)
+      }
+    })()
+    let destinationState
+    try {
+      await openProfileFromSidebar(debuggerClient, fixtureName)
+      await waitForExpression(
+        debuggerClient,
+        `(async () => {
+          const result = await window.chromaShift.getState()
+          return result.ok && result.value.preview.state === 'active' &&
+            result.value.preview.kind === 'preview' &&
+            result.value.preview.profileId === ${JSON.stringify(fixtureId)} &&
+            document.querySelector(':has(> [data-part="main-panel"]) + [data-part="preview-banner"]')
+              ?.textContent?.includes(${JSON.stringify(`Previewing: ${fixtureName}`)}) === true
+        })()`,
+        'Switching previews did not start the destination Preview with its banner.'
+      )
+      destinationState = await readGuarded()
+      const deadline = Date.now() + timeoutMilliseconds
+      while (samples.at(-1) !== destinationState) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            'The switch sampler did not record the destination state after the destination Preview started.'
+          )
+        }
+        await delay(10)
+      }
+    } finally {
+      sampling = false
+      await sampler
+    }
+    const gap = await debuggerClient.send('Runtime.evaluate', {
+      expression: `(() => {
+        window.__smokeSwitchObserver?.disconnect()
+        return window.__smokeSwitchBannerGap === true
+      })()`,
+      returnByValue: true
+    })
+    if (gap.result.value !== false) {
+      throw new Error('The preview banner disappeared while switching between previewed profiles.')
+    }
+    const observation = {
+      samples: samples.length,
+      baselineTransients: samples.filter((sample) => sample === baseline).length,
+      liveSamples: samples.filter((sample) => sample === liveState).length,
+      otherSamples: samples.filter(
+        (sample) => ![sourceState, destinationState, baseline].includes(sample)
+      ).length
+    }
+    globalThis.console.log(`Preview switch observation: ${JSON.stringify(observation)}`)
+    if ([liveState, sourceState, baseline].includes(destinationState)) {
+      throw new Error('The preview-switch destination did not show its own guarded state.')
+    }
+    if (observation.liveSamples > 0 || observation.otherSamples > 0) {
+      throw new Error(
+        'The guarded display showed a state other than either preview or Original settings while switching previews.'
+      )
+    }
+    const firstDestination = samples.indexOf(destinationState)
+    if (
+      samples[0] !== sourceState ||
+      samples.at(-1) !== destinationState ||
+      samples.lastIndexOf(sourceState) > firstDestination
+    ) {
+      throw new Error(
+        'The guarded display did not go straight from the source preview to the destination.'
+      )
+    }
+
+    await verifyLongProfileName(debuggerClient, fixtureName)
+    await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+    await waitForExpression(
+      debuggerClient,
+      `(async () => {
+        if (!(await ${smokePreviewActive})) return false
+        const deleted = await window.chromaShift.deleteProfile(${JSON.stringify(fixtureId)})
+        return deleted.ok
+      })()`,
+      'Could not return to the Smoke profile preview and remove the preview-switch fixture.'
+    )
+
+    // Ending the replaced preview still restores the exact live target.
+    await clickAppButton(debuggerClient, 'End preview', '[data-part="preview-banner"]')
+    const restoredLive = displayStateFingerprint(
+      await waitForRestoredDisplayState(restorationGuard, guardedDisplay.id, liveState)
+    )
+    if (restoredLive !== liveState) {
+      throw new Error('End preview after switching previews did not restore the exact live target.')
+    }
+
+    // Reopen the Smoke profile preview, as the following checks expect. Its hold
+    // makes restoring the live profile's saved content a write-free change.
+    await openProfileFromSidebar(debuggerClient, 'Smoke profile')
+    await waitForExpression(
+      debuggerClient,
+      smokePreviewActive,
+      'Could not return to the Smoke profile preview after the preview-switch check.'
+    )
+    await restoreLiveProfile()
+    const heldState = await readGuarded()
+    await delay(300)
+    if (heldState === liveState || (await readGuarded()) !== heldState) {
+      throw new Error(
+        'Restoring the live profile during the Smoke profile preview changed the guarded display.'
+      )
+    }
+  } finally {
+    if (!liveProfileRestored) {
+      // Keep a failure above from also leaving the live profile modified.
+      await restoreLiveProfile().catch((error) => {
+        globalThis.console.error(
+          `Could not restore the live profile after a failed preview-switch check: ${error.message}`
+        )
+      })
+    }
+  }
 }
 
 async function evaluateRenderer(expression) {

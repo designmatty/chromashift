@@ -186,7 +186,11 @@ targets remain persisted and resume when the same physical display returns.
   switching on hold. Focus loss leaves preview active.
   Switching from one previewed or edited profile to another profile that will
   preview keeps the strip mounted and names the destination. It hides only when
-  the destination is the live profile or the switch fails.
+  the destination is the live profile or the switch fails. The displays go
+  straight from the first profile's values to the destination's without showing
+  the live profile, and automatic switching stays on hold. Unsaved changes still
+  open the Update, Discard or Cancel dialog first. A switch made while a display
+  or power transition is pending still passes through the live profile.
 - Color controls keep the app's label/value/slider row and the mini panel's
   label/value above the slider. Values appear as plain text. In the app panel,
   click a value to edit it inline; Enter or blur saves and Escape cancels.
@@ -259,6 +263,24 @@ and restores the prior automatic or manual target. `Discard changes` also waits
 for pending writes; on a non-live profile it returns the session to the saved
 values instead. Preview
 holds automatic writes while remembering foreground changes and has no countdown.
+
+Switching an app-panel Preview or Edit to another profile's Preview replaces the
+session in place. Main keeps the activation hold and every baseline the first
+session owns. It restores HDR displays and displays the destination does not
+target, then applies the destination from the same immutable captured
+baselines, so one profile never compounds onto another. A queued automatic
+target stays queued until the destination preview ends. A failure before the
+destination's first write restores the first session completely, as rolling it
+back before starting would. A later failure restores both sessions' displays,
+or keeps the destination for Retry after a native baseline-restore error.
+Unconfirmed restoration uses the existing Safety blocked recovery. Switches from
+or to a Temporary override, to an Edit, to the same profile, or while a display
+or power transition is pending keep the full teardown before starting. The
+renderer drains debounced writes before the switch. If the destination's start
+is never sent or is rejected, the renderer ends the first session only while
+main still has that same session active under Active control. A session main
+keeps for Retry stays, and the editor shows it again. A newer profile switch
+may take the first session over and replace it; any other newer action ends it.
 
 Main owns Hold to compare through the narrow `setPreviewCompare(profileId,
 showing, sessionId, lifetime)` preload call. Its strict Zod request and response contracts,

@@ -50,6 +50,11 @@ export interface PreviewDraft {
   invalidateSync(): void
   settlePreview(): Promise<void>
   /**
+   * Release compare and drain every synchronization without cancelling, for a
+   * start that replaces the session in place (#78).
+   */
+  handOffPreview(): Promise<void>
+  /**
    * Invalidate, wait for every in-flight synchronization, then cancel the
    * native session. Resolves only once the session is safely rolled back.
    */
@@ -243,6 +248,10 @@ export function usePreviewDraft(options: UsePreviewDraftOptions): PreviewDraft {
     settlePreview: async () => {
       await compare.release()
       await sync.settle()
+    },
+    handOffPreview: async () => {
+      await compare.release()
+      await sync.handOff()
     },
     rollbackPreview: (throwOnError) => {
       const rollback = sync.rollback(throwOnError)

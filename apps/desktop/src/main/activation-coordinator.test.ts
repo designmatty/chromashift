@@ -1109,6 +1109,36 @@ describe('AutomaticActivationController', () => {
     ).toEqual([50, 75])
   })
 
+  it('continues a preview hold only where a new preview could begin, without writing the live target', async () => {
+    const native = new FakeNativeActivationPort()
+    const profileRepository = repository(configuration([defaultProfile, gameAProfile], 'default'))
+    const controller = new AutomaticActivationController(
+      profileRepository,
+      new ActivationCoordinator(profileRepository, native, new RecordingLogger()),
+      new RecordingLogger()
+    )
+    await controller.start(application('Browser.exe'))
+    const applies = () => native.calls.filter((call) => call.operation === 'apply')
+
+    await expect(controller.continuePreview()).rejects.toThrow('No display preview is active.')
+    await expect(controller.beginPreview()).resolves.toEqual(['display:one'])
+    await controller.handleNativeEvent(foregroundEvent('GameA.exe'))
+    await expect(controller.continuePreview()).resolves.toEqual(['display:one'])
+    expect(controller.state.queuedTarget).toEqual({ kind: 'profile', profileId: 'game-a' })
+    expect(controller.state.currentTarget).toEqual({ kind: 'profile', profileId: 'default' })
+    expect(applies()).toHaveLength(1)
+
+    await controller.beginSystemTransition()
+    await expect(controller.continuePreview()).rejects.toThrow(
+      'A display transition is in progress.'
+    )
+    await controller.completeSystemTransition(true)
+    await expect(controller.continuePreview()).resolves.toEqual(['display:one'])
+    await controller.suspendWrites()
+    await expect(controller.continuePreview()).rejects.toThrow('Restore the pending displays')
+    expect(applies()).toHaveLength(1)
+  })
+
   it('preserves a preview-owned baseline while its display is disconnected', async () => {
     const native = new FakeNativeActivationPort()
     const profileRepository = repository(configuration([gameAProfile]))

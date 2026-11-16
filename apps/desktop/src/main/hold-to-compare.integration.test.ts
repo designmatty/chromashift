@@ -37,6 +37,7 @@ async function fixture(missingTarget = false, kind: 'edit' | 'override' = 'edit'
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: cancel,
       confirmPreview: async () => undefined
     },

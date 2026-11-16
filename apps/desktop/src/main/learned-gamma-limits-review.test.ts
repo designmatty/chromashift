@@ -145,7 +145,12 @@ it('updates the displayed gamma after learning from a newly added preview target
   await s.repository.save(empty)
   const preview = new PreviewSessionController(
     s.physical,
-    { beginPreview: async () => [], cancelPreview: async () => {}, confirmPreview: async () => {} },
+    {
+      beginPreview: async () => [],
+      continuePreview: async () => [],
+      cancelPreview: async () => {},
+      confirmPreview: async () => {}
+    },
     () => {},
     undefined,
     s.limits,

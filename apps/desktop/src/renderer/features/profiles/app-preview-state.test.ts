@@ -4,7 +4,7 @@ import type { ProductState } from '@shared/product-api'
 import {
   discardPlan,
   isProfileClickNoop,
-  keepsPreviewBannerWhileSwitching,
+  replacesPreviewInPlace,
   liveProfile,
   previewBannerVisible,
   shouldPreviewProfile,
@@ -193,21 +193,22 @@ describe('preview banner while switching profiles', () => {
   })
 
   it('keeps the banner from one previewed or edited profile to another', () => {
-    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('preview')), third)).toBe(true)
-    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('edit')), third)).toBe(true)
+    expect(replacesPreviewInPlace(withPreview(previewing('preview')), third)).toBe(true)
+    expect(replacesPreviewInPlace(withPreview(previewing('edit')), third)).toBe(true)
   })
   it('keeps the banner for an empty destination, but not the live or same profile', () => {
     const before = withPreview(previewing('preview'))
-    expect(keepsPreviewBannerWhileSwitching(before, profiles[0]!)).toBe(false)
-    expect(keepsPreviewBannerWhileSwitching(before, { ...third, displays: [] })).toBe(true)
-    expect(keepsPreviewBannerWhileSwitching(before, profiles[1]!)).toBe(false)
+    expect(replacesPreviewInPlace(before, profiles[0]!)).toBe(false)
+    expect(replacesPreviewInPlace(before, { ...third, displays: [] })).toBe(true)
+    expect(replacesPreviewInPlace(before, profiles[1]!)).toBe(false)
   })
   it('does not keep the banner without a preview, for an override, or when not Active', () => {
-    expect(keepsPreviewBannerWhileSwitching(withPreview({ state: 'inactive' }), third)).toBe(false)
-    expect(keepsPreviewBannerWhileSwitching(withPreview(previewing('override')), third)).toBe(false)
-    expect(
-      keepsPreviewBannerWhileSwitching(withPreview(previewing('preview'), 'paused'), third)
-    ).toBe(false)
+    expect(replacesPreviewInPlace(withPreview({ state: 'inactive' }), third)).toBe(false)
+    expect(replacesPreviewInPlace(withPreview(previewing('override')), third)).toBe(false)
+    expect(replacesPreviewInPlace(withPreview(previewing('preview'), 'paused'), third)).toBe(false)
+    expect(replacesPreviewInPlace(withPreview(previewing('edit'), 'safetyBlocked'), third)).toBe(
+      false
+    )
   })
   it('shows the destination while the previous session rolls back', () => {
     const rolledBack = withPreview({ state: 'inactive' })
