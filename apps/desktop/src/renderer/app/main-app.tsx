@@ -606,6 +606,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                   py="4"
                   bg="bg.panel"
                   borderWidth="1px"
+                  borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
                   rounded="lg"
                   shadow="md"
                 >
@@ -644,6 +645,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               }
               rounded="xl"
               bg={{ base: 'bg', _dark: 'bg.muted' }}
+              // A hairline with a lit top edge. Borders, not an inset shadow, so
+              // the sticky profile header cannot cover the edge while scrolling.
+              borderWidth="1px"
+              borderColor={{ base: 'border', _dark: 'border.muted' }}
+              borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
               inert={pausedOverlay}
               aria-hidden={pausedOverlay || undefined}
             >
@@ -693,7 +699,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               data-part="preview-banner"
               flexShrink={0}
               p="3"
-              gap="3"
+              gap="2"
               align="center"
               rounded="lg"
               bg="colorPalette.subtle"
@@ -729,8 +735,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
               <Stack flex="1" minW="0" gap="0">
                 <Text truncate>Previewing: {shownProfile.name}</Text>
               </Stack>
+              <Button size="xs" variant="surface" disabled={busy} onClick={endPreview}>
+                End preview
+              </Button>
               <Button
-                size="2xs"
+                size="xs"
                 disabled={busy}
                 onClick={() => {
                   if (!shownProfile.enabled) {
@@ -750,9 +759,6 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
                 }}
               >
                 {shownProfile.enabled ? 'Use this profile' : 'Enable'}
-              </Button>
-              <Button size="2xs" variant="outline" disabled={busy} onClick={endPreview}>
-                End preview
               </Button>
             </Flex>
           )}

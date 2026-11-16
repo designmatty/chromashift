@@ -149,10 +149,10 @@ function MiniProfilePickerOption({
       width="full"
       minW="0"
       alignItems="center"
-      gap="3"
+      gap="2"
       fontWeight="500"
       color="fg"
-      paddingX="2"
+      paddingX="3"
       paddingY="3"
       borderRadius="xl"
       _hover={{ bg: 'bg.muted' }}

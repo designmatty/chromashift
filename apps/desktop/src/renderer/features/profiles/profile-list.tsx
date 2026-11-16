@@ -126,7 +126,12 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
       p="1"
       gap="0"
       rounded="lg"
-      bg="bg.muted"
+      // A faint tint of the surrounding surface with a lit bottom lip, so the
+      // track reads as a shallow groove.
+      bg={{ base: 'blackAlpha.100', _dark: 'black/11' }}
+      shadow="recessed"
+      borderBottomWidth="1px"
+      borderBottomColor={{ base: 'white', _dark: 'border.muted' }}
     >
       {(['automatic', 'manual'] as const).map((mode) => (
         <Tooltip
@@ -147,10 +152,14 @@ export function ProfileList(props: ProfileListProps): React.JSX.Element {
             fontSize={props.collapsed ? 'xs' : 'sm'}
             rounded="md"
             color={props.mode.kind === mode ? 'fg' : 'fg.muted'}
-            bg={props.mode.kind === mode ? 'bg.panel' : undefined}
-            shadow={props.mode.kind === mode ? 'xs' : undefined}
+            bg={props.mode.kind === mode ? { base: 'bg.panel', _dark: 'bg.muted' } : undefined}
+            shadow={props.mode.kind === mode ? 'raised' : undefined}
             _before={{ display: 'none' }}
-            _hover={props.mode.kind === mode ? undefined : { bg: 'bg.emphasized' }}
+            _hover={
+              props.mode.kind === mode
+                ? undefined
+                : { bg: { base: 'blackAlpha.100', _dark: 'whiteAlpha.50' } }
+            }
             disabled={mode === 'manual' && props.currentId === null}
           >
             <SegmentGroup.ItemText srOnly={props.collapsed}>
@@ -451,6 +460,7 @@ function ProfileListRow(
       gap="1"
       rounded="full"
       bg={props.selected ? 'bg.panel' : 'transparent'}
+      shadow={props.selected ? 'raised' : undefined}
       borderWidth={props.selected ? '1px' : '0'}
       borderColor="border"
       position="relative"
@@ -467,7 +477,9 @@ function ProfileListRow(
         '&[data-dragging]': { visibility: 'hidden' },
         '&[data-drag-preview]': {
           zIndex: 2,
-          bg: 'bg.panel',
+          // Opaque in both themes. The condition also outranks the row's
+          // transparent `_dark` background.
+          bg: { base: 'bg.panel', _dark: 'bg.muted' },
           boxShadow: 'md',
           outline: '1px solid {colors.border.emphasized}',
           transition: 'none',

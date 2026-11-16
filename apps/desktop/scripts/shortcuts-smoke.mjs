@@ -208,6 +208,13 @@ export async function verifyShortcuts({
     `${hasBinding}`,
     'The shortcut did not save again after removal.'
   )
+  // Main saves before the renderer receives the binding, and only then renders
+  // the options button. Wait for the keycaps, as after the first save.
+  await waitForExpression(
+    debuggerClient,
+    `document.querySelector(${JSON.stringify(toggle)})?.querySelectorAll('[data-part="shortcut-key"]').length === 4 && document.querySelector(${JSON.stringify(options)}) !== null`,
+    'The re-saved shortcut did not return to keycaps with its options menu.'
+  )
   await click(options)
   await waitForExpression(
     debuggerClient,

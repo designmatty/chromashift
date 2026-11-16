@@ -104,6 +104,7 @@ function SettingsSelect<T extends string>({
 
   return (
     <Select.Root
+      variant="subtle"
       disabled={disabled}
       collection={collection}
       value={[value]}
@@ -117,7 +118,11 @@ function SettingsSelect<T extends string>({
       <Select.HiddenSelect />
       <Select.Label srOnly>{ariaLabel}</Select.Label>
       <Select.Control>
-        <Select.Trigger aria-label={ariaLabel} bgColor={'bg'}>
+        <Select.Trigger
+          aria-label={ariaLabel}
+          shadow="raised"
+          borderColor={{ base: 'border', _dark: 'transparent' }}
+        >
           <Select.ValueText />
         </Select.Trigger>
         <Select.IndicatorGroup>

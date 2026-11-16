@@ -2,12 +2,13 @@ import {
   Badge,
   Box,
   Button,
+  createListCollection,
   Dialog,
   Flex,
   Heading,
   Input,
-  NativeSelect,
   Portal,
+  Select,
   Stack,
   Text
 } from '@chakra-ui/react'
@@ -20,6 +21,16 @@ import {
   prettyDiagnosticDetails,
   type DiagnosticLevelFilter
 } from '@/features/settings/diagnostic-entries'
+
+const levelCollection = createListCollection<{ label: string; value: DiagnosticLevelFilter }>({
+  items: [
+    { label: 'All levels', value: 'all' },
+    { label: 'Info', value: 'information' },
+    { label: 'Warning', value: 'warning' },
+    { label: 'Error', value: 'error' },
+    { label: 'Critical', value: 'critical' }
+  ]
+})
 
 export function DiagnosticsPanel({
   onError
@@ -101,7 +112,7 @@ export function DiagnosticsPanel({
         <Flex gap="2" wrap="wrap">
           <Button
             aria-label="Copy logs"
-            variant="outline"
+            variant="surface"
             size="xs"
             rounded="full"
             minW="28"
@@ -116,7 +127,7 @@ export function DiagnosticsPanel({
           </Button>
           <Button
             aria-label="Download logs"
-            variant="outline"
+            variant="surface"
             size="xs"
             rounded="full"
             minW="32"
@@ -131,7 +142,7 @@ export function DiagnosticsPanel({
           </Button>
           <Button
             aria-label="Refresh diagnostics"
-            variant="outline"
+            variant="surface"
             size="xs"
             borderRadius="full"
             loading={loading}
@@ -143,8 +154,9 @@ export function DiagnosticsPanel({
           <Button
             ref={clearRef}
             aria-label="Clear logs"
+            marginLeft="auto"
             colorPalette="red"
-            variant="outline"
+            variant="surface"
             size="xs"
             rounded="full"
             loading={sharing === 'clear'}
@@ -156,21 +168,45 @@ export function DiagnosticsPanel({
         </Flex>
       </Stack>
       <Flex gap="2">
-        <NativeSelect.Root size="sm" width="40">
-          <NativeSelect.Field
-            aria-label="Log level"
-            value={level}
-            onChange={(event) => setLevel(event.target.value as DiagnosticLevelFilter)}
-          >
-            <option value="all">All levels</option>
-            {['information', 'warning', 'error', 'critical'].map((value) => (
-              <option key={value} value={value}>
-                {value === 'information' ? 'Info' : value[0]!.toUpperCase() + value.slice(1)}
-              </option>
-            ))}
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
+        <Select.Root
+          variant="subtle"
+          collection={levelCollection}
+          value={[level]}
+          onValueChange={(details) => {
+            const nextLevel = details.value[0]
+            if (nextLevel !== undefined) setLevel(nextLevel as DiagnosticLevelFilter)
+          }}
+          size="sm"
+          width="40"
+          flexShrink={0}
+        >
+          <Select.HiddenSelect />
+          <Select.Label srOnly>Log level</Select.Label>
+          <Select.Control>
+            <Select.Trigger
+              aria-label="Log level"
+              shadow="raised"
+              borderColor={{ base: 'border', _dark: 'transparent' }}
+            >
+              <Select.ValueText />
+            </Select.Trigger>
+            <Select.IndicatorGroup>
+              <Select.Indicator color="fg.muted" />
+            </Select.IndicatorGroup>
+          </Select.Control>
+          <Portal>
+            <Select.Positioner>
+              <Select.Content borderWidth="1px" borderColor="border" color="fg">
+                {levelCollection.items.map((item) => (
+                  <Select.Item item={item} key={item.value}>
+                    <Select.ItemText>{item.label}</Select.ItemText>
+                    <Select.ItemIndicator />
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Positioner>
+          </Portal>
+        </Select.Root>
         <Input
           ref={searchRef}
           size="sm"
@@ -201,6 +237,7 @@ export function DiagnosticsPanel({
             rounded="lg"
             borderWidth="1px"
             borderColor={{ base: 'border', _dark: 'border.muted' }}
+            borderTopColor={{ base: 'border', _dark: 'whiteAlpha.200' }}
             bg="bg.subtle"
           >
             <Flex align="center" gap="2" wrap="wrap">
@@ -264,7 +301,7 @@ export function DiagnosticsPanel({
               <Dialog.Footer>
                 <Button
                   ref={cancelRef}
-                  variant="outline"
+                  variant="surface"
                   disabled={sharing === 'clear'}
                   onClick={() => setConfirmClear(false)}
                 >
@@ -274,6 +311,7 @@ export function DiagnosticsPanel({
                   colorPalette="red"
                   loading={sharing === 'clear'}
                   onClick={() => void clear()}
+                  variant={'solid'}
                 >
                   Clear logs
                 </Button>

@@ -2075,17 +2075,27 @@ async function verifyMiniComparison(prior, applied, draftBrightness = 56) {
   for (const theme of ['dark', 'light']) {
     await setTheme(debuggerClient, theme)
     await debuggerClient.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 })
+    // The previous pass leaves the pointer on Compare, and the theme switch fades
+    // both buttons. Wait for the hover-out and theme transitions to settle before
+    // comparing; a single read can land mid-transition.
+    await waitForExpression(
+      debuggerClient,
+      `(() => {
+        const button = document.querySelector('[aria-label="Hold to compare with saved"]')
+        const update = [...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')]
+          .find(candidate => candidate.textContent.trim() === 'Update profile')
+        if (!button || !update) return false
+        const style = getComputedStyle(button)
+        const neighbor = getComputedStyle(update)
+        return style.height === neighbor.height && style.borderRadius === neighbor.borderRadius &&
+          Number.parseFloat(style.borderRadius) >= Number.parseFloat(style.height) / 2 &&
+          style.backgroundColor === neighbor.backgroundColor
+      })()`,
+      `Mini compare must match the Update profile size, pill shape and subtle surface (${theme}).`
+    )
     const point = await evaluate(`(() => {
         const button = document.querySelector('[aria-label="Hold to compare with saved"]')
         if (!button) return null
-        const update = [...document.querySelectorAll('[data-part="unsaved-changes-actions"] button')]
-          .find(candidate => candidate.textContent.trim() === 'Update profile')
-        const style = getComputedStyle(button)
-        const neighbor = getComputedStyle(update)
-        if (style.height !== neighbor.height || style.borderRadius !== neighbor.borderRadius ||
-            Number.parseFloat(style.borderRadius) < Number.parseFloat(style.height) / 2 ||
-            style.backgroundColor !== neighbor.backgroundColor)
-          throw new Error('Mini compare must match the Update profile size, pill shape and subtle surface.')
         window.__miniCompareIdleBackground = getComputedStyle(button).backgroundColor
         window.__miniCompareHeight = document.querySelector('[data-part="mini-panel"]').getBoundingClientRect().height
         const rect = button.getBoundingClientRect()
@@ -2814,7 +2824,8 @@ async function runSmoke() {
     shellBorder: 'rgb(200, 200, 208)',
     panelBackground: 'rgba(0, 0, 0, 0)',
     rowBackground: 'rgb(241, 241, 243)',
-    selectBackground: 'rgb(255, 255, 255)',
+    // Subtle Select variant: the trigger fills with bg.muted.
+    selectBackground: 'rgb(227, 227, 232)',
     foreground: 'rgb(9, 9, 11)'
   }
   if (JSON.stringify(lightVisuals.result.value) !== JSON.stringify(expectedLightVisuals)) {
@@ -3822,8 +3833,10 @@ async function runSmoke() {
       })()`, `The mini-panel trigger did not truncate the long name (${theme}).`)
       await hoverElement(pausedMiniDebugger, '[data-part="active-profile-name"]')
       await delay(600)
-      await waitForExpression(pausedMiniDebugger, `document.querySelector('[role="tooltip"]') === null`,
-        'The mini-panel profile name unexpectedly showed a tooltip.')
+      // The trigger may show its "Switch profile" hint, but never the full name.
+      await waitForExpression(pausedMiniDebugger, `![...document.querySelectorAll('[role="tooltip"]')]
+        .some((tooltip) => tooltip.textContent?.includes(${JSON.stringify(longMiniName)}))`,
+        'The mini-panel profile name unexpectedly showed a name tooltip.')
       await captureNativeWindow(electron.pid, join(screenshotDirectory, `mini-long-name-${theme}-native.png`))
       await pausedMiniDebugger.send('Runtime.evaluate', {
         expression: `document.querySelector('[data-part="active-profile"]')?.click()`
