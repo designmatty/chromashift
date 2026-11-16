@@ -271,6 +271,8 @@ export const displayStateSchema = z.discriminatedUnion('provider', [
 export const baselineCaptureResultSchema = z.object({
   displayId: displayIdSchema,
   state: z.enum(['captured', 'alreadyCaptured']),
+  /** Additive in protocol v2: the color mode when the baseline was captured. */
+  colorMode: z.enum(['sdr', 'hdr']).optional(),
   gammaRampHash: z.string().min(1).optional(),
   nvidiaSaturation: z.number().int().optional(),
   nvidiaHue: z.number().int().optional(),

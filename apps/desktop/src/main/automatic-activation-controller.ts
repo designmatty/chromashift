@@ -250,6 +250,15 @@ export class AutomaticActivationController {
     return this.coordinator.capturedDisplayIds
   }
 
+  /**
+   * Owned displays whose last activation write was HDR-projected (saturation and
+   * hue only). Read after beginPreview or continuePreview drains the queue; the
+   * preview hold keeps it unchanged for the session.
+   */
+  public hdrProjectedDisplayIds(): readonly string[] {
+    return this.coordinator.hdrProjectedDisplayIds
+  }
+
   public async cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     if (!this.#previewing) return
     this.#previewing = false

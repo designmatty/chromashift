@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { displaySettingsSchema } from './protocol.js'
 import { describe, expect, it } from 'vitest'
 import {
+  baselineCaptureResultSchema,
   displayApplyRequestSchema,
   displayApplyResultSchema,
   displaySchema,
@@ -37,6 +38,19 @@ describe('native protocol', () => {
       ).toEqual([application])
     }
   )
+  it('accepts the additive capture color mode and older captures without it', () => {
+    const capture = { displayId: 'display:one', state: 'captured', gammaRampHash: 'original' }
+    expect(baselineCaptureResultSchema.parse(capture)).toEqual(capture)
+    for (const colorMode of ['sdr', 'hdr'])
+      expect(baselineCaptureResultSchema.parse({ ...capture, colorMode })).toEqual({
+        ...capture,
+        colorMode
+      })
+    expect(baselineCaptureResultSchema.safeParse({ ...capture, colorMode: 'wide' }).success).toBe(
+      false
+    )
+  })
+
   it('validates accepted gamma and a baseline-bound learned limit in protocol v2', () => {
     const result = {
       displayId: 'display:one',

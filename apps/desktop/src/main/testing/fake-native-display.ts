@@ -74,10 +74,88 @@ export function testCapabilityReport(
 }
 
 /**
+ * A typical NVIDIA display in SDR: Windows ramp brightness, contrast and gamma,
+ * NVIDIA saturation and hue. The fake derives its HDR report from this.
+ */
+export function nvidiaCapabilityReport(
+  displayId: string,
+  vibranceAndHue = true
+): DisplayCapabilityReport {
+  const windows = { supported: true, provider: 'windows' as const, min: 0, max: 100, default: 50 }
+  const nvidia = { supported: true, provider: 'nvidia' as const, min: 0, max: 100, default: 50 }
+  const unsupported = { supported: false, provider: 'unknown' as const, reason: 'Not available' }
+  const report = testCapabilityReport(displayId, vibranceAndHue)
+  return {
+    ...report,
+    capabilities: {
+      brightness: windows,
+      contrast: windows,
+      gamma: { ...windows, min: 0.3, max: 2.8, default: 1 },
+      saturation: vibranceAndHue ? nvidia : unsupported,
+      hue: vibranceAndHue ? { ...nvidia, default: 0 } : unsupported,
+      colorTemperature: unsupported
+    }
+  }
+}
+
+const sdrOnlyUnderHdr = {
+  supported: false,
+  provider: 'unknown' as const,
+  reason: 'Windows gamma ramps are SDR-only. This control applies when HDR is off.'
+}
+const amdUnderHdr = {
+  supported: false,
+  provider: 'unknown' as const,
+  reason: 'AMD display controls are disabled until ADLX behavior is verified under HDR.'
+}
+
+/**
+ * Mirrors CapabilityResolver under HDR: the Windows ramp controls are SDR-only,
+ * NVIDIA saturation and hue keep their provider capability, and AMD reports
+ * nothing supported.
+ */
+export function hdrCapabilityReport(
+  report: DisplayCapabilityReport,
+  vendor: Display['adapter']['vendor']
+): DisplayCapabilityReport {
+  if (vendor === 'amd') {
+    return {
+      ...report,
+      capabilities: {
+        brightness: amdUnderHdr,
+        contrast: amdUnderHdr,
+        gamma: amdUnderHdr,
+        saturation: amdUnderHdr,
+        hue: amdUnderHdr,
+        colorTemperature: amdUnderHdr
+      }
+    }
+  }
+  const nvidiaOnly = (capability: DisplayCapabilityReport['capabilities']['saturation']) =>
+    vendor === 'nvidia' && capability.provider === 'nvidia'
+      ? capability
+      : { supported: false, provider: 'unknown' as const, reason: 'No NVIDIA provider.' }
+  return {
+    ...report,
+    capabilities: {
+      brightness: sdrOnlyUnderHdr,
+      contrast: sdrOnlyUnderHdr,
+      gamma: sdrOnlyUnderHdr,
+      saturation: nvidiaOnly(report.capabilities.saturation),
+      hue: nvidiaOnly(report.capabilities.hue),
+      colorTemperature: { supported: false, provider: 'unknown', reason: 'No verified provider.' }
+    }
+  }
+}
+
+/**
  * The one fake for the native display seam, satisfying both consumer ports
  * (activation's NativeActivationPort and preview's PreviewNativePort). It
  * simulates baseline capture state, HDR, disconnects, per-display failures,
  * and concurrency, so tests configure knobs instead of hand-rolling adapters.
+ * HDR follows the helper's #89 rules: capture is refused only for AMD, and
+ * apply accepts only NVIDIA saturation and hue, refusing anything else before
+ * any write.
  */
 export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativePort {
   public readonly calls: NativeCall[] = []
@@ -91,6 +169,14 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public readonly failRestoreDisplayIds = new Set<string>()
   public readonly failRestoreAllDisplayIds = new Set<string>()
   public readonly hdrDisplayIds = new Set<string>()
+  /** Displays driven by AMD: nothing is capturable or applicable under HDR. */
+  public readonly amdDisplayIds = new Set<string>()
+  /**
+   * A provider write or read-back fails after the settings reach the display.
+   * The helper then restores the whole display; if that restore also fails
+   * (failRestoreDisplayIds), apply reports BASELINE_RESTORE_FAILED.
+   */
+  public readonly failApplyWriteDisplayIds = new Set<string>()
   public readonly disconnectedDisplayIds = new Set<string>()
   public readonly disconnectOnApplyDisplayIds = new Set<string>()
   public maxConcurrentCalls = 0
@@ -99,6 +185,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
   public readonly gammaRanges = new Map<string, { min: number; max: number }>()
   public readonly baselineHashes = new Map<string, string>()
   readonly #capturedHashes = new Map<string, string>()
+  readonly #captureModes = new Map<string, 'sdr' | 'hdr'>()
   readonly #capturedDisplayIds = new Set<string>()
   readonly #baselineSettings = new Map<string, DisplaySettings>()
   #activeCalls = 0
@@ -121,16 +208,26 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
     }
     return [...byId.values()]
       .filter((display) => !this.disconnectedDisplayIds.has(display.id))
-      .map((display) => ({ ...display, hdr: this.hdrDisplayIds.has(display.id) || display.hdr }))
+      .map((display) => ({
+        ...display,
+        adapter: this.amdDisplayIds.has(display.id)
+          ? { ...display.adapter, vendor: 'amd' as const }
+          : display.adapter,
+        hdr: this.hdrDisplayIds.has(display.id) || display.hdr
+      }))
   }
 
   public getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport> {
-    return Promise.resolve(this.reports.get(displayId) ?? testCapabilityReport(displayId))
+    const report = this.reports.get(displayId) ?? testCapabilityReport(displayId)
+    return Promise.resolve(
+      this.#isHdr(displayId) ? hdrCapabilityReport(report, this.#vendor(displayId)) : report
+    )
   }
 
   public captureBaseline(displayId: string): Promise<BaselineCaptureResult> {
     return this.#call({ operation: 'capture', displayId }, async () => {
-      this.#ensureSdr(displayId, 'baseline.capture')
+      if (this.#isHdr(displayId) && this.#vendor(displayId) === 'amd')
+        this.#hdrUnsafe(displayId, 'baseline.capture')
       if (this.disconnectedDisplayIds.has(displayId)) {
         throw new NativeServiceError(
           'DISPLAY_NOT_FOUND',
@@ -153,9 +250,11 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       }
       this.#capturedDisplayIds.add(displayId)
       this.captured.push(displayId)
+      if (!alreadyCaptured) this.#captureModes.set(displayId, this.#isHdr(displayId) ? 'hdr' : 'sdr')
       return {
         displayId,
         state: alreadyCaptured ? 'alreadyCaptured' : 'captured',
+        colorMode: this.#captureModes.get(displayId)!,
         gammaRampHash: this.#capturedHashes.get(displayId)!
       }
     })
@@ -166,7 +265,7 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
     settings: DisplaySettings
   ): Promise<DisplayApplyResult> {
     return this.#call({ operation: 'apply', displayId, settings }, async () => {
-      this.#ensureSdr(displayId, 'display.apply')
+      if (this.#isHdr(displayId)) this.#ensureHdrApply(displayId, settings)
       if (this.disconnectOnApplyDisplayIds.delete(displayId)) {
         this.disconnectedDisplayIds.add(displayId)
       }
@@ -205,6 +304,25 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
       settings = acceptedGamma === undefined ? settings : { ...settings, gamma: acceptedGamma }
       this.applied.push({ displayId, settings })
       this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId), ...settings })
+      if (this.failApplyWriteDisplayIds.has(displayId)) {
+        // The helper's whole-display cleanup after a failed provider write.
+        if (this.failRestoreDisplayIds.has(displayId)) {
+          throw new NativeServiceError(
+            'BASELINE_RESTORE_FAILED',
+            `Restoration after a failed apply could not be confirmed for ${displayId}. ` +
+              'The apply failed first with NVIDIA_VERIFY_FAILED.',
+            'display.apply',
+            'test-request'
+          )
+        }
+        this.currentSettings.set(displayId, { ...this.#baselineSettings.get(displayId) })
+        throw new NativeServiceError(
+          'NVIDIA_VERIFY_FAILED',
+          `NVIDIA read-back failed on ${displayId}`,
+          'display.apply',
+          'test-request'
+        )
+      }
       return { displayId, settings, applied: { gamma: acceptedGamma }, learnedGammaLimit }
     })
   }
@@ -257,18 +375,37 @@ export class FakeNativeDisplayPort implements NativeActivationPort, PreviewNativ
     })
   }
 
-  #ensureSdr(displayId: string, command: string): void {
-    if (
+  #isHdr(displayId: string): boolean {
+    return (
       this.hdrDisplayIds.has(displayId) ||
       this.displays.some((display) => display.id === displayId && display.hdr)
-    ) {
-      throw new NativeServiceError(
-        'HDR_UNSAFE',
-        `HDR is active on ${displayId}`,
-        command,
-        'test-request'
-      )
-    }
+    )
+  }
+
+  #vendor(displayId: string): Display['adapter']['vendor'] {
+    if (this.amdDisplayIds.has(displayId)) return 'amd'
+    return this.displays.find((display) => display.id === displayId)?.adapter.vendor ?? 'nvidia'
+  }
+
+  /** The helper validates the whole HDR request before capture or any write. */
+  #ensureHdrApply(displayId: string, settings: DisplaySettings): void {
+    const sdrOnly =
+      settings.brightness !== undefined ||
+      settings.contrast !== undefined ||
+      settings.gamma !== undefined ||
+      settings.colorTemperature !== undefined
+    const empty = settings.saturation === undefined && settings.hue === undefined
+    if (this.#vendor(displayId) !== 'nvidia' || sdrOnly || empty)
+      this.#hdrUnsafe(displayId, 'display.apply')
+  }
+
+  #hdrUnsafe(displayId: string, command: string): never {
+    throw new NativeServiceError(
+      'HDR_UNSAFE',
+      `HDR is active on ${displayId}`,
+      command,
+      'test-request'
+    )
   }
 
   async #call<T>(call: NativeCall, operation: () => Promise<T>): Promise<T> {

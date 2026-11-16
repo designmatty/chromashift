@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createNeutralColorSettings } from '@chromashift/core'
+import { createNeutralColorSettings, JsonProfileRepository } from '@chromashift/core'
 import { describe, expect, it } from 'vitest'
 import type {
   BaselineCaptureResult,
@@ -12,10 +12,12 @@ import type {
   DisplaySettings,
   RestoreAllResult
 } from '@chromashift/native-client'
+import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import { PhysicalDisplayClient } from '@main/physical-display-client.js'
 import {
   FakeNativeDisplayPort,
+  nvidiaCapabilityReport,
   testCapabilityReport,
   testDisplay
 } from '@main/testing/fake-native-display.js'
@@ -303,4 +305,74 @@ it('keeps endpoint baselines and learned limits through repeated physical captur
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+describe('HDR fan-out across endpoints (#89)', () => {
+  const dp = 'display:dp'
+  const hdmi = 'display:hdmi'
+  const color = { ...createNeutralColorSettings(), brightness: 30, saturation: 80, hue: 10 }
+
+  function coordinatorFor(native: FakeNativeDisplayPort): ActivationCoordinator {
+    for (const id of [dp, hdmi]) native.reports.set(id, nvidiaCapabilityReport(id))
+    const repository = new JsonProfileRepository({
+      read: async () =>
+        JSON.stringify({
+          schemaVersion: 3,
+          profiles: [
+            {
+              id: 'default',
+              name: 'Default',
+              enabled: true,
+              applications: [],
+              displays: [{ displayId: physicalId, color }]
+            }
+          ],
+          settings: { defaultProfileId: 'default' }
+        }),
+      write: async () => undefined
+    })
+    // The shared fake models HDR capture and apply; foreground reads are unused here.
+    const endpoints = Object.assign(native, {
+      getForegroundApplication: async () => null,
+      getVisibleApplications: async () => []
+    })
+    return new ActivationCoordinator(repository, new PhysicalDisplayClient(endpoints), {
+      write: () => undefined
+    })
+  }
+
+  it('withholds the ramp controls from every endpoint while one endpoint is HDR', async () => {
+    const native = new FakeNativeDisplayPort(0, [
+      endpoint(dp, 'DisplayPort', { hdr: true }),
+      endpoint(hdmi, 'HDMI')
+    ])
+    await expect(coordinatorFor(native).activate(null)).resolves.toMatchObject({
+      status: 'activated',
+      failures: []
+    })
+    expect(native.applied).toEqual([
+      { displayId: dp, settings: { saturation: 80, hue: 10 } },
+      { displayId: hdmi, settings: { saturation: 80, hue: 10 } }
+    ])
+  })
+
+  it('restores every endpoint and writes nothing when an AMD endpoint turns HDR', async () => {
+    const native = new FakeNativeDisplayPort(0, [endpoint(dp, 'DisplayPort'), endpoint(hdmi, 'HDMI')])
+    native.amdDisplayIds.add(hdmi)
+    const coordinator = coordinatorFor(native)
+    await coordinator.activate(null)
+    expect(native.applied.map((entry) => entry.displayId)).toEqual([dp, hdmi])
+
+    native.hdrDisplayIds.add(hdmi)
+    await coordinator.resetForDisplayTransition()
+    const before = native.calls.length
+    await expect(coordinator.activate(null)).resolves.toMatchObject({
+      deferredDisplayIds: [physicalId],
+      failures: []
+    })
+    expect(native.calls.slice(before)).toEqual([
+      { operation: 'restore', displayId: dp },
+      { operation: 'restore', displayId: hdmi }
+    ])
+  })
 })

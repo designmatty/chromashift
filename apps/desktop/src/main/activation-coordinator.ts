@@ -14,15 +14,22 @@ import type {
   BaselineCaptureResult,
   Display,
   DisplayApplyResult,
+  DisplayCapabilityReport,
   DisplayRestoreResult,
   DisplaySettings,
   RestoreAllResult
 } from '@chromashift/native-client'
+import {
+  hasDisplaySettings,
+  projectDisplaySettings,
+  withheldSettingNames
+} from '@main/display-settings-projection.js'
 import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 
 export interface NativeActivationPort {
   getDisplays(): Promise<Display[]>
+  getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport>
   captureBaseline(displayId: string): Promise<BaselineCaptureResult>
   applyDisplaySettings(displayId: string, settings: DisplaySettings): Promise<DisplayApplyResult>
   restoreDisplay(displayId: string): Promise<DisplayRestoreResult>
@@ -71,6 +78,13 @@ function findSelectedProfile(
 export class ActivationCoordinator {
   readonly #resolver = new ActivationResolver()
   readonly #capturedDisplayIds = new Set<string>()
+  /**
+   * Displays whose last activation write was an HDR-projected apply: saturation
+   * and hue only, with the GDI ramp at its captured baseline. Removed before any
+   * other write attempt and on every restore or reset, so an unknown display
+   * always counts as possibly carrying SDR ramp values.
+   */
+  readonly #hdrProjectedDisplayIds = new Map<string, string>()
   #queue: Promise<void> = Promise.resolve()
   #restorationBlocked = false
 
@@ -180,6 +194,11 @@ export class ActivationCoordinator {
     return this.#restorationBlocked
   }
 
+  /** Snapshot for preview sessions, read after the activation queue drains. */
+  public get hdrProjectedDisplayIds(): readonly string[] {
+    return [...this.#hdrProjectedDisplayIds.values()]
+  }
+
   async #transition(
     foregroundApplication: ForegroundApplication | null,
     mode: ActivationMode
@@ -275,11 +294,23 @@ export class ActivationCoordinator {
     const normalizedDesiredIds = new Set(
       desiredTargets.map((target) => target.displayId.toLowerCase())
     )
+    // Under HDR only capability-supported controls outside the SDR-only ramp set
+    // reach native (#89). An empty request holds that display at Original settings.
+    const hdrRequests = new Map<string, DisplaySettings>()
+    for (const target of desiredTargets) {
+      const key = target.displayId.toLowerCase()
+      if (!hdrDisplayIds.has(key) || !connectedDisplayIds.has(key)) continue
+      hdrRequests.set(key, await this.#hdrRequest(target.displayId, target.color, failures))
+    }
+    let hdrRejected = false
 
     for (const displayId of [...this.#capturedDisplayIds]) {
+      const key = displayId.toLowerCase()
+      // Native Apply restores the captured baseline before every write, so a
+      // display that will be written is not restored here.
       if (
-        normalizedDesiredIds.has(displayId.toLowerCase()) &&
-        !hdrDisplayIds.has(displayId.toLowerCase())
+        normalizedDesiredIds.has(key) &&
+        (!hdrDisplayIds.has(key) || hasDisplaySettings(hdrRequests.get(key)))
       )
         continue
       if (!connectedDisplayIds.has(displayId.toLowerCase())) {
@@ -318,6 +349,7 @@ export class ActivationCoordinator {
           }
         }
         this.#capturedDisplayIds.delete(displayId)
+        this.#hdrProjectedDisplayIds.delete(key)
         this.logger.write({
           level: 'information',
           eventName: result.restored ? 'BaselineRestored' : 'BaselineRestoreSkipped',
@@ -352,7 +384,9 @@ export class ActivationCoordinator {
         )
         continue
       }
-      if (hdrDisplayIds.has(target.displayId.toLowerCase())) {
+      const key = target.displayId.toLowerCase()
+      const hdrRequest = hdrDisplayIds.has(key) ? (hdrRequests.get(key) ?? {}) : undefined
+      if (hdrRequest !== undefined && !hasDisplaySettings(hdrRequest)) {
         this.#deferDisplay(profile.id, target.displayId, 'apply', 'hdrActive', deferredDisplayIds)
         continue
       }
@@ -361,6 +395,7 @@ export class ActivationCoordinator {
         this.#capturedDisplayIds.add(target.displayId)
       } catch (error) {
         if (this.#isHdrUnsafe(error)) {
+          hdrRejected = true
           this.#deferDisplay(
             profile.id,
             target.displayId,
@@ -382,11 +417,25 @@ export class ActivationCoordinator {
         continue
       }
 
+      if (hdrRequest !== undefined) {
+        this.logger.write({
+          level: 'information',
+          eventName: 'HdrSettingsWithheld',
+          profileId: profile.id,
+          displayId: target.displayId,
+          settings: withheldSettingNames(target.color, hdrRequest)
+        })
+      }
+      // Until this write is confirmed, the display may show any earlier output.
+      this.#hdrProjectedDisplayIds.delete(key)
       try {
-        await this.native.applyDisplaySettings(target.displayId, target.color)
+        await this.native.applyDisplaySettings(target.displayId, hdrRequest ?? target.color)
+        if (hdrRequest !== undefined) this.#hdrProjectedDisplayIds.set(key, target.displayId)
         await this.limits?.clampSavedProfile(this.repository, profile.id)
       } catch (error) {
         if (this.#isHdrUnsafe(error)) {
+          // Native refused before any write. Never count this as applied.
+          hdrRejected = true
           this.#deferDisplay(profile.id, target.displayId, 'apply', 'hdrActive', deferredDisplayIds)
         } else if (this.#isDisplayDisconnected(error)) {
           this.#deferDisplay(
@@ -413,6 +462,9 @@ export class ActivationCoordinator {
       }
     }
 
+    // An HDR race refused a write. The next activation or the topology transition
+    // must retry instead of deduplicating this target.
+    if (hdrRejected) this.#resolver.reset()
     this.logger.write({
       level: 'information',
       eventName: 'ProfileActivated',
@@ -437,6 +489,7 @@ export class ActivationCoordinator {
       for (const display of result.displays) {
         if (display.restored || display.reason === 'baselineNotCaptured') {
           this.#capturedDisplayIds.delete(display.displayId)
+          this.#hdrProjectedDisplayIds.delete(display.displayId.toLowerCase())
         } else if (display.code === 'DISPLAY_NOT_FOUND') {
           this.#capturedDisplayIds.add(display.displayId)
           this.#deferDisplay(
@@ -557,6 +610,21 @@ export class ActivationCoordinator {
       : { operation, displayId, code, message }
   }
 
+  /** Unknown HDR capabilities fail closed: hold Original settings and surface the error. */
+  async #hdrRequest(
+    displayId: string,
+    color: DisplaySettings,
+    failures: ActivationFailure[]
+  ): Promise<DisplaySettings> {
+    try {
+      const report = await this.native.getDisplayCapabilityReport(displayId)
+      return projectDisplaySettings(color, report.capabilities, true)
+    } catch (error) {
+      if (!this.#isDisplayDisconnected(error)) failures.push(this.#failure('apply', error, displayId))
+      return {}
+    }
+  }
+
   #isHdrUnsafe(error: unknown): boolean {
     return describeError(error).code === 'HDR_UNSAFE'
   }
@@ -608,6 +676,7 @@ export class ActivationCoordinator {
     if (reason === 'nativeServiceRestart') this.#restorationBlocked = false
     this.#resolver.reset()
     this.#capturedDisplayIds.clear()
+    this.#hdrProjectedDisplayIds.clear()
     for (const displayId of retainedDisplayIds) this.#capturedDisplayIds.add(displayId)
     this.logger.write({
       level: 'information',

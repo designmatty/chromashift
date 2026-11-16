@@ -65,6 +65,8 @@ describe('review-90 deterministic proofs', () => {
       logger
     )
     await activation.start(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     await coordinator.resetForDisplayTransition()
@@ -103,6 +105,8 @@ describe('review-90 deterministic proofs', () => {
       () => undefined
     )
     await preview.start(draft, 'edit', saved)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     const restore = native.restoreDisplay.bind(native)
     vi.spyOn(native, 'restoreDisplay')
@@ -144,6 +148,8 @@ describe('review-90 deterministic proofs', () => {
     const next = makeProfile('next', [one, two], 30)
     const coordinator = new ActivationCoordinator(repo([initial, next]), native, logger)
     await coordinator.activate(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     const before = native.calls.length
@@ -181,6 +187,8 @@ describe('review-90 deterministic proofs', () => {
       void control.recordCompletedOutcome(outcome)
     })
     await activation.start(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     let enter!: () => void
@@ -216,6 +224,8 @@ describe('review-90 deterministic proofs', () => {
     const repository = repo([makeProfile('default', [one, two], 30)])
     const coordinator = new ActivationCoordinator(repository, native, logger)
     await coordinator.activate(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     await coordinator.resetForDisplayTransition()
