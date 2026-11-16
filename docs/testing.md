@@ -2,18 +2,19 @@
 
 ## Test commands
 
-| Command                                 | Scope                                                                                                                        | Environment                    |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget | Any supported Windows checkout |
-| `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                               | Interactive Windows hardware   |
-| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                         | Interactive Windows desktop    |
-| `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration          | Interactive Windows desktop    |
-| `npm run smoke:capability-log`          | Manual/Automatic switches with state refreshes write the display without repeated `DisplayCapabilityResolved` entries        | Interactive Windows desktop    |
-| `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                  | Interactive Windows desktop    |
-| `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                        | Interactive Windows desktop    |
-| `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                  | Windows                        |
-| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, and retained data                                                        | Interactive Windows desktop    |
-| `npm run measure:performance`           | Packaged latency, memory, CPU, renderer release, and footprint budgets                                                       | Reference Windows host         |
+| Command                                 | Scope                                                                                                                                              | Environment                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget                       | Any supported Windows checkout |
+| `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                                                     | Interactive Windows hardware   |
+| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                                               | Interactive Windows desktop    |
+| `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration                                | Interactive Windows desktop    |
+| `npm run smoke:capability-log`          | Manual/Automatic switches with state refreshes write the display without repeated `DisplayCapabilityResolved` entries                              | Interactive Windows desktop    |
+| `npm run smoke:hdr`                     | NVIDIA saturation and hue on a display already in HDR: capture records HDR, SDR-only fields refused, read-back, exact restore; skipped without HDR | Interactive Windows desktop    |
+| `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                                        | Interactive Windows desktop    |
+| `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                                              | Interactive Windows desktop    |
+| `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                                        | Windows                        |
+| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, and retained data                                                                              | Interactive Windows desktop    |
+| `npm run measure:performance`           | Packaged latency, memory, CPU, renderer release, and footprint budgets                                                                             | Reference Windows host         |
 
 `npm run verify` is the canonical non-interactive gate and the command used by
 GitHub CI. It does not claim native hardware, visible desktop, installation, or
@@ -46,7 +47,10 @@ The TypeScript and native test suites cover these contracts:
   case-insensitive display IDs, matching, and activation precedence
 - Serialized activation, baseline capture before apply, baseline-first profile
   changes, duplicate suppression after success, per-display failures, retry,
-  disconnected targets, HDR apply deferral with immediate baseline restore, and topology reapply
+  disconnected targets, HDR projection to NVIDIA saturation and hue with restore-then-apply,
+  HDR deferral with immediate baseline restore when nothing applies, HDR-projected write
+  tracking for preview sessions, `HDR_UNSAFE` races that never deduplicate, unconfirmed
+  cleanup after a failed write stopping remaining and queued writes, and topology reapply
 - Review #90 proof regressions: baseline-first Apply restoration failures keep
   Safety blocked; failed HDR restoration stops SDR writes in the same transition
   and already queued foreground work; recovery confirms tracked restoration
@@ -63,7 +67,12 @@ The TypeScript and native test suites cover these contracts:
   navigation, mini-panel overrides, per-control neutral reset, target removal,
   close-time restoration before renderer release, visible failure guidance and
   retries, disconnected baseline retention and confirmed HDR restoration, and
-  overlapping close controllers after renderer recovery
+  overlapping close controllers after renderer recovery. #89 adds NVIDIA HDR
+  saturation and hue reapplied mid-Edit and mid-override with the draft kept,
+  HDR edits, in-place Discard, End preview, failed HDR writes with unconfirmed
+  cleanup entering recovery and Retry, and untargeted HDR displays during an
+  override (kept when HDR-projected, restored when they may carry SDR ramp
+  values). The #88 cases run on AMD displays, where nothing applies under HDR.
 - Panel close and handoff reasons with the shared fake native: app close rolls
   back dirty Edit and Temporary override to the exact prior automatic/manual
   target; mini close (and Escape where the panel can take focus) roll back overrides; both handoffs carry an
@@ -81,7 +90,13 @@ The TypeScript and native test suites cover these contracts:
   persists as schema-v1 `resume` recovery, with Retry restoring tracked previews
   before resuming and working after restart without an in-memory session.
 - Physical-display grouping, safe capability intersection, endpoint fanout,
-  target rewrite, provider ownership, and restore-result aggregation
+  target rewrite, provider ownership, and restore-result aggregation. Under HDR,
+  any HDR endpoint withholds brightness, contrast, and gamma from every endpoint,
+  and an AMD endpoint in HDR restores every endpoint without writes.
+- Renderer color controls in both panels: NVIDIA-HDR enables saturation and hue
+  and disables brightness, contrast, and gamma ("Applies when HDR is off"), even
+  with a stale report. AMD-HDR keeps the #88 notice with every control disabled,
+  Safety blocked copy covers both, and SDR shows no notice.
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
   persistence, including atomic writes and concurrent update queues
 - Pause, Resume, Safety blocked, restore-and-pause, emergency restore,
@@ -93,13 +108,23 @@ The TypeScript and native test suites cover these contracts:
 - Sender-validated Zod IPC, sandboxed preload behavior, CSP, navigation policy,
   Electron fuses, package layout, staged Azure signing order, signed-installer
   update metadata, release preflight, renderer size, and package footprint
-- Native gamma transforms, HDR capture/apply rejection, restore-only HDR writes
-  with gamma read-back and captured vendor baselines, foreground-window resolution,
+- Native gamma transforms, restore-only HDR writes with gamma read-back and
+  captured vendor baselines. #89 adds NVIDIA capture under HDR recording `hdr`, AMD
+  capture and apply still refused, and the HDR apply allowlist refusing
+  brightness, contrast, gamma, color temperature, empty requests and non-NVIDIA
+  displays with zero writes. HDR saturation and hue write after a baseline
+  restore with read-back. A failed NVIDIA write or read-back restores the whole
+  display, and an unconfirmed cleanup reports `BASELINE_RESTORE_FAILED`, in SDR
+  too. The SDR path refuses a transformed ramp after HDR turns on during the
+  baseline restore or before a rejected-ramp retry. An ownership change writes
+  nothing after detection, and the HDR capability report is checked for NVIDIA,
+  AMD and Intel. Also covered: foreground-window resolution,
   heartbeat deadlines, parent monitoring, display identity, baseline ownership,
   and explicit shutdown policy. AMD fake-provider write failure, custom-color and
   LUT read-back mismatches retain ownership and succeed on retry for single and
   restore-all routes. The production lifecycle loop is exercised through EOF,
-  parent exit and watchdog expiry with fake providers and an HDR display.
+  parent exit and watchdog expiry with fake providers and an HDR display,
+  including a baseline captured and applied under HDR.
 
 `fixtures/gamma-envelope.json` is shared by the core, native-client, website,
 and C# tests. It covers both sides of the brightness boundaries 6/7, 29/30,
@@ -207,9 +232,72 @@ restoration guard with known original ramp hash and NVIDIA vibrance/hue values.
 
 Record GPU/driver, display model, Windows HDR toggle method, original and final
 ramp hashes and vendor values, logs, and any visual difference between read-back
-and output. Restore-only HDR writes on NVIDIA and all AMD writes remain
-hardware-unverified until the corresponding owner checks are recorded. Real HDR
-profile support is tracked separately in #89.
+and output. The owner's 2026-11-08 retest of #90, recorded on #88, covered steps
+1 to 4 for HDR-on during an edit, HDR-off, Discard, a profile switch and tray
+Exit on NVIDIA. The watchdog kill path, the mini-panel notice, a real restore
+failure, and all AMD writes remain hardware-unverified. HDR profile support is
+#89, below.
+
+### Owner HDR retest for #89
+
+Required before merge on the owner's NVIDIA-driven HDR display (G60SD) with a
+second display in SDR. No smoke, native integration, desktop driving, process
+stops, or real-display writes were run to implement #89. Unit and fake-native
+results do not establish hardware behavior. NVIDIA saturation and hue under HDR
+are implemented and pending this verification; AMD stays unverified and
+blocked under HDR. Use an independent restoration guard. Before starting,
+record the SDR baseline: ramp hash (the G60SD's known neutral hash is
+`3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf`) and NVIDIA
+vibrance/hue (expected 50/0). `npm run smoke:hdr` runs the native-only HDR
+check when a display already reports HDR, and skips otherwise. It never toggles
+HDR.
+
+1. **Apply in HDR, with read-back.** With HDR on, select a profile whose
+   G60SD target has saturation 70, hue 5%, and brightness 30. Confirm visible
+   saturation and hue changes, no brightness change, and `DisplaySettingApplied`
+   with `colorMode: "hdr"` and the expected saturation and hue values. Confirm
+   NVIDIA Control Panel shows the same vibrance and hue. The app and mini panels
+   must show "HDR is on. Saturation and hue apply now; brightness, contrast and
+   gamma apply when HDR is off.", with Saturation and Hue enabled, and
+   Brightness, Contrast and Gamma disabled at their target values with "Applies
+   when HDR is off."
+2. **Preview and override in HDR.** Click another profile to preview, drag
+   saturation and hue in the app panel, then make a mini-panel override. Each
+   change must take effect on the G60SD while brightness stays at the baseline.
+   Discard, Update profile and Hold to compare must behave as in SDR for
+   saturation and hue.
+3. **HDR on and off mid-Edit.** In SDR, edit the G60SD to brightness 30,
+   saturation 85, hue 5% without saving, with a separate SDR draft on the second
+   display. Turn HDR on. The brightness change must disappear while saturation
+   and hue stay, and the draft and Update/Discard must stay. Turn HDR off. The
+   full draft, including brightness 30, must reapply. Repeat with a mini-panel
+   override.
+4. **Untargeted HDR display during an override.** With the live profile
+   applying saturation to the G60SD in HDR, start a mini-panel override that
+   changes only the second display. The G60SD must keep its saturation. Then,
+   during an override that started in SDR, turn HDR on: an untargeted G60SD
+   returns to original settings, and the live profile's saturation comes back
+   after the override ends.
+5. **Exact restore.** In HDR, after each of Discard, End preview, a switch to a
+   profile without a G60SD target, and tray Exit, confirm vibrance/hue return to
+   the recorded baseline with `BaselineRestored`. Then kill the Electron
+   process from outside during an HDR apply (watchdog/parent-exit path, under
+   the guarded procedure). Before relaunching, confirm vibrance/hue and, after
+   turning HDR off, the ramp hash match the recorded baseline.
+6. **Start with HDR already on.** Quit ChromaShift. With HDR on, start it with
+   a profile targeting the G60SD. Confirm `BaselineCaptured` with
+   `colorMode: "hdr"` and saturation applied. Turn HDR off. The full vector must
+   apply, and the native log's captured `gammaRampHash` must equal the known SDR
+   hash. Exit, and confirm the ramp hash read from a fresh helper still matches
+   the known SDR capture.
+7. **Failure handling.** Under a controlled NVIDIA read-back failure in HDR
+   (guarded procedure), confirm whole-display restoration. If the cleanup
+   restoration also fails, confirm `BASELINE_RESTORE_FAILED`, Safety blocked,
+   no further writes to either display, the retained draft, and recovery on
+   Retry.
+
+Record GPU/driver, display model, Windows HDR toggle method, the recorded and
+final ramp hashes, vibrance/hue values, the `smoke:hdr` output, and logs.
 
 `npm run native:test:integration` launches the real
 `ChromaShift.DisplayService.exe`. It verifies:
@@ -357,6 +445,17 @@ each switch. The helper must log `DisplayCapabilityResolved` for the first
 resolution of each display, then not again while capabilities stay unchanged,
 while the switches still write the display. The same check runs early in the full
 suite. HDR or topology changes during the run log new entries and fail it.
+
+`mise.exe exec -- npm run smoke:hdr` builds and runs only the #89 check
+(`--hdr-only`). It starts its own DisplayService, which is also its restoration
+guard, and runs only when an NVIDIA display already reports HDR with saturation
+or hue support; otherwise it logs a skip. It confirms the Windows ramp controls
+are unsupported, captures with `colorMode: "hdr"`, and checks that a brightness
+request is refused with `HDR_UNSAFE` and no change. It then applies mild
+saturation and hue (±5 vibrance, ±4 hue degrees), reads both back through
+the capability report, restores, and confirms the original values. Shutdown
+restores anything left. It never toggles HDR or writes a non-baseline ramp.
+The full suite runs the same check before its other steps.
 
 ### Owner checks for panel close and handoff
 
@@ -563,7 +662,10 @@ Verified on this host:
 - parent-exit and heartbeat-timeout restoration
 - baseline-free helper recovery
 - Historical SDR to HDR to SDR apply deferral and reapply with exact final
-  restoration; this does not verify the new restore-only writes during HDR
+  restoration
+- #88 restore-only writes under HDR on NVIDIA, with read-back: HDR-on during an
+  edit, HDR-off, Discard, a profile switch and tray Exit (owner retest of #90,
+  recorded on #88)
 - active Edit during DisplayPort disconnect, cancel while absent, reconnect, and
   reapply to the same stable display
 - HDMI disconnect and reconnect with stable identity and exact restoration
@@ -577,7 +679,10 @@ in `display-research.md`. Package and runtime measurements live in
 Not hardware-verified:
 
 - AMD display writes and AMD-driven multi-monitor behavior
-- Restore-only writes while HDR is active on NVIDIA or AMD
+- Restore-only writes while HDR is active on AMD, and the NVIDIA watchdog and
+  real restore-failure paths under HDR
+- NVIDIA saturation and hue applied while HDR is active (#89), and baseline
+  capture under HDR
 - mixed-GPU display control
 - suspend and resume, lock and unlock, refresh-rate and primary-display changes
 - NVIDIA driver reset

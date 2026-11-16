@@ -50,6 +50,7 @@ available for a write test.
 | Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Implemented, unverified (ADLX LUT) |
 | Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Implemented, unverified (ADLX)     |
 | Hue                        | Unsupported                                | Verified (private NVAPI)             | Implemented, unverified (ADLX)     |
+| Saturation and hue in HDR  | N/A                                        | Implemented, unverified (#89)        | Blocked under HDR                  |
 | Color temperature          | Unsupported                                | Unsupported                          | Implemented, unverified (ADLX)     |
 | Capability/range reporting | Verified                                   | Verified                             | Implemented, unverified            |
 | State read                 | Verified                                   | Verified                             | ADLX initialized; no AMD display   |
@@ -82,10 +83,14 @@ API may report success while silently refusing a ramp.
 
 Microsoft strongly discourages `SetDeviceGammaRamp`: it is global, other
 software or display events can overwrite it, unsafe ramps can fail silently,
-and HDR behavior is undefined. ChromaShift therefore refuses baseline capture
-and profile gamma application whenever HDR is reported active. The #88 owner
-decision permits restore-only writes of the captured ramp with read-back; this
-still needs owner hardware verification under HDR. ChromaShift clamps product values, transforms
+and HDR behavior is undefined. ChromaShift therefore refuses profile gamma
+application whenever HDR is reported active, and re-reads HDR state immediately
+before each transformed ramp write. The #88 owner decision permits
+restore-only writes of the captured ramp with read-back. Since #89, a non-AMD
+display may capture its baseline under HDR. The ramp is read and stored as
+usual, because the #88 hardware runs showed the ramp persisting across HDR
+transitions and reading back exactly under HDR; the baseline records the color
+mode. ChromaShift clamps product values, transforms
 from the captured baseline rather than compounding profiles, and verifies every
 write. This provider is feasible for the MVP but remains the largest Windows
 reliability risk. See the official
@@ -126,11 +131,32 @@ to SDR reapplied the saved profile without recapturing the baseline.
 
 The 2026-11-08 hardware findings and owner decision in #88 supersede that
 restoration policy: stale SDR preview values remained visible under HDR. The
-implementation now restores captured gamma and vendor state immediately while
-keeping capture and profile apply blocked. No new hardware run establishes the
-safety or effectiveness of restore-only writes under HDR; see the owner retest
-in `testing.md`. AMD's direct captured-state restore is unchanged but also
-hardware-unverified.
+implementation restores captured gamma and vendor state immediately. The
+owner's 2026-11-08 retest of #90, recorded on #88, confirmed restore-only
+writes on the G60SD with read-back. The retest covered HDR-on during an edit,
+HDR-off, Discard, a profile switch and tray Exit. It did not cover the watchdog
+kill path, the mini-panel notice, a real restore failure, or AMD. AMD's direct
+captured-state restore is unchanged and hardware-unverified.
+
+### HDR profile support (#89)
+
+NVIDIA saturation and hue now apply while HDR is on. Each apply restores the
+captured ramp and NVIDIA values, then writes Digital Vibrance and hue through
+the same private-NVAPI provider, with read-back. This is implemented and
+awaits owner hardware verification (`testing.md`, "Owner HDR retest for #89").
+The open hardware questions are whether the values take effect in HDR, read
+back correctly, survive HDR transitions, and restore exactly. AMD stays blocked
+under HDR.
+
+Brightness, contrast, and gamma stay SDR-only. Candidates considered:
+
+| Candidate                                                                           | Outcome                                                                                                                                             |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Per-display SDR content brightness (the Windows "SDR content brightness" slider)    | Rejected. Setting it needs an undocumented `DisplayConfigSetDeviceInfo` request type, and the repository uses only documented Windows and GPU APIs. |
+| HDR-aware transforms: an MHC2/ICC color profile or a DXGI output color-space change | Deferred. A different pipeline that replaces the user's color management state and needs its own capture and restore design.                        |
+| The NVIDIA driver's own HDR color controls                                          | Deferred. Not exposed by public NVAPI; would widen the private-interface dependency.                                                                |
+| The GDI ramp under HDR                                                              | Rejected. Microsoft documents HDR behavior as undefined; the ramp is only restored under HDR.                                                       |
+| Keep brightness, contrast, and gamma SDR-only                                       | Chosen. Profiles keep one color vector, and these values apply when HDR turns off.                                                                  |
 
 ## AMD findings
 
@@ -247,8 +273,9 @@ post-release work.
   limitations; read-back reduces but cannot remove those risks.
 - HDR-on detection, capability shutdown, deferred profile application, SDR
   recovery, and exact exit restoration after HDR-off were hardware-validated on
-  the G60SD. The #88 restore-only writes under HDR require a new owner retest;
-  profile application under HDR remains unsupported.
+  the G60SD. The #88 restore-only writes under HDR passed the owner's NVIDIA
+  retest of #90. Under HDR only NVIDIA saturation and hue apply (#89), pending
+  owner hardware verification; brightness, contrast, and gamma stay SDR-only.
 - NVIDIA DVC and hue depend on undocumented/private interfaces and a replaceable
   LGPL-3.0 wrapper. The packaging contract is compliant, but driver compatibility
   remains a risk.
@@ -268,15 +295,15 @@ should continue owning profiles, matching, persistence, activation precedence,
 and user-facing errors. `DisplayService` should remain limited to enumeration,
 events, validated native reads/writes, and baseline restoration.
 
-| Product capability                                 | Recommended provider                                             |
-| -------------------------------------------------- | ---------------------------------------------------------------- |
-| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                        |
-| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook            |
-| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                           |
-| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper     |
-| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation  |
-| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation             |
-| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op |
+| Product capability                                 | Recommended provider                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                                                      |
+| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                                          |
+| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                                         |
+| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper; also under HDR (#89, unverified) |
+| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation                                |
+| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation                                           |
+| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op                               |
 
 These constraints still govern the shipped product:
 

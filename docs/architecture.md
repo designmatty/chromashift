@@ -41,7 +41,12 @@ in 0.05 steps toward neutral, including 1.0, rebuilding each ramp from the
 immutable baseline. Rejected writes leave output unchanged, so the walk has no
 intermediate restore. Accepted writes still require exact read-back. Exhaustion,
 read-back errors, and other partial failures retain whole-display restoration.
-HDR remains restore-only. Protocol v2 reports the accepted gamma and an optional
+The SDR apply re-reads HDR state and ownership immediately before every
+transformed ramp write, including each retry, and refuses with `HDR_UNSAFE` or
+`BASELINE_OWNERSHIP_CHANGED`. A whole-display cleanup after a failed apply runs
+only through a freshly resolved, owner-validated descriptor; an unconfirmed
+cleanup reports `BASELINE_RESTORE_FAILED` with the original error as context.
+The GDI ramp under HDR is only ever restored. Protocol v2 reports the accepted gamma and an optional
 learned end, value, brightness, SDR mode, and captured ramp hash in `display.apply`.
 Native persists no limits. See `native-protocol.md` for the result schema.
 
@@ -129,15 +134,42 @@ errors returned by native Apply also keep control blocked. Failed transitions
 reset deduplication so confirmed recovery can retry.
 External restoration and native-service exit also reset activation state.
 
-HDR blocks profile application and baseline capture in both Electron and the
-helper. Restore-only writes of an existing immutable baseline are allowed with
-read-back, independently of the unsupported apply capabilities. An HDR-on
-transition restores the display immediately. Discard, End preview, profile
-switches, shutdown, watchdog, parent exit, and stdin EOF also restore HDR displays.
-Only confirmed restoration releases ownership; an unconfirmed restore enters
+Under HDR (#89), the helper has a separate, narrow apply path. It accepts only
+NVIDIA saturation and hue and refuses every other field, an empty request, and
+any non-NVIDIA display with `HDR_UNSAFE` before capture or any write. It
+restores the captured ramp and NVIDIA values, then writes saturation and hue
+with read-back. Brightness, contrast, and gamma stay SDR-only, and the GDI ramp
+is written under HDR only to restore the captured baseline. Capture under HDR
+is allowed except on AMD and records `colorMode: "hdr"`; an existing baseline
+is never recaptured. The capability report under HDR keeps NVIDIA saturation and
+hue at their provider capability and marks the Windows ramp controls
+unsupported; AMD reports nothing supported.
+
+Electron projects each HDR target through one function,
+`projectDisplaySettings`, which keeps only capability-supported settings and
+always withholds brightness, contrast, and gamma under HDR. A non-empty request
+is captured and applied through the normal restore-then-apply path. A display
+whose request is empty, such as AMD, Intel, or NVIDIA without vibrance, is
+restored and held at Original settings, as #88 did. For a physical display
+with several endpoints, any HDR endpoint makes the whole target HDR, and the
+intersection of endpoint capabilities decides the rest, so an AMD endpoint in
+HDR restores every endpoint. HDR on and off reuse the existing topology
+transition and activation queue: HDR-on restores and applies saturation and
+hue; HDR-off applies the full vector. Discard, End preview, profile switches,
+shutdown, watchdog, parent exit, and stdin EOF still restore HDR displays. Only
+confirmed restoration releases ownership; an unconfirmed restore enters
 Safety blocked in the running app and remains retryable. Activation restore
 failures suspend subsequent foreground writes, and a failed recovery stays
-blocked. Disconnected baseline retention is unchanged.
+blocked. `HDR_UNSAFE` from a race is a deferral that never deduplicates the
+target. Disconnected baseline retention is unchanged.
+
+The activation coordinator tracks which displays its last write left
+HDR-projected. A preview or override session reads that set after draining
+the activation queue. An untargeted HDR display keeps the live target's
+saturation and hue, as an untargeted SDR display keeps its output. If its
+output may still carry SDR ramp values, for example because HDR turned on
+during the session, the display is restored instead, and the live target
+reapplies when the session ends.
 
 HDR restoration preserves the Edit or override session, unsaved draft, and SDR
 targets, including after a transient restore failure. The interrupted session
@@ -152,13 +184,16 @@ Retry cannot resume activation until those restores are confirmed. The
 in-memory preview recovery reason survives failed retries, so a successful
 End preview completes recovery without an extra Retry. It still persists as
 schema-v1 `resume`.
-Both panels explain HDR above disabled target values; those values apply
-when HDR turns off through the existing topology transition. The mini panel keeps
-its fixed window sizing and scrolls the controls pane if needed. Windows gamma
-restore verifies the exact captured ramp, NVIDIA restore verifies vibrance/hue,
-and AMD's existing restore writes captured custom-color values and LUT directly
-with read-back. No provider's profile setters are enabled under HDR. Restore under
-HDR still requires owner NVIDIA hardware verification; AMD remains unverified.
+Both panels explain HDR from the capability report. When saturation or hue
+still applies, they say so and disable only brightness, contrast, and gamma
+("Applies when HDR is off"). When nothing applies, they keep the #88 notice above
+disabled target values. Those values apply when HDR turns off through the
+existing topology transition. The mini panel keeps its fixed window sizing and
+scrolls the controls pane if needed. Windows gamma restore verifies the exact
+captured ramp, NVIDIA restore verifies vibrance/hue, and AMD's existing restore
+writes captured custom-color values and LUT directly with read-back. Only NVIDIA
+saturation and hue setters run under HDR. NVIDIA HDR saturation and hue are
+implemented and await owner hardware verification; AMD remains unverified.
 
 Display and power transitions use a second coordinator around that same activation
 queue. Electron lock/suspend events pause new writes immediately; unlock,
@@ -241,7 +276,8 @@ targets, foreground-app triggers, and an Electron `.exe` picker. Triggers sit
 above color controls as compact executable chips, with add actions at the right
 of the section heading. The header shows an assigned hotkey at the start of its action group. Its
 controls derive support and provider explanations from each selected display's
-capability report; HDR-unsafe Windows gamma controls remain disabled. A separate
+capability report; under HDR, brightness, contrast, and gamma stay disabled while
+supported saturation and hue stay editable. A separate
 display view retains the hardware diagnostics needed for provider support.
 Profile deletion, unsaved changes, and shortcut removal use Chakra's renderer-modal `Dialog` so closing an overflow
 menu and removing its trigger cannot strand Windows keyboard focus outside the
@@ -256,6 +292,7 @@ baselines back to activation and resets deduplication before reapplying the prio
 target, including displays held at Original settings. Switching from a Preview or
 Edit to another profile's Preview skips that teardown (#78): the preview queue
 keeps the activation hold through `continuePreview`, restores only HDR displays
+without an HDR write
 and displays the destination does not target, and applies the destination from
 the same immutable baselines, so the live target never shows between them.
 Native capture is idempotent while a baseline is held. Failures before the
@@ -330,7 +367,8 @@ preview hold, validates resumption, and reasserts the intended target through th
 activation queue. In-session restoration failures instead retain the session and
 its draft for continuation, without restoring unaffected SDR draft targets or
 silently treating recovery as Discard. Disconnected baselines still pass back to activation as retained
-ownership without a restore failure. HDR displays restore immediately;
+ownership without a restore failure. HDR displays without an HDR write restore
+immediately;
 `baselineNotCaptured` needs no restoration or capture.
 
 Tray left-click reopens the last-used panel. If that panel is already visible, the
