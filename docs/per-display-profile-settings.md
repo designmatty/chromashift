@@ -327,9 +327,9 @@ without vibrance, restores its captured Original settings immediately, as in
 #88. So does an NVIDIA display whose HDR request native refuses before
 writing; the failure is recorded, the draft stays, and an unconfirmed restore
 enters Safety blocked. Every later edit, and the next transition, retries
-that display from a fresh capture. While the refusal persists, both panels
-show an error saying the display keeps its original settings and the changes
-are kept. An untargeted HDR display keeps the live target's saturation and hue
+that display from a fresh capture. While the refusal persists, edits are
+still accepted and the display stays at its original settings; the failure is
+logged. An untargeted HDR display keeps the live target's saturation and hue
 during an override unless its output may still carry SDR ramp values; then it
 is restored. The session and full draft stay intact, SDR displays keep the
 draft, and HDR-off reapplies the full current draft or target. Both panels show

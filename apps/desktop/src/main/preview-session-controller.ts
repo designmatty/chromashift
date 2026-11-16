@@ -73,20 +73,6 @@ export class PreviewRestoreError extends Error {
   }
 }
 
-/**
- * An update kept the session and draft, but native refused the HDR projection
- * for these displays, so they show Original settings. The next update retries.
- */
-export class PreviewDisplayHeldError extends Error {
-  public constructor(public readonly displayNames: readonly string[]) {
-    super(
-      `ChromaShift couldn't apply saturation and hue to ${displayNames.join(', ')} while HDR is on, ` +
-        'so it shows its original settings. Your changes are kept, and the next change tries again.'
-    )
-    this.name = 'PreviewDisplayHeldError'
-  }
-}
-
 interface ActivePreview {
   /** Stable across draft updates and in-place Preview to Edit promotion. */
   sessionId: number
@@ -385,7 +371,13 @@ export class PreviewSessionController {
       const activationHdrSafe = new Set(
         [...this.#activationHdrSafe()].filter((key) => active.activationHdrSafe.has(key))
       )
-      await this.#restoreHdrDisplays(active.touched, displays, targets, hdrWrites, activationHdrSafe)
+      await this.#restoreHdrDisplays(
+        active.touched,
+        displays,
+        targets,
+        hdrWrites,
+        activationHdrSafe
+      )
       await this.#holdOriginal(active.touched, targets)
       return { profile, targets, displays, hdrWrites, activationHdrSafe }
     } catch (error) {
@@ -405,9 +397,8 @@ export class PreviewSessionController {
       // Reject rather than buffer edits: a delayed edit must not change held output.
       if (active.comparing)
         throw new PreviewValidationError('Release Hold to compare before editing.')
-      let held: string[]
       try {
-        held = await this.#update(profileId, targets)
+        await this.#update(profileId, targets)
         const active = this.#requireActive(profileId)
         active.draft = structuredClone({
           ...(draft ?? active.draft),
@@ -429,9 +420,8 @@ export class PreviewSessionController {
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
       }
-      // The update and draft stand. Report the held display through the normal
-      // request error so both panels show it; the next update retries it.
-      if (held.length > 0) throw new PreviewDisplayHeldError(held)
+      // A held display keeps the accepted draft and retries on the next update.
+      // It is logged, not rejected: callers treat a rejected update as unsaved.
     })
   }
 
@@ -516,8 +506,7 @@ export class PreviewSessionController {
     })
   }
 
-  /** Returns the names of displays held at Original settings by this update. */
-  async #update(profileId: string, targets: DisplayColorTarget[]): Promise<string[]> {
+  async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
     const active = this.#requireActive(profileId)
     const displays = await this.native.getDisplays()
     const hdrWrites = await this.#hdrWrites(targets, displays)
@@ -559,7 +548,6 @@ export class PreviewSessionController {
       active.held.delete(key)
     }
 
-    const heldNow: string[] = []
     for (const target of desired) {
       const key = target.displayId.toLowerCase()
       const current = active.applied.get(key)
@@ -591,8 +579,6 @@ export class PreviewSessionController {
             active.held.delete(key)
           } else {
             active.held.add(key)
-            const display = displays.find((candidate) => candidate.id.toLowerCase() === key)
-            heldNow.push(display?.name ?? target.displayId)
           }
         } catch (error) {
           if (!this.#isDisplayDeferred(error)) throw error
@@ -601,7 +587,6 @@ export class PreviewSessionController {
       }
       active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
     }
-    return heldNow
   }
 
   public async confirm(profileId: string): Promise<void> {
@@ -810,8 +795,7 @@ export class PreviewSessionController {
         await this.native.captureBaseline(target.displayId)
         active.touched.set(key, target.displayId)
         active.activationHdrSafe.delete(key)
-        if (!(await this.#applyOrHold(target, hdrWrite, active.touched)))
-          active.held.add(key)
+        if (!(await this.#applyOrHold(target, hdrWrite, active.touched))) active.held.add(key)
       } catch (error) {
         if (!this.#isDisplayDeferred(error)) throw error
         const key = target.displayId.toLowerCase()
@@ -962,9 +946,7 @@ export class PreviewSessionController {
 
   /** Read after beginPreview or continuePreview drained the activation queue. */
   #activationHdrSafe(): Set<string> {
-    return new Set(
-      (this.activation.hdrProjectedDisplayIds?.() ?? []).map((id) => id.toLowerCase())
-    )
+    return new Set((this.activation.hdrProjectedDisplayIds?.() ?? []).map((id) => id.toLowerCase()))
   }
 
   /** Restore only known baselines. Missing targets never cause baseline capture. */

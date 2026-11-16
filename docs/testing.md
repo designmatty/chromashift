@@ -78,8 +78,8 @@ The TypeScript and native test suites cover these contracts:
   mid-Edit and at override start. The draft stays, and an unconfirmed restore
   enters Safety blocked or recovery. The next draft edit, transition or
   activation retries from a fresh capture. A persistent refusal holds again on
-  each edit and rejects with the panel error, while the session, draft and other
-  displays continue.
+  each edit without rejecting it, while the session, draft, Update profile,
+  Discard and other displays continue.
 - Panel close and handoff reasons with the shared fake native: app close rolls
   back dirty Edit and Temporary override to the exact prior automatic/manual
   target; mini close (and Escape where the panel can take focus) roll back overrides; both handoffs carry an

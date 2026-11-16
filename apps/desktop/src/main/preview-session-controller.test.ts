@@ -15,7 +15,6 @@ import { NativeServiceError } from '@chromashift/native-client'
 import type { DisplayApplyResult, DisplaySettings } from '@chromashift/native-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  PreviewDisplayHeldError,
   PreviewRestoreError,
   PreviewSessionController,
   type PreviewActivationPort
@@ -769,14 +768,15 @@ describe('PreviewSessionController', () => {
     const native = new FakeNative()
     native.reports.set(display.id, nvidiaCapabilityReport(display.id))
     const failed = vi.fn(async () => undefined)
-    const controller = new PreviewSessionController(
-      native,
-      new FakeActivation(),
-      () => undefined,
-      { restoreFailed: failed, restored: async () => undefined }
-    )
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined, {
+      restoreFailed: failed,
+      restored: async () => undefined
+    })
     const draft = profile(
-      targets([display.id, { brightness: 30, saturation: 85 }], [secondDisplay.id, { brightness: 35 }])
+      targets(
+        [display.id, { brightness: 30, saturation: 85 }],
+        [secondDisplay.id, { brightness: 35 }]
+      )
     )
     await controller.start(draft, 'edit', profile())
     native.hdrDisplayIds.add(display.id)
@@ -1584,7 +1584,10 @@ describe('a refused HDR projection (#89 final review)', () => {
     native.hdrDisplayIds.add(display.id)
   }
   const draft = profile(
-    targets([display.id, { brightness: 30, saturation: 85 }], [secondDisplay.id, { brightness: 35 }])
+    targets(
+      [display.id, { brightness: 30, saturation: 85 }],
+      [secondDisplay.id, { brightness: 35 }]
+    )
   )
 
   it('restores the display, holds it and keeps the draft when HDR turns on mid-Edit', async () => {
@@ -1624,7 +1627,11 @@ describe('a refused HDR projection (#89 final review)', () => {
 
     // The next transition retries from a fresh capture of the restored original.
     await controller.reapplyAfterDisplayTransition()
-    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+    expect(native.currentSettings.get(display.id)).toEqual({
+      brightness: 48,
+      saturation: 85,
+      hue: 0
+    })
     expect(controller.unsavedDraft).toEqual(draft)
   })
 
@@ -1649,7 +1656,11 @@ describe('a refused HDR projection (#89 final review)', () => {
     native.failRestoreDisplayIds.clear()
     await expect(controller.retryRestoration()).resolves.toBe(true)
     expect(controller.sessionRecoveryPending).toBe(false)
-    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
+    expect(native.currentSettings.get(display.id)).toEqual({
+      brightness: 48,
+      saturation: 85,
+      hue: 0
+    })
   })
 
   it('retries a held display on the next edit, from a fresh capture, once the refusal clears', async () => {
@@ -1663,10 +1674,17 @@ describe('a refused HDR projection (#89 final review)', () => {
 
     // No display transition: the next draft edit alone reaches the HDR display.
     const edited = profile(
-      targets([display.id, { brightness: 30, saturation: 95 }], [secondDisplay.id, { brightness: 35 }])
+      targets(
+        [display.id, { brightness: 30, saturation: 95 }],
+        [secondDisplay.id, { brightness: 35 }]
+      )
     )
     await controller.update(edited.id, edited.displays, edited)
-    expect(native.currentSettings.get(display.id)).toEqual({ brightness: 48, saturation: 95, hue: 0 })
+    expect(native.currentSettings.get(display.id)).toEqual({
+      brightness: 48,
+      saturation: 95,
+      hue: 0
+    })
     // The confirmed hold released ownership; the new capture is of Original output.
     expect(native.baselineCaptures.slice(capturesBefore)).toEqual([
       { displayId: display.id, settings: { brightness: 48 } }
@@ -1676,13 +1694,18 @@ describe('a refused HDR projection (#89 final review)', () => {
     // Once applied, an unrelated edit leaves the display alone.
     const applies = native.applied.length
     const other = profile(
-      targets([display.id, { brightness: 30, saturation: 95 }], [secondDisplay.id, { brightness: 40 }])
+      targets(
+        [display.id, { brightness: 30, saturation: 95 }],
+        [secondDisplay.id, { brightness: 40 }]
+      )
     )
     await controller.update(other.id, other.displays, other)
-    expect(native.applied.slice(applies).map((entry) => entry.displayId)).toEqual([secondDisplay.id])
+    expect(native.applied.slice(applies).map((entry) => entry.displayId)).toEqual([
+      secondDisplay.id
+    ])
   })
 
-  it('retries, holds again and reports each edit while the refusal persists', async () => {
+  it('retries and holds again on each edit while the refusal persists, accepting the draft', async () => {
     const native = refusingNative()
     const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
     await controller.start(draft, 'edit', profile())
@@ -1699,15 +1722,8 @@ describe('a refused HDR projection (#89 final review)', () => {
         targets([display.id, { brightness: 30, saturation }], [secondDisplay.id, { brightness }])
       )
       const calls = native.calls.length
-      const update = controller.update(edited.id, edited.displays, edited)
-      await expect(update).rejects.toBeInstanceOf(PreviewDisplayHeldError)
-      // Both panels show it through the normal request error banner.
-      expect(mapProductError(await update.catch((error: unknown) => error))).toEqual({
-        code: 'OPERATION_FAILED',
-        message:
-          "ChromaShift couldn't apply saturation and hue to Test display while HDR is on, " +
-          'so it shows its original settings. Your changes are kept, and the next change tries again.'
-      })
+      // The update is accepted, so app-panel Update profile and Discard keep working.
+      await expect(controller.update(edited.id, edited.displays, edited)).resolves.toBeUndefined()
       // Retried: fresh capture, refused apply, confirmed restore.
       expect(native.calls.slice(calls).filter((call) => call.displayId === display.id)).toEqual([
         { operation: 'capture', displayId: display.id },

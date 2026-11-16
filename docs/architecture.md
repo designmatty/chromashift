@@ -161,9 +161,9 @@ disconnects and `HDR_UNSAFE` keep their own handling. A held display is not
 treated as disconnected. Activation retries it on its next activation, because
 the failed outcome resets deduplication. A preview session retries it on every
 draft update and on each reapply. Each retry starts from a fresh capture of the
-restored original. While the refusal persists, each update keeps the session
-and draft but rejects with a message that both panels show through their
-normal error banner.
+restored original. While the refusal persists, each update is still accepted,
+keeps the session and draft, and logs `HdrProjectionHeld`; the panels show no
+separate warning.
 For a physical display
 with several endpoints, any HDR endpoint makes the whole target HDR, and the
 intersection of endpoint capabilities decides the rest, so an AMD endpoint in
