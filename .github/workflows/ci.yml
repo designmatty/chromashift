@@ -1,10 +1,16 @@
 name: CI
 
+# Website-only changes run Website CI instead (website-ci.yml). A change that
+# also touches anything outside apps/website still runs this full check.
 on:
   pull_request:
+    paths-ignore:
+      - 'apps/website/**'
   push:
     branches:
       - main
+    paths-ignore:
+      - 'apps/website/**'
 
 concurrency:
   group: ci-${{ github.ref }}

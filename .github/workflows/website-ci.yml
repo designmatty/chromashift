@@ -1,0 +1,61 @@
+name: Website CI
+
+# Website-only changes skip the Windows CI (see ci.yml), so this covers the
+# website's slice of `npm run verify`. Any change outside the website still
+# runs the full Windows verification, which includes these checks.
+on:
+  pull_request:
+    paths:
+      - 'apps/website/**'
+      - '.github/workflows/website-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/website/**'
+      - '.github/workflows/website-ci.yml'
+
+concurrency:
+  group: website-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify website
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+
+      # Root install for the shared Prettier and ESLint setup. The desktop's
+      # Electron binary is not needed here.
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Check formatting
+        run: npx prettier --check apps/website
+
+      - name: Lint
+        run: npx eslint apps/website
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @chromashift/website
+
+      - name: Test
+        run: npm run test --workspace @chromashift/website
+
+      - name: Build
+        run: npm run website:build
