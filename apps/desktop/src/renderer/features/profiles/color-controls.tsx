@@ -126,6 +126,22 @@ export interface ControlSupport {
   reason: string
 }
 
+/** Windows gamma-ramp controls. They stay SDR-only while HDR is on (#89). */
+const sdrOnlyControls: ReadonlySet<ColorControlKey> = new Set(['brightness', 'contrast', 'gamma'])
+const appliesWhenHdrIsOff = 'Applies when HDR is off.'
+
+/** Controls the capability report still supports while HDR is on, in display order. */
+export function hdrApplicableControls(
+  report: DisplayCapabilityReport | undefined
+): ColorControlKey[] {
+  return controls
+    .filter(
+      (control) =>
+        !sdrOnlyControls.has(control.key) && report?.capabilities[control.key]?.supported === true
+    )
+    .map((control) => control.key)
+}
+
 export function controlSupport(
   key: ColorControlKey,
   display: Display | undefined,
@@ -139,15 +155,23 @@ export function controlSupport(
     }
   }
 
+  const capability = report?.capabilities[key]
   if (display.hdr) {
+    // Brightness, contrast and gamma keep their values and apply when HDR is off.
+    if (sdrOnlyControls.has(key)) {
+      return { available: false, status: 'unavailable', reason: appliesWhenHdrIsOff }
+    }
+    if (capability?.supported === true) return { available: true, status: '', reason: '' }
     return {
       available: false,
       status: 'unavailable',
-      reason: 'HDR is on. These values apply when HDR is turned off.'
+      reason:
+        hdrApplicableControls(report).length === 0
+          ? appliesWhenHdrIsOff
+          : (capability?.reason ?? 'Unsupported by the active provider.')
     }
   }
 
-  const capability = report?.capabilities[key]
   if (capability === undefined || !capability.supported) {
     return {
       available: false,
@@ -157,6 +181,29 @@ export function controlSupport(
   }
 
   return { available: true, status: '', reason: '' }
+}
+
+/** The HDR notice, driven by which controls the capability report still supports. */
+export function hdrNotice(
+  report: DisplayCapabilityReport | undefined,
+  safetyBlocked: boolean
+): string {
+  const applicable = hdrApplicableControls(report)
+  if (applicable.length === 0) {
+    return safetyBlocked
+      ? "HDR is on and isn't supported yet. Restoration needs confirmation. Use Retry to restore original settings."
+      : "HDR is on and isn't supported yet. This display stays at its original settings. Values below apply when HDR is off."
+  }
+  if (safetyBlocked) {
+    return 'HDR is on. Restoration needs confirmation. Use Retry to restore original settings.'
+  }
+  const names = applicable.map((key) =>
+    controls.find((control) => control.key === key)!.label.toLowerCase()
+  )
+  const list =
+    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)!}`
+  const verb = names.length === 1 ? 'applies' : 'apply'
+  return `HDR is on. ${list.charAt(0).toUpperCase()}${list.slice(1)} ${verb} now; brightness, contrast and gamma apply when HDR is off.`
 }
 
 export function ColorControls({
@@ -197,9 +244,7 @@ export function ColorControls({
     <Stack gap={compact ? 4 : 3}>
       {display?.hdr && (
         <Text role="status" fontSize="xs" color="fg.muted">
-          {product.chromaShift?.status === 'safetyBlocked'
-            ? "HDR is on and isn't supported yet. Restoration needs confirmation. Use Retry to restore original settings."
-            : "HDR is on and isn't supported yet. This display stays at its original settings. Values below apply when HDR is off."}
+          {hdrNotice(report, product.chromaShift?.status === 'safetyBlocked')}
         </Text>
       )}
       {controls
