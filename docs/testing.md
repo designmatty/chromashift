@@ -18,6 +18,8 @@
 `npm run verify` is the canonical non-interactive gate and the command used by
 GitHub CI. It does not claim native hardware, visible desktop, installation, or
 restoration behavior. Run the relevant real command when changing those paths.
+A change confined to `apps/website` skips the Windows CI and runs the faster
+Website CI instead: website formatting, lint, typecheck, tests, and build.
 
 The desktop test command installs Electron's binary once before starting Vitest
 workers. This prevents concurrent first-import extraction after a clean `npm ci`.

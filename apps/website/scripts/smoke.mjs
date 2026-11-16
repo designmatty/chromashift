@@ -228,11 +228,21 @@ async function run() {
     await change(name, next)
     assert.notEqual(await pixelHash(), before, `${name} changes screenshot pixels`)
   }
-  assert.equal(await hidden('[data-mini-override]'), false, 'changes show Reset and Update')
+  assert.equal(await hidden('[data-mini-override]'), false, 'changes show Discard and Update')
   await capture('demo-dirty')
+
+  // The mini panel's Hold to compare shows the saved profile only while pressed.
+  const dirtyHash = await pixelHash()
+  const compareSaved = await bounds('[data-mini-compare]')
+  await mouse('mousePressed', compareSaved.x + 20, compareSaved.y + 12)
+  assert.equal(await pixelHash(), profiled, 'Hold to compare shows the saved profile')
+  assert.equal(await value('hue'), 0, 'Hold to compare shows saved values')
+  await mouse('mouseReleased', compareSaved.x + 20, compareSaved.y + 12)
+  assert.equal(await pixelHash(), dirtyHash, 'releasing returns to the unsaved changes')
+
   await click('[data-mini-reset]')
   assert.equal(await hidden('[data-mini-override]'), true)
-  assert.equal(await pixelHash(), profiled, 'Reset changes returns to the profile')
+  assert.equal(await pixelHash(), profiled, 'Discard changes returns to the profile')
 
   // The gamma envelope follows brightness, and per-control reset returns to neutral.
   await change('gamma', 2.8)
@@ -249,7 +259,7 @@ async function run() {
   assert.notEqual(await filter(), 'none')
   await click('[data-mini-reset]')
 
-  // Hold to compare shows the original only while pressed.
+  // Hold to see original shows the original only while pressed.
   const compare = await bounds('[data-demo-compare]')
   await mouse('mousePressed', compare.x + 20, compare.y + 18)
   assert.equal(await filter(), 'none')
@@ -266,7 +276,7 @@ async function run() {
   assert.equal(await value('hue'), 1, 'keyboard adjusts hue')
   await click('[data-mini-update]')
   assert.equal(await hidden('[data-mini-override]'), true, 'Update profile saves the draft')
-  assert.equal(await text('[data-hero-controls] [data-control="hue"] [data-value]'), '0')
+  assert.equal(await text('[data-hero-controls] [data-control="hue"] [data-value]'), '0°')
 
   // Daytime switches automatically to the app's general profile.
   await click('[data-demo-variant="day"]')
@@ -278,7 +288,7 @@ async function run() {
   await click('[data-mini-update]')
   assert.equal(
     await text('[data-hero-controls] [data-control="hue"] [data-value]'),
-    '1',
+    '4°',
     'saving Tarkov updates the hero replica'
   )
 
@@ -328,6 +338,14 @@ async function run() {
   await click('[data-mini-picker-open]')
   await click('input[name="demo-profile"][value="automatic"]')
   assert.equal(await text('[data-mini-profile]'), 'Default profile')
+
+  // Hovering shows the app-style tooltip instead of a native title.
+  const restoreButton = await bounds('[data-mini-restore]')
+  await mouse('mouseMoved', restoreButton.x + 20, restoreButton.y + 20)
+  await waitFor(`!${query('.tooltip')}.hidden`, 'tooltip shown')
+  assert.equal(await text('.tooltip'), 'Restore original display settings')
+  await mouse('mouseMoved', restoreButton.x - 300, restoreButton.y - 300)
+  assert.equal(await hidden('.tooltip'), true, 'leaving hides the tooltip')
 
   // Dragging by the title bar moves the panel and keeps it on screen.
   const panel = await bounds('[data-mini]')

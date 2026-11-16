@@ -49,11 +49,13 @@ describe('demo color controls', () => {
     expect(setControl({ ...neutralColor }, 'hue', Number.NaN).hue).toBe(0)
   })
 
-  it('formats values like the mini panel', () => {
+  it('formats values like the app', () => {
     expect(formatValue('brightness', 56.4)).toBe('56%')
-    expect(formatValue('gamma', 1)).toBe('1')
+    expect(formatValue('gamma', 1)).toBe('1.00')
     expect(formatValue('gamma', 1.45)).toBe('1.45')
-    expect(formatValue('gamma', 1.5)).toBe('1.5')
+    expect(formatValue('gamma', 1.5)).toBe('1.50')
+    expect(formatValue('hue', 0)).toBe('0°')
+    expect(formatValue('hue', 1)).toBe('4°')
   })
 })
 

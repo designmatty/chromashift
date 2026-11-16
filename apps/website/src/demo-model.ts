@@ -82,11 +82,11 @@ export function sameColor(left: ColorSettings, right: ColorSettings): boolean {
   return colorControls.every(({ key }) => left[key] === right[key])
 }
 
-/** Matches the mini panel's compact value label. */
+/** Matches the app's value label (`control-values.ts` in the desktop renderer). */
 export function formatValue(key: ColorKey, value: number): string {
-  return key === 'gamma'
-    ? value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
-    : `${Math.round(value)}%`
+  if (key === 'gamma') return value.toFixed(2)
+  if (key === 'hue') return `${Math.round(value * 3.59)}°`
+  return `${Math.round(value)}%`
 }
 
 /**

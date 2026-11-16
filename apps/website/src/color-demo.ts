@@ -19,6 +19,7 @@ import {
   type Point
 } from '@/demo-model'
 import { createTour, type TourStep } from '@/demo-tour'
+import { initTooltips } from '@/tooltip'
 
 const rampFilter = 'url(#demo-ramp)'
 const svgNamespace = 'http://www.w3.org/2000/svg'
@@ -33,6 +34,8 @@ interface DemoState {
   paused: boolean
   restored: boolean
   comparing: boolean
+  /** Hold to compare in the mini panel: show the saved profile instead of the draft. */
+  comparingSaved: boolean
   picker: boolean
 }
 
@@ -41,6 +44,14 @@ interface ControlElements {
   input: HTMLInputElement
   value: HTMLElement
   reset: HTMLButtonElement
+  limit: HTMLElement
+}
+
+/** Profile icons, as the app shows each executable's own icon. */
+const profileIcons: Record<string, string> = {
+  'escapefromtarkov.exe': '/media/app-icons/tarkov.png',
+  'rustclient.exe': '/media/app-icons/rust.png',
+  'blender.exe': '/media/app-icons/blender.png'
 }
 
 export function initColorDemo(): void {
@@ -53,6 +64,7 @@ export function initColorDemo(): void {
     if (element === null) throw new Error(`Missing demo element ${selector}`)
     return element
   }
+  initTooltips(dialog)
   const stage = part('[data-demo-stage]')
   const screen = part<HTMLImageElement>('[data-demo-screen]')
   const loading = part('[data-demo-loading]')
@@ -89,10 +101,12 @@ export function initColorDemo(): void {
     paused: false,
     restored: false,
     comparing: false,
+    comparingSaved: false,
     picker: false
   }
 
   const controls = buildControls(part('[data-mini-controls]'))
+  const liveBadges = new Map<string, HTMLElement>()
   const options = buildPicker(part('[data-mini-picker]'))
   const appButtons = buildAppButtons(appGroup)
   const tourStart = part<HTMLButtonElement>('[data-tour-start]')
@@ -159,14 +173,16 @@ export function initColorDemo(): void {
   function render(): void {
     const profile = activeProfile()
     const dirty = !sameColor(state.draft, profile.color)
+    if (!dirty) state.comparingSaved = false
+    const shown = state.comparingSaved ? profile.color : state.draft
     const showOriginal = state.paused || state.restored || state.comparing
 
-    const ramp = rampTable(state.draft).join(' ')
+    const ramp = rampTable(shown).join(' ')
     if (ramp !== lastRamp) {
       for (const fn of rampFunctions) fn.setAttribute('tableValues', ramp)
       lastRamp = ramp
     }
-    screen.style.filter = showOriginal ? 'none' : screenshotFilter(state.draft, rampFilter)
+    screen.style.filter = showOriginal ? 'none' : screenshotFilter(shown, rampFilter)
     original.hidden = !showOriginal
     originalLabel.textContent = state.paused
       ? 'ChromaShift paused'
@@ -176,9 +192,10 @@ export function initColorDemo(): void {
     compare.classList.toggle('is-active', state.comparing)
 
     const powerLabel = state.paused ? 'Resume ChromaShift' : 'Pause ChromaShift'
-    power.dataset.status = state.paused ? 'paused' : 'active'
+    power.dataset.status = state.paused ? 'paused' : dirty ? 'on-hold' : 'active'
     power.setAttribute('aria-label', powerLabel)
-    power.title = powerLabel
+    power.dataset.tooltip =
+      dirty && !state.paused ? 'Auto-switching on hold — unsaved changes' : powerLabel
     restore.disabled = state.paused
 
     controlsView.hidden = state.picker
@@ -190,11 +207,15 @@ export function initColorDemo(): void {
 
     for (const control of colorControls) {
       const elements = controls.get(control.key)!
-      const value = state.draft[control.key]
-      const range = allowedRange(control.key, state.draft)
+      const value = shown[control.key]
+      const range = allowedRange(control.key, shown)
       const span = control.max - control.min
+      const limited = range.min > control.min || range.max < control.max
+      elements.limit.hidden = !limited
+      elements.limit.dataset.tooltip = `Min ${range.min.toFixed(2)}, max ${range.max.toFixed(2)} at brightness ${Math.round(shown.brightness)}%`
+      elements.limit.setAttribute('aria-label', elements.limit.dataset.tooltip)
       elements.input.value = String(value)
-      elements.input.disabled = state.paused
+      elements.input.disabled = state.paused || state.comparingSaved
       elements.input.setAttribute('aria-valuemin', String(range.min))
       elements.input.setAttribute('aria-valuemax', String(range.max))
       elements.input.setAttribute('aria-valuetext', formatValue(control.key, value))
@@ -202,11 +223,12 @@ export function initColorDemo(): void {
       elements.input.style.setProperty('--lo', `${((range.min - control.min) / span) * 100}%`)
       elements.input.style.setProperty('--hi', `${((control.max - range.max) / span) * 100}%`)
       elements.value.textContent = formatValue(control.key, value)
-      elements.reset.hidden = state.paused || value === control.neutral
+      elements.reset.hidden = state.paused || state.comparingSaved || value === control.neutral
     }
 
     const selected = state.mode.kind === 'automatic' ? 'automatic' : state.mode.profileId
     for (const option of options) option.checked = option.value === selected
+    for (const [id, badge] of liveBadges) badge.hidden = id !== profile.id
 
     for (const button of appButtons) {
       button.setAttribute('aria-pressed', String(button.dataset.demoApp === state.scene.app.id))
@@ -329,17 +351,27 @@ export function initColorDemo(): void {
       reset.type = 'button'
       reset.className = 'mini-control__reset'
       reset.textContent = '↺'
-      reset.title = `Reset ${control.label.toLowerCase()} to neutral`
-      reset.setAttribute('aria-label', reset.title)
+      reset.dataset.tooltip = 'Reset to neutral'
+      reset.setAttribute('aria-label', `Reset ${control.label.toLowerCase()} to neutral`)
       reset.addEventListener('click', () => changeControl(control.key, control.neutral))
+      const limit = document.createElement('span')
+      limit.className = 'mini-control__limit'
+      limit.setAttribute('role', 'img')
+      limit.hidden = true
+      limit.append(icon('shield-alert'))
       const value = document.createElement('span')
       value.className = 'mini-control__value'
       value.setAttribute('aria-hidden', 'true')
-      head.append(icon(control.icon), label, reset, value)
+      head.append(icon(control.icon), label, limit, reset, value)
 
       const input = document.createElement('input')
       input.type = 'range'
       input.className = 'mini-slider'
+      if (control.key === 'saturation' || control.key === 'hue') input.dataset.track = control.key
+      input.style.setProperty(
+        '--n',
+        String((control.neutral - control.min) / (control.max - control.min))
+      )
       input.id = `demo-${control.key}`
       input.min = String(control.min)
       input.max = String(control.max)
@@ -348,7 +380,7 @@ export function initColorDemo(): void {
 
       row.append(head, input)
       container.append(row)
-      elements.set(control.key, { row, input, value, reset })
+      elements.set(control.key, { row, input, value, reset, limit })
     }
     return elements
   }
@@ -359,11 +391,12 @@ export function initColorDemo(): void {
     const list = document.createElement('div')
     list.className = 'mini__picker-list'
     const items = [
-      { value: 'automatic', label: 'Automatic', isDefault: false },
+      { value: 'automatic', label: 'Automatic', isDefault: false, executable: undefined },
       ...state.profiles.map((profile) => ({
         value: profile.id,
         label: profile.name,
-        isDefault: profile.executable === null
+        isDefault: profile.executable === null,
+        executable: profile.executable
       }))
     ]
     const inputs = items.map((item) => {
@@ -383,12 +416,25 @@ export function initColorDemo(): void {
       const mark = document.createElement('span')
       mark.className = 'mini-option__mark'
       mark.setAttribute('aria-hidden', 'true')
-      option.append(input, mark, item.label)
+      option.append(input, mark)
+      if (item.executable !== undefined) option.append(profileIcon(item.executable))
+      const name = document.createElement('span')
+      name.className = 'mini-option__name'
+      name.textContent = item.label
+      option.append(name)
       if (item.isDefault) {
         const badge = document.createElement('span')
-        badge.className = 'cs-badge'
+        badge.className = 'cs-badge mini-option__badge'
         badge.textContent = 'Default'
         option.append(badge)
+      }
+      if (item.value !== 'automatic') {
+        const live = document.createElement('span')
+        live.className = 'cs-badge mini-option__badge mini-option__badge--live'
+        live.textContent = 'Live'
+        live.hidden = true
+        liveBadges.set(item.value, live)
+        option.append(live)
       }
       ;(item.value === 'automatic' ? pinned : list).append(option)
       return input
@@ -456,28 +502,16 @@ export function initColorDemo(): void {
     pickerOpen.focus()
   })
 
-  const setComparing = (comparing: boolean): void => {
+  holdButton(compare, (comparing) => {
     if (state.comparing === comparing) return
     state.comparing = comparing
     render()
-  }
-  compare.addEventListener('pointerdown', (event) => {
-    compare.setPointerCapture(event.pointerId)
-    setComparing(true)
   })
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) {
-    compare.addEventListener(type, () => setComparing(false))
-  }
-  compare.addEventListener('keydown', (event) => {
-    if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
-      event.preventDefault()
-      setComparing(true)
-    }
+  holdButton(part<HTMLButtonElement>('[data-mini-compare]'), (comparing) => {
+    if (state.comparingSaved === comparing) return
+    state.comparingSaved = comparing
+    render()
   })
-  compare.addEventListener('keyup', (event) => {
-    if (event.key === ' ' || event.key === 'Enter') setComparing(false)
-  })
-  compare.addEventListener('contextmenu', (event) => event.preventDefault())
 
   dragHandle.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || (event.target as Element).closest('button') !== null) return
@@ -524,6 +558,7 @@ export function initColorDemo(): void {
   dialog.addEventListener('close', () => {
     if (tour.active) tour.stop()
     state.comparing = false
+    state.comparingSaved = false
     state.picker = false
     render()
   })
@@ -578,6 +613,45 @@ function icon(name: string): SVGSVGElement {
   return svg
 }
 
+/** The executable's icon, or the palette for Default, in a 30px circle. */
+function profileIcon(executable: string | null): HTMLElement {
+  const frame = document.createElement('span')
+  frame.className = 'mini-option__icon'
+  const src = executable === null ? undefined : profileIcons[executable.toLowerCase()]
+  if (src === undefined) {
+    frame.append(icon('palette'))
+  } else {
+    const image = document.createElement('img')
+    image.src = src
+    image.width = 30
+    image.height = 30
+    image.alt = ''
+    frame.append(image)
+  }
+  return frame
+}
+
+/** Wires a press-and-hold button: pointer, Space, or Enter held down. */
+function holdButton(button: HTMLButtonElement, set: (held: boolean) => void): void {
+  button.addEventListener('pointerdown', (event) => {
+    button.setPointerCapture(event.pointerId)
+    set(true)
+  })
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur']) {
+    button.addEventListener(type, () => set(false))
+  }
+  button.addEventListener('keydown', (event) => {
+    if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+      event.preventDefault()
+      set(true)
+    }
+  })
+  button.addEventListener('keyup', (event) => {
+    if (event.key === ' ' || event.key === 'Enter') set(false)
+  })
+  button.addEventListener('contextmenu', (event) => event.preventDefault())
+}
+
 /** Saving the Tarkov profile in the demo also updates the hero's app replica. */
 function updateHero(profile: DemoProfile): void {
   if (profile.id !== 'tarkov') return
@@ -587,7 +661,8 @@ function updateHero(profile: DemoProfile): void {
     )
     if (row === null) continue
     const value = profile.color[control.key]
-    row.querySelector('[data-value]')!.textContent = String(value)
+    row.querySelector('[data-value]')!.textContent = formatValue(control.key, value)
+    row.querySelector<HTMLElement>('[data-reset]')!.hidden = value === control.neutral
     row
       .querySelector<HTMLElement>('[data-track]')
       ?.style.setProperty('--p', String((value - control.min) / (control.max - control.min)))
