@@ -96,6 +96,7 @@ describe('review-90 deterministic proofs', () => {
       native,
       {
         beginPreview: async () => [],
+        continuePreview: async () => [],
         cancelPreview: async () => undefined,
         confirmPreview: async () => undefined
       },

@@ -369,7 +369,9 @@ export class ProductRuntime {
         restored: () => chromaShiftController.previewRestored()
       },
       this.#gammaLimits,
-      profileRepository
+      profileRepository,
+      // Created further down this method; read when each queued preview start runs.
+      () => this.#displayTransitionController?.pending ?? false
     )
     this.#previewController = previewController
     const chromaShiftController = new ChromaShiftController(

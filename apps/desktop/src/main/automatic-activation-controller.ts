@@ -234,6 +234,22 @@ export class AutomaticActivationController {
     return this.coordinator.capturedDisplayIds
   }
 
+  /**
+   * Keeps the existing hold for a session replacing the active preview, so
+   * the live target is never written between them. Admits exactly what
+   * beginPreview admits, without releasing and retaking the hold.
+   */
+  public async continuePreview(): Promise<readonly string[]> {
+    if (!this.#previewing) throw new Error('No display preview is active.')
+    if (!this.#enabled) throw new Error('Display preview is not available.')
+    if (this.#systemTransitioning) throw new Error('A display transition is in progress.')
+    await this.coordinator.waitForIdle()
+    if (!this.#previewing || this.#writesSuspended || this.coordinator.restorationBlocked) {
+      throw new Error('Restore the pending displays before starting a preview.')
+    }
+    return this.coordinator.capturedDisplayIds
+  }
+
   public async cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     if (!this.#previewing) return
     this.#previewing = false

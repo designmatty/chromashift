@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createNeutralColorSettings } from '@chromashift/core'
 import { describe, expect, it } from 'vitest'
 import type {
   BaselineCaptureResult,
@@ -8,7 +12,13 @@ import type {
   DisplaySettings,
   RestoreAllResult
 } from '@chromashift/native-client'
+import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import { PhysicalDisplayClient } from '@main/physical-display-client.js'
+import {
+  FakeNativeDisplayPort,
+  testCapabilityReport,
+  testDisplay
+} from '@main/testing/fake-native-display.js'
 
 const physicalId = 'display:physical-g60'
 
@@ -228,4 +238,69 @@ describe('PhysicalDisplayClient', () => {
 
     expect(displays.map((display) => display.id)).toEqual(['display:dp', 'display:hdmi'])
   })
+})
+
+// #78: a preview replacement recaptures displays it already holds.
+it('keeps endpoint baselines and learned limits through repeated physical capture and partial restore', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chromashift-physical-capture-'))
+  try {
+    const panel = 'display:physical'
+    const first = { ...testDisplay('display:one'), physicalId: panel }
+    const second = { ...testDisplay('display:two'), physicalId: panel }
+    const native = new FakeNativeDisplayPort(0, [first, second])
+    for (const display of [first, second]) {
+      const capabilities = testCapabilityReport(display.id)
+      capabilities.capabilities.gamma = { supported: true, provider: 'windows', min: 0.3, max: 2.8 }
+      native.reports.set(display.id, capabilities)
+    }
+    const originals = new Map([
+      [first.id, { ...createNeutralColorSettings(), brightness: 44 }],
+      [second.id, { ...createNeutralColorSettings(), brightness: 47 }]
+    ])
+    for (const [id, color] of originals) native.currentSettings.set(id, color)
+    const limits = new LearnedGammaLimits(join(directory, 'limits.json'), {
+      write: () => undefined
+    })
+    await limits.load()
+    const physical = new PhysicalDisplayClient(
+      {
+        getDisplays: () => native.getDisplays(),
+        getDisplayCapabilityReport: (id) => native.getDisplayCapabilityReport(id),
+        getForegroundApplication: async () => null,
+        getVisibleApplications: async () => [],
+        captureBaseline: (id) => native.captureBaseline(id),
+        applyDisplaySettings: (id, settings) => native.applyDisplaySettings(id, settings),
+        restoreDisplay: (id) => native.restoreDisplay(id),
+        restoreAllBaselines: () => native.restoreAllBaselines()
+      },
+      limits
+    )
+    await physical.captureBaseline(panel)
+    // One endpoint rejects part of the range, so both converge on its learned maximum.
+    native.gammaRanges.set(second.id, { min: 0.3, max: 1.5 })
+    await physical.applyDisplaySettings(panel, { ...createNeutralColorSettings(), gamma: 1.8 })
+    const learned = structuredClone(limits.applicable)
+    expect(learned.displays[panel]?.sdr?.brightness['50']?.max).toBe(1.5)
+
+    await expect(physical.captureBaseline(panel)).resolves.toMatchObject({
+      state: 'alreadyCaptured'
+    })
+    expect(limits.applicable).toEqual(learned)
+    expect(native.baselineCaptures).toHaveLength(2)
+
+    // A partial restore releases only the confirmed endpoint. Recapture reads
+    // Original there and keeps the held baseline for the endpoint that failed.
+    native.failRestoreDisplayIds.add(second.id)
+    await expect(physical.restoreDisplay(panel)).rejects.toThrow('Restore failed')
+    await expect(physical.captureBaseline(panel)).resolves.toMatchObject({ state: 'captured' })
+    expect(limits.applicable).toEqual(learned)
+    for (const capture of native.baselineCaptures) {
+      expect(capture.settings).toEqual(originals.get(capture.displayId))
+    }
+    native.failRestoreDisplayIds.clear()
+    await physical.restoreDisplay(panel)
+    for (const [id, color] of originals) expect(native.currentSettings.get(id)).toEqual(color)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

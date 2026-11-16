@@ -28,6 +28,74 @@ function topology(
 }
 
 describe('DisplayTransitionController', () => {
+  it('reports pending from the first signal until the refresh, including completion, settles', async () => {
+    let releaseRefresh: (() => void) | undefined
+    const refreshStarted = async (): Promise<() => void> => {
+      for (let turn = 0; turn < 50 && releaseRefresh === undefined; turn++) await Promise.resolve()
+      const release = releaseRefresh!
+      releaseRefresh = undefined
+      return release
+    }
+    let refreshFails = false
+    const pendingAt: Record<string, boolean> = {}
+    const controller: DisplayTransitionController = new DisplayTransitionController(
+      {
+        refreshDisplayTopology: () =>
+          new Promise((resolve, reject) => {
+            releaseRefresh = () =>
+              refreshFails ? reject(new Error('refresh failed')) : resolve(topology())
+          })
+      },
+      {
+        beginSystemTransition: async () => undefined,
+        completeSystemTransition: async () => {
+          pendingAt.complete = controller.pending
+        }
+      },
+      { reapplyAfterDisplayTransition: async () => false },
+      new Logger(),
+      60_000
+    )
+    expect(controller.pending).toBe(false)
+
+    controller.handleDisplayEvent('displayAdded')
+    expect(controller.pending).toBe(true)
+    const flushing = controller.flush()
+    expect(controller.pending).toBe(true)
+    ;(await refreshStarted())()
+    await flushing
+    expect(pendingAt.complete).toBe(true)
+    expect(controller.pending).toBe(false)
+
+    // A failed refresh still settles.
+    refreshFails = true
+    controller.handleDisplayEvent('displayRemoved')
+    const failing = controller.flush()
+    ;(await refreshStarted())()
+    await failing
+    expect(controller.pending).toBe(false)
+
+    // Lock stays pending until a refresh queued after it settles.
+    refreshFails = false
+    controller.handlePowerEvent('lock')
+    expect(controller.pending).toBe(true)
+    await controller.flush()
+    expect(controller.pending).toBe(true)
+    controller.handlePowerEvent('unlock')
+    const unlocking = controller.flush()
+    expect(controller.pending).toBe(true)
+    ;(await refreshStarted())()
+    await unlocking
+    expect(controller.pending).toBe(false)
+
+    // Dispose drops a scheduled refresh and any pause.
+    controller.handlePowerEvent('suspend')
+    controller.handleDisplayEvent('displayMetricsChanged')
+    expect(controller.pending).toBe(true)
+    controller.dispose()
+    expect(controller.pending).toBe(false)
+  })
+
   it('pauses immediately and coalesces resume and display notifications', async () => {
     const calls: string[] = []
     const logger = new Logger()

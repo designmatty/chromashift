@@ -14,7 +14,7 @@ import {
   liveProfile,
   shouldPreviewProfile,
   isProfileClickNoop,
-  keepsPreviewBannerWhileSwitching,
+  replacesPreviewInPlace,
   previewBannerVisible,
   discardPlan,
   updatePlan
@@ -66,7 +66,11 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
   // Destination of a preview-to-preview switch, keeping the banner mounted
   // while the previous session rolls back and the next one starts.
   const [pendingPreviewId, setPendingPreviewId] = useState<string | null>(null)
-  const [pendingContinuation, setPendingContinuation] = useState<(() => Promise<void>) | null>(null)
+  // A profile destination lets the unsaved-changes choice replace the session in place.
+  const [pendingContinuation, setPendingContinuation] = useState<{
+    work: () => Promise<void>
+    destination?: ColorProfile
+  } | null>(null)
   const [pendingDisable, setPendingDisable] = useState<{
     profile: ColorProfile
     accelerator: string
@@ -90,6 +94,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
     resetTo: resetDraft,
     invalidateSync,
     settlePreview,
+    handOffPreview,
     rollbackPreview
   } = usePreviewDraft({
     kind: 'edit',
@@ -259,61 +264,130 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       throw cause
     }
   }
-  function continueAfterChanges(work: () => Promise<void>): void {
+  function continueAfterChanges(work: () => Promise<void>, destination?: ColorProfile): void {
     void releaseCompare()
     if (dirty) {
       const version = ++actionVersion.current
       requestAnimationFrame(() => {
-        if (version === actionVersion.current) setPendingContinuation(() => work)
+        if (version === actionVersion.current) setPendingContinuation({ work, destination })
       })
     } else perform(work)
+  }
+  // Save in the session, as header Update does, so the next preview can replace it.
+  async function saveBeforeSwitch(): Promise<void> {
+    if (draft === null) return
+    const saved = await saveAppPreview(draft, settlePreview, window.chromaShift)
+    if (isCurrentAction()) resetTo(saved)
   }
   function resolveChanges(update: boolean): void {
     const next = pendingContinuation
     if (next === null) return
     perform(async () => {
-      if (update) await updateProfile()
+      // Switching to another profile's Preview replaces this session in place
+      // (#78). The choice still saves or drops the draft, but never ends the
+      // session first, so the displays do not show the live target in between.
+      const state = await value(window.chromaShift.getState())
+      const replaced =
+        next.destination !== undefined &&
+        state.preview.state === 'active' &&
+        replacesPreviewInPlace(state, next.destination)
+          ? state.preview.profileId
+          : null
+      if (update) await (replaced !== null ? saveBeforeSwitch() : updateProfile())
       else {
-        await rollback()
+        await (replaced !== null ? handOffPreview() : rollback())
         if (isCurrentAction()) resetTo(selected)
       }
       setPendingContinuation((current) => (current === next ? null : current))
-      if (isCurrentAction()) await next()
+      try {
+        if (isCurrentAction()) await next.work()
+      } finally {
+        // If no switch replaced it, the choice still ends this session, as before.
+        if (replaced !== null) await endUnreplacedSession(replaced)
+      }
     })
+  }
+  async function endUnreplacedSession(profileId: string): Promise<void> {
+    const state = await value(window.chromaShift.getState())
+    if (
+      state.preview.state === 'active' &&
+      state.preview.profileId.toLowerCase() === profileId.toLowerCase()
+    )
+      await rollback()
   }
   async function openProfile(profile: ColorProfile): Promise<void> {
     if (!isCurrentAction()) return
     const before = await value(window.chromaShift.getState())
     if (!isCurrentAction()) return
-    if (keepsPreviewBannerWhileSwitching(before, profile)) setPendingPreviewId(profile.id)
+    // Main replaces a Preview or Edit in place (#78): the displays go from the
+    // current profile's values to the destination's without the live target.
+    const replacing = replacesPreviewInPlace(before, profile)
+    if (replacing) setPendingPreviewId(profile.id)
+    // Until the destination's start is sent, the previous session still runs.
+    // Any exit before then ends it, as the old rollback-first order did.
+    let previousSettled = !replacing
+    let startSent = false
+    const endPrevious = async (): Promise<void> => {
+      if (previousSettled) return
+      previousSettled = true
+      await rollback()
+    }
+    // A newer action replaces or ends a clean session itself, without a flash.
+    // Unsaved changes belong to a Discard, which must still drop them.
+    const superseded = async (): Promise<void> => {
+      if (hasUnsavedSession(before.preview)) await endPrevious()
+    }
     try {
       const keepingOverride =
         before.preview.state === 'active' &&
         before.preview.kind === 'override' &&
         before.preview.profileId === profile.id
       if (before.chromaShift.status !== 'active') await settlePreview()
+      else if (replacing) await handOffPreview()
       else if (!keepingOverride) await rollback()
-      if (!isCurrentAction()) return
+      if (!isCurrentAction()) return await superseded()
       await value(window.chromaShift.openProfile(profile.id))
       const state = await value(window.chromaShift.getState())
-      if (!isCurrentAction()) return
+      if (!isCurrentAction()) return await superseded()
       const current = state.configuration.profiles.find((item) => item.id === profile.id)
       if (current === undefined) {
         setPendingPreviewId(null)
-        return
+        return await endPrevious()
       }
       followingLive.current = liveProfile(state)?.id === current.id
       setSelectedId(current.id)
       resetTo(keepingOverride ? appSessionDraft(state) : current, { dirty: keepingOverride })
       setView('profiles')
       // The pending destination clears once its session reaches the renderer.
-      if (shouldPreviewProfile(state, current))
+      if (shouldPreviewProfile(state, current)) {
+        previousSettled = true
+        startSent = replacing
         await value(window.chromaShift.startPreview(current, 'preview'))
-      else setPendingPreviewId(null)
+      } else {
+        setPendingPreviewId(null)
+        await endPrevious()
+      }
     } catch (cause) {
       setPendingPreviewId(null)
+      if (startSent) await reconcileRejectedReplacement(before.preview)
+      else await endPrevious()
       throw cause
     }
+  }
+  // A rejected replacing start can leave the previous session running, for
+  // example when admission rejects it before the preview queue. End only that
+  // still-active session, as the old rollback-first order would have. A session
+  // in recovery stays for Retry, and B is never cancelled blindly.
+  async function reconcileRejectedReplacement(previous: ProductState['preview']): Promise<void> {
+    const state = await value(window.chromaShift.getState())
+    if (
+      previous.state === 'active' &&
+      state.chromaShift.status === 'active' &&
+      state.preview.state === 'active' &&
+      state.preview.sessionId === previous.sessionId &&
+      state.preview.profileId.toLowerCase() === previous.profileId.toLowerCase()
+    )
+      await rollback()
   }
   function selectProfile(profile: ColorProfile): void {
     if (isProfileClickNoop(view, profile.id, selected?.id ?? null)) return
@@ -323,7 +397,7 @@ export function MainApp({ product }: { product: ProductState }): React.JSX.Eleme
       resetTo(profile)
       setView('profiles')
     }
-    continueAfterChanges(() => openProfile(profile))
+    continueAfterChanges(() => openProfile(profile), profile)
   }
   function selectActivation(profileId: string | null): void {
     const lifetime = window.chromaShift.getPanelLifetime()

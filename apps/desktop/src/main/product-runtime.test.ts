@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNeutralColorSettings, type ColorProfile } from '@chromashift/core'
 import {
+  NativeServiceError,
   PROTOCOL_VERSION,
   type DisplayTopologyRefreshResult,
   type ForegroundApplication,
@@ -685,6 +686,188 @@ describe('product runtime startup wiring', () => {
     expect(harness.trayMenusCreated()).toBe(1)
     expect(harness.client.calls).toEqual([])
     expect(() => harness.runtime.dispose()).not.toThrow()
+  })
+})
+
+// #78: control, HDR and recovery that land during an in-place replacement.
+describe('preview replacement recovery', () => {
+  async function deferredSwap() {
+    const alpha = reorderProfile('alpha', 35)
+    alpha.displays.push({
+      displayId: 'display:two',
+      color: { ...createNeutralColorSettings(), brightness: 38 }
+    })
+    const beta = reorderProfile('beta', 75)
+    beta.displays.push({
+      displayId: 'display:three',
+      color: { ...createNeutralColorSettings(), brightness: 77 }
+    })
+    const h = await createHarness({}, { profiles: [alpha, beta] })
+    await h.runtime.start()
+    const product = h.runtime.productController!
+    await product.startPreview(alpha, 'preview')
+    const apply = h.client.applyDisplaySettings.bind(h.client)
+    // Default is live with display:one at brightness 60.
+    const liveWrites: string[] = []
+    let open!: () => void
+    let reached!: () => void
+    const opened = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    h.client.applyDisplaySettings = async (id, settings) => {
+      if (id === 'display:one' && settings.brightness === 60) liveWrites.push(id)
+      if (id === 'display:three') {
+        reached()
+        await opened
+      }
+      return apply(id, settings)
+    }
+    const swapping = product.startPreview(beta, 'preview')
+    await arrived
+    const restoreApply = () => {
+      h.client.applyDisplaySettings = apply
+    }
+    return { h, product, beta, swapping, open, liveWrites, restoreApply }
+  }
+
+  it.each(['pause', 'restore original settings'] as const)(
+    'lets the swap finish, then %s restores every display and stays Paused',
+    async (operation) => {
+      const { h, product, swapping, open, liveWrites, restoreApply } = await deferredSwap()
+      try {
+        const control =
+          operation === 'pause' ? product.controlChromaShift('pause') : product.restoreBaseline()
+        open()
+        await swapping
+        await control
+
+        expect(h.intent().chromaShiftStatus).toBe('paused')
+        expect((await product.getState()).preview).toEqual({ state: 'inactive' })
+        for (const id of ['display:one', 'display:two', 'display:three']) {
+          expect(h.client.currentSettings.get(id) ?? {}).toEqual({})
+        }
+        expect(liveWrites).toEqual([])
+      } finally {
+        restoreApply()
+        await h.runtime.dispose()
+      }
+    }
+  )
+
+  it('reapplies B after an HDR-on transition queued behind the swap, holding HDR at Original', async () => {
+    const { h, product, beta, swapping, open, liveWrites, restoreApply } = await deferredSwap()
+    try {
+      vi.useFakeTimers()
+      h.client.hdrDisplayIds.add('display:one')
+      h.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      open()
+      await swapping
+      await vi.waitFor(() => expect(h.logger.has('DisplayTransitionCompleted')).toBe(true))
+
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      expect((await product.getState()).preview).toMatchObject({
+        state: 'active',
+        profileId: beta.id,
+        kind: 'preview'
+      })
+      expect(h.client.currentSettings.get('display:one')).toEqual({})
+      expect(h.client.currentSettings.get('display:two')).toEqual({})
+      expect(h.client.currentSettings.get('display:three')?.brightness).toBe(77)
+
+      h.client.hdrDisplayIds.clear()
+      h.displayEvent('displayMetricsChanged')
+      await vi.advanceTimersByTimeAsync(750)
+      await vi.waitFor(() =>
+        expect(h.client.currentSettings.get('display:one')?.brightness).toBe(75)
+      )
+      expect(liveWrites).toEqual([])
+      vi.useRealTimers()
+      restoreApply()
+      await product.cancelPreview()
+      expect(h.client.currentSettings.get('display:one')?.brightness).toBe(60)
+      expect(h.client.currentSettings.get('display:three')).toEqual({})
+    } finally {
+      vi.useRealTimers()
+      restoreApply()
+      await h.runtime.dispose()
+    }
+  })
+
+  it.each([
+    { stage: 'an untargeted A restore', failure: 'restore' },
+    { stage: 'an HDR A restore', failure: 'hdr' },
+    { stage: 'a native baseline restore while applying B', failure: 'apply' }
+  ] as const)('stays Safety blocked until Retry confirms $stage', async ({ failure }) => {
+    const alpha = reorderProfile('alpha', 35)
+    alpha.displays.push({
+      displayId: 'display:two',
+      color: { ...createNeutralColorSettings(), brightness: 38 }
+    })
+    const beta = reorderProfile('beta', 75)
+    const h = await createHarness({}, { profiles: [alpha, beta] })
+    await h.runtime.start()
+    const product = h.runtime.productController!
+    const apply = h.client.applyDisplaySettings.bind(h.client)
+    try {
+      await product.startPreview(alpha, 'preview')
+      if (failure === 'apply') {
+        h.client.applyDisplaySettings = async (id, settings) => {
+          if (id === 'display:one') {
+            throw new NativeServiceError(
+              'BASELINE_RESTORE_FAILED',
+              'Baseline restore failed before apply.',
+              'display.apply',
+              'test-request'
+            )
+          }
+          return apply(id, settings)
+        }
+      } else {
+        // display:two is in A only, so the replacement must restore it first.
+        h.client.failRestoreDisplayIds.add('display:two')
+        if (failure === 'hdr') h.client.hdrDisplayIds.add('display:two')
+      }
+
+      await expect(product.startPreview(beta, 'preview')).rejects.toBeInstanceOf(
+        PreviewRestoreError
+      )
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      // A's restore failures are teardown recovery; B's apply failure keeps B to continue.
+      expect(h.runtime.previewController!.sessionRecoveryPending).toBe(failure === 'apply')
+
+      const before = h.client.calls.length
+      await expect(product.controlChromaShift('retry')).rejects.toBeInstanceOf(
+        PreviewRestoreError
+      )
+      expect(h.intent().chromaShiftStatus).toBe('safetyBlocked')
+      if (failure !== 'apply') {
+        expect(h.client.calls.slice(before).some((call) => call.operation === 'apply')).toBe(false)
+      }
+
+      h.client.failRestoreDisplayIds.clear()
+      h.client.applyDisplaySettings = apply
+      await product.controlChromaShift('retry')
+      expect(h.intent().chromaShiftStatus).toBe('active')
+      const state = await product.getState()
+      if (failure === 'apply') {
+        expect(state.preview).toMatchObject({ state: 'active', profileId: beta.id, kind: 'preview' })
+        expect(h.client.currentSettings.get('display:one')?.brightness).toBe(75)
+      } else {
+        expect(state.preview).toEqual({ state: 'inactive' })
+        expect(h.client.currentSettings.get('display:one')?.brightness).toBe(60)
+      }
+      expect(h.client.currentSettings.get('display:two')).toEqual({})
+      await product.cancelPreview()
+      expect(h.client.currentSettings.get('display:one')?.brightness).toBe(60)
+    } finally {
+      h.client.applyDisplaySettings = apply
+      h.client.failRestoreDisplayIds.clear()
+      await h.runtime.dispose()
+    }
   })
 })
 

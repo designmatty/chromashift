@@ -487,6 +487,15 @@ it('preserves an open rename when pointer-down starts compare', async () => {
   await f.settle()
   expect(preventDefault).toHaveBeenCalledOnce()
   expect(detail().profile.name).toBe(renamed)
+  // Let the debounced rename sync inside this test, while its window stub still exists.
+  await vi.waitFor(() =>
+    expect(f.updatePreview).toHaveBeenCalledWith(
+      saved.id,
+      expect.anything(),
+      expect.objectContaining({ name: renamed }),
+      1
+    )
+  )
 })
 
 it.each(['blur', 'pointerup', 'minimize', 'navigation', 'endPreview', 'unmount'])(
@@ -1418,5 +1427,218 @@ it.each([
     reply.resolve({ ok: true, value: null })
     await f.settle()
     expect(window.chromaShift.enableAutomatic).not.toHaveBeenCalled()
+  }
+)
+
+// #78: a switch from one Preview or Edit to another profile's Preview replaces
+// the session in place. The renderer never ends the first session before it.
+function swapSetup(dirty = false) {
+  const f = setup()
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0)
+    return 1
+  })
+  const alpha = addProfile(f, 'alpha')
+  const beta = addProfile(f, 'beta')
+  const gamma = addProfile(f, 'gamma')
+  f.product = {
+    ...f.product,
+    preview: {
+      state: 'active',
+      sessionId: 1,
+      kind: dirty ? 'edit' : 'preview',
+      profileId: alpha.id,
+      targets: [],
+      draft: dirty ? { ...alpha, name: 'Unsaved alpha' } : alpha,
+      unsavedChanges: dirty
+    }
+  }
+  f.render()
+  const dialog = () =>
+    find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!.props
+  return { f, alpha, beta, gamma, dialog }
+}
+
+it('switches from one preview to another without ending the first session', async () => {
+  const { f, beta } = swapSetup()
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(beta, 'preview')
+  expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+  expect(f.product.preview).toMatchObject({ state: 'active', profileId: beta.id })
+  expect(find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props.profile.id).toBe(
+    beta.id
+  )
+})
+
+it.each(['discard', 'update'] as const)(
+  'replaces an unsaved Edit after the dialog choice to %s, without ending it first',
+  async (choice) => {
+    const { f, alpha, beta, dialog } = swapSetup(true)
+    f.profiles()!.props.onSelect(beta)
+    await f.settle()
+    expect(dialog().open).toBe(true)
+    if (choice === 'discard') dialog().onDiscard!()
+    else dialog().onPrimary()
+    await f.settle()
+    expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+    expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(beta, 'preview')
+    expect(f.product.preview).toMatchObject({ state: 'active', profileId: beta.id })
+    if (choice === 'update') {
+      // Saved in the session as header Update does, never committed through confirmPreview.
+      expect(window.chromaShift.saveProfile).toHaveBeenCalledExactlyOnceWith({
+        ...alpha,
+        name: 'Unsaved alpha'
+      })
+    } else expect(window.chromaShift.saveProfile).not.toHaveBeenCalled()
+    expect(dialog().open).toBe(false)
+  }
+)
+
+it('ends the first session as before when the destination becomes live before it previews', async () => {
+  const { f, beta } = swapSetup()
+  vi.mocked(window.chromaShift.openProfile).mockImplementationOnce(async () => {
+    f.product = {
+      ...f.product,
+      chromaShift: {
+        ...f.product.chromaShift,
+        intendedTarget: { kind: 'profile', profileId: beta.id }
+      }
+    }
+    return { ok: true, value: beta }
+  })
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+  expect(f.startPreview).not.toHaveBeenCalled()
+  expect(f.product.preview).toEqual({ state: 'inactive' })
+})
+
+it('ends the first session when opening the destination fails before its preview starts', async () => {
+  const { f, beta } = swapSetup()
+  // The view's openProfile effect also asks main for the destination; fail every request.
+  vi.mocked(window.chromaShift.openProfile).mockResolvedValue({
+    ok: false,
+    error: { code: 'NOT_FOUND', message: 'Profile beta does not exist.' }
+  })
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+  expect(f.startPreview).not.toHaveBeenCalled()
+})
+
+it.each([
+  { outcome: 'restored', cancels: 0 },
+  { outcome: 'admission rejected with A still active', cancels: 1 },
+  { outcome: 'B kept for continuation recovery', cancels: 0 }
+] as const)(
+  'agrees with main after a rejected replacing start: $outcome',
+  async ({ outcome, cancels }) => {
+    const { f, alpha, beta } = swapSetup()
+    f.startPreview.mockImplementationOnce(async () => {
+      if (outcome === 'restored') {
+        // Main restored every display and released the hold before rejecting.
+        f.product = { ...f.product, preview: { state: 'inactive' } }
+      } else if (outcome === 'B kept for continuation recovery') {
+        f.product = {
+          ...f.product,
+          chromaShift: { ...f.product.chromaShift, status: 'safetyBlocked' },
+          preview: {
+            state: 'active',
+            sessionId: 2,
+            kind: 'preview',
+            profileId: beta.id,
+            targets: beta.displays,
+            draft: beta,
+            unsavedChanges: false
+          }
+        }
+      }
+      return {
+        ok: false as const,
+        error: { code: 'OPERATION_FAILED', message: 'The preview could not start.' }
+      } as unknown as { ok: true; value: null }
+    })
+    f.profiles()!.props.onSelect(beta)
+    await f.settle()
+
+    expect(f.startPreview).toHaveBeenCalledOnce()
+    expect(window.chromaShift.cancelPreview).toHaveBeenCalledTimes(cancels)
+    const banner = findWhere<{ 'data-part'?: string }>(
+      f.tree,
+      (props) => props['data-part'] === 'preview-banner'
+    )
+    const detail = find<Parameters<typeof ProfileDetail>[0]>(f.tree, ProfileDetail)!.props
+    expect(detail.profile.id).toBe(beta.id)
+    if (outcome === 'B kept for continuation recovery') {
+      // Retry owns the retained session; Safety blocked hides the preview strip.
+      expect(f.product.preview).toMatchObject({ state: 'active', profileId: beta.id })
+    } else {
+      expect(f.product.preview).toEqual({ state: 'inactive' })
+    }
+    expect(banner).toBeUndefined()
+    expect(f.product.preview).not.toMatchObject({ profileId: alpha.id })
+  }
+)
+
+it('lets a newer switch replace a clean session that an older switch had handed off', async () => {
+  const { f, beta, gamma } = swapSetup()
+  const opening = delayed<{ ok: true; value: ColorProfile }>()
+  vi.mocked(window.chromaShift.openProfile).mockImplementation(async (id) =>
+    id === beta.id ? opening.promise : { ok: true, value: beta }
+  )
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  f.profiles()!.props.onSelect(gamma)
+  opening.resolve({ ok: true, value: beta })
+  await f.settle()
+  expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(gamma, 'preview')
+  expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+  expect(f.product.preview).toMatchObject({ state: 'active', profileId: gamma.id })
+})
+
+it('still drops the draft after Discard when a newer action supersedes the switch', async () => {
+  const { f, beta, gamma, dialog } = swapSetup(true)
+  f.profiles()!.props.onSelect(beta)
+  await f.settle()
+  const opening = delayed<{ ok: true; value: ColorProfile }>()
+  vi.mocked(window.chromaShift.openProfile).mockImplementation(async (id) =>
+    id === beta.id ? opening.promise : { ok: true, value: beta }
+  )
+  dialog().onDiscard!()
+  await f.settle()
+  f.profiles()!.props.onSelect(gamma)
+  opening.resolve({ ok: true, value: beta })
+  await f.settle()
+  // The superseded switch ends the unsaved session before the newer one starts fresh.
+  // (The fresh start's own rollback-first cancel then finds no session.)
+  expect(window.chromaShift.cancelPreview).toHaveBeenCalledWith(1)
+  expect(f.startPreview).toHaveBeenCalledExactlyOnceWith(gamma, 'preview')
+  expect(vi.mocked(window.chromaShift.cancelPreview).mock.invocationCallOrder[0]).toBeLessThan(
+    f.startPreview.mock.invocationCallOrder[0]!
+  )
+  expect(window.chromaShift.saveProfile).not.toHaveBeenCalled()
+})
+
+it.each(['paused', 'safetyBlocked'] as const)(
+  'neither replaces nor ends a session while %s',
+  async (status) => {
+    const { f, beta } = swapSetup(status === 'safetyBlocked')
+    f.product = { ...f.product, chromaShift: { ...f.product.chromaShift, status } }
+    f.render()
+    if (status === 'safetyBlocked') {
+      // Safety blocked keeps the dialog; Discard still ends the session as before.
+      find<Parameters<typeof ProfileList>[0]>(f.tree, ProfileList)!.props.onSelect(beta)
+      await f.settle()
+      find<Parameters<typeof ProfileActionDialog>[0]>(f.tree, ProfileActionDialog)!.props
+        .onDiscard!()
+      await f.settle()
+      expect(window.chromaShift.cancelPreview).toHaveBeenCalledExactlyOnceWith(1)
+    } else {
+      f.profiles()!.props.onSelect(beta)
+      await f.settle()
+      expect(window.chromaShift.cancelPreview).not.toHaveBeenCalled()
+    }
+    expect(f.startPreview).not.toHaveBeenCalled()
   }
 )

@@ -33,6 +33,10 @@ export class DisplayTransitionController {
   #timer: NodeJS.Timeout | undefined
   #tail: Promise<void> = Promise.resolve()
   #disposed = false
+  // Refreshes queued or running, and a lock or suspend awaiting its refresh.
+  #refreshes = 0
+  #paused = false
+  #pauses = 0
 
   public constructor(
     private readonly native: DisplayTransitionNativePort,
@@ -46,10 +50,21 @@ export class DisplayTransitionController {
     private readonly onSettled: () => void = () => undefined
   ) {}
 
+  /**
+   * True from the first display or power signal until its refresh settles,
+   * including the activation completion. Display ownership may change during
+   * this window, so preview replacement takes the restore-first path.
+   */
+  public get pending(): boolean {
+    return this.#timer !== undefined || this.#refreshes > 0 || this.#paused
+  }
+
   public handlePowerEvent(event: PowerTransitionEvent): void {
     if (this.#disposed) return
     this.#reasons.add(event)
     if (event === 'lock' || event === 'suspend') {
+      this.#paused = true
+      this.#pauses += 1
       void this.#enqueue(async () => {
         await this.activation.beginSystemTransition()
         this.logger.write({
@@ -74,7 +89,7 @@ export class DisplayTransitionController {
     if (this.#timer !== undefined) {
       clearTimeout(this.#timer)
       this.#timer = undefined
-      void this.#enqueue(() => this.#refresh())
+      this.#queueRefresh()
     }
     await this.#tail
   }
@@ -83,6 +98,7 @@ export class DisplayTransitionController {
     this.#disposed = true
     if (this.#timer !== undefined) clearTimeout(this.#timer)
     this.#timer = undefined
+    this.#paused = false
     this.#reasons.clear()
   }
 
@@ -90,8 +106,23 @@ export class DisplayTransitionController {
     if (this.#timer !== undefined) clearTimeout(this.#timer)
     this.#timer = setTimeout(() => {
       this.#timer = undefined
-      void this.#enqueue(() => this.#refresh())
+      this.#queueRefresh()
     }, this.debounceMs)
+  }
+
+  #queueRefresh(): void {
+    // Counted in the same turn that clears the timer, so pending never drops between them.
+    this.#refreshes += 1
+    const pauses = this.#pauses
+    void this.#enqueue(async () => {
+      try {
+        await this.#refresh()
+      } finally {
+        this.#refreshes -= 1
+        // Only a refresh queued after the latest lock or suspend completes it.
+        if (pauses === this.#pauses) this.#paused = false
+      }
+    })
   }
 
   async #refresh(): Promise<void> {

@@ -69,6 +69,7 @@ it('keeps a mini override unchanged on app hydration and only syncs subsequent u
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },

@@ -37,6 +37,7 @@ it('warns on quit for a rename still inside the renderer debounce, then saves th
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -89,6 +90,7 @@ it('rolls back a reverted draft on minimize through the serialized session queue
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: cancel,
       confirmPreview: async () => undefined
     },
@@ -126,6 +128,7 @@ it('commitAppPreview promotes the matching override without native calls before 
     native,
     {
       beginPreview: async () => ['display:abc', 'display:other'],
+      continuePreview: async () => ['display:abc', 'display:other'],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -163,6 +166,7 @@ it('app rollback retains an unconfirmed restore and Discard retries the native r
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -213,6 +217,7 @@ it('promotes a clicked preview before applying edits without restoring or recapt
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -265,6 +270,7 @@ it.each(['pending', 'completed'] as const)(
       native,
       {
         beginPreview: async () => [],
+        continuePreview: async () => [],
         cancelPreview: () => cancelling,
         confirmPreview: async () => undefined
       },
@@ -325,6 +331,7 @@ it('previews a new profile at neutral values and promotes its first edit in plac
     native,
     {
       beginPreview: async () => [],
+      continuePreview: async () => [],
       cancelPreview: async () => undefined,
       confirmPreview: async () => undefined
     },
@@ -423,4 +430,74 @@ it('previews a new profile at neutral values and promotes its first edit in plac
   })
   expect(native.captured).toEqual(['display:one', 'display:two'])
   expect(native.restored).toEqual([])
+})
+
+it('hands off A so a debounced A edit never lands in the B session that replaces it (#78)', async () => {
+  vi.useFakeTimers()
+  const native = new FakeNativeDisplayPort(0, [testDisplay('display:abc')])
+  const cancel = vi.fn(async () => undefined)
+  const controller = new PreviewSessionController(
+    native,
+    {
+      beginPreview: async () => [],
+      continuePreview: async () => [],
+      cancelPreview: cancel,
+      confirmPreview: async () => undefined
+    },
+    () => undefined
+  )
+  const other: ColorProfile = {
+    ...profile,
+    id: 'other',
+    name: 'Other',
+    displays: [
+      { displayId: 'display:abc', color: { ...createNeutralColorSettings(), brightness: 40 } }
+    ]
+  }
+  // An Edit sends each debounced draft straight to updatePreview.
+  await controller.start(profile, 'edit', profile)
+  const sync = new PreviewSyncSession(
+    {
+      startPreview: async (draft, kind) => {
+        await controller.start(draft, kind, profile)
+        return ok
+      },
+      updatePreview: async (id, targets, draft) => {
+        await controller.update(id, targets, draft)
+        return ok
+      },
+      cancelPreview: async () => {
+        await controller.cancel()
+        return ok
+      }
+    },
+    'edit',
+    () => undefined
+  )
+  // One A edit is in flight, and a second is still inside the debounce window.
+  const sent = structuredClone(profile)
+  sent.displays[0]!.color.brightness = 61
+  sync.schedule(sent, controller.state)
+  vi.advanceTimersByTime(PREVIEW_SYNC_DEBOUNCE_MS)
+  const debouncing = structuredClone(profile)
+  debouncing.displays[0]!.color.brightness = 72
+  sync.schedule(debouncing, controller.state)
+
+  await sync.handOff()
+  await controller.start(other, 'preview', other)
+  await vi.advanceTimersByTimeAsync(PREVIEW_SYNC_DEBOUNCE_MS * 2)
+
+  expect(controller.state).toMatchObject({
+    state: 'active',
+    profileId: other.id,
+    kind: 'preview',
+    draft: other,
+    targets: other.displays,
+    unsavedChanges: false
+  })
+  // The in-flight edit drained into A first; the debounced one was dropped.
+  expect(native.applied.map((entry) => entry.settings.brightness)).toEqual([84, 61, 40])
+  expect(native.restored).toEqual([])
+  expect(cancel).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
 })

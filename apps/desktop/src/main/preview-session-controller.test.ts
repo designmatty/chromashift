@@ -1,4 +1,8 @@
 import { EventEmitter } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import { mapProductError } from '@main/product-ipc.js'
 import { attachNativeEventRouter } from '@main/native-event-router.js'
 import type { StructuredLogEvent } from '@main/structured-logger.js'
@@ -36,9 +40,17 @@ class FakeActivation implements PreviewActivationPort {
     operation: 'cancel' | 'confirm'
     displayIds: string[]
   }> = []
+  public owned: readonly string[] = []
+  public continueError: Error | undefined
   public beginPreview(): Promise<readonly string[]> {
     this.calls.push('begin')
-    return Promise.resolve([])
+    return Promise.resolve(this.owned)
+  }
+  public continuePreview(): Promise<readonly string[]> {
+    this.calls.push('continue')
+    return this.continueError === undefined
+      ? Promise.resolve(this.owned)
+      : Promise.reject(this.continueError)
   }
   public cancelPreview(retainedDisplayIds: readonly string[] = []): Promise<void> {
     this.calls.push('cancel')
@@ -918,4 +930,412 @@ it('restores the full preview display and keeps gamma rejection values and adapt
   expect(activation.calls).toEqual(['begin', 'cancel'])
   expect(preview.state).toEqual({ state: 'inactive' })
   expect(records).toContainEqual(diagnostic)
+})
+
+describe('replacing a preview in place (#78)', () => {
+  const third = testDisplay('display:three', false, 'Third display', false)
+  // display:one is in both profiles, display:two only in A, display:three only in B.
+  const alpha = named('alpha', [
+    [display.id, { saturation: 70 }],
+    [secondDisplay.id, { brightness: 30 }]
+  ])
+  const beta = named('beta', [
+    [display.id, { saturation: 80 }],
+    [third.id, { brightness: 60 }]
+  ])
+  const originals = new Map([
+    [display.id, completeColor({ brightness: 44 })],
+    [secondDisplay.id, completeColor({ brightness: 47 })],
+    [third.id, completeColor({ brightness: 49 })]
+  ])
+
+  function named(id: string, entries: Array<[string, Partial<ColorSettings>]>): ColorProfile {
+    return { id, name: id, enabled: true, applications: [], displays: targets(...entries) }
+  }
+
+  function setup(options: { limits?: LearnedGammaLimits; transitionPending?: () => boolean } = {}) {
+    const native = new FakeNativeDisplayPort(0, [display, secondDisplay, third])
+    for (const [id, settings] of originals) native.currentSettings.set(id, { ...settings })
+    options.limits?.setDisplaySource(native)
+    const activation = new FakeActivation()
+    const states = vi.fn()
+    const recovery = { restoreFailed: vi.fn(async () => {}), restored: vi.fn(async () => {}) }
+    const controller = new PreviewSessionController(
+      native,
+      activation,
+      states,
+      recovery,
+      options.limits,
+      undefined,
+      options.transitionPending
+    )
+    const reset = () => {
+      native.calls.length = 0
+      native.restored.length = 0
+      states.mockClear()
+    }
+    return { native, activation, states, recovery, controller, reset }
+  }
+
+  it('restores first instead of replacing while a display transition is pending', async () => {
+    let pending = false
+    const { native, activation, controller } = setup({ transitionPending: () => pending })
+    await controller.start(alpha, 'preview')
+    native.restored.length = 0
+    pending = true
+
+    await controller.start(beta, 'preview')
+
+    expect(activation.calls).toEqual(['begin', 'cancel', 'begin'])
+    expect(native.restored.slice(0, 2)).toEqual([display.id, secondDisplay.id])
+    expect(controller.state).toMatchObject({ state: 'active', profileId: beta.id })
+  })
+
+  it.each([false, true])(
+    'restores A completely when replacement preflight rejects; cleanup also fails: %s',
+    async (cleanupFails) => {
+      const directory = await mkdtemp(join(tmpdir(), 'chromashift-preview-swap-'))
+      try {
+        const limits = new LearnedGammaLimits(join(directory, 'limits.json'), {
+          write: () => undefined
+        })
+        await limits.load()
+        const { native, activation, recovery, controller, reset } = setup({ limits })
+        await controller.start(alpha, 'preview')
+        reset()
+        // Learned-limit applicability reads capabilities before any replacement write.
+        vi.spyOn(native, 'getDisplayCapabilityReport').mockRejectedValueOnce(
+          new NativeServiceError(
+            'DISPLAY_NOT_FOUND',
+            'Display disconnected during replacement preflight.',
+            'display.capabilities',
+            'test-request'
+          )
+        )
+        if (cleanupFails) native.failRestoreDisplayIds.add(display.id)
+
+        const starting = controller.start(beta, 'preview')
+        await (cleanupFails
+          ? expect(starting).rejects.toBeInstanceOf(PreviewRestoreError)
+          : expect(starting).rejects.toThrow('replacement preflight'))
+
+        expect(native.calls.filter((call) => call.operation !== 'restore')).toEqual([])
+        expect(native.calls).toEqual([
+          { operation: 'restore', displayId: display.id },
+          { operation: 'restore', displayId: secondDisplay.id }
+        ])
+        if (cleanupFails) {
+          expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
+          expect(recovery.restoreFailed).toHaveBeenCalledOnce()
+          expect(activation.calls).toEqual(['begin'])
+          native.failRestoreDisplayIds.clear()
+          await controller.cancel()
+        } else {
+          expect(activation.calls).toEqual(['begin', 'cancel'])
+        }
+        expect(controller.state).toEqual({ state: 'inactive' })
+        expectOriginals(native)
+      } finally {
+        await rm(directory, { recursive: true, force: true })
+      }
+    }
+  )
+
+  function expectOriginals(native: FakeNativeDisplayPort): void {
+    for (const [id, settings] of originals) expect(native.currentSettings.get(id)).toEqual(settings)
+  }
+
+  it('goes from A to B without releasing the hold or restoring a display both profiles target', async () => {
+    const { native, activation, states, controller, reset } = setup()
+    await controller.start(alpha, 'preview')
+    reset()
+
+    await controller.start(beta, 'preview')
+
+    expect(activation.calls).toEqual(['begin', 'continue'])
+    expect(native.calls).toEqual([
+      { operation: 'restore', displayId: secondDisplay.id },
+      { operation: 'capture', displayId: display.id },
+      { operation: 'capture', displayId: third.id },
+      { operation: 'apply', displayId: display.id, settings: beta.displays[0]!.color },
+      { operation: 'apply', displayId: third.id, settings: beta.displays[1]!.color }
+    ])
+    expect(native.baselineCaptures.map((capture) => capture.displayId)).toEqual([
+      display.id,
+      secondDisplay.id,
+      third.id
+    ])
+    expect(native.currentSettings.get(display.id)).toEqual(beta.displays[0]!.color)
+    expect(native.currentSettings.get(secondDisplay.id)).toEqual(originals.get(secondDisplay.id))
+    expect(native.currentSettings.get(third.id)).toEqual(beta.displays[1]!.color)
+    expect(controller.state).toEqual({
+      state: 'active',
+      sessionId: 2,
+      profileId: beta.id,
+      kind: 'preview',
+      comparing: false,
+      draft: beta,
+      unsavedChanges: false,
+      targets: beta.displays
+    })
+    expect(states).toHaveBeenCalledExactlyOnceWith(controller.state)
+
+    reset()
+    await controller.cancel()
+    expect(native.restored).toEqual([display.id, secondDisplay.id, third.id])
+    expect(activation.calls).toEqual(['begin', 'continue', 'cancel'])
+    expect(activation.retainedDisplayIds.at(-1)).toEqual({ operation: 'cancel', displayIds: [] })
+    expectOriginals(native)
+  })
+
+  it('restores activation-owned baselines that the next preview does not target', async () => {
+    const { native, activation, controller, reset } = setup()
+    activation.owned = [secondDisplay.id]
+    await controller.start(named('one-only', [[display.id, { saturation: 70 }]]), 'preview')
+    reset()
+
+    await controller.start(named('three-only', [[third.id, { brightness: 60 }]]), 'preview')
+
+    expect(native.calls.filter((call) => call.operation === 'restore')).toEqual([
+      { operation: 'restore', displayId: secondDisplay.id },
+      { operation: 'restore', displayId: display.id }
+    ])
+    reset()
+    await controller.cancel()
+    expect(native.restored).toEqual([secondDisplay.id, display.id, third.id])
+  })
+
+  it('discards an unsaved Edit draft when it replaces the session with a preview', async () => {
+    const { activation, controller } = setup()
+    await controller.start(alpha, 'preview')
+    const draft = { ...alpha, name: 'Unsaved alpha' }
+    await controller.start(draft, 'edit', alpha)
+    await controller.update(alpha.id, targets([display.id, { saturation: 90 }]), draft)
+    expect(controller.unsavedDraft).not.toBeNull()
+
+    await controller.start(beta, 'preview')
+
+    expect(activation.calls).toEqual(['begin', 'continue'])
+    expect(controller.unsavedDraft).toBeNull()
+    expect(controller.state).toMatchObject({ kind: 'preview', profileId: beta.id, draft: beta })
+  })
+
+  it.each([
+    { from: 'override', to: 'preview', next: beta },
+    { from: 'preview', to: 'edit', next: beta },
+    { from: 'preview', to: 'override', next: beta },
+    { from: 'edit', to: 'edit', next: beta },
+    { from: 'preview', to: 'preview', next: { ...alpha, displays: beta.displays } }
+  ] as const)(
+    'keeps the full teardown from $from to $to for $next.id',
+    async ({ from, to, next }) => {
+      const { native, activation, controller } = setup()
+      await controller.start(alpha, from)
+      native.restored.length = 0
+
+      await controller.start(next, to)
+
+      expect(activation.calls).toEqual(['begin', 'cancel', 'begin'])
+      expect(native.restored.slice(0, 2)).toEqual([display.id, secondDisplay.id])
+      expect(controller.state).toMatchObject({ state: 'active', kind: to, profileId: next.id })
+    }
+  )
+
+  it.each(['validation', 'activation'] as const)(
+    'restores A completely when the replacement fails %s before writing',
+    async (stage) => {
+      const { native, activation, controller, reset } = setup()
+      await controller.start(alpha, 'preview')
+      reset()
+      if (stage === 'validation') {
+        vi.spyOn(native, 'getDisplayCapabilityReport').mockRejectedValueOnce(
+          new Error('capability report failed')
+        )
+      } else activation.continueError = new Error('A display transition is in progress.')
+
+      await expect(controller.start(beta, 'preview')).rejects.toThrow(
+        stage === 'validation' ? 'capability report failed' : 'A display transition is in progress.'
+      )
+
+      expect(controller.state).toEqual({ state: 'inactive' })
+      expect(activation.calls).toEqual(
+        stage === 'validation' ? ['begin', 'cancel'] : ['begin', 'continue', 'cancel']
+      )
+      expect(native.calls).toEqual([
+        { operation: 'restore', displayId: display.id },
+        { operation: 'restore', displayId: secondDisplay.id }
+      ])
+      expectOriginals(native)
+    }
+  )
+
+  it('keeps tracking an A display whose restore fails and never applies B', async () => {
+    const { native, activation, recovery, controller, reset } = setup()
+    await controller.start(alpha, 'preview')
+    reset()
+    native.failRestoreDisplayIds.add(secondDisplay.id)
+
+    await expect(controller.start(beta, 'preview')).rejects.toBeInstanceOf(PreviewRestoreError)
+
+    expect(native.calls.filter((call) => call.operation !== 'restore')).toEqual([])
+    expect(native.currentSettings.get(display.id)).toEqual(originals.get(display.id))
+    expect(controller.state).toEqual({ state: 'restorePending', displayIds: [secondDisplay.id] })
+    expect(recovery.restoreFailed).toHaveBeenCalledOnce()
+    expect(activation.calls).toEqual(['begin', 'continue'])
+
+    native.failRestoreDisplayIds.clear()
+    await controller.cancel()
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(activation.calls).toEqual(['begin', 'continue', 'cancel'])
+    expect(recovery.restored).toHaveBeenCalledOnce()
+    expectOriginals(native)
+  })
+
+  it.each([false, true])(
+    'restores A and B displays after B fails to apply; an unconfirmed restore stays tracked: %s',
+    async (restoreFails) => {
+      const { native, activation, recovery, controller, reset } = setup()
+      await controller.start(alpha, 'preview')
+      reset()
+      native.failApplyDisplayIds.add(third.id)
+      if (restoreFails) native.failRestoreDisplayIds.add(display.id)
+
+      const starting = controller.start(beta, 'preview')
+      await (restoreFails
+        ? expect(starting).rejects.toBeInstanceOf(PreviewRestoreError)
+        : expect(starting).rejects.toThrow(`Unsupported on ${third.id}`))
+
+      expect(native.calls.filter((call) => call.operation === 'restore')).toEqual([
+        { operation: 'restore', displayId: secondDisplay.id },
+        { operation: 'restore', displayId: display.id },
+        { operation: 'restore', displayId: secondDisplay.id },
+        { operation: 'restore', displayId: third.id }
+      ])
+      if (restoreFails) {
+        expect(controller.state).toEqual({ state: 'restorePending', displayIds: [display.id] })
+        expect(recovery.restoreFailed).toHaveBeenCalledOnce()
+        expect(activation.calls).toEqual(['begin', 'continue'])
+        native.failRestoreDisplayIds.clear()
+        await controller.cancel()
+      }
+      expect(controller.state).toEqual({ state: 'inactive' })
+      expect(activation.calls).toEqual(['begin', 'continue', 'cancel'])
+      expectOriginals(native)
+    }
+  )
+
+  it('keeps B for continuation after a native baseline restore failure, still tracking A', async () => {
+    const { native, activation, recovery, controller, reset } = setup()
+    await controller.start(alpha, 'preview')
+    reset()
+    const apply = native.applyDisplaySettings.bind(native)
+    vi.spyOn(native, 'applyDisplaySettings').mockImplementation(async (id, settings) => {
+      if (id !== display.id) return apply(id, settings)
+      throw new NativeServiceError(
+        'BASELINE_RESTORE_FAILED',
+        'Baseline restore failed before apply.',
+        'display.apply',
+        'test-request'
+      )
+    })
+
+    await expect(controller.start(beta, 'preview')).rejects.toBeInstanceOf(PreviewRestoreError)
+
+    expect(controller.sessionRecoveryPending).toBe(true)
+    expect(controller.state).toMatchObject({
+      state: 'active',
+      profileId: beta.id,
+      kind: 'preview',
+      targets: beta.displays
+    })
+    expect(recovery.restoreFailed).toHaveBeenCalledOnce()
+    expect(activation.calls).toEqual(['begin', 'continue'])
+
+    vi.mocked(native.applyDisplaySettings).mockImplementation(apply)
+    reset()
+    await controller.cancel()
+    expect(native.restored).toEqual([display.id, secondDisplay.id, third.id])
+    expect(activation.calls).toEqual(['begin', 'continue', 'cancel'])
+    expectOriginals(native)
+  })
+
+  it('releases Hold to compare into A before replacing it, and rejects compares for A afterwards', async () => {
+    const { native, controller } = setup()
+    await controller.start(alpha, 'preview')
+    const draft = { ...alpha, displays: targets([display.id, { saturation: 90 }]) }
+    await controller.start(alpha, 'edit', alpha)
+    await controller.update(alpha.id, draft.displays, draft)
+    const oldSession = (controller.state as { sessionId: number }).sessionId
+    await controller.setCompare(alpha.id, true)
+    native.applied.length = 0
+
+    await controller.start(beta, 'preview')
+
+    expect(
+      native.applied
+        .filter((entry) => entry.displayId === display.id)
+        .map((entry) => entry.settings.saturation)
+    ).toEqual([90, 80])
+    expect(controller.state).toMatchObject({ profileId: beta.id, comparing: false })
+    await expect(
+      controller.setCompare(alpha.id, true, () => undefined, oldSession)
+    ).rejects.toThrow('different profile')
+    await expect(controller.setCompare(beta.id, true, () => undefined, oldSession)).rejects.toThrow(
+      'The preview session changed.'
+    )
+  })
+
+  it('restores an HDR display A touched and defers an HDR display B targets', async () => {
+    const { native, activation, controller, reset } = setup()
+    await controller.start(alpha, 'preview')
+    reset()
+    native.hdrDisplayIds.add(secondDisplay.id)
+    native.hdrDisplayIds.add(third.id)
+
+    await controller.start(beta, 'preview')
+
+    expect(native.calls).toEqual([
+      { operation: 'restore', displayId: secondDisplay.id },
+      { operation: 'capture', displayId: display.id },
+      { operation: 'apply', displayId: display.id, settings: beta.displays[0]!.color }
+    ])
+    expect(controller.state).toMatchObject({ profileId: beta.id, targets: beta.displays })
+    reset()
+    await controller.cancel()
+    expect(native.restored).toEqual([display.id])
+    expect(activation.retainedDisplayIds.at(-1)).toEqual({ operation: 'cancel', displayIds: [] })
+  })
+
+  it('retains a disconnected A display without a restore failure and hands it back at the end', async () => {
+    const { native, activation, recovery, controller } = setup()
+    await controller.start(alpha, 'preview')
+    native.disconnectedDisplayIds.add(secondDisplay.id)
+
+    await controller.start(beta, 'preview')
+    await controller.cancel()
+
+    expect(recovery.restoreFailed).not.toHaveBeenCalled()
+    expect(activation.calls).toEqual(['begin', 'continue', 'cancel'])
+    expect(activation.retainedDisplayIds.at(-1)).toEqual({
+      operation: 'cancel',
+      displayIds: [secondDisplay.id]
+    })
+  })
+
+  it('serializes queued replacements so the newest preview owns the session and the panel close', async () => {
+    const { native, activation, controller } = setup()
+    await controller.start(alpha, 'preview')
+    const gamma = named('gamma', [[secondDisplay.id, { brightness: 20 }]])
+
+    await Promise.all([controller.start(beta, 'preview'), controller.start(gamma, 'preview')])
+
+    expect(activation.calls).toEqual(['begin', 'continue', 'continue'])
+    expect(controller.state).toMatchObject({ sessionId: 3, profileId: gamma.id })
+    expect(native.currentSettings.get(display.id)).toEqual(originals.get(display.id))
+    expect(native.currentSettings.get(third.id)).toEqual(originals.get(third.id))
+    await controller.cancelForPanelHide('close')
+    expect(controller.state).toEqual({ state: 'inactive' })
+    expect(activation.calls).toEqual(['begin', 'continue', 'continue', 'cancel'])
+    expectOriginals(native)
+  })
 })

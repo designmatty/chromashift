@@ -253,7 +253,16 @@ settings from the native service's immutable baseline. During app-panel Preview 
 without a target are held at Original settings by restoring existing baselines,
 with no capture or write on displays that have no baseline. Teardown hands retained
 baselines back to activation and resets deduplication before reapplying the prior
-target, including displays held at Original settings. Both renderer surfaces
+target, including displays held at Original settings. Switching from a Preview or
+Edit to another profile's Preview skips that teardown (#78): the preview queue
+keeps the activation hold through `continuePreview`, restores only HDR displays
+and displays the destination does not target, and applies the destination from
+the same immutable baselines, so the live target never shows between them.
+Native capture is idempotent while a baseline is held. Failures before the
+destination's first write tear the first session down completely. Override
+sessions, Edit destinations, same-profile starts and any pending display
+transition keep the teardown, because a transition can add an endpoint that
+shares a source with modified output. Both renderer surfaces
 drive their sessions through one shared seam: `use-preview-draft.ts` owns the
 draft and dirty state, and the framework-free `preview-sync.ts` session owns
 debounced draft synchronization, the start-versus-update decision, and
