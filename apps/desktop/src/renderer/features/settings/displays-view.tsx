@@ -52,7 +52,7 @@ export function DisplaysView({
     }
   }
   return (
-    <Stack as="section" h="full" gap="4">
+    <Stack as="section" gap="4">
       <Flex as="header" align="center" justify="space-between">
         <Heading as="h1" size="lg">
           Displays
