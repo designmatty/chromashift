@@ -662,7 +662,7 @@ export function MiniDisplaySelect({
             <Icon size={'sm'}>
               <Monitor />
             </Icon>
-            {selected?.hdr && <HdrBadge size="xs" />}
+            {selected?.hdr && <HdrBadge />}
             <Select.ValueText />
           </HStack>
         </Select.Trigger>
@@ -676,7 +676,7 @@ export function MiniDisplaySelect({
             {collection.items.map((item) => (
               <Select.Item item={item} key={item.value}>
                 <HStack gap="2" minW="0">
-                  {item.hdr && <HdrBadge size="xs" />}
+                  {item.hdr && <HdrBadge />}
                   <Select.ItemText>{item.label}</Select.ItemText>
                 </HStack>
                 <Select.ItemIndicator />
