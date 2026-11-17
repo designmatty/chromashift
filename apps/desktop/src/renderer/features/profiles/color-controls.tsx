@@ -1,4 +1,4 @@
-import { Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
+import { Alert, Box, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
 import { Palette, ShieldAlert, Thermometer } from 'lucide-react'
 import {
   effectiveGammaRange,
@@ -128,7 +128,7 @@ export interface ControlSupport {
 
 /** Windows gamma-ramp controls. They stay SDR-only while HDR is on (#89). */
 const sdrOnlyControls: ReadonlySet<ColorControlKey> = new Set(['brightness', 'contrast', 'gamma'])
-const appliesWhenHdrIsOff = 'Applies when HDR is off.'
+const disabledWhileHdrIsOn = 'Disabled while HDR is on.'
 
 /** Controls the capability report still supports while HDR is on, in display order. */
 export function hdrApplicableControls(
@@ -159,7 +159,7 @@ export function controlSupport(
   if (display.hdr) {
     // Brightness, contrast and gamma keep their values and apply when HDR is off.
     if (sdrOnlyControls.has(key)) {
-      return { available: false, status: 'unavailable', reason: appliesWhenHdrIsOff }
+      return { available: false, status: 'unavailable', reason: disabledWhileHdrIsOn }
     }
     if (capability?.supported === true) return { available: true, status: '', reason: '' }
     return {
@@ -167,7 +167,7 @@ export function controlSupport(
       status: 'unavailable',
       reason:
         hdrApplicableControls(report).length === 0
-          ? appliesWhenHdrIsOff
+          ? disabledWhileHdrIsOn
           : (capability?.reason ?? 'Unsupported by the active provider.')
     }
   }
@@ -183,27 +183,20 @@ export function controlSupport(
   return { available: true, status: '', reason: '' }
 }
 
-/** The HDR notice, driven by which controls the capability report still supports. */
+/** The HDR warning, driven by whether the capability report still supports any control. */
 export function hdrNotice(
   report: DisplayCapabilityReport | undefined,
   safetyBlocked: boolean
 ): string {
-  const applicable = hdrApplicableControls(report)
-  if (applicable.length === 0) {
-    return safetyBlocked
-      ? "HDR is on and isn't supported yet. Restoration needs confirmation. Use Retry to restore original settings."
-      : "HDR is on and isn't supported yet. This display stays at its original settings. Values below apply when HDR is off."
-  }
-  if (safetyBlocked) {
-    return 'HDR is on. Restoration needs confirmation. Use Retry to restore original settings.'
-  }
-  const names = applicable.map((key) =>
-    controls.find((control) => control.key === key)!.label.toLowerCase()
-  )
-  const list =
-    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)!}`
-  const verb = names.length === 1 ? 'applies' : 'apply'
-  return `HDR is on. ${list.charAt(0).toUpperCase()}${list.slice(1)} ${verb} now; brightness, contrast and gamma apply when HDR is off.`
+  const partlySupported = hdrApplicableControls(report).length > 0
+  const lead = partlySupported
+    ? "ChromaShift isn't fully compatible with HDR."
+    : "ChromaShift doesn't support HDR on this display yet."
+  if (safetyBlocked)
+    return `${lead} Restoration needs confirmation. Use Retry to restore original settings.`
+  return partlySupported
+    ? `${lead} Some controls are disabled while HDR is on.`
+    : `${lead} It stays at its original settings while HDR is on.`
 }
 
 export function ColorControls({
@@ -243,9 +236,20 @@ export function ColorControls({
   return (
     <Stack gap={compact ? 4 : 3}>
       {display?.hdr && (
-        <Text role="status" fontSize="xs" color="fg.muted">
-          {hdrNotice(report, product.chromaShift?.status === 'safetyBlocked')}
-        </Text>
+        <Alert.Root
+          data-part="hdr-notice"
+          role="status"
+          status="warning"
+          size="sm"
+          {...(compact ? { px: '2.5', py: '2', gap: '2' } : {})}
+        >
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title fontWeight="normal" fontSize="xs">
+              {hdrNotice(report, product.chromaShift?.status === 'safetyBlocked')}
+            </Alert.Title>
+          </Alert.Content>
+        </Alert.Root>
       )}
       {controls
         .filter(
@@ -359,7 +363,6 @@ export function ColorControls({
                       ? 'saturation'
                       : undefined
                 }
-                limitLabel={gammaLimitLabel}
                 disabled={!editable || !support.available}
                 aria-label={`${control.label} for ${display?.name ?? displayId}`}
                 aria-valuetext={formatValue(control.key, value)}

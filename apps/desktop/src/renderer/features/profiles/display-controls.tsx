@@ -9,6 +9,7 @@ import {
 } from '@chromashift/core'
 import type { ProductState } from '@shared/product-api.js'
 import { ColorControls } from '@/features/profiles/color-controls'
+import { HdrBadge } from '@/features/profiles/hdr-badge'
 import { buildDisplayRows, type DisplayRow } from '@/features/profiles/display-rows'
 
 const LAST_DISPLAY_KEY = 'chromashift.profile-editor.selected-display'
@@ -81,6 +82,7 @@ export function DisplayControls({
                 color: 'fg'
               }}
             >
+              {row.display.hdr && <HdrBadge />}
               <Text maxW="190px" truncate as="span" color={'inherit'}>
                 {row.display.name}
               </Text>

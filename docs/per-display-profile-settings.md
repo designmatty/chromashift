@@ -220,9 +220,10 @@ targets remain persisted and resume when the same physical display returns.
   it appears only when non-neutral, disabled with its neutral action available.
   The mini-panel height includes this row whenever it is visible.
 - Brightness changes clamp gamma immediately. The inline gamma input adopts the
-  new bounds. Disallowed slider sections use hatching in both themes. A tooltip
-  names the gamma bounds and current brightness and appears briefly when the
-  thumb reaches a constrained limit. The initial envelope remains
+  new bounds. Disallowed slider sections use hatching in both themes. The
+  shield icon's tooltip, described below, names the gamma bounds and current
+  brightness; the gamma slider and row have no tooltip of their own. The
+  initial envelope remains
   `fixtures/gamma-envelope.json`. Windows may reject values inside it. Native
   retries in 0.05 steps toward neutral 1.0 and reads back the first accepted
   value. That value becomes this display's learned minimum or maximum at the
@@ -333,11 +334,16 @@ logged. An untargeted HDR display keeps the live target's saturation and hue
 during an override unless its output may still carry SDR ramp values; then it
 is restored. The session and full draft stay intact, SDR displays keep the
 draft, and HDR-off reapplies the full current draft or target. Both panels show
-an HDR notice driven by the capability report. With saturation or hue
-available it reads "HDR is on. Saturation and hue apply now; brightness,
-contrast and gamma apply when HDR is off.", and brightness, contrast, and gamma
-are disabled with "Applies when HDR is off." Without any HDR control the #88
-notice stays above disabled target values. Restoration never implicitly
+a short warning alert above the controls, driven by the capability report. With
+saturation or hue available it reads "ChromaShift isn't fully compatible with
+HDR. Some controls are disabled while HDR is on.", and brightness, contrast, and
+gamma are disabled at their target values with the tooltip "Disabled while HDR
+is on." Without any HDR control it reads "ChromaShift doesn't support HDR on
+this display yet. It stays at its original settings while HDR is on.", above
+disabled target values. While Safety blocked, the same alert ends with
+"Restoration needs confirmation. Use Retry to restore original settings." An
+outlined orange "HDR" badge marks HDR displays before their names in the app
+panel's display tabs and in the mini panel's display select. Restoration never implicitly
 discards changes. NVIDIA HDR saturation and hue await owner hardware
 verification; AMD remains unverified.
 If restoration fails during the session, the full draft remains available in

@@ -91,7 +91,21 @@ describe('learned gamma feedback', () => {
           )
         const html = render()
         expect(html).toContain('data-part="gamma-limit-note"')
-        expect(html).toContain('data-tooltip="Min 0.30, max 1.85 at brightness 50%"')
+        // The limit text is a tooltip on the shield only, not on the gamma slider or row.
+        const limitTooltips = [
+          ...html.matchAll(/<span data-tooltip="Min 0\.30, max 1\.85 at brightness 50%">/g)
+        ]
+        expect(limitTooltips).toHaveLength(1)
+        const shield = html.slice(limitTooltips[0]!.index)
+        expect(shield.indexOf('data-part="gamma-limit-note"')).toBeLessThan(
+          shield.indexOf('</span>')
+        )
+        const gammaSlider = html.slice(html.indexOf('data-control="gamma"'))
+        expect(
+          gammaSlider
+            .slice(0, gammaSlider.indexOf('data-slot="slider"'))
+            .match(/data-tooltip="Min/g)
+        ).toHaveLength(1)
         expect(html).not.toContain('Limited to')
         expect(html).toContain('data-gamma-min="0.3" data-gamma-max="1.85"')
         expect(html).toContain('data-part="slider-disabled-upper"')
@@ -115,7 +129,7 @@ describe('learned gamma feedback', () => {
         />
       </ChakraProvider>
     )
-    expect(html).toContain('data-tooltip="Min 0.30, max 2.30 at brightness 100%"')
+    expect(html.match(/data-tooltip="Min 0\.30, max 2\.30 at brightness 100%"/g)).toHaveLength(1)
   })
 
   it.each([true, false])(

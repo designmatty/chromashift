@@ -2,10 +2,10 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createNeutralColorSettings } from '@chromashift/core'
 import { describe, expect, it } from 'vitest'
-import type { DisplayCapabilityReport } from '@chromashift/native-client/protocol'
+import type { Display, DisplayCapabilityReport } from '@chromashift/native-client/protocol'
 import type { ProductState } from '@shared/product-api'
 import { system } from '@/theme/system'
-import { ColorControls } from '@/features/profiles/color-controls'
+import { ColorControls, controlSupport } from '@/features/profiles/color-controls'
 
 type Capabilities = Record<
   'brightness' | 'contrast' | 'gamma' | 'saturation' | 'hue' | 'colorTemperature',
@@ -30,6 +30,43 @@ const amdUnderHdr = {
   reason: 'AMD display controls are disabled until ADLX behavior is verified under HDR.'
 }
 
+const amdHdr = {
+  brightness: amdUnderHdr,
+  contrast: amdUnderHdr,
+  gamma: amdUnderHdr,
+  saturation: amdUnderHdr,
+  hue: amdUnderHdr,
+  colorTemperature: amdUnderHdr
+}
+
+/**
+ * The HDR notice's text. It must be a warning Alert that keeps the polite
+ * status role and appears once, above the color controls.
+ */
+function hdrAlert(html: string): string {
+  const matches = [...html.matchAll(/<div\b[^>]*data-part="hdr-notice"[^>]*>/g)]
+  expect(matches).toHaveLength(1)
+  const root = matches[0]![0]
+  expect(root).toContain('role="status"')
+  expect(root).toContain('chakra-alert__root')
+  // status="warning" resolves the alert's color palette to orange.
+  const cssClass = /\b(css-[a-z0-9]+)/.exec(root)?.[1]
+  const rules = html.match(new RegExp(`\\.${cssClass}\\{[^}]*\\}`, 'g')) ?? []
+  expect(rules.join('')).toContain('orange')
+  const start = matches[0]!.index
+  expect(start).toBeLessThan(html.indexOf('data-part="color-control"'))
+  const firstRow = html.lastIndexOf('<', html.indexOf('data-part="color-control"'))
+  const notice = html.slice(start, firstRow)
+  // The status icon comes before the title.
+  expect(notice.indexOf('<svg')).toBeGreaterThan(-1)
+  expect(notice.indexOf('<svg')).toBeLessThan(notice.indexOf('chakra-alert__title'))
+  return notice
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/g, '')
+    .replace(/<svg[\s\S]*?<\/svg>/g, '')
+    .replace(/<[^>]+>/g, '')
+    .trim()
+}
+
 /** The disabled flag of each slider, keyed by its data-control row. */
 function sliderStates(html: string): Record<string, boolean> {
   const states: Record<string, boolean> = {}
@@ -41,6 +78,40 @@ function sliderStates(html: string): Record<string, boolean> {
   }
   return states
 }
+
+describe('control support under HDR', () => {
+  const display = { id: 'display:test', name: 'Test display', hdr: true } as Display
+  const reportFor = (capabilities: Capabilities) =>
+    ({ displayId: display.id, capabilities }) as unknown as DisplayCapabilityReport
+
+  it('disables the ramp controls with "Disabled while HDR is on."', () => {
+    const report = reportFor({
+      brightness: windows,
+      contrast: windows,
+      gamma: windows,
+      saturation: nvidia,
+      hue: nvidia,
+      colorTemperature: noProvider
+    })
+    for (const key of ['brightness', 'contrast', 'gamma'] as const)
+      expect(controlSupport(key, display, report)).toEqual({
+        available: false,
+        status: 'unavailable',
+        reason: 'Disabled while HDR is on.'
+      })
+    expect(controlSupport('saturation', display, report).available).toBe(true)
+    // A control that never applies on this display keeps its own reason.
+    expect(controlSupport('colorTemperature', display, report).reason).toBe(
+      'No verified provider is available.'
+    )
+  })
+
+  it('uses the same reason for every control when nothing applies under HDR', () => {
+    const report = reportFor(amdHdr)
+    for (const key of ['saturation', 'hue', 'colorTemperature'] as const)
+      expect(controlSupport(key, display, report).reason).toBe('Disabled while HDR is on.')
+  })
+})
 
 describe('color controls in both panels', () => {
   for (const compact of [false, true]) {
@@ -70,19 +141,20 @@ describe('color controls in both panels', () => {
       ).replaceAll('&#x27;', "'")
     }
 
-    it(`enables NVIDIA saturation and hue under HDR and keeps the ramp controls for SDR, compact=${compact}`, () => {
-      const html = render(true, {
+    it(`enables NVIDIA saturation and hue under HDR with a short warning, compact=${compact}`, () => {
+      const nvidiaHdr = {
         brightness: sdrOnly,
         contrast: sdrOnly,
         gamma: sdrOnly,
         saturation: nvidia,
         hue: nvidia,
         colorTemperature: noProvider
-      })
-      expect(html).toContain(
-        'HDR is on. Saturation and hue apply now; brightness, contrast and gamma apply when HDR is off.'
+      }
+      const html = render(true, nvidiaHdr)
+      expect(hdrAlert(html)).toBe(
+        "ChromaShift isn't fully compatible with HDR. Some controls are disabled while HDR is on."
       )
-      expect(html).not.toContain("isn't supported yet")
+      expect(html).not.toContain('apply now')
       // Disabled controls keep their target values.
       expect(html).toContain('30%')
       expect(html).toContain('85%')
@@ -93,34 +165,12 @@ describe('color controls in both panels', () => {
         saturation: false,
         hue: false
       })
-      expect(
-        render(true, {
-          brightness: sdrOnly,
-          contrast: sdrOnly,
-          gamma: sdrOnly,
-          saturation: nvidia,
-          hue: noProvider,
-          colorTemperature: noProvider
-        })
-      ).toContain(
-        'HDR is on. Saturation applies now; brightness, contrast and gamma apply when HDR is off.'
+      expect(hdrAlert(render(true, { ...nvidiaHdr, hue: noProvider }))).toBe(
+        "ChromaShift isn't fully compatible with HDR. Some controls are disabled while HDR is on."
       )
-      const blocked = render(
-        true,
-        {
-          brightness: sdrOnly,
-          contrast: sdrOnly,
-          gamma: sdrOnly,
-          saturation: nvidia,
-          hue: nvidia,
-          colorTemperature: noProvider
-        },
-        'safetyBlocked'
+      expect(hdrAlert(render(true, nvidiaHdr, 'safetyBlocked'))).toBe(
+        "ChromaShift isn't fully compatible with HDR. Restoration needs confirmation. Use Retry to restore original settings."
       )
-      expect(blocked).toContain(
-        'HDR is on. Restoration needs confirmation. Use Retry to restore original settings.'
-      )
-      expect(blocked).not.toContain('apply now')
     })
 
     it(`keeps the ramp controls disabled under HDR even with a stale SDR report, compact=${compact}`, () => {
@@ -135,32 +185,22 @@ describe('color controls in both panels', () => {
       expect(sliderStates(html)).toMatchObject({ brightness: true, contrast: true, gamma: true })
     })
 
-    it(`keeps today's notice and disables every control on an AMD display under HDR, compact=${compact}`, () => {
-      const amd = {
-        brightness: amdUnderHdr,
-        contrast: amdUnderHdr,
-        gamma: amdUnderHdr,
-        saturation: amdUnderHdr,
-        hue: amdUnderHdr,
-        colorTemperature: amdUnderHdr
-      }
-      const html = render(true, amd)
-      expect(html).toContain(
-        "HDR is on and isn't supported yet. This display stays at its original settings. Values below apply when HDR is off."
+    it(`warns that HDR is unsupported and disables every control on an AMD display, compact=${compact}`, () => {
+      const html = render(true, amdHdr)
+      expect(hdrAlert(html)).toBe(
+        "ChromaShift doesn't support HDR on this display yet. It stays at its original settings while HDR is on."
       )
       expect(html).toContain('85%')
       const states = sliderStates(html)
       // Neutral color temperature stays hidden when unsupported.
       expect(Object.values(states)).toHaveLength(5)
       expect(Object.values(states).every(Boolean)).toBe(true)
-      const blocked = render(true, amd, 'safetyBlocked')
-      expect(blocked).toContain(
-        "HDR is on and isn't supported yet. Restoration needs confirmation. Use Retry to restore original settings."
+      expect(hdrAlert(render(true, amdHdr, 'safetyBlocked'))).toBe(
+        "ChromaShift doesn't support HDR on this display yet. Restoration needs confirmation. Use Retry to restore original settings."
       )
-      expect(blocked).not.toContain('This display stays at its original settings.')
     })
 
-    it(`shows no HDR notice and enables supported controls in SDR, compact=${compact}`, () => {
+    it(`shows no HDR warning and enables supported controls in SDR, compact=${compact}`, () => {
       const html = render(false, {
         brightness: windows,
         contrast: windows,
@@ -169,7 +209,8 @@ describe('color controls in both panels', () => {
         hue: nvidia,
         colorTemperature: noProvider
       })
-      expect(html).not.toContain('HDR is on')
+      expect(html).not.toContain('data-part="hdr-notice"')
+      expect(html).not.toContain('HDR')
       expect(sliderStates(html)).toEqual({
         brightness: false,
         contrast: false,

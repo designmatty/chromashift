@@ -198,10 +198,13 @@ Retry cannot resume activation until those restores are confirmed. The
 in-memory preview recovery reason survives failed retries, so a successful
 End preview completes recovery without an extra Retry. It still persists as
 schema-v1 `resume`.
-Both panels explain HDR from the capability report. When saturation or hue
-still applies, they say so and disable only brightness, contrast, and gamma
-("Applies when HDR is off"). When nothing applies, they keep the #88 notice above
-disabled target values. Those values apply when HDR turns off through the
+Both panels show a short Chakra warning alert for an HDR display, driven by the
+capability report. When saturation or hue still applies, it says ChromaShift
+isn't fully compatible with HDR and only brightness, contrast, and gamma are
+disabled ("Disabled while HDR is on."). When nothing applies, it says HDR isn't
+supported on that display and every control is disabled above its target
+value. An outlined orange "HDR" badge marks HDR displays in the app panel's
+display tabs and the mini panel's display select. Target values apply when HDR turns off through the
 existing topology transition. The mini panel keeps its fixed window sizing and
 scrolls the controls pane if needed. Windows gamma restore verifies the exact
 captured ramp, NVIDIA restore verifies vibrance/hue, and AMD's existing restore

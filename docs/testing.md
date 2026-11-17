@@ -101,9 +101,13 @@ The TypeScript and native test suites cover these contracts:
   any HDR endpoint withholds brightness, contrast, and gamma from every endpoint,
   and an AMD endpoint in HDR restores every endpoint without writes.
 - Renderer color controls in both panels: NVIDIA-HDR enables saturation and hue
-  and disables brightness, contrast, and gamma ("Applies when HDR is off"), even
-  with a stale report. AMD-HDR keeps the #88 notice with every control disabled,
-  Safety blocked copy covers both, and SDR shows no notice.
+  and disables brightness, contrast, and gamma ("Disabled while HDR is on."),
+  even with a stale report. The HDR notice is a single warning Alert with the
+  status role and the short copy for NVIDIA-HDR and AMD-HDR, with every control
+  disabled on AMD. Safety blocked copy covers both, and SDR shows no notice. The
+  learned gamma limit tooltip appears once, on the shield only. The "HDR" badge
+  appears once, before the name, on HDR display tabs and in the mini display
+  select's trigger and options.
 - Profile, preference, intent, window-state, diagnostic-log, and legacy-path
   persistence, including atomic writes and concurrent update queues
 - Pause, Resume, Safety blocked, restore-and-pause, emergency restore,
@@ -264,10 +268,11 @@ HDR.
    saturation and hue changes, no brightness change, and `DisplaySettingApplied`
    with `colorMode: "hdr"` and the expected saturation and hue values. Confirm
    NVIDIA Control Panel shows the same vibrance and hue. The app and mini panels
-   must show "HDR is on. Saturation and hue apply now; brightness, contrast and
-   gamma apply when HDR is off.", with Saturation and Hue enabled, and
-   Brightness, Contrast and Gamma disabled at their target values with "Applies
-   when HDR is off."
+   must show the warning alert "ChromaShift isn't fully compatible with HDR.
+   Some controls are disabled while HDR is on.", with Saturation and Hue enabled,
+   and Brightness, Contrast and Gamma disabled at their target values with the
+   tooltip "Disabled while HDR is on." The G60SD's display tab and its mini-panel
+   select entry show the "HDR" badge before its name; the SDR display shows none.
 2. **Preview and override in HDR.** Click another profile to preview, drag
    saturation and hue in the app panel, then make a mini-panel override. Each
    change must take effect on the G60SD while brightness stays at the baseline.
