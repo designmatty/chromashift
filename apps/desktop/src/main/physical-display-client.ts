@@ -173,7 +173,11 @@ export class PhysicalDisplayClient {
     }
     const hashes = results.map((result) => result.gammaRampHash)
     if (hashes.every((hash) => hash !== undefined)) {
-      const hash = createHash('sha256').update(JSON.stringify(hashes)).digest('hex')
+      // The adapter is part of the learned-limit key: moving a panel to another
+      // GPU changes the driver that accepts or rejects ramps, even when both
+      // report the same original ramp.
+      const sources = endpoints.map((display, index) => [display.adapter.deviceId, hashes[index]])
+      const hash = createHash('sha256').update(JSON.stringify(sources)).digest('hex')
       this.#baselineHashes.set(displayId.toLowerCase(), hash)
       await this.limits?.observeBaseline(displayId, hash)
     }
