@@ -2,10 +2,13 @@
 
 Status: current hardware record, first established on 2026-08-08 and extended by
 later guarded tests. Windows and NVIDIA behavior is verified on the test machine.
-AMD display operations remain explicitly unverified because no active monitor is
-attached to the AMD adapter.
+AMD display operations are verified only on an integrated RDNA 2 display in SDR;
+see the AMD hardware record (#119).
 
 ## Environment
+
+This table records the 2026-08-08 host. For the #119 AMD record, the VG278 moved
+to the integrated AMD GPU; see the AMD hardware record below.
 
 | Item                 | Tested result                                                                                                                          |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,22 +42,22 @@ installed matching Node/npm/.NET versions work identically. Root scripts expose
 mapping, read-back, and restoration paths exist, but matching hardware was not
 available for a write test.
 
-| Capability                 | Windows                                    | NVIDIA                               | AMD                           |
-| -------------------------- | ------------------------------------------ | ------------------------------------ | ----------------------------- |
-| Adapter detection          | Verified                                   | Verified                             | Verified                      |
-| Display enumeration        | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
-| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Verified on integrated RDNA 2 |
-| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | N/A                           |
-| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2 |
-| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2 |
-| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Verified through Windows ramp |
-| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Verified on integrated RDNA 2 |
-| Hue                        | Unsupported                                | Verified (private NVAPI)             | Verified on integrated RDNA 2 |
-| Saturation and hue in HDR  | N/A                                        | Implemented, unverified (#89)        | Blocked under HDR             |
-| Color temperature          | Unsupported                                | Unsupported                          | Verified on integrated RDNA 2 |
-| Capability/range reporting | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
-| State read                 | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
-| Exact restoration          | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
+| Capability                 | Windows                                    | NVIDIA                               | AMD                                          |
+| -------------------------- | ------------------------------------------ | ------------------------------------ | -------------------------------------------- |
+| Adapter detection          | Verified                                   | Verified                             | Verified                                     |
+| Display enumeration        | Verified                                   | Verified                             | Verified on integrated RDNA 2                |
+| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Verified on integrated RDNA 2                |
+| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | N/A                                          |
+| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2                |
+| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2                |
+| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Verified on integrated RDNA 2 (Windows ramp) |
+| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Verified on integrated RDNA 2                |
+| Hue                        | Unsupported                                | Verified (private NVAPI)             | Verified on integrated RDNA 2                |
+| Saturation and hue in HDR  | N/A                                        | Implemented, unverified (#89)        | Blocked under HDR                            |
+| Color temperature          | Unsupported                                | Unsupported                          | Verified on integrated RDNA 2                |
+| Capability/range reporting | Verified                                   | Verified                             | Verified on integrated RDNA 2                |
+| State read                 | Verified                                   | Verified                             | Verified on integrated RDNA 2                |
+| Exact restoration          | Verified                                   | Verified                             | Verified on integrated RDNA 2                |
 
 ## Windows findings
 
@@ -301,8 +304,8 @@ post-release work.
 - NVIDIA DVC and hue depend on undocumented/private interfaces and a replaceable
   LGPL-3.0 wrapper. The packaging contract is compliant, but driver compatibility
   remains a risk.
-- No AMD-driven monitor was available. The ADLX implementation is not a claim of
-  AMD hardware validation.
+- AMD is verified only on an integrated RDNA 2 display in SDR. Discrete Radeon
+  cards, AMD under HDR, and several AMD-driven displays remain unverified.
 - The G60SD endpoint IDs are verified independently across DisplayPort and HDMI
   reconnect, and both map to one hardware-verified physical profile ID. Panels
   without trustworthy EDID serials intentionally remain endpoint-specific; other
@@ -333,8 +336,8 @@ These constraints still govern the shipped product:
    transforms, baseline-first application, and emergency restoration.
 2. NVIDIA private APIs remain compatibility-sensitive. Keep the replaceable
    wrapper and exact read-back/restoration checks.
-3. AMD must be tested on at least one ADLX-supported, AMD-driven monitor before
-   AMD support is advertised as verified.
+3. AMD support is advertised as verified only for tested hardware: currently an
+   integrated RDNA 2 display in SDR.
 4. Topology invalidation and heartbeat restoration are implemented. Additional
    transition and baseline-owning fault evidence is issue-driven post-release
    work; do not make a broad crash-safe hardware claim.

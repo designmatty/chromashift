@@ -246,7 +246,7 @@ ramp hashes and vendor values, logs, and any visual difference between read-back
 and output. The owner's 2026-11-08 retest of #90, recorded on #88, covered steps
 1 to 4 for HDR-on during an edit, HDR-off, Discard, a profile switch and tray
 Exit on NVIDIA. The watchdog kill path, the mini-panel notice, a real restore
-failure, and all AMD writes remain hardware-unverified. HDR profile support is
+failure, and AMD restore under HDR remain hardware-unverified. HDR profile support is
 #89, below.
 
 ### Owner HDR retest for #89
