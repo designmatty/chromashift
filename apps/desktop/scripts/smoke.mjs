@@ -4437,7 +4437,8 @@ async function runSmoke() {
       const display = state.value.displays.find(
         (candidate) => candidate.id === ${JSON.stringify(guardedProductDisplayId)}
       )
-      const secondDisplay = state.value.displays.find(
+      // A vendor-scoped run writes only the guarded display.
+      const secondDisplay = ${JSON.stringify(guardedVendor !== undefined)} ? undefined : state.value.displays.find(
         (candidate) => candidate.id !== display?.id &&
           state.value.capabilityReports[candidate.id]?.capabilities.brightness.supported === true
       )
@@ -4661,7 +4662,7 @@ async function runSmoke() {
         (display) =>
           state.value.capabilityReports[display.id]?.capabilities.brightness.supported === true
       )
-      if (writableDisplays.length < 2) return { skipped: true }
+      if (writableDisplays.length < 2 || ${JSON.stringify(guardedVendor !== undefined)}) return { skipped: true }
       return {
         skipped: false,
         targets: profile?.displays.map((target) => [target.displayId, target.color])
