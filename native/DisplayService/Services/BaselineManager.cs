@@ -37,9 +37,8 @@ internal sealed class BaselineManager(
                 return Describe(existing, "alreadyCaptured");
             }
 
-            var ramp = display.Adapter.Vendor != "amd" && gamma.IsSupported(display.WindowsDisplayName)
-                ? ReadGamma(display)
-                : null;
+            // Every adapter's gamma uses the Windows ramp. AMD capture under HDR was refused above.
+            var ramp = gamma.IsSupported(display.WindowsDisplayName) ? ReadGamma(display) : null;
             var nvidiaState = nvidia.GetState(display);
             var amdState = amd.GetState(display);
             if (ramp is null && !nvidiaState.Saturation.Supported && !nvidiaState.Hue.Supported && !HasAmdCapability(amdState))
@@ -67,11 +66,12 @@ internal sealed class BaselineManager(
             if (display.Adapter.Vendor == "amd")
             {
                 var state = amd.GetState(display);
+                var windowsRamp = !display.Hdr && gamma.IsSupported(display.WindowsDisplayName) ? ReadGamma(display) : null;
                 return new JsonObject
                 {
                     ["displayId"] = displayId,
                     ["provider"] = "amd",
-                    ["gammaRampHash"] = state.GammaRamp?.GetHash(),
+                    ["gammaRampHash"] = windowsRamp?.GetHash(),
                     ["brightness"] = state.Brightness.Current,
                     ["contrast"] = state.Contrast.Current,
                     ["saturation"] = state.Saturation.Current,
@@ -195,17 +195,18 @@ internal sealed class BaselineManager(
             int? colorTemperature = null;
             double? appliedGamma = settings.Gamma;
             JsonObject? learnedGammaLimit = null;
+            // AMD brightness and contrast use ADLX custom color; elsewhere they
+            // shape the Windows ramp. Gamma always uses the Windows ramp.
+            var rampBrightness = settings.Brightness;
+            var rampContrast = settings.Contrast;
             if (display.Adapter.Vendor == "amd")
             {
                 if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
                 if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
-                if (settings.Gamma is not null)
-                {
-                    if (baseline.Amd.GammaRamp is null) throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", baseline.Amd.GammaReason ?? "AMD gamma is unavailable.");
-                    gammaHash = amd.SetGamma(display, baseline.Amd.GammaRamp, settings.Gamma.Value);
-                }
+                rampBrightness = null;
+                rampContrast = null;
             }
-            else if (settings.Brightness is not null || settings.Contrast is not null || settings.Gamma is not null)
+            if (rampBrightness is not null || rampContrast is not null || settings.Gamma is not null)
             {
                 EnsureGammaSafe(display);
                 if (baseline.GammaRamp is null)
@@ -220,7 +221,7 @@ internal sealed class BaselineManager(
                     {
                         var requested = GammaRampTransform.Apply(
                             baseline.GammaRamp,
-                            new GammaSettings(settings.Brightness, settings.Contrast, candidate));
+                            new GammaSettings(rampBrightness, rampContrast, candidate));
                         // The path was chosen from an earlier snapshot. Re-read HDR and
                         // ownership right before every transformed ramp write, including
                         // rejection retries; HDR_UNSAFE then restores the whole display.
@@ -809,8 +810,7 @@ internal sealed class BaselineManager(
         ["amdContrast"] = entry.Amd.Contrast.Current,
         ["amdSaturation"] = entry.Amd.Saturation.Current,
         ["amdHue"] = entry.Amd.Hue.Current,
-        ["amdColorTemperature"] = entry.Amd.ColorTemperature.Current,
-        ["amdGammaRampHash"] = entry.Amd.GammaRamp?.GetHash()
+        ["amdColorTemperature"] = entry.Amd.ColorTemperature.Current
     };
 
     private static void Log(
@@ -858,5 +858,5 @@ internal sealed class BaselineManager(
 
     private static bool HasAmdCapability(AmdDisplayState state) =>
         state.Brightness.Supported || state.Contrast.Supported || state.Saturation.Supported ||
-        state.Hue.Supported || state.ColorTemperature.Supported || state.GammaRamp is not null;
+        state.Hue.Supported || state.ColorTemperature.Supported;
 }

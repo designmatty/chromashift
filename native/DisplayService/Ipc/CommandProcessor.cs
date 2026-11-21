@@ -238,9 +238,7 @@ internal sealed class CommandProcessor(
             ["contrast"] = NativeJson.ToNode(amd.Contrast),
             ["saturation"] = NativeJson.ToNode(amd.Saturation),
             ["hue"] = NativeJson.ToNode(amd.Hue),
-            ["colorTemperature"] = NativeJson.ToNode(amd.ColorTemperature),
-            ["gammaRampHash"] = amd.GammaRamp?.GetHash(),
-            ["gammaReason"] = amd.GammaReason
+            ["colorTemperature"] = NativeJson.ToNode(amd.ColorTemperature)
         }
     };
 }

@@ -168,10 +168,10 @@ export class PhysicalDisplayClient {
     const results = [] as BaselineCaptureResult[]
     for (const display of endpoints) results.push(await this.endpoint.captureBaseline(display.id))
     for (const result of results) {
-      const hash = result.gammaRampHash ?? result.amdGammaRampHash
+      const hash = result.gammaRampHash
       if (hash !== undefined) this.#endpointBaselineHashes.set(result.displayId, hash)
     }
-    const hashes = results.map((result) => result.gammaRampHash ?? result.amdGammaRampHash)
+    const hashes = results.map((result) => result.gammaRampHash)
     if (hashes.every((hash) => hash !== undefined)) {
       const hash = createHash('sha256').update(JSON.stringify(hashes)).digest('hex')
       this.#baselineHashes.set(displayId.toLowerCase(), hash)

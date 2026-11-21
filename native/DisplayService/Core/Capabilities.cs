@@ -33,9 +33,7 @@ internal sealed record AmdDisplayState(
     ProviderControlState Contrast,
     ProviderControlState Saturation,
     ProviderControlState Hue,
-    ProviderControlState ColorTemperature,
-    GammaRamp? GammaRamp,
-    string? GammaReason);
+    ProviderControlState ColorTemperature);
 
 internal sealed record AmdAdlxDiagnostics(
     bool LibraryAvailable,
