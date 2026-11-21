@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.17] - 2026-11-20
+
+### Added
+
+- On NVIDIA displays, saturation and hue now apply while Windows HDR is on, in
+  profiles, previews and overrides. Brightness, contrast and gamma stay
+  SDR-only: they keep their values and apply when HDR turns off. AMD and other
+  displays still stay at their original settings while HDR is on.
+- Displays in HDR show an HDR badge in the display tabs and in the mini panel's
+  display picker.
+
+### Changed
+
+- The HDR notice is a short warning in both panels. Controls that HDR turns off
+  say "Disabled while HDR is on."
+- A learned gamma limit shows on the shield icon only, not on the slider.
+
+### Fixed
+
+- If ChromaShift can't confirm that a display was restored after a failed
+  write, it stops further writes and enters Safety blocked instead of reporting
+  only the write error.
+- A display that switches to HDR in the middle of an apply, for example when a
+  game turns HDR on, no longer receives brightness, contrast or gamma changes
+  meant for SDR.
+
 ## [0.1.0-preview.16] - 2026-11-16
 
 ### Added
@@ -279,7 +305,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.16...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.17...HEAD
+[0.1.0-preview.17]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.16...v0.1.0-preview.17
 [0.1.0-preview.16]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.15...v0.1.0-preview.16
 [0.1.0-preview.15]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.14...v0.1.0-preview.15
 [0.1.0-preview.14]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.12...v0.1.0-preview.14
