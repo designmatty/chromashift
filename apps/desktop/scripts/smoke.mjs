@@ -1148,8 +1148,16 @@ for (const display of guardDisplays) {
   group.push(display)
   guardGroups.set(id, group)
 }
+// `--display-vendor=amd` guards only a display on that adapter vendor, so the
+// owner can run the smoke against an AMD-driven display beside NVIDIA ones.
+const guardedVendor = globalThis.process.argv
+  .find((argument) => argument.startsWith('--display-vendor='))
+  ?.slice('--display-vendor='.length)
+  .toLowerCase()
 let guardedDisplays
 for (const group of [...guardGroups.values()].sort((left, right) => right.length - left.length)) {
+  if (guardedVendor !== undefined && !group.every((display) => display.adapter.vendor === guardedVendor))
+    continue
   const reports = await Promise.all(
     group.map((display) => restorationGuard.getDisplayCapabilityReport(display.id))
   )
@@ -1163,7 +1171,11 @@ for (const group of [...guardGroups.values()].sort((left, right) => right.length
 }
 if (guardedDisplays === undefined) {
   await restorationGuard.stop()
-  throw new Error('The restoration guard found no SDR display with brightness support.')
+  throw new Error(
+    guardedVendor === undefined
+      ? 'The restoration guard found no SDR display with brightness support.'
+      : `The restoration guard found no SDR ${guardedVendor} display with brightness support.`
+  )
 }
 const guardedDisplay = guardedDisplays[0]
 const guardedBaselines = new Map()
