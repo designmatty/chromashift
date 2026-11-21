@@ -39,22 +39,22 @@ installed matching Node/npm/.NET versions work identically. Root scripts expose
 mapping, read-back, and restoration paths exist, but matching hardware was not
 available for a write test.
 
-| Capability                 | Windows                                    | NVIDIA                               | AMD                                |
-| -------------------------- | ------------------------------------------ | ------------------------------------ | ---------------------------------- |
-| Adapter detection          | Verified                                   | Verified                             | Verified                           |
-| Display enumeration        | Verified                                   | Verified                             | Implemented, unverified            |
-| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Implemented, unverified            |
-| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | N/A                                |
-| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Implemented, unverified (ADLX)     |
-| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Implemented, unverified (ADLX)     |
-| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Implemented, unverified (ADLX LUT) |
-| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Implemented, unverified (ADLX)     |
-| Hue                        | Unsupported                                | Verified (private NVAPI)             | Implemented, unverified (ADLX)     |
-| Saturation and hue in HDR  | N/A                                        | Implemented, unverified (#89)        | Blocked under HDR                  |
-| Color temperature          | Unsupported                                | Unsupported                          | Implemented, unverified (ADLX)     |
-| Capability/range reporting | Verified                                   | Verified                             | Implemented, unverified            |
-| State read                 | Verified                                   | Verified                             | ADLX initialized; no AMD display   |
-| Exact restoration          | Verified                                   | Verified                             | Implemented, unverified            |
+| Capability                 | Windows                                    | NVIDIA                               | AMD                           |
+| -------------------------- | ------------------------------------------ | ------------------------------------ | ----------------------------- |
+| Adapter detection          | Verified                                   | Verified                             | Verified                      |
+| Display enumeration        | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
+| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Verified on integrated RDNA 2 |
+| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | N/A                           |
+| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2 |
+| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2 |
+| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Verified through Windows ramp |
+| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Verified on integrated RDNA 2 |
+| Hue                        | Unsupported                                | Verified (private NVAPI)             | Verified on integrated RDNA 2 |
+| Saturation and hue in HDR  | N/A                                        | Implemented, unverified (#89)        | Blocked under HDR             |
+| Color temperature          | Unsupported                                | Unsupported                          | Verified on integrated RDNA 2 |
+| Capability/range reporting | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
+| State read                 | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
+| Exact restoration          | Verified                                   | Verified                             | Verified on integrated RDNA 2 |
 
 ## Windows findings
 
@@ -163,22 +163,44 @@ Brightness, contrast, and gamma stay SDR-only. Candidates considered:
 The implementation binds directly to AMD's official
 [ADLX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/ADLX) C ABI. It loads
 `amdadlx64.dll`, queries the runtime version, initializes `IADLXSystem`,
-enumerates `IADLXDisplay` instances, and accesses `IADLXDisplayCustomColor` and
-`IADLXDisplayGamma`. No third-party AMD wrapper is used.
+enumerates `IADLXDisplay` instances, and accesses `IADLXDisplayCustomColor`. No
+third-party AMD wrapper is used.
 
 Brightness, contrast, saturation, hue, and color temperature independently query
-support, current value, and native min/max/step. Product 0–100 values are mapped
-into the queried range and aligned to its step; writes require exact read-back.
-ADLX gamma is a 256×RGB re-gamma LUT rather than a scalar. The provider captures
-that exact LUT, applies the same pure product gamma transform, writes the new LUT,
-and verifies/restores it exactly. AMD documents these display interfaces in its
+support, current value, and native min/max/step. Product values are mapped into
+the queried range so product neutral always lands on the AMD neutral point:
+brightness 0, contrast 100, saturation 100, and 6500 K. Product 0 and 100 reach
+the range ends, linearly on each side of neutral, aligned to the step. Product hue
+is a 0–359° wheel with neutral at 0°. Turning from 0° toward 180° scales to AMD
+neutral through the maximum, and from 359° back toward 180° through the minimum.
+Writes require exact read-back. AMD documents these display interfaces in its
 [ADLX display reference](https://gpuopen.com/manuals/adlx/adlx-sdk-references/adlx-interfaces/display/).
 
-On this machine the installed ADLX 1.4.0.121 runtime initialized successfully
-against the 1.5.0.124 SDK boundary, but returned zero displays because both
-monitors are connected to NVIDIA. Runtime writes, per-display name/EDID mapping,
-native ranges, HDR behavior, and restoration are consequently
-`Implemented, unverified`, not `Verified`.
+AMD gamma uses the guarded Windows ramp, as on other adapters, with the same
+SDR-only gate, read-back, rejection retry, and exact restoration. The ADLX
+re-gamma LUT is not used. `IADLXDisplayGamma.GetGammaRamp` returns `ADLX_FAIL`
+while the driver uses re-gamma coefficients, its default state, so the LUT is not
+capturable. The Windows ramp on the same display reads as the identity ramp.
+
+### AMD hardware record (#119)
+
+Owner host, 2026-11-20: Ryzen 9 9950X3D integrated AMD Radeon Graphics (RDNA 2,
+`PCI\VEN_1002&DEV_13C0`), driver 32.0.21036.18, ADLX 1.4, ASUS VG278 over HDMI
+in SDR at 59.94 Hz. The RTX 5090 drove the Odyssey G60SD at the same time.
+
+- ADLX ranges: brightness -100 to 100, contrast 0 to 200, saturation 0 to 200,
+  hue -30 to 30, color temperature 4000 to 10000 K.
+- Original state: brightness 0, contrast 100, saturation 100, hue 0, 6500 K,
+  re-gamma coefficients, Windows ramp hash
+  `3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf`.
+- Before #119, product-neutral hue and temperature wrote -30 and 7000 K.
+- After #119: neutral writes AMD neutral, a mild apply with gamma 1.10 reads back
+  exactly, and explicit restore, helper stop, and the heartbeat watchdog each
+  return every value and the ramp hash to the original state. The driver stays on
+  re-gamma coefficients after the restore.
+
+Discrete Radeon cards, AMD under HDR, and several AMD-driven displays remain
+unverified.
 
 ## Baseline and restoration results
 
@@ -301,8 +323,8 @@ events, validated native reads/writes, and baseline restoration.
 | Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                                          |
 | NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                                         |
 | NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper; also under HDR (#89, unverified) |
-| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces after hardware validation                                |
-| AMD gamma                                          | Official ADLX re-gamma LUT after hardware validation                                           |
+| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces                                                          |
+| AMD gamma                                          | Guarded Windows gamma ramp in SDR only (#119)                                                  |
 | Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op                               |
 
 These constraints still govern the shipped product:

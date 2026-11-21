@@ -89,8 +89,9 @@ not the Default profile.
   records; saved profile targets remain.
 - The fixed global emergency shortcut must work without a renderer.
 
-AMD ADLX support is implemented, but AMD writes remain hardware-unverified until
-tested on an AMD-driven display. Do not describe AMD behavior as verified.
+AMD writes are hardware-verified only on an integrated RDNA 2 display in SDR
+(#119). Describe discrete Radeon cards, AMD under HDR, and AMD-driven
+multi-display behavior as unverified.
 
 ## Profiles and activation
 

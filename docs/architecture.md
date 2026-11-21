@@ -27,8 +27,9 @@ the measurements and the threshold for reconsidering the shell.
 foreground events, capability discovery, native state reads/writes, and exact
 baseline restoration. It resolves controls independently. On the tested NVIDIA
 display, brightness/contrast/gamma resolve to the Windows ramp provider while
-saturation/hue resolve to NVIDIA. AMD custom-color controls and its gamma LUT are
-separate ADLX capabilities.
+saturation/hue resolve to NVIDIA. On AMD displays, brightness, contrast,
+saturation, hue, and color temperature resolve to ADLX custom color, and gamma
+resolves to the Windows ramp.
 
 Provider handles are reacquired for operations rather than persisted across
 topology changes. Every write is validated and read back. The baseline manager
