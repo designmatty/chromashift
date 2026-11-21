@@ -1104,9 +1104,18 @@ $processId`
 const compareOnly = globalThis.process.argv.includes('--compare-only')
 const capabilityLogOnly = globalThis.process.argv.includes('--capability-log-only')
 const hdrOnly = globalThis.process.argv.includes('--hdr-only')
+// `--display-vendor=amd` guards only a display on that adapter vendor, so the
+// owner can run the smoke against an AMD-driven display beside NVIDIA ones.
+// Parsed before any phase that writes displays.
+const guardedVendor = globalThis.process.argv
+  .find((argument) => argument.startsWith('--display-vendor='))
+  ?.slice('--display-vendor='.length)
+  .toLowerCase()
 // #89: NVIDIA HDR saturation/hue with read-back and exact restore. Runs only when a
 // display already reports HDR, and never toggles HDR or writes a non-baseline ramp.
-if (!compareOnly && !capabilityLogOnly) await verifyHdrSaturationHue({ displayServicePath })
+// A run scoped to another vendor skips it, so it writes no NVIDIA display.
+if (!compareOnly && !capabilityLogOnly && (guardedVendor === undefined || guardedVendor === 'nvidia'))
+  await verifyHdrSaturationHue({ displayServicePath })
 if (hdrOnly) globalThis.process.exit(0)
 if (!compareOnly && !capabilityLogOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
@@ -1148,12 +1157,6 @@ for (const display of guardDisplays) {
   group.push(display)
   guardGroups.set(id, group)
 }
-// `--display-vendor=amd` guards only a display on that adapter vendor, so the
-// owner can run the smoke against an AMD-driven display beside NVIDIA ones.
-const guardedVendor = globalThis.process.argv
-  .find((argument) => argument.startsWith('--display-vendor='))
-  ?.slice('--display-vendor='.length)
-  .toLowerCase()
 let guardedDisplays
 for (const group of [...guardGroups.values()].sort((left, right) => right.length - left.length)) {
   if (guardedVendor !== undefined && !group.every((display) => display.adapter.vendor === guardedVendor))
