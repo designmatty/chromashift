@@ -201,6 +201,7 @@ internal sealed class BaselineManager(
             var rampContrast = settings.Contrast;
             if (display.Adapter.Vendor == "amd")
             {
+                EnsureAmdOriginalsCaptured(baseline.Amd, settings);
                 if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
                 if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
                 rampBrightness = null;
@@ -855,6 +856,29 @@ internal sealed class BaselineManager(
         AmdDisplayState Amd,
         // "sdr" or "hdr": the color mode when this baseline was captured.
         string ColorMode);
+
+    /// <summary>
+    /// Every requested ADLX control must have a captured original, so Restore can
+    /// return it. A control that was unreadable at capture stays unwritable for
+    /// this baseline, even if ADLX reads recover later.
+    /// </summary>
+    internal static void EnsureAmdOriginalsCaptured(AmdDisplayState baseline, DisplaySettings settings)
+    {
+        foreach (var (requested, captured, name) in new[]
+        {
+            (settings.Brightness, baseline.Brightness, "brightness"),
+            (settings.Contrast, baseline.Contrast, "contrast"),
+            (settings.Saturation, baseline.Saturation, "saturation"),
+            (settings.Hue, baseline.Hue, "hue"),
+            (settings.ColorTemperature, baseline.ColorTemperature, "color temperature")
+        })
+        {
+            if (requested is null || (captured.Supported && captured.Current is not null)) continue;
+            throw new DisplayOperationException(
+                "CAPABILITY_UNSUPPORTED",
+                $"AMD {name} has no captured original value for this display.");
+        }
+    }
 
     private static bool HasAmdCapability(AmdDisplayState state) =>
         state.Brightness.Supported || state.Contrast.Supported || state.Saturation.Supported ||

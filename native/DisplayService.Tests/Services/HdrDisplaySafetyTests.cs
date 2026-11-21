@@ -531,6 +531,22 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Fact]
+    public void AmdControlUnreadableAtCaptureStaysUnwritableAfterAdlxRecovers()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Amd.Current = new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported);
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Amd.Current = fixture.Amd.Baseline;
+
+        Assert.Equal("CAPABILITY_UNSUPPORTED", Assert.Throws<DisplayOperationException>(() =>
+            fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(65, null, 1.2, null, null, null))).Code);
+        Assert.DoesNotContain(fixture.Calls, call => call.StartsWith("amd:set", StringComparison.Ordinal));
+        Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
     public void AmdSdrApplyWithoutGammaWritesOnlyTheBaselineRamp()
     {
         var fixture = new Fixture("amd");
