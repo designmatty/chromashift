@@ -63,7 +63,7 @@ public sealed class GammaRejectionTests
     }
 
     [Fact]
-    public void ReadBackMismatchIsNeverRetriedAndHdrStillRefusesAllProfileWrites()
+    public void ReadBackMismatchIsNeverRetriedAndHdrStillRefusesGammaRampWrites()
     {
         var display = TestDisplay();
         var calls = new List<string>();

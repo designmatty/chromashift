@@ -10,20 +10,22 @@ import type {
   Display,
   DisplayApplyResult,
   DisplayCapabilityReport,
-  DisplayRestoreResult
+  DisplayRestoreResult,
+  DisplaySettings
 } from '@chromashift/native-client'
 import type { PreviewState } from '@shared/product-api.js'
 import { profilesDiffer } from '@shared/unsaved-changes.js'
-import { describeError } from '@main/structured-logger.js'
+import { describeError, type StructuredLogger } from '@main/structured-logger.js'
 import type { PanelHideReason } from '@main/panel-controller.js'
 import type { ProfileRepository } from '@chromashift/core'
 import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
+import { hasDisplaySettings, projectDisplaySettings } from '@main/display-settings-projection.js'
 
 export interface PreviewNativePort {
   getDisplays(): Promise<Display[]>
   getDisplayCapabilityReport(displayId: string): Promise<DisplayCapabilityReport>
   captureBaseline(displayId: string): Promise<BaselineCaptureResult>
-  applyDisplaySettings(displayId: string, settings: ColorSettings): Promise<DisplayApplyResult>
+  applyDisplaySettings(displayId: string, settings: DisplaySettings): Promise<DisplayApplyResult>
   restoreDisplay(displayId: string): Promise<DisplayRestoreResult>
 }
 
@@ -38,6 +40,12 @@ export interface PreviewActivationPort {
   continuePreview(): Promise<readonly string[]>
   cancelPreview(retainedDisplayIds?: readonly string[]): Promise<void>
   confirmPreview(profileId: string, retainedDisplayIds?: readonly string[]): Promise<void>
+  /**
+   * Owned displays whose last activation write was HDR-projected (saturation and
+   * hue only, ramp at baseline). Without it, every owned display counts as
+   * possibly carrying SDR ramp values, which restores it under HDR as #88 did.
+   */
+  hdrProjectedDisplayIds?(): readonly string[]
 }
 
 export interface PreviewRecoveryPort {
@@ -81,8 +89,19 @@ interface ActivePreview {
   touched: Map<string, string>
   /** Capability checks already passed, keyed by lowercased display ID. */
   validated: Map<string, Set<ColorSettingName>>
-  /** Desired targets currently absent from the native display snapshot. */
+  /** Desired targets currently not written: disconnected, or held by HDR. */
   disconnected: Set<string>
+  /**
+   * Connected HDR displays whose projected apply native refused. They show
+   * Original settings and retry on every update and session reapply.
+   */
+  held: Set<string>
+  /**
+   * Activation-owned displays whose output is HDR-safe: the activation's last
+   * write was HDR-projected and this session has not written them since.
+   * Snapshot after the activation queue drained; the preview hold keeps it valid.
+   */
+  activationHdrSafe: Set<string>
 }
 
 function hasUnsavedChanges(active: ActivePreview): boolean {
@@ -124,7 +143,8 @@ export class PreviewSessionController {
     private readonly limits?: LearnedGammaLimits,
     private readonly repository?: ProfileRepository,
     /** A display or power transition is pending or settling; replacement then restores first. */
-    private readonly transitionPending: () => boolean = () => false
+    private readonly transitionPending: () => boolean = () => false,
+    private readonly logger?: StructuredLogger
   ) {}
 
   public get state(): PreviewState {
@@ -201,6 +221,8 @@ export class PreviewSessionController {
     let targets: DisplayColorTarget[]
     let displays: Display[]
     let touched: Map<string, string>
+    let hdrWrites: Map<string, DisplaySettings>
+    let activationHdrSafe: Set<string>
     if (replaced === null) {
       await this.limits?.refreshApplicability()
       profile = this.limits?.clampProfile(profile) ?? profile
@@ -221,22 +243,20 @@ export class PreviewSessionController {
       }
       displays = await this.native.getDisplays()
       await this.#validateTargets(targets, validated, displays, true)
+      hdrWrites = await this.#hdrWrites(targets, displays)
       const ownedDisplayIds = await this.activation.beginPreview()
+      activationHdrSafe = this.#activationHdrSafe()
       touched = new Map(ownedDisplayIds.map((id) => [id.toLowerCase(), id]))
     } else {
-      ;({ profile, targets, displays } = await this.#releaseForReplacement(
-        replaced,
-        profile,
-        validated
-      ))
+      ;({ profile, targets, displays, hdrWrites, activationHdrSafe } =
+        await this.#releaseForReplacement(replaced, profile, validated))
       // Restored entries are harmless; retained and unconfirmed ones must stay tracked.
       touched = new Map(replaced.touched)
     }
 
     const applied = new Map<string, DisplayColorTarget>()
-    const writableDisplayIds = new Set(
-      displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
-    )
+    const writableDisplayIds = this.#writableDisplayIds(displays, hdrWrites)
+    const held = new Set<string>()
     const disconnected = new Set(
       targets
         .filter((target) => !writableDisplayIds.has(target.displayId.toLowerCase()))
@@ -244,7 +264,7 @@ export class PreviewSessionController {
     )
     try {
       if (replaced === null) {
-        await this.#restoreHdrDisplays(touched, displays)
+        await this.#restoreHdrDisplays(touched, displays, targets, hdrWrites, activationHdrSafe)
         if (kind !== 'override') await this.#holdOriginal(touched, targets)
       }
       for (const target of targets) {
@@ -261,8 +281,9 @@ export class PreviewSessionController {
       for (const target of targets) {
         const key = target.displayId.toLowerCase()
         if (!disconnected.has(key)) {
+          activationHdrSafe.delete(key)
           try {
-            await this.#applyTarget(target)
+            if (!(await this.#applyOrHold(target, hdrWrites.get(key), touched))) held.add(key)
           } catch (error) {
             if (!this.#isDisplayDeferred(error)) throw error
             disconnected.add(key)
@@ -283,7 +304,9 @@ export class PreviewSessionController {
         applied,
         touched,
         validated,
-        disconnected
+        disconnected,
+        held,
+        activationHdrSafe
       }
       if (error instanceof PreviewRestoreError) {
         this.#active.applied = new Map(
@@ -307,7 +330,9 @@ export class PreviewSessionController {
       applied,
       touched,
       validated,
-      disconnected
+      disconnected,
+      held,
+      activationHdrSafe
     }
     this.onStateChanged(this.state)
   }
@@ -325,19 +350,36 @@ export class PreviewSessionController {
     active: ActivePreview,
     requested: ColorProfile,
     validated: Map<string, Set<ColorSettingName>>
-  ): Promise<{ profile: ColorProfile; targets: DisplayColorTarget[]; displays: Display[] }> {
+  ): Promise<{
+    profile: ColorProfile
+    targets: DisplayColorTarget[]
+    displays: Display[]
+    hdrWrites: Map<string, DisplaySettings>
+    activationHdrSafe: Set<string>
+  }> {
     try {
       await this.limits?.refreshApplicability()
       const profile = this.limits?.clampProfile(requested) ?? requested
       const targets = activeColorTargets(profile)
       const displays = await this.native.getDisplays()
       await this.#validateTargets(targets, validated, displays, true)
+      const hdrWrites = await this.#hdrWrites(targets, displays)
       for (const id of await this.activation.continuePreview()) {
         active.touched.set(id.toLowerCase(), id)
       }
-      await this.#restoreHdrDisplays(active.touched, displays)
+      // The replaced session may have written activation-owned displays itself.
+      const activationHdrSafe = new Set(
+        [...this.#activationHdrSafe()].filter((key) => active.activationHdrSafe.has(key))
+      )
+      await this.#restoreHdrDisplays(
+        active.touched,
+        displays,
+        targets,
+        hdrWrites,
+        activationHdrSafe
+      )
       await this.#holdOriginal(active.touched, targets)
-      return { profile, targets, displays }
+      return { profile, targets, displays, hdrWrites, activationHdrSafe }
     } catch (error) {
       const rollback = await this.#teardown()
       if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
@@ -378,6 +420,8 @@ export class PreviewSessionController {
         if (rollback.failures.length > 0) throw new PreviewRestoreError(rollback.failures)
         throw error
       }
+      // A held display keeps the accepted draft and retries on the next update.
+      // It is logged, not rejected: callers treat a rejected update as unsaved.
     })
   }
 
@@ -465,16 +509,26 @@ export class PreviewSessionController {
   async #update(profileId: string, targets: DisplayColorTarget[]): Promise<void> {
     const active = this.#requireActive(profileId)
     const displays = await this.native.getDisplays()
-    await this.#restoreHdrDisplays(active.touched, displays)
+    const hdrWrites = await this.#hdrWrites(targets, displays)
+    await this.#restoreHdrDisplays(
+      active.touched,
+      displays,
+      targets,
+      hdrWrites,
+      active.activationHdrSafe
+    )
     for (const display of displays) {
-      if (display.hdr) {
-        active.disconnected.add(display.id.toLowerCase())
-        active.validated.delete(display.id.toLowerCase())
-      }
+      if (!display.hdr) continue
+      const key = display.id.toLowerCase()
+      // HDR targets are capability-filtered here, not through the SDR validation.
+      active.validated.delete(key)
+      if (!hdrWrites.has(key)) active.disconnected.add(key)
     }
     const desired = targets
     const connectedDesired = desired.filter(
-      (target) => !active.disconnected.has(target.displayId.toLowerCase())
+      (target) =>
+        !active.disconnected.has(target.displayId.toLowerCase()) &&
+        !hdrWrites.has(target.displayId.toLowerCase())
     )
     await this.#validateTargets(connectedDesired, active.validated, undefined, true)
     for (const target of connectedDesired) {
@@ -491,17 +545,25 @@ export class PreviewSessionController {
         throw new PreviewRestoreError(restored.failures, restored.retainedDisplayIds)
       active.applied.delete(key)
       active.disconnected.delete(key)
+      active.held.delete(key)
     }
 
     for (const target of desired) {
       const key = target.displayId.toLowerCase()
       const current = active.applied.get(key)
-      if (current !== undefined && sameColorSettings(current.color, target.color)) continue
+      // A held display retries on every update, even when its target is unchanged.
+      if (
+        current !== undefined &&
+        sameColorSettings(current.color, target.color) &&
+        !active.held.has(key)
+      )
+        continue
       if (active.disconnected.has(key)) {
         active.applied.set(key, { displayId: target.displayId, color: { ...target.color } })
         continue
       }
-      if (current === undefined) {
+      // A confirmed hold released the baseline, so this captures Original output.
+      if (current === undefined || !active.touched.has(key)) {
         try {
           await this.native.captureBaseline(target.displayId)
           active.touched.set(key, target.displayId)
@@ -511,8 +573,13 @@ export class PreviewSessionController {
         }
       }
       if (!active.disconnected.has(key)) {
+        active.activationHdrSafe.delete(key)
         try {
-          await this.#applyTarget(target)
+          if (await this.#applyOrHold(target, hdrWrites.get(key), active.touched)) {
+            active.held.delete(key)
+          } else {
+            active.held.add(key)
+          }
         } catch (error) {
           if (!this.#isDisplayDeferred(error)) throw error
           active.disconnected.add(key)
@@ -692,11 +759,21 @@ export class PreviewSessionController {
       )
     }
     const displays = await this.native.getDisplays()
-    await this.#restoreHdrDisplays(active.touched, displays)
-    const connectedDisplayIds = new Set(
-      displays.filter((display) => !display.hdr).map((display) => display.id.toLowerCase())
+    const sessionTargets = [...active.applied.values()]
+    const hdrWrites = await this.#hdrWrites(sessionTargets, displays)
+    // HDR-on during the session: a touched display that may still carry SDR ramp
+    // values is restored. An untargeted one returns to the live target when the
+    // session ends; a targeted one with an HDR write is reapplied below.
+    await this.#restoreHdrDisplays(
+      active.touched,
+      displays,
+      sessionTargets,
+      hdrWrites,
+      active.activationHdrSafe
     )
+    const connectedDisplayIds = this.#writableDisplayIds(displays, hdrWrites)
     active.disconnected.clear()
+    active.held.clear()
     for (const target of active.applied.values()) {
       if (!connectedDisplayIds.has(target.displayId.toLowerCase())) {
         active.disconnected.add(target.displayId.toLowerCase())
@@ -711,11 +788,14 @@ export class PreviewSessionController {
       await this.#holdOriginal(active.touched, [...active.applied.values()])
     }
     for (const target of targets) {
-      if (!this.#isTargetValidated(target, active.validated)) continue
+      const key = target.displayId.toLowerCase()
+      const hdrWrite = hdrWrites.get(key)
+      if (hdrWrite === undefined && !this.#isTargetValidated(target, active.validated)) continue
       try {
         await this.native.captureBaseline(target.displayId)
-        active.touched.set(target.displayId.toLowerCase(), target.displayId)
-        await this.#applyTarget(target)
+        active.touched.set(key, target.displayId)
+        active.activationHdrSafe.delete(key)
+        if (!(await this.#applyOrHold(target, hdrWrite, active.touched))) active.held.add(key)
       } catch (error) {
         if (!this.#isDisplayDeferred(error)) throw error
         const key = target.displayId.toLowerCase()
@@ -787,15 +867,33 @@ export class PreviewSessionController {
     )
   }
 
-  /** HDR blocks desired settings, but never restoration of a captured baseline. */
+  /**
+   * HDR never defers a restore. A touched HDR display returns to Original
+   * settings when the session targets it without an HDR write (held), or when
+   * the session does not target it and its output may still include SDR ramp
+   * values. An untargeted display whose last activation write was HDR-projected
+   * keeps that output, as an untargeted SDR display does.
+   */
   async #restoreHdrDisplays(
     touched: Map<string, string>,
-    displays: readonly Display[]
+    displays: readonly Display[],
+    targets: readonly DisplayColorTarget[],
+    hdrWrites: ReadonlyMap<string, DisplaySettings>,
+    activationHdrSafe: ReadonlySet<string>
   ): Promise<void> {
     const hdrIds = new Set(
       displays.filter((display) => display.hdr).map((display) => display.id.toLowerCase())
     )
-    const displayIds = [...touched].filter(([key]) => hdrIds.has(key)).map(([, id]) => id)
+    const targeted = new Set(targets.map((target) => target.displayId.toLowerCase()))
+    const displayIds = [...touched]
+      .filter(([key]) =>
+        !hdrIds.has(key)
+          ? false
+          : targeted.has(key)
+            ? !hdrWrites.has(key)
+            : !activationHdrSafe.has(key)
+      )
+      .map(([, id]) => id)
     if (displayIds.length === 0) return
     const result = await this.#restoreDisplayIds(displayIds)
     const retained = new Set(result.retainedDisplayIds.map((id) => id.toLowerCase()))
@@ -804,6 +902,51 @@ export class PreviewSessionController {
     }
     if (result.failures.length > 0)
       throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+  }
+
+  /**
+   * The capability-filtered request for each HDR display a target writes. Only
+   * displays with a non-empty request appear; the rest stay at Original settings
+   * while HDR is on. The full target stays in the draft either way.
+   */
+  async #hdrWrites(
+    targets: readonly DisplayColorTarget[],
+    displays: readonly Display[]
+  ): Promise<Map<string, DisplaySettings>> {
+    const hdrIds = new Set(
+      displays.filter((display) => display.hdr).map((display) => display.id.toLowerCase())
+    )
+    const writes = new Map<string, DisplaySettings>()
+    for (const target of targets) {
+      const key = target.displayId.toLowerCase()
+      if (!hdrIds.has(key)) continue
+      let report: DisplayCapabilityReport
+      try {
+        report = await this.native.getDisplayCapabilityReport(target.displayId)
+      } catch (error) {
+        if (this.#isDisplayDeferred(error)) continue
+        throw error
+      }
+      const request = projectDisplaySettings(target.color, report.capabilities, true)
+      if (hasDisplaySettings(request)) writes.set(key, request)
+    }
+    return writes
+  }
+
+  #writableDisplayIds(
+    displays: readonly Display[],
+    hdrWrites: ReadonlyMap<string, DisplaySettings>
+  ): Set<string> {
+    return new Set(
+      displays
+        .filter((display) => !display.hdr || hdrWrites.has(display.id.toLowerCase()))
+        .map((display) => display.id.toLowerCase())
+    )
+  }
+
+  /** Read after beginPreview or continuePreview drained the activation queue. */
+  #activationHdrSafe(): Set<string> {
+    return new Set((this.activation.hdrProjectedDisplayIds?.() ?? []).map((id) => id.toLowerCase()))
   }
 
   /** Restore only known baselines. Missing targets never cause baseline capture. */
@@ -940,9 +1083,58 @@ export class PreviewSessionController {
     return code === 'DISPLAY_NOT_FOUND' || code === 'HDR_UNSAFE'
   }
 
-  async #applyTarget(target: DisplayColorTarget): Promise<void> {
+  /**
+   * Applies a target; returns false when an HDR projection was refused and the
+   * display is now held at Original settings. A refused HDR apply writes
+   * nothing, so the display may still show earlier SDR output, including a
+   * transformed ramp: restore it explicitly and keep the session and draft. An
+   * unconfirmed restore throws PreviewRestoreError, which enters recovery.
+   * Restoration failures, disconnects and HDR_UNSAFE keep their own handling.
+   */
+  async #applyOrHold(
+    target: DisplayColorTarget,
+    hdrWrite: DisplaySettings | undefined,
+    touched: Map<string, string>
+  ): Promise<boolean> {
     try {
-      const result = await this.native.applyDisplaySettings(target.displayId, target.color)
+      await this.#applyTarget(target, hdrWrite)
+      return true
+    } catch (error) {
+      if (
+        hdrWrite === undefined ||
+        error instanceof PreviewRestoreError ||
+        this.#isDisplayDeferred(error)
+      )
+        throw error
+      this.logger?.write({
+        level: 'error',
+        eventName: 'DisplaySettingFailed',
+        operation: 'apply',
+        displayId: target.displayId,
+        ...describeError(error)
+      })
+      const result = await this.#restoreDisplayIds([target.displayId])
+      if (result.failures.length > 0)
+        throw new PreviewRestoreError(result.failures, result.retainedDisplayIds)
+      const key = target.displayId.toLowerCase()
+      if (!result.retainedDisplayIds.some((id) => id.toLowerCase() === key)) touched.delete(key)
+      this.logger?.write({
+        level: 'warning',
+        eventName: 'HdrProjectionHeld',
+        displayId: target.displayId,
+        reason: 'hdrProjectionRefused'
+      })
+      return false
+    }
+  }
+
+  /** An HDR display gets its capability-filtered request; the target keeps every value. */
+  async #applyTarget(target: DisplayColorTarget, hdrWrite?: DisplaySettings): Promise<void> {
+    try {
+      const result = await this.native.applyDisplaySettings(
+        target.displayId,
+        hdrWrite ?? target.color
+      )
       if (result.applied.gamma !== undefined)
         target.color = { ...target.color, gamma: result.applied.gamma }
     } catch (error) {

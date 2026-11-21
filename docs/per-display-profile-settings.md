@@ -220,9 +220,10 @@ targets remain persisted and resume when the same physical display returns.
   it appears only when non-neutral, disabled with its neutral action available.
   The mini-panel height includes this row whenever it is visible.
 - Brightness changes clamp gamma immediately. The inline gamma input adopts the
-  new bounds. Disallowed slider sections use hatching in both themes. A tooltip
-  names the gamma bounds and current brightness and appears briefly when the
-  thumb reaches a constrained limit. The initial envelope remains
+  new bounds. Disallowed slider sections use hatching in both themes. The
+  shield icon's tooltip, described below, names the gamma bounds and current
+  brightness; the gamma slider and row have no tooltip of their own. The
+  initial envelope remains
   `fixtures/gamma-envelope.json`. Windows may reject values inside it. Native
   retries in 0.05 steps toward neutral 1.0 and reads back the first accepted
   value. That value becomes this display's learned minimum or maximum at the
@@ -236,7 +237,7 @@ targets remain persisted and resume when the same physical display returns.
   limit. Limits
   persist per stable display, brightness and color mode, bound to captured
   Original settings. Changed captured baselines invalidate them. SDR is the
-  only active mode; HDR remains restore-only.
+  only active mode; under HDR the gamma ramp is only restored.
 - Applying a saved profile or opening it in the editor quietly saves any gamma
   clamp required by learned limits. Imported and migrated profiles use the same
   path. Other unsaved fields remain intact. Settings → Displays offers
@@ -266,7 +267,7 @@ holds automatic writes while remembering foreground changes and has no countdown
 
 Switching an app-panel Preview or Edit to another profile's Preview replaces the
 session in place. Main keeps the activation hold and every baseline the first
-session owns. It restores HDR displays and displays the destination does not
+session owns. It restores HDR displays without an HDR write and displays the destination does not
 target, then applies the destination from the same immutable captured
 baselines, so one profile never compounds onto another. A queued automatic
 target stays queued until the destination preview ends. A failure before the
@@ -316,11 +317,35 @@ are held at Original settings. The session restores any existing immutable nativ
 baseline without capturing modified output. A display without a captured baseline
 needs no write. Adding a target uses normal capture-before-apply; removing it
 restores Original settings. Disconnected baselines remain retained and deferred.
-HDR displays restore their captured Original settings immediately, including
-during an Edit or Temporary override transition. The session and full draft stay
-intact, SDR displays keep the draft, and HDR-off reapplies the current draft or
-target. Both panels show an HDR notice above disabled target values, explaining
-that they apply when HDR is off. Restoration never implicitly discards changes.
+While HDR is on, a target keeps its complete color vector, and only the
+capability-supported controls outside brightness, contrast, and gamma reach the
+display (#89). On an NVIDIA display that means saturation and hue: an HDR-on
+transition, including during an Edit or Temporary override, restores the
+captured baseline and applies the target's saturation and hue, and every edit,
+Discard, compare, and profile switch does the same from the same baseline. A
+display with nothing applicable under HDR, such as AMD, Intel, or NVIDIA
+without vibrance, restores its captured Original settings immediately, as in
+#88. So does an NVIDIA display whose HDR request native refuses before
+writing; the failure is recorded, the draft stays, and an unconfirmed restore
+enters Safety blocked. Every later edit, and the next transition, retries
+that display from a fresh capture. While the refusal persists, edits are
+still accepted and the display stays at its original settings; the failure is
+logged. An untargeted HDR display keeps the live target's saturation and hue
+during an override unless its output may still carry SDR ramp values; then it
+is restored. The session and full draft stay intact, SDR displays keep the
+draft, and HDR-off reapplies the full current draft or target. Both panels show
+a short warning alert above the controls, driven by the capability report. With
+saturation or hue available it reads "ChromaShift isn't fully compatible with
+HDR. Some controls are disabled while HDR is on.", and brightness, contrast, and
+gamma are disabled at their target values with the tooltip "Disabled while HDR
+is on." Without any HDR control it reads "ChromaShift doesn't support HDR on
+this display yet. It stays at its original settings while HDR is on.", above
+disabled target values. While Safety blocked, the same alert ends with
+"Restoration needs confirmation. Use Retry to restore original settings." An
+outlined orange "HDR" badge marks HDR displays before their names in the app
+panel's display tabs and in the mini panel's display select. Restoration never implicitly
+discards changes. NVIDIA HDR saturation and hue await owner hardware
+verification; AMD remains unverified.
 If restoration fails during the session, the full draft remains available in
 main and both panels, with SDR draft output unchanged. Safety blocked disables
 color writes. Retry validates ownership, confirms the affected restoration, and

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { projectDisplaySettings } from '@main/display-settings-projection.js'
 import type { LearnedGammaLimits } from '@main/learned-gamma-limits.js'
 import type {
   BaselineCaptureResult,
@@ -209,19 +210,12 @@ export class PhysicalDisplayClient {
         aggregateCapability(reports.map((report) => report.capabilities[name]))
       ])
     ) as DisplayCapabilityReport['capabilities']
-    const projected = Object.fromEntries(
-      capabilityNames.flatMap((name) =>
-        commonCapabilities[name].supported && settings[name] !== undefined
-          ? [[name, settings[name]]]
-          : []
-      )
-    ) as DisplaySettings
+    // Any HDR endpoint withholds the SDR-only ramp controls from every endpoint,
+    // and the intersection of capabilities decides the rest (#89).
+    const hdr = endpoints.some((display) => display.hdr)
+    const projected = projectDisplaySettings(settings, commonCapabilities, hdr)
     // Clamp after projection so learning and lookup use native's effective brightness.
-    this.limits?.observeCapabilities(
-      displayId,
-      endpoints.some((display) => display.hdr),
-      commonCapabilities
-    )
+    this.limits?.observeCapabilities(displayId, hdr, commonCapabilities)
     const clamped = this.limits?.clampSettings(displayId, projected)
     if (clamped?.gamma !== undefined) projected.gamma = clamped.gamma
 

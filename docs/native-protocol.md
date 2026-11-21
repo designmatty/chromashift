@@ -66,12 +66,12 @@ version change.
 | `service.health`           | none                    | Protocol/service identity, baseline-owner identity/count, process ID, and watchdog state                                                                                         |
 | `service.heartbeat`        | none                    | Arms or resets the ten-second restoration watchdog                                                                                                                               |
 | `displays.list`            | none                    | Active endpoint displays with unique `id`, profile-facing `physicalId`, EDID data, adapter, connection, HDR, and refresh                                                         |
-| `display.capabilities`     | `displayId`             | Per-control support/provider/range/default/reason and diagnostic native state                                                                                                    |
+| `display.capabilities`     | `displayId`             | Per-control support/provider/range/default/reason and diagnostic native state; under HDR only NVIDIA saturation and hue can be supported                                         |
 | `display.state`            | `displayId`             | Current provider state and gamma-ramp hash; full Windows ramp where applicable                                                                                                   |
-| `display.apply`            | `displayId`, `settings` | Captures baseline if needed, validates, applies, reads back, rolls back on failure                                                                                               |
+| `display.apply`            | `displayId`, `settings` | Captures baseline if needed, validates, applies, reads back, rolls back on failure; under HDR accepts only NVIDIA saturation and hue                                             |
 | `display.topology.refresh` | none                    | Atomically re-enumerates displays, re-resolves capability/HDR reports, and validates retained baseline ownership                                                                 |
 | `display.restore`          | `displayId`             | Restores and releases that display's captured baseline, including under HDR, with read-back verification                                                                         |
-| `baseline.capture`         | `displayId`             | Idempotently captures all controllable provider state; refuses capture while HDR is active                                                                                       |
+| `baseline.capture`         | `displayId`             | Idempotently captures all controllable provider state and reports `colorMode`; refuses AMD capture while HDR is active                                                           |
 | `baseline.restore`         | `displayId`             | Alias of `display.restore`                                                                                                                                                       |
 | `baseline.restoreAll`      | none                    | Attempts every captured display, including HDR displays, and returns per-display results; failed restores retain their captured baseline for retry                               |
 | `foreground.current`       | none                    | Current PID, executable/path, title, optional window class, and transient monitor source                                                                                         |
@@ -110,9 +110,42 @@ actually accepted. A successful GDI retry also returns `learnedGammaLimit`:
 starting envelope. Only explicit `SetDeviceGammaRamp` rejection retries, with
 0.05 steps toward neutral and no intervening restore. Every accepted ramp is
 read back. Exhaustion includes neutral before whole-display restoration and the
-existing rejection diagnostics. Read-back and other failures do not retry. HDR
-and AMD write behavior are unchanged. TypeScript owns persistence and effective
-envelope clamping; no native persistence or new request fields are introduced.
+existing rejection diagnostics. Read-back and other failures do not retry.
+TypeScript owns persistence and effective envelope clamping; no native
+persistence or new request fields are introduced.
+
+### HDR (#89, additive in protocol v2)
+
+- `baseline.capture` results include `colorMode: "sdr" | "hdr"`, the mode when
+  that baseline was captured. Clients that predate the field ignore it. Capture
+  under HDR is refused with `HDR_UNSAFE` only for AMD displays. It reads and stores
+  the GDI ramp as usual, and an existing baseline is never recaptured.
+- `display.apply` on a display in HDR accepts only NVIDIA `saturation` and
+  `hue`. Brightness, contrast, gamma, color temperature, a request with neither
+  saturation nor hue, and any AMD, Intel, or unknown display get `HDR_UNSAFE`
+  before capture or any write. An accepted request restores the captured ramp and
+  NVIDIA values with read-back, then writes saturation and hue with read-back.
+  The GDI ramp is written under HDR only to restore the captured baseline.
+  Original settings come back under HDR only through `display.restore`.
+- `display.capabilities` under HDR reports NVIDIA saturation and hue with their
+  provider capability, the Windows ramp controls as unsupported with an
+  SDR-only reason, and every AMD control as unsupported.
+- On the SDR path, every transformed ramp write, including each rejection
+  retry, first re-reads the display. HDR gives `HDR_UNSAFE`, and the
+  whole-display cleanup runs. An ownership change gives
+  `BASELINE_OWNERSHIP_CHANGED`, and nothing more is written.
+- After any failed apply, the whole-display cleanup runs only through a
+  freshly resolved descriptor that matches the baseline owner. An ownership
+  mismatch writes nothing and returns `BASELINE_OWNERSHIP_CHANGED`. A cleanup
+  that cannot be confirmed returns `BASELINE_RESTORE_FAILED`, with the original
+  apply code and message as context; a display that disconnected meanwhile
+  returns `DISPLAY_NOT_FOUND`. The baseline is retained in all three cases. A
+  confirmed cleanup returns the original apply error.
+
+The helper and Electron ship together, and the handshake requires matching
+protocol versions. A mismatched older helper could only refuse an HDR capture
+or apply with `HDR_UNSAFE`, which Electron defers and never treats as success,
+so these additions keep protocol version `2`.
 
 Native commands always accept the endpoint `id`; `physicalId` is identity
 metadata for Electron grouping. The native baseline table is never keyed by a

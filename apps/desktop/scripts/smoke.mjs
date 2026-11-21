@@ -12,6 +12,7 @@ import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mj
 import { verifyShortcuts } from './shortcuts-smoke.mjs'
 import { verifyCloseRetryGuidance } from './close-retry-smoke.mjs'
 import { verifyLearnedGammaLimits } from './learned-gamma-limits-smoke.mjs'
+import { verifyHdrSaturationHue } from './hdr-saturation-hue-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 import { clickAppButton as clickReadyAppButton } from './smoke-app-actions.mjs'
 
@@ -1102,6 +1103,11 @@ $processId`
 
 const compareOnly = globalThis.process.argv.includes('--compare-only')
 const capabilityLogOnly = globalThis.process.argv.includes('--capability-log-only')
+const hdrOnly = globalThis.process.argv.includes('--hdr-only')
+// #89: NVIDIA HDR saturation/hue with read-back and exact restore. Runs only when a
+// display already reports HDR, and never toggles HDR or writes a non-baseline ramp.
+if (!compareOnly && !capabilityLogOnly) await verifyHdrSaturationHue({ displayServicePath })
+if (hdrOnly) globalThis.process.exit(0)
 if (!compareOnly && !capabilityLogOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
   environment: Object.fromEntries(Object.entries(globalThis.process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),
@@ -5210,7 +5216,7 @@ async function runSmoke() {
     debuggerClient,
     `
     document.querySelector('[data-part="chromashift-control"]')?.textContent?.includes('Auto-switching on hold') &&
-    document.querySelector('[data-part="profile-detail"] [role="slider"]')?.getAttribute('aria-valuenow') === '56' &&
+    document.querySelector(${JSON.stringify(`[data-part="profile-detail"] [data-part="display-control"][data-display-id="${guardedProductDisplayId}"] [role="slider"]`)})?.getAttribute('aria-valuenow') === '56' &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Update profile') &&
     document.querySelector('[data-part="unsaved-changes-actions"]')?.textContent?.includes('Discard changes') &&
     document.querySelector('[data-part="override-banner"]') === null &&

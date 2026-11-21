@@ -330,6 +330,8 @@ describe('true baseline preview with activation rollback', () => {
     async (state) => {
       const { native, preview, activation, coordinator } = await fixture()
       const deferred = state === 'hdr' ? native.hdrDisplayIds : native.disconnectedDisplayIds
+      // AMD keeps #88's HDR path: nothing applies, so the display holds Original settings.
+      if (state === 'hdr') native.amdDisplayIds.add(two)
       deferred.add(two)
       await preview.start(empty, 'preview')
       expect(native.calls).toEqual(
@@ -533,8 +535,53 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('restores HDR assigned and missing targets without capture or profile writes', async () => {
+  it('applies NVIDIA HDR saturation from the same baselines and restores exactly on cancel', async () => {
+    const { native, preview, activation, coordinator } = await fixture()
+    native.hdrDisplayIds.add(two)
+    await activation.beginSystemTransition()
+    await activation.completeSystemTransition(true)
+    // The live target reprojects for HDR: saturation only, brightness at baseline.
+    expect(native.currentSettings.get(two)).toEqual({ ...originals.get(two), saturation: 78 })
+    expect(coordinator.hdrProjectedDisplayIds).toEqual([two])
+
+    // An override that targets only display one leaves the HDR display's live saturation.
+    native.calls.length = 0
+    const override = { ...live, displays: [live.displays[0]!] }
+    await preview.start(
+      { ...override, displays: [{ displayId: one, color: color({ saturation: 90 }) }] },
+      'override',
+      override
+    )
+    expect(native.calls.filter((call) => call.displayId === two)).toEqual([])
+    expect(native.currentSettings.get(two)).toEqual({ ...originals.get(two), saturation: 78 })
+    await preview.cancel()
+    expect(native.currentSettings.get(two)).toEqual({ ...originals.get(two), saturation: 78 })
+
+    // A preview targeting the HDR display applies its saturation from the same baseline.
+    native.calls.length = 0
+    await preview.start(
+      { ...partial, displays: [{ displayId: two, color: color({ brightness: 20, saturation: 30 }) }] },
+      'preview'
+    )
+    expect(native.calls.filter((call) => call.operation === 'apply')).toEqual([
+      { operation: 'apply', displayId: two, settings: { saturation: 30 } }
+    ])
+    expect(native.currentSettings.get(two)).toEqual({ ...originals.get(two), saturation: 30 })
+    await preview.cancel()
+    expect(native.currentSettings.get(two)).toEqual({ ...originals.get(two), saturation: 78 })
+
+    native.hdrDisplayIds.delete(two)
+    native.calls.length = 0
+    await activation.beginSystemTransition()
+    await activation.completeSystemTransition(true)
+    expectLive(native)
+    expectOriginalCaptures(native)
+  })
+
+  it('restores AMD HDR assigned and missing targets without capture or profile writes', async () => {
     const { native, preview } = await fixture()
+    native.amdDisplayIds.add(one)
+    native.amdDisplayIds.add(two)
     native.hdrDisplayIds.add(one)
     native.hdrDisplayIds.add(two)
     await preview.start(partial, 'preview')

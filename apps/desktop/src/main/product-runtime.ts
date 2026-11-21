@@ -371,7 +371,8 @@ export class ProductRuntime {
       this.#gammaLimits,
       profileRepository,
       // Created further down this method; read when each queued preview start runs.
-      () => this.#displayTransitionController?.pending ?? false
+      () => this.#displayTransitionController?.pending ?? false,
+      logger
     )
     this.#previewController = previewController
     const chromaShiftController = new ChromaShiftController(

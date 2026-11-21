@@ -10,7 +10,7 @@ import { ActivationCoordinator } from '@main/activation-coordinator.js'
 import { AutomaticActivationController } from '@main/automatic-activation-controller.js'
 import { ChromaShiftController } from '@main/chroma-shift-controller.js'
 import { PreviewSessionController } from '@main/preview-session-controller.js'
-import { FakeNativeDisplayPort } from '@main/testing/fake-native-display.js'
+import { FakeNativeDisplayPort, nvidiaCapabilityReport } from '@main/testing/fake-native-display.js'
 
 const one = 'display:one'
 const two = 'display:two'
@@ -65,6 +65,8 @@ describe('review-90 deterministic proofs', () => {
       logger
     )
     await activation.start(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     await coordinator.resetForDisplayTransition()
@@ -103,6 +105,8 @@ describe('review-90 deterministic proofs', () => {
       () => undefined
     )
     await preview.start(draft, 'edit', saved)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     const restore = native.restoreDisplay.bind(native)
     vi.spyOn(native, 'restoreDisplay')
@@ -144,6 +148,8 @@ describe('review-90 deterministic proofs', () => {
     const next = makeProfile('next', [one, two], 30)
     const coordinator = new ActivationCoordinator(repo([initial, next]), native, logger)
     await coordinator.activate(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     const before = native.calls.length
@@ -181,6 +187,8 @@ describe('review-90 deterministic proofs', () => {
       void control.recordCompletedOutcome(outcome)
     })
     await activation.start(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     let enter!: () => void
@@ -216,6 +224,8 @@ describe('review-90 deterministic proofs', () => {
     const repository = repo([makeProfile('default', [one, two], 30)])
     const coordinator = new ActivationCoordinator(repository, native, logger)
     await coordinator.activate(null)
+    // AMD keeps the #88 path: an HDR display held at Original settings.
+    native.amdDisplayIds.add(one)
     native.hdrDisplayIds.add(one)
     native.failRestoreDisplayIds.add(one)
     await coordinator.resetForDisplayTransition()
@@ -304,5 +314,56 @@ describe('review-90 deterministic proofs', () => {
     await rejected
     expect(native.calls.slice(before).filter((call) => call.operation === 'apply')).toEqual([])
     await expect(activation.beginPreview()).rejects.toThrow('pending displays')
+  })
+})
+
+describe('review-89 final regressions', () => {
+  it('enters Safety blocked when a refused HDR projection cannot be restored', async () => {
+    const native = new FakeNativeDisplayPort()
+    // A transient NVIDIA read fails at capture, and an SDR brightness ramp applies.
+    native.reports.set(one, nvidiaCapabilityReport(one, false))
+    native.captureWithoutNvidiaDisplayIds.add(one)
+    const repository = repo([makeProfile('default', [one, two], 30)])
+    const coordinator = new ActivationCoordinator(repository, native, logger)
+    const activation = new AutomaticActivationController(repository, coordinator, logger)
+    const control = new ChromaShiftController(
+      activation,
+      { refreshTopology: async () => ({ baselines: [] }) },
+      { cancel: async () => undefined },
+      {
+        status: 'active',
+        pendingOperation: null,
+        intendedMode: { kind: 'automatic' },
+        intendedTarget: { kind: 'profile', profileId: 'default' }
+      },
+      async () => undefined,
+      logger
+    )
+    await activation.start(null)
+    expect(native.currentSettings.get(one)?.brightness).toBe(30)
+
+    // NVIDIA reads recover and HDR turns on: native refuses against the retained baseline.
+    native.captureWithoutNvidiaDisplayIds.clear()
+    native.reports.set(one, nvidiaCapabilityReport(one))
+    native.hdrDisplayIds.add(one)
+    native.failRestoreDisplayIds.add(one)
+    await coordinator.resetForDisplayTransition()
+    const outcome = await activation.enableAutomatic()
+    await control.recordCompletedOutcome(outcome)
+    expect(outcome.failures).toContainEqual(
+      expect.objectContaining({ operation: 'apply', displayId: one, code: 'CAPABILITY_UNSUPPORTED' })
+    )
+    expect(outcome.failures).toContainEqual(
+      expect.objectContaining({ operation: 'restore', displayId: one })
+    )
+    expect(control.chromaShiftState.status).toBe('safetyBlocked')
+    expect(coordinator.restorationBlocked).toBe(true)
+
+    // Retry confirms restoration first; the fresh capture then includes NVIDIA state.
+    native.failRestoreDisplayIds.clear()
+    const recovered = await control.retrySafetyCheck('manual')
+    expect(recovered.failures).toEqual([])
+    expect(control.chromaShiftState.status).toBe('active')
+    expect(native.currentSettings.get(one)).toEqual({ saturation: 50, hue: 0 })
   })
 })

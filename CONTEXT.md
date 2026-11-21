@@ -34,8 +34,10 @@ _Avoid_: Paused, disabled
 
 **Original settings**:
 The display state captured before ChromaShift first modified a display during
-the current control session. These are also the intended on-screen settings
-while HDR prevents profile or draft application.
+the current control session, in SDR or in HDR. These are also the intended
+on-screen settings while HDR leaves a display no applicable control. On an
+NVIDIA display in HDR, profile saturation and hue apply on top of them;
+brightness, contrast, and gamma wait until HDR is off.
 _Avoid_: Factory defaults, default profile
 
 **Restore original settings**:

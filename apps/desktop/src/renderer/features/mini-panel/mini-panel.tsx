@@ -36,6 +36,7 @@ import { Brand, Empty, PanelViewToggle } from '@/components/layout/presentationa
 import { Tooltip } from '@/components/ui/tooltip'
 import { AUTOMATIC_ID, MiniProfilePicker } from '@/features/mini-panel/mini-profile-picker'
 import { ColorControls } from '@/features/profiles/color-controls'
+import { HdrBadge } from '@/features/profiles/hdr-badge'
 import { CompareButton } from '@/features/profiles/compare-button'
 import { showColorTemperature as temperatureVisible } from '@/features/profiles/control-values'
 import { applyOverrideTargets } from '@/features/profiles/override-targets'
@@ -610,7 +611,7 @@ function chromaShiftActionLabel(product: ProductState): string {
     : 'Resume ChromaShift'
 }
 
-function MiniDisplaySelect({
+export function MiniDisplaySelect({
   displays,
   selectedId,
   onSelect
@@ -623,7 +624,11 @@ function MiniDisplaySelect({
   const collection = useMemo(
     () =>
       createListCollection({
-        items: displays.map((display) => ({ label: display.name, value: display.id }))
+        items: displays.map((display) => ({
+          label: display.name,
+          value: display.id,
+          hdr: display.hdr
+        }))
       }),
     [displays]
   )
@@ -657,6 +662,7 @@ function MiniDisplaySelect({
             <Icon size={'sm'}>
               <Monitor />
             </Icon>
+            {selected?.hdr && <HdrBadge />}
             <Select.ValueText />
           </HStack>
         </Select.Trigger>
@@ -669,7 +675,10 @@ function MiniDisplaySelect({
           <Select.Content borderWidth="1px" borderColor="border" color="fg">
             {collection.items.map((item) => (
               <Select.Item item={item} key={item.value}>
-                <Select.ItemText>{item.label}</Select.ItemText>
+                <HStack gap="2" minW="0">
+                  {item.hdr && <HdrBadge />}
+                  <Select.ItemText>{item.label}</Select.ItemText>
+                </HStack>
                 <Select.ItemIndicator />
               </Select.Item>
             ))}

@@ -17,12 +17,21 @@ internal sealed class BaselineManager(
     private readonly Dictionary<string, BaselineEntry> _baselines = new(StringComparer.Ordinal);
     private readonly Lock _sync = new();
 
-    internal JsonObject Capture(string displayId)
+    internal JsonObject Capture(string displayId) => Capture(displayId, allowHdr: true);
+
+    /// <summary>
+    /// Captures once and never recaptures. Under HDR only non-AMD displays may
+    /// capture; the entry records the color mode at capture. The SDR apply path
+    /// passes <paramref name="allowHdr"/> false so a display that turned HDR
+    /// after its first enumeration still fails closed before any write.
+    /// </summary>
+    private JsonObject Capture(string displayId, bool allowHdr)
     {
         lock (_sync)
         {
             var display = FindDisplay(displayId);
-            EnsureDisplayWritesSafe(display);
+            if (allowHdr) EnsureCaptureSafe(display);
+            else EnsureSdrWritesSafe(display);
             if (_baselines.TryGetValue(displayId, out var existing))
             {
                 return Describe(existing, "alreadyCaptured");
@@ -42,9 +51,10 @@ internal sealed class BaselineManager(
                 display.WindowsDisplayName,
                 ramp,
                 nvidiaState,
-                amdState);
+                amdState,
+                ColorModeOf(display));
             _baselines.Add(display.Id, entry);
-            Log("BaselineCaptured", display, ramp?.GetHash());
+            Log("BaselineCaptured", display, ramp?.GetHash(), entry.ColorMode);
             return Describe(entry, "captured");
         }
     }
@@ -88,197 +98,276 @@ internal sealed class BaselineManager(
             GammaRampTransform.ValidateSettings(
                 new GammaSettings(settings.Brightness, settings.Contrast, settings.Gamma));
             var display = FindDisplay(displayId);
-            EnsureDisplayWritesSafe(display);
-            if (!_baselines.TryGetValue(displayId, out var baseline))
-            {
-                _ = Capture(displayId);
-                baseline = _baselines[displayId];
-            }
-            EnsureBaselineOwnership(display, baseline);
+            return display.Hdr ? ApplyUnderHdr(display, settings) : ApplySdr(display, settings);
+        }
+    }
 
-            try
-            {
-                // Every request represents the complete product-level state for this
-                // display. Restore first so settings omitted from a later profile or
-                // live-preview update do not inherit values from the previous request.
-                RestoreEntry(display, baseline);
+    /// <summary>
+    /// The only profile write allowed while HDR is on: NVIDIA saturation and hue.
+    /// The whole request is validated before capture or any write, so no partial
+    /// apply can happen. The GDI ramp is written only by <see cref="RestoreEntry"/>,
+    /// which restores the captured baseline with read-back.
+    /// </summary>
+    private JsonObject ApplyUnderHdr(DisplayDescriptor display, DisplaySettings settings)
+    {
+        EnsureHdrApplyRequest(display, settings);
+        if (!_baselines.TryGetValue(display.Id, out var baseline))
+        {
+            _ = Capture(display.Id, allowHdr: true);
+            baseline = _baselines[display.Id];
+        }
+        EnsureBaselineOwnership(display, baseline);
+        if (settings.Saturation is not null && !baseline.Nvidia.Saturation.Supported)
+        {
+            throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+        }
+        if (settings.Hue is not null && !baseline.Nvidia.Hue.Supported)
+        {
+            throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+        }
 
-                string? gammaHash = null;
-                int? brightness = null;
-                int? contrast = null;
-                int? colorTemperature = null;
-                double? appliedGamma = settings.Gamma;
-                JsonObject? learnedGammaLimit = null;
-                if (display.Adapter.Vendor == "amd")
+        try
+        {
+            // Restore-then-apply, as in SDR: the captured ramp and NVIDIA values
+            // come back first, so profiles never compound.
+            RestoreEntry(display, baseline);
+            int? saturation = settings.Saturation is { } requestedSaturation
+                ? nvidia.SetSaturation(display, requestedSaturation)
+                : null;
+            int? hue = settings.Hue is { } requestedHue
+                ? nvidia.SetHue(display, requestedHue)
+                : null;
+            NativeLog.Write(new JsonObject
+            {
+                ["level"] = "information",
+                ["eventName"] = "DisplaySettingApplied",
+                ["displayId"] = display.Id,
+                ["displayName"] = display.Name,
+                ["provider"] = "nvidia",
+                ["colorMode"] = "hdr",
+                ["saturation"] = saturation,
+                ["hue"] = hue
+            });
+            return new JsonObject
+            {
+                ["displayId"] = display.Id,
+                ["settings"] = NativeJson.ToNode(settings),
+                ["applied"] = new JsonObject
                 {
-                    if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
-                    if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
-                    if (settings.Gamma is not null)
-                    {
-                        if (baseline.Amd.GammaRamp is null) throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", baseline.Amd.GammaReason ?? "AMD gamma is unavailable.");
-                        gammaHash = amd.SetGamma(display, baseline.Amd.GammaRamp, settings.Gamma.Value);
-                    }
+                    ["saturation"] = saturation,
+                    ["hue"] = hue
                 }
-                else if (settings.Brightness is not null || settings.Contrast is not null || settings.Gamma is not null)
+            };
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            RestoreAfterFailedApply(display, baseline, exception);
+            throw new DisplayOperationException("VALUE_OUT_OF_RANGE", exception.Message, exception);
+        }
+        catch (Exception exception)
+        {
+            RestoreAfterFailedApply(display, baseline, exception);
+            throw;
+        }
+    }
+
+    private JsonObject ApplySdr(DisplayDescriptor display, DisplaySettings settings)
+    {
+        var displayId = display.Id;
+        EnsureSdrWritesSafe(display);
+        if (!_baselines.TryGetValue(displayId, out var baseline))
+        {
+            _ = Capture(displayId, allowHdr: false);
+            baseline = _baselines[displayId];
+        }
+        EnsureBaselineOwnership(display, baseline);
+
+        try
+        {
+            // Every request represents the complete product-level state for this
+            // display. Restore first so settings omitted from a later profile or
+            // live-preview update do not inherit values from the previous request.
+            RestoreEntry(display, baseline);
+
+            string? gammaHash = null;
+            int? brightness = null;
+            int? contrast = null;
+            int? colorTemperature = null;
+            double? appliedGamma = settings.Gamma;
+            JsonObject? learnedGammaLimit = null;
+            if (display.Adapter.Vendor == "amd")
+            {
+                if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
+                if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
+                if (settings.Gamma is not null)
                 {
-                    EnsureGammaSafe(display);
-                    if (baseline.GammaRamp is null)
+                    if (baseline.Amd.GammaRamp is null) throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", baseline.Amd.GammaReason ?? "AMD gamma is unavailable.");
+                    gammaHash = amd.SetGamma(display, baseline.Amd.GammaRamp, settings.Gamma.Value);
+                }
+            }
+            else if (settings.Brightness is not null || settings.Contrast is not null || settings.Gamma is not null)
+            {
+                EnsureGammaSafe(display);
+                if (baseline.GammaRamp is null)
+                {
+                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Windows gamma controls are unavailable for this display.");
+                }
+                try
+                {
+                    var candidate = settings.Gamma ?? 1;
+                    var rejected = false;
+                    while (true)
                     {
-                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Windows gamma controls are unavailable for this display.");
-                    }
-                    try
-                    {
-                        var candidate = settings.Gamma ?? 1;
-                        var rejected = false;
-                        while (true)
+                        var requested = GammaRampTransform.Apply(
+                            baseline.GammaRamp,
+                            new GammaSettings(settings.Brightness, settings.Contrast, candidate));
+                        // The path was chosen from an earlier snapshot. Re-read HDR and
+                        // ownership right before every transformed ramp write, including
+                        // rejection retries; HDR_UNSAFE then restores the whole display.
+                        EnsureStillSdrBeforeTransformedRampWrite(display.Id, baseline);
+                        try
                         {
-                            var requested = GammaRampTransform.Apply(
-                                baseline.GammaRamp,
-                                new GammaSettings(settings.Brightness, settings.Contrast, candidate));
-                            try
+                            WriteAndVerify(display, requested);
+                            gammaHash = requested.GetHash();
+                            appliedGamma = settings.Gamma is null && !rejected ? null : candidate;
+                            if (rejected)
                             {
-                                WriteAndVerify(display, requested);
-                                gammaHash = requested.GetHash();
-                                appliedGamma = settings.Gamma is null && !rejected ? null : candidate;
-                                if (rejected)
+                                learnedGammaLimit = new JsonObject
                                 {
-                                    learnedGammaLimit = new JsonObject
-                                    {
-                                        ["end"] = (settings.Gamma ?? 1) > 1 ? "max" : "min",
-                                        ["value"] = candidate,
-                                        ["brightness"] = settings.Brightness ?? 50,
-                                        ["colorMode"] = "sdr",
-                                        ["baselineHash"] = baseline.GammaRamp.GetHash()
-                                    };
-                                    NativeLog.Write(new JsonObject
-                                    {
-                                        ["level"] = "information",
-                                        ["eventName"] = "GammaLimitLearned",
-                                        ["displayId"] = display.Id,
-                                        ["requestedGamma"] = settings.Gamma ?? 1,
-                                        ["limit"] = learnedGammaLimit.DeepClone()
-                                    });
-                                }
-                                break;
-                            }
-                            catch (DisplayOperationException exception) when (
-                                exception.Code == "GAMMA_WRITE_FAILED" &&
-                                exception.InnerException is GammaRampRejectedException && candidate != 1)
-                            {
-                                rejected = true;
+                                    ["end"] = (settings.Gamma ?? 1) > 1 ? "max" : "min",
+                                    ["value"] = candidate,
+                                    ["brightness"] = settings.Brightness ?? 50,
+                                    ["colorMode"] = "sdr",
+                                    ["baselineHash"] = baseline.GammaRamp.GetHash()
+                                };
                                 NativeLog.Write(new JsonObject
                                 {
-                                    ["level"] = "warning",
-                                    ["eventName"] = "GammaSettingsRejected",
+                                    ["level"] = "information",
+                                    ["eventName"] = "GammaLimitLearned",
                                     ["displayId"] = display.Id,
-                                    ["displayName"] = display.Name,
-                                    ["adapterName"] = display.Adapter.Name,
-                                    ["adapterDeviceId"] = display.Adapter.DeviceId,
-                                    ["provider"] = "windows",
-                                    ["code"] = exception.Code,
-                                    ["nativeMessage"] = exception.Message,
-                                    ["brightness"] = settings.Brightness ?? 50,
-                                    ["contrast"] = settings.Contrast ?? 50,
-                                    ["gamma"] = candidate,
-                                    ["baselineHash"] = baseline.GammaRamp.GetHash(),
-                                    ["retryingTowardNeutral"] = true
+                                    ["requestedGamma"] = settings.Gamma ?? 1,
+                                    ["limit"] = learnedGammaLimit.DeepClone()
                                 });
-                                candidate = candidate > 1
-                                    ? Math.Max(1, Math.Round(candidate - 0.05, 10))
-                                    : Math.Min(1, Math.Round(candidate + 0.05, 10));
                             }
+                            break;
+                        }
+                        catch (DisplayOperationException exception) when (
+                            exception.Code == "GAMMA_WRITE_FAILED" &&
+                            exception.InnerException is GammaRampRejectedException && candidate != 1)
+                        {
+                            rejected = true;
+                            NativeLog.Write(new JsonObject
+                            {
+                                ["level"] = "warning",
+                                ["eventName"] = "GammaSettingsRejected",
+                                ["displayId"] = display.Id,
+                                ["displayName"] = display.Name,
+                                ["adapterName"] = display.Adapter.Name,
+                                ["adapterDeviceId"] = display.Adapter.DeviceId,
+                                ["provider"] = "windows",
+                                ["code"] = exception.Code,
+                                ["nativeMessage"] = exception.Message,
+                                ["brightness"] = settings.Brightness ?? 50,
+                                ["contrast"] = settings.Contrast ?? 50,
+                                ["gamma"] = candidate,
+                                ["baselineHash"] = baseline.GammaRamp.GetHash(),
+                                ["retryingTowardNeutral"] = true
+                            });
+                            candidate = candidate > 1
+                                ? Math.Max(1, Math.Round(candidate - 0.05, 10))
+                                : Math.Min(1, Math.Round(candidate + 0.05, 10));
                         }
                     }
-                    catch (DisplayOperationException exception) when (
-                        exception.Code is "GAMMA_WRITE_FAILED" or "GAMMA_VERIFY_FAILED")
-                    {
-                        NativeLog.Write(new JsonObject
-                        {
-                            ["level"] = "error",
-                            ["eventName"] = "GammaSettingsRejected",
-                            ["displayId"] = display.Id,
-                            ["displayName"] = display.Name,
-                            ["windowsDisplayName"] = display.WindowsDisplayName,
-                            ["provider"] = "windows",
-                            ["adapterId"] = display.Adapter.Id,
-                            ["adapterName"] = display.Adapter.Name,
-                            ["adapterVendor"] = display.Adapter.Vendor,
-                            ["adapterDeviceId"] = display.Adapter.DeviceId,
-                            ["nativeMessage"] = exception.Message,
-                            ["code"] = exception.Code,
-                            ["brightness"] = settings.Brightness ?? 50,
-                            ["contrast"] = settings.Contrast ?? 50,
-                            ["gamma"] = settings.Gamma ?? 1
-                        });
-                        throw new DisplayOperationException(
-                            exception.Code,
-                            FormattableString.Invariant($"This display rejected gamma {settings.Gamma ?? 1:0.00} at brightness {settings.Brightness ?? 50:0.##}% ({display.Name})."),
-                            exception);
-                    }
                 }
-
-                int? saturation = null;
-                if (settings.Saturation is not null)
+                catch (DisplayOperationException exception) when (
+                    exception.Code is "GAMMA_WRITE_FAILED" or "GAMMA_VERIFY_FAILED")
                 {
-                    if (display.Adapter.Vendor == "amd")
+                    NativeLog.Write(new JsonObject
                     {
-                        saturation = amd.SetSaturation(display, settings.Saturation.Value);
-                    }
-                    else if (!baseline.Nvidia.Saturation.Supported)
-                    {
-                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
-                    }
-                    else saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
+                        ["level"] = "error",
+                        ["eventName"] = "GammaSettingsRejected",
+                        ["displayId"] = display.Id,
+                        ["displayName"] = display.Name,
+                        ["windowsDisplayName"] = display.WindowsDisplayName,
+                        ["provider"] = "windows",
+                        ["adapterId"] = display.Adapter.Id,
+                        ["adapterName"] = display.Adapter.Name,
+                        ["adapterVendor"] = display.Adapter.Vendor,
+                        ["adapterDeviceId"] = display.Adapter.DeviceId,
+                        ["nativeMessage"] = exception.Message,
+                        ["code"] = exception.Code,
+                        ["brightness"] = settings.Brightness ?? 50,
+                        ["contrast"] = settings.Contrast ?? 50,
+                        ["gamma"] = settings.Gamma ?? 1
+                    });
+                    throw new DisplayOperationException(
+                        exception.Code,
+                        FormattableString.Invariant($"This display rejected gamma {settings.Gamma ?? 1:0.00} at brightness {settings.Brightness ?? 50:0.##}% ({display.Name})."),
+                        exception);
                 }
-
-                int? hue = null;
-                if (settings.Hue is not null)
-                {
-                    if (display.Adapter.Vendor == "amd")
-                    {
-                        hue = amd.SetHue(display, settings.Hue.Value);
-                    }
-                    else if (!baseline.Nvidia.Hue.Supported)
-                    {
-                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
-                    }
-                    else hue = nvidia.SetHue(display, settings.Hue.Value);
-                }
-
-                if (settings.ColorTemperature is not null)
-                {
-                    if (display.Adapter.Vendor != "amd") throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
-                    colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
-                }
-
-                Log("DisplaySettingApplied", display, gammaHash);
-                return new JsonObject
-                {
-                    ["displayId"] = displayId,
-                    ["settings"] = NativeJson.ToNode(settings with { Gamma = appliedGamma }),
-                    ["learnedGammaLimit"] = learnedGammaLimit,
-                    ["applied"] = new JsonObject
-                    {
-                        ["gammaRampHash"] = gammaHash,
-                        ["gamma"] = appliedGamma,
-                        ["brightness"] = brightness,
-                        ["contrast"] = contrast,
-                        ["saturation"] = saturation,
-                        ["hue"] = hue,
-                        ["colorTemperature"] = colorTemperature
-                    }
-                };
             }
-            catch (ArgumentOutOfRangeException exception)
+
+            int? saturation = null;
+            if (settings.Saturation is not null)
             {
-                TryRestoreAfterFailedApply(display, baseline);
-                throw new DisplayOperationException("VALUE_OUT_OF_RANGE", exception.Message, exception);
+                if (display.Adapter.Vendor == "amd")
+                {
+                    saturation = amd.SetSaturation(display, settings.Saturation.Value);
+                }
+                else if (!baseline.Nvidia.Saturation.Supported)
+                {
+                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+                }
+                else saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
             }
-            catch
+
+            int? hue = null;
+            if (settings.Hue is not null)
             {
-                TryRestoreAfterFailedApply(display, baseline);
-                throw;
+                if (display.Adapter.Vendor == "amd")
+                {
+                    hue = amd.SetHue(display, settings.Hue.Value);
+                }
+                else if (!baseline.Nvidia.Hue.Supported)
+                {
+                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+                }
+                else hue = nvidia.SetHue(display, settings.Hue.Value);
             }
+
+            if (settings.ColorTemperature is not null)
+            {
+                if (display.Adapter.Vendor != "amd") throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
+                colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
+            }
+
+            Log("DisplaySettingApplied", display, gammaHash, "sdr");
+            return new JsonObject
+            {
+                ["displayId"] = displayId,
+                ["settings"] = NativeJson.ToNode(settings with { Gamma = appliedGamma }),
+                ["learnedGammaLimit"] = learnedGammaLimit,
+                ["applied"] = new JsonObject
+                {
+                    ["gammaRampHash"] = gammaHash,
+                    ["gamma"] = appliedGamma,
+                    ["brightness"] = brightness,
+                    ["contrast"] = contrast,
+                    ["saturation"] = saturation,
+                    ["hue"] = hue,
+                    ["colorTemperature"] = colorTemperature
+                }
+            };
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            RestoreAfterFailedApply(display, baseline, exception);
+            throw new DisplayOperationException("VALUE_OUT_OF_RANGE", exception.Message, exception);
+        }
+        catch (Exception exception)
+        {
+            RestoreAfterFailedApply(display, baseline, exception);
+            throw;
         }
     }
 
@@ -429,7 +518,8 @@ internal sealed class BaselineManager(
     private void RestoreEntry(DisplayDescriptor display, BaselineEntry baseline)
     {
         // Restore accepts only immutable captured state, including under HDR.
-        // Capture and Apply keep their separate HDR guards.
+        // This is the only GDI ramp write allowed under HDR. Capture and Apply keep
+        // their separate HDR guards (EnsureCaptureSafe, EnsureHdrApplyRequest).
         var failures = new List<string>();
         if (baseline.GammaRamp is not null)
         {
@@ -514,22 +604,114 @@ internal sealed class BaselineManager(
             "ChromaShift will retain it and refuse to recapture modified output.");
     }
 
-    private void TryRestoreAfterFailedApply(DisplayDescriptor display, BaselineEntry baseline)
+    /// <summary>
+    /// Whole-display restoration after a failed apply. The caller rethrows the
+    /// apply error only when this restoration is confirmed. The baseline is
+    /// retained whenever restoration is not confirmed:
+    /// - an ownership mismatch, in the apply error or in a freshly resolved
+    ///   descriptor, writes nothing and reports BASELINE_OWNERSHIP_CHANGED;
+    /// - a display that disconnected reports DISPLAY_NOT_FOUND, for reconnect;
+    /// - any other unconfirmed restoration reports BASELINE_RESTORE_FAILED, so
+    ///   Electron stops further writes.
+    /// Permitted cleanup writes go through the fresh, owner-validated descriptor.
+    /// </summary>
+    private void RestoreAfterFailedApply(DisplayDescriptor display, BaselineEntry baseline, Exception applyError)
+    {
+        var applyCode = applyError is DisplayOperationException operation ? operation.Code : "COMMAND_FAILED";
+        if (applyCode == "BASELINE_OWNERSHIP_CHANGED")
+        {
+            LogCleanupRefused(display.Id, applyCode, applyError.Message, "ownershipChanged");
+            return;
+        }
+
+        DisplayDescriptor current;
+        try
+        {
+            current = FindDisplay(display.Id);
+        }
+        catch (Exception findError)
+        {
+            var disconnected = findError is DisplayOperationException { Code: "DISPLAY_NOT_FOUND" };
+            throw UnconfirmedCleanup(display, applyError, applyCode, findError, disconnected);
+        }
+        if (!BaselineOwnership.IsValid(baseline.Owner, current))
+        {
+            LogCleanupRefused(display.Id, applyCode, applyError.Message, "ownershipChanged");
+            throw new DisplayOperationException(
+                "BASELINE_OWNERSHIP_CHANGED",
+                $"The captured baseline for {display.Name} belongs to a different display provider; " +
+                $"ChromaShift retained it without writing. The apply failed first with {applyCode}: {applyError.Message}",
+                applyError);
+        }
+
+        try
+        {
+            RestoreEntry(current, baseline);
+        }
+        catch (Exception restoreError)
+        {
+            throw UnconfirmedCleanup(display, applyError, applyCode, restoreError, !IsConnected(display.Id));
+        }
+    }
+
+    private static DisplayOperationException UnconfirmedCleanup(
+        DisplayDescriptor display,
+        Exception applyError,
+        string applyCode,
+        Exception restoreError,
+        bool disconnected)
+    {
+        NativeLog.Write(new JsonObject
+        {
+            ["level"] = "critical",
+            ["eventName"] = "BaselineRestoreFailed",
+            ["displayId"] = display.Id,
+            ["message"] = restoreError.Message,
+            ["applyCode"] = applyCode,
+            ["applyMessage"] = applyError.Message,
+            ["connected"] = !disconnected
+        });
+        return new DisplayOperationException(
+            disconnected ? "DISPLAY_NOT_FOUND" : "BASELINE_RESTORE_FAILED",
+            $"Restoration after a failed apply could not be confirmed for {display.Name}: {restoreError.Message} " +
+            $"The apply failed first with {applyCode}: {applyError.Message}",
+            new AggregateException(applyError, restoreError));
+    }
+
+    private static void LogCleanupRefused(string displayId, string applyCode, string applyMessage, string reason) =>
+        NativeLog.Write(new JsonObject
+        {
+            ["level"] = "critical",
+            ["eventName"] = "BaselineRestoreRefused",
+            ["displayId"] = displayId,
+            ["reason"] = reason,
+            ["applyCode"] = applyCode,
+            ["applyMessage"] = applyMessage
+        });
+
+    /// <summary>An enumeration failure counts as connected, so restoration fails closed.</summary>
+    private bool IsConnected(string displayId)
     {
         try
         {
-            RestoreEntry(display, baseline);
+            return displays.List().Any(display => string.Equals(display.Id, displayId, StringComparison.Ordinal));
         }
-        catch (Exception exception)
+        catch
         {
-            NativeLog.Write(new JsonObject
-            {
-                ["level"] = "critical",
-                ["eventName"] = "BaselineRestoreFailed",
-                ["displayId"] = display.Id,
-                ["message"] = exception.Message
-            });
+            return true;
         }
+    }
+
+    /// <summary>
+    /// A fresh enumeration immediately before a transformed GDI ramp write on the
+    /// SDR path. HDR or an ownership change refuses the write; baseline restore
+    /// writes do not use this check.
+    /// </summary>
+    private void EnsureStillSdrBeforeTransformedRampWrite(string displayId, BaselineEntry baseline)
+    {
+        var current = FindDisplay(displayId);
+        EnsureBaselineOwnership(current, baseline);
+        EnsureSdrWritesSafe(current);
     }
 
     private DisplayDescriptor FindDisplay(string displayId) =>
@@ -558,19 +740,68 @@ internal sealed class BaselineManager(
         }
     }
 
-    internal static void EnsureDisplayWritesSafe(DisplayDescriptor display)
+    /// <summary>Guards the SDR apply path, including the capture it may need.</summary>
+    internal static void EnsureSdrWritesSafe(DisplayDescriptor display)
     {
         if (!display.Hdr) return;
         throw new DisplayOperationException(
             "HDR_UNSAFE",
-            $"Baseline capture and profile application are disabled while HDR is active on {display.Name}; " +
+            $"SDR profile application is disabled while HDR is active on {display.Name}; " +
+            "only NVIDIA saturation and hue, or a restore of captured original settings, are allowed.");
+    }
+
+    /// <summary>
+    /// Capture is a read. Under HDR it stays refused for AMD, whose ADLX behavior
+    /// under HDR is unverified. Other displays may capture; the entry records HDR.
+    /// </summary>
+    internal static void EnsureCaptureSafe(DisplayDescriptor display)
+    {
+        if (!display.Hdr || display.Adapter.Vendor != "amd") return;
+        throw new DisplayOperationException(
+            "HDR_UNSAFE",
+            $"AMD baseline capture and profile application are disabled while HDR is active on {display.Name}; " +
             "only captured original settings may be restored.");
     }
+
+    /// <summary>
+    /// Validates a whole HDR apply request before capture or any write. Only NVIDIA
+    /// saturation and hue are accepted. Brightness, contrast and gamma use the GDI
+    /// ramp and stay SDR-only; color temperature has no NVIDIA provider. An empty
+    /// request is refused: Original settings come back only through restore.
+    /// </summary>
+    internal static void EnsureHdrApplyRequest(DisplayDescriptor display, DisplaySettings settings)
+    {
+        if (!display.Hdr) return;
+        if (display.Adapter.Vendor != "nvidia")
+        {
+            throw new DisplayOperationException(
+                "HDR_UNSAFE",
+                $"Profile application is disabled while HDR is active on {display.Name}; " +
+                "only NVIDIA saturation and hue may be applied under HDR.");
+        }
+        if (settings.Brightness is not null || settings.Contrast is not null ||
+            settings.Gamma is not null || settings.ColorTemperature is not null)
+        {
+            throw new DisplayOperationException(
+                "HDR_UNSAFE",
+                $"Brightness, contrast, gamma and color temperature stay disabled while HDR is active on {display.Name}; " +
+                "only NVIDIA saturation and hue may be applied under HDR.");
+        }
+        if (settings.Saturation is null && settings.Hue is null)
+        {
+            throw new DisplayOperationException(
+                "HDR_UNSAFE",
+                $"An HDR apply for {display.Name} must set saturation or hue; restore original settings instead.");
+        }
+    }
+
+    private static string ColorModeOf(DisplayDescriptor display) => display.Hdr ? "hdr" : "sdr";
 
     private static JsonObject Describe(BaselineEntry entry, string state) => new()
     {
         ["displayId"] = entry.Owner.DisplayId,
         ["state"] = state,
+        ["colorMode"] = entry.ColorMode,
         ["gammaRampHash"] = entry.GammaRamp?.GetHash(),
         ["nvidiaSaturation"] = entry.Nvidia.Saturation.Current,
         ["nvidiaHue"] = entry.Nvidia.Hue.Current,
@@ -582,7 +813,11 @@ internal sealed class BaselineManager(
         ["amdGammaRampHash"] = entry.Amd.GammaRamp?.GetHash()
     };
 
-    private static void Log(string eventName, DisplayDescriptor display, string? gammaRampHash) =>
+    private static void Log(
+        string eventName,
+        DisplayDescriptor display,
+        string? gammaRampHash,
+        string? colorMode = null) =>
         NativeLog.Write(new JsonObject
         {
             ["level"] = "information",
@@ -590,6 +825,7 @@ internal sealed class BaselineManager(
             ["displayId"] = display.Id,
             ["displayName"] = display.Name,
             ["provider"] = "windows",
+            ["colorMode"] = colorMode,
             ["gammaRampHash"] = gammaRampHash
         });
 
@@ -616,7 +852,9 @@ internal sealed class BaselineManager(
         string WindowsDisplayName,
         GammaRamp? GammaRamp,
         NvidiaDisplayState Nvidia,
-        AmdDisplayState Amd);
+        AmdDisplayState Amd,
+        // "sdr" or "hdr": the color mode when this baseline was captured.
+        string ColorMode);
 
     private static bool HasAmdCapability(AmdDisplayState state) =>
         state.Brightness.Supported || state.Contrast.Supported || state.Saturation.Supported ||

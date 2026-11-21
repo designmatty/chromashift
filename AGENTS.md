@@ -60,13 +60,21 @@ not the Default profile.
 - Validate and clamp values in TypeScript, IPC schemas, native commands, and the
   provider before a write.
 - Read back native writes. On a partial apply failure, restore the whole display.
-  A rejected GDI gamma ramp may retry toward neutral in 0.05 steps without
-  intervening restoration. Each accepted step requires read-back; exhaustion
-  through neutral or any other failure follows whole-display restoration.
-- Treat HDR as a capability change. Block baseline capture and profile, preview,
-  and override apply while HDR is active. Allow only restore writes of captured
-  original settings, with read-back; restore immediately on an HDR-on transition.
-  Preserve the draft and SDR output until the user discards or HDR turns off.
+  If that restoration cannot be confirmed, the apply reports
+  `BASELINE_RESTORE_FAILED`. A rejected GDI gamma ramp may retry toward neutral
+  in 0.05 steps without intervening restoration. Each accepted step requires
+  read-back; exhaustion through neutral or any other failure follows
+  whole-display restoration.
+- Treat HDR as a capability change. While HDR is active, profile, preview, and
+  override apply may write only NVIDIA saturation and hue, after restoring the
+  captured baseline, with read-back. Brightness, contrast, and gamma stay
+  SDR-only: the GDI ramp is written under HDR only to restore captured original
+  settings, and every transformed ramp write re-checks HDR first. AMD capture
+  and apply stay blocked under HDR; other displays may capture, and the
+  baseline records the color mode. A display with no HDR-applicable control
+  restores immediately on an HDR-on transition. Preserve the draft and SDR
+  output until the user discards or HDR turns off. NVIDIA HDR saturation and
+  hue await owner hardware verification.
 - An unconfirmed restoration stops subsequent profile writes in the current
   transition and in queued work. Retry confirms tracked restoration before
   applying targets. In-session recovery preserves the full draft and session;

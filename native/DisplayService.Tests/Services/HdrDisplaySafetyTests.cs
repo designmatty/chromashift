@@ -12,18 +12,377 @@ namespace ChromaShift.DisplayService.Tests.Services;
 public sealed class HdrDisplaySafetyTests
 {
     [Fact]
-    public void RejectsBaselineCaptureWhileHdrIsActive()
+    public void RejectsAmdBaselineCaptureAndSdrWritesWhileHdrIsActive()
     {
-        var exception = Assert.Throws<DisplayOperationException>(
-            () => BaselineManager.EnsureDisplayWritesSafe(Display(hdr: true)));
+        var amd = Display(hdr: true, vendor: "amd");
+        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
+            () => BaselineManager.EnsureCaptureSafe(amd)).Code);
+        foreach (var vendor in new[] { "nvidia", "amd", "intel", "unknown" })
+        {
+            Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
+                () => BaselineManager.EnsureSdrWritesSafe(Display(hdr: true, vendor: vendor))).Code);
+        }
+    }
 
-        Assert.Equal("HDR_UNSAFE", exception.Code);
+    [Theory]
+    [InlineData("nvidia", true)]
+    [InlineData("intel", true)]
+    [InlineData("unknown", true)]
+    [InlineData("nvidia", false)]
+    [InlineData("amd", false)]
+    public void AllowsNonAmdCaptureUnderHdrAndEveryCaptureInSdr(string vendor, bool hdr)
+    {
+        BaselineManager.EnsureCaptureSafe(Display(hdr, vendor));
+        if (!hdr) BaselineManager.EnsureSdrWritesSafe(Display(hdr, vendor));
     }
 
     [Fact]
-    public void AllowsBaselineCaptureWhenHdrIsInactive()
+    public void NvidiaCaptureUnderHdrRecordsHdrModeReadsTheRampAndNeverRecaptures()
     {
-        BaselineManager.EnsureDisplayWritesSafe(Display(hdr: false));
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        var captured = fixture.Manager.Capture(fixture.Displays.Current.Id);
+        Assert.Equal("captured", captured["state"]!.GetValue<string>());
+        Assert.Equal("hdr", captured["colorMode"]!.GetValue<string>());
+        Assert.Equal(Ramp(250).GetHash(), captured["gammaRampHash"]!.GetValue<string>());
+        Assert.Equal(43, captured["nvidiaSaturation"]!.GetValue<int>());
+        fixture.Gamma.Current = Ramp(200);
+        fixture.Nvidia.Current = new(Control(85), Control(40));
+        var again = fixture.Manager.Capture(fixture.Displays.Current.Id);
+        Assert.Equal("alreadyCaptured", again["state"]!.GetValue<string>());
+        Assert.Equal(Ramp(250).GetHash(), again["gammaRampHash"]!.GetValue<string>());
+        Assert.Equal(43, again["nvidiaSaturation"]!.GetValue<int>());
+        Assert.Empty(fixture.Calls);
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void SdrCaptureRecordsSdrMode()
+    {
+        var fixture = new Fixture();
+        var captured = fixture.Manager.Capture(fixture.Displays.Current.Id);
+        Assert.Equal("sdr", captured["colorMode"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void HdrApplyRestoresTheBaselineThenWritesSaturationAndHueWithReadBack()
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        var result = fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 75, 10, null));
+        Assert.Equal(new[]
+        {
+            "gamma:write", "gamma:read", "nvidia:restore", "nvidia:read",
+            "nvidia:setSaturation", "nvidia:readSaturation", "nvidia:setHue", "nvidia:readHue"
+        }, fixture.Calls);
+        Assert.Equal(new[] { Ramp(250).GetHash() }, fixture.Gamma.Writes);
+        Assert.Equal(75, result["applied"]!["saturation"]!.GetValue<int>());
+        Assert.Equal(36, result["applied"]!["hue"]!.GetValue<int>());
+        Assert.Null(result["applied"]!["gammaRampHash"]);
+        Assert.Equal(new NvidiaDisplayState(Control(75), Control(36)), fixture.Nvidia.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(1, fixture.Manager.Count);
+
+        fixture.Manager.Restore(fixture.Displays.Current.Id);
+        Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
+        Assert.Equal(0, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void HdrApplyAfterAnSdrEditRestoresTheSdrRampBeforeSaturation()
+    {
+        var fixture = new Fixture();
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(30, 50, 1, 85, null, null));
+        Assert.NotEqual(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Calls.Clear();
+        fixture.Gamma.Writes.Clear();
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 85, null, null));
+        Assert.Equal(new[] { Ramp(250).GetHash() }, fixture.Gamma.Writes);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(85, fixture.Nvidia.Current.Saturation.Current);
+        Assert.Equal(12, fixture.Nvidia.Current.Hue.Current);
+    }
+
+    public static TheoryData<double?, double?, double?, double?, double?, double?> RejectedHdrRequests => new()
+    {
+        { 30, null, null, 85, null, null },
+        { null, 40, null, 85, null, null },
+        { null, null, 1, 85, null, null },
+        { null, null, null, 85, 0, 60 },
+        { 30, 50, 1, 85, 0, null },
+        { null, null, null, null, null, null }
+    };
+
+    [Theory]
+    [MemberData(nameof(RejectedHdrRequests))]
+    public void HdrApplyRejectsSdrOnlyFieldsAndEmptyRequestsBeforeCaptureOrAnyWrite(
+        double? brightness, double? contrast, double? gamma, double? saturation, double? hue, double? colorTemperature)
+    {
+        foreach (var captured in new[] { false, true })
+        {
+            var fixture = new Fixture();
+            if (captured) fixture.Manager.Capture(fixture.Displays.Current.Id);
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            var settings = new DisplaySettings(brightness, contrast, gamma, saturation, hue, colorTemperature);
+            Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
+                () => fixture.Manager.Apply(fixture.Displays.Current.Id, settings)).Code);
+            Assert.Empty(fixture.Calls);
+            Assert.Empty(fixture.Gamma.Writes);
+            Assert.Equal(captured ? 1 : 0, fixture.Manager.Count);
+        }
+    }
+
+    [Theory]
+    [InlineData("amd")]
+    [InlineData("intel")]
+    [InlineData("unknown")]
+    public void HdrApplyOfSaturationAndHueStaysBlockedForNonNvidiaDisplays(string vendor)
+    {
+        foreach (var captured in new[] { false, true })
+        {
+            var fixture = new Fixture(vendor);
+            if (captured) fixture.Manager.Capture(fixture.Displays.Current.Id);
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+                fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 75, 10, null))).Code);
+            Assert.Empty(fixture.Calls);
+            Assert.Equal(captured ? 1 : 0, fixture.Manager.Count);
+        }
+    }
+
+    [Fact]
+    public void AmdCaptureUnderHdrStaysBlockedEvenWithAnExistingBaseline()
+    {
+        foreach (var captured in new[] { false, true })
+        {
+            var fixture = new Fixture("amd");
+            if (captured) fixture.Manager.Capture(fixture.Displays.Current.Id);
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
+                () => fixture.Manager.Capture(fixture.Displays.Current.Id)).Code);
+            Assert.Empty(fixture.Calls);
+            Assert.Equal(captured ? 1 : 0, fixture.Manager.Count);
+        }
+    }
+
+    [Theory]
+    [InlineData("saturation")]
+    [InlineData("hue")]
+    public void HdrApplyOfAnUnsupportedNvidiaControlFailsBeforeAnyWrite(string control)
+    {
+        var fixture = new Fixture();
+        fixture.Nvidia.Current = control == "saturation"
+            ? new(Unsupported, Control(12))
+            : new(Control(43), Unsupported);
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        var settings = control == "saturation"
+            ? new DisplaySettings(null, null, null, 75, null, null)
+            : new DisplaySettings(null, null, null, null, 10, null);
+        Assert.Equal("CAPABILITY_UNSUPPORTED", Assert.Throws<DisplayOperationException>(
+            () => fixture.Manager.Apply(fixture.Displays.Current.Id, settings)).Code);
+        Assert.Empty(fixture.Calls);
+    }
+
+    [Theory]
+    [InlineData("saturationWrite", "COMMAND_FAILED")]
+    [InlineData("saturationReadBack", "NVIDIA_VERIFY_FAILED")]
+    [InlineData("hueReadBack", "NVIDIA_VERIFY_FAILED")]
+    public void FailedNvidiaWriteOrReadBackUnderHdrRestoresTheWholeDisplay(string failure, string code)
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Nvidia.FailSaturationWrite = failure == "saturationWrite";
+        fixture.Nvidia.IgnoreSaturationWrite = failure == "saturationReadBack";
+        fixture.Nvidia.IgnoreHueWrite = failure == "hueReadBack";
+        var exception = Assert.ThrowsAny<Exception>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 75, 10, null)));
+        Assert.Equal(code, exception is DisplayOperationException operation ? operation.Code : "COMMAND_FAILED");
+        // Baseline-first restore, the failed write, then whole-display restoration.
+        Assert.Equal(2, fixture.Calls.Count(call => call == "nvidia:restore"));
+        Assert.Equal(2, fixture.Calls.Count(call => call == "gamma:write"));
+        Assert.Equal("nvidia:read", fixture.Calls[^1]);
+        Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void BaselineRestoreFailureInsideHdrApplyIsARestoreFailure()
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Nvidia.FailVerify = true;
+        Assert.Equal("BASELINE_RESTORE_FAILED", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 75, null, null))).Code);
+        Assert.DoesNotContain("nvidia:setSaturation", fixture.Calls);
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnconfirmedCleanupAfterAFailedNvidiaWriteIsARestoreFailure(bool hdr)
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = hdr };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Nvidia.MismatchSaturationReadBack = true;
+        fixture.Nvidia.FailCleanupRestore = true;
+        var settings = hdr
+            ? new DisplaySettings(null, null, null, 85, null, null)
+            : new DisplaySettings(30, 50, 1, 85, null, null);
+        var error = Assert.Throws<DisplayOperationException>(
+            () => fixture.Manager.Apply(fixture.Displays.Current.Id, settings));
+        Assert.Equal("BASELINE_RESTORE_FAILED", error.Code);
+        Assert.Contains("NVIDIA_VERIFY_FAILED", error.Message);
+        // The profile value is still on screen, and ownership stays for Retry.
+        Assert.Equal(85, fixture.Nvidia.Current.Saturation.Current);
+        Assert.Equal(1, fixture.Manager.Count);
+
+        fixture.Nvidia.FailCleanupRestore = false;
+        fixture.Manager.Restore(fixture.Displays.Current.Id);
+        Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(0, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void FailedCleanupOnADisplayThatDisconnectedKeepsItsBaselineForReconnect()
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Nvidia.MismatchSaturationReadBack = true;
+        fixture.Nvidia.FailCleanupRestore = true;
+        fixture.Gamma.BeforeWrite = _ =>
+        {
+            // The display leaves while the cleanup restore runs.
+            if (fixture.Calls.Contains("nvidia:setSaturation")) fixture.Displays.Connected = false;
+        };
+        Assert.Equal("DISPLAY_NOT_FOUND", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 85, null, null))).Code);
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void SdrApplyRefusesTheTransformedRampWhenHdrTurnsOnDuringTheBaselineRestore()
+    {
+        var fixture = new Fixture();
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        var baselineHash = Ramp(250).GetHash();
+        var transformedUnderHdr = 0;
+        fixture.Gamma.BeforeWrite = ramp =>
+        {
+            if (ramp.GetHash() != baselineHash && fixture.Displays.Current.Hdr) transformedUnderHdr++;
+            // Windows turns HDR on while the baseline-first restore is written.
+            if (ramp.GetHash() == baselineHash)
+                fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        };
+        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(30, 50, 1, 85, null, null))).Code);
+        Assert.Equal(0, transformedUnderHdr);
+        Assert.All(fixture.Gamma.Writes, hash => Assert.Equal(baselineHash, hash));
+        Assert.Equal(baselineHash, fixture.Gamma.Current.GetHash());
+        Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void SdrApplyRefusesARejectedRampRetryOnceHdrIsOn()
+    {
+        var fixture = new Fixture();
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        var baselineHash = Ramp(250).GetHash();
+        var transformedWrites = 0;
+        var transformedUnderHdr = 0;
+        fixture.Gamma.BeforeWrite = ramp =>
+        {
+            if (ramp.GetHash() == baselineHash) return;
+            transformedWrites++;
+            if (fixture.Displays.Current.Hdr) transformedUnderHdr++;
+            // The driver rejects the first ramp, and HDR turns on before the retry.
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            throw new GammaRampRejectedException(5, "SetDeviceGammaRamp failed for DISPLAY1.");
+        };
+        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(50, 50, 1.5, null, null, null))).Code);
+        Assert.Equal(1, transformedWrites);
+        Assert.Equal(0, transformedUnderHdr);
+        Assert.Equal(baselineHash, fixture.Gamma.Current.GetHash());
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void OwnershipChangeFoundBeforeTheTransformedRampWritesNothingAfterDetection()
+    {
+        var fixture = new Fixture();
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        var enumerations = 0;
+        var callsAtDetection = -1;
+        fixture.Displays.AfterList = () =>
+        {
+            enumerations++;
+            // Apply's own enumeration still matches; a dock or GPU routing change
+            // then gives the pre-ramp enumeration a different adapter.
+            if (enumerations == 1)
+                fixture.Displays.Current = fixture.Displays.Current with
+                {
+                    Adapter = fixture.Displays.Current.Adapter with { DeviceId = "PCI\\VEN_10DE&DEV_OTHER" }
+                };
+            if (enumerations == 2) callsAtDetection = fixture.Calls.Count;
+        };
+        Assert.Equal("BASELINE_OWNERSHIP_CHANGED", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(30, 50, 1, 85, null, null))).Code);
+        Assert.True(callsAtDetection >= 0);
+        Assert.DoesNotContain(fixture.Calls.Skip(callsAtDetection),
+            call => call is "gamma:write" or "nvidia:restore" or "nvidia:setSaturation");
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void CleanupRefusesToWriteThroughADescriptorWithADifferentOwner()
+    {
+        var fixture = new Fixture();
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Nvidia.MismatchSaturationReadBack = true;
+        var enumerations = 0;
+        var callsAtDetection = -1;
+        fixture.Displays.AfterList = () =>
+        {
+            enumerations++;
+            if (enumerations == 1)
+                fixture.Displays.Current = fixture.Displays.Current with
+                {
+                    Adapter = fixture.Displays.Current.Adapter with { DeviceId = "PCI\\VEN_10DE&DEV_OTHER" }
+                };
+            if (enumerations == 2) callsAtDetection = fixture.Calls.Count;
+        };
+        var error = Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 85, null, null)));
+        Assert.Equal("BASELINE_OWNERSHIP_CHANGED", error.Code);
+        Assert.Contains("NVIDIA_VERIFY_FAILED", error.Message);
+        // The cleanup's fresh enumeration is the second one; nothing is written after it.
+        Assert.True(callsAtDetection >= 0);
+        Assert.DoesNotContain(fixture.Calls.Skip(callsAtDetection),
+            call => call is "gamma:write" or "nvidia:restore");
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void SdrApplyFailsClosedWhenHdrTurnsOnBeforeItsFirstCapture()
+    {
+        var fixture = new Fixture();
+        // The first enumeration is SDR; the capture's re-enumeration sees HDR.
+        fixture.Displays.AfterList = () => fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(30, 50, 1, 85, null, null))).Code);
+        Assert.Empty(fixture.Calls);
+        Assert.Equal(0, fixture.Manager.Count);
     }
 
     [Fact]
@@ -43,12 +402,19 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RestoreAllIncludesHdrForLifecycleExitAndStrictShutdown(bool explicitShutdown)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void RestoreAllIncludesHdrForLifecycleExitAndStrictShutdown(bool explicitShutdown, bool appliedUnderHdr)
     {
         var fixture = new Fixture();
-        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        if (appliedUnderHdr)
+        {
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 85, 10, null));
+        }
+        else fixture.Manager.Capture(fixture.Displays.Current.Id);
         fixture.Gamma.Current = Ramp(200);
         fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
         // The lifecycle finally uses RestoreAll(); service.shutdown uses strict flags.
@@ -57,28 +423,8 @@ public sealed class HdrDisplaySafetyTests
             failOnError: explicitShutdown, discardDisconnected: explicitShutdown);
         Assert.True(result["displays"]![0]!["restored"]!.GetValue<bool>());
         Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(new NvidiaDisplayState(Control(43), Control(12)), fixture.Nvidia.Current);
         Assert.Equal(0, fixture.Manager.Count);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CaptureAndApplyRemainBlockedUnderHdrEvenWithAnExistingBaseline(bool captured)
-    {
-        var fixture = new Fixture();
-        if (captured) fixture.Manager.Capture(fixture.Displays.Current.Id);
-        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
-        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
-            () => fixture.Manager.Capture(fixture.Displays.Current.Id)).Code);
-        foreach (var settings in new[] {
-            new DisplaySettings(30, 50, 1, 85, 0, null),
-            new DisplaySettings(null, null, null, null, null, null)
-        })
-        {
-            Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
-                () => fixture.Manager.Apply(fixture.Displays.Current.Id, settings)).Code);
-        }
-        Assert.Empty(fixture.Calls);
     }
 
     [Theory]
@@ -106,7 +452,7 @@ public sealed class HdrDisplaySafetyTests
     [Fact]
     public void AmdRestoreUsesOnlyCapturedValuesAndNoProfileSettersUnderHdr()
     {
-        var fixture = new Fixture(amd: true);
+        var fixture = new Fixture("amd");
         fixture.Manager.Capture(fixture.Displays.Current.Id);
         fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
         fixture.Manager.Restore(fixture.Displays.Current.Id);
@@ -124,7 +470,7 @@ public sealed class HdrDisplaySafetyTests
     [InlineData("gammaReadBack", true)]
     public void AmdHdrRestoreFailureRetainsCapturedOwnershipAndRetries(string failure, bool restoreAll)
     {
-        var fixture = new Fixture(amd: true);
+        var fixture = new Fixture("amd");
         fixture.Manager.Capture(fixture.Displays.Current.Id);
         fixture.Amd.Current = fixture.Amd.Baseline with { Brightness = Control(22), GammaRamp = Ramp(200) };
         fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
@@ -148,15 +494,28 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Theory]
-    [InlineData("eof")]
-    [InlineData("parentExit")]
-    [InlineData("watchdog")]
-    public async Task ProductionLifecycleRouteRestoresHdrBaseline(string route)
+    [InlineData("eof", false)]
+    [InlineData("parentExit", false)]
+    [InlineData("watchdog", false)]
+    [InlineData("eof", true)]
+    [InlineData("parentExit", true)]
+    [InlineData("watchdog", true)]
+    public async Task ProductionLifecycleRouteRestoresHdrBaseline(string route, bool appliedUnderHdr)
     {
         var fixture = new Fixture();
-        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        if (appliedUnderHdr)
+        {
+            // Start in HDR: capture under HDR, then an HDR saturation/hue apply.
+            fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(null, null, null, 85, 10, null));
+            Assert.Equal(85, fixture.Nvidia.Current.Saturation.Current);
+        }
+        else
+        {
+            fixture.Manager.Capture(fixture.Displays.Current.Id);
+            fixture.Nvidia.Current = new(Control(85), Control(40));
+        }
         fixture.Gamma.Current = Ramp(200);
-        fixture.Nvidia.Current = new(Control(85), Control(40));
         fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
         using var output = new StringWriter();
         // The input thread blocks until released; no helper, processes or real providers run.
@@ -227,10 +586,9 @@ public sealed class HdrDisplaySafetyTests
         internal readonly FakeNvidia Nvidia;
         internal readonly FakeAmd Amd;
         internal readonly BaselineManager Manager;
-        internal Fixture(bool amd = false)
+        internal Fixture(string vendor = "nvidia")
         {
-            var display = Display(hdr: false);
-            Displays = new(display with { Adapter = display.Adapter with { Vendor = amd ? "amd" : "nvidia" } });
+            Displays = new(Display(hdr: false, vendor));
             Gamma = new(Calls);
             Nvidia = new(Calls);
             Amd = new(Calls);
@@ -242,12 +600,20 @@ public sealed class HdrDisplaySafetyTests
     {
         internal DisplayDescriptor Current = display;
         internal bool Connected = true;
-        public IReadOnlyList<DisplayDescriptor> List() => Connected ? [Current] : [];
+        /// <summary>Runs after each enumeration, to model a change between two reads.</summary>
+        internal Action? AfterList;
+        public IReadOnlyList<DisplayDescriptor> List()
+        {
+            IReadOnlyList<DisplayDescriptor> result = Connected ? [Current] : [];
+            AfterList?.Invoke();
+            return result;
+        }
     }
 
     private sealed class FakeGamma(List<string> calls) : IWindowsGammaProvider
     {
         internal GammaRamp Current = Ramp(250);
+        internal readonly List<string> Writes = [];
         internal bool FailWrite;
         internal bool IgnoreWrite;
         public bool IsSupported(string name) => true;
@@ -256,24 +622,60 @@ public sealed class HdrDisplaySafetyTests
             if (calls.Contains("gamma:write")) calls.Add("gamma:read");
             return Current;
         }
+        /// <summary>Runs before each write; it may change the registry or reject the ramp.</summary>
+        internal Action<GammaRamp>? BeforeWrite;
         public void Write(string name, GammaRamp ramp)
         {
             calls.Add("gamma:write");
+            Writes.Add(ramp.GetHash());
+            BeforeWrite?.Invoke(ramp);
             if (FailWrite) throw new Win32Exception("write failed");
             if (!IgnoreWrite) Current = ramp;
         }
     }
 
+    /// <summary>Mirrors NvidiaColorProvider: map, write, read back, and fail on mismatch.</summary>
     private sealed class FakeNvidia(List<string> calls) : INvidiaColorProvider
     {
         internal NvidiaDisplayState Current = new(Control(43), Control(12));
         internal bool FailVerify;
+        internal bool FailSaturationWrite;
+        internal bool IgnoreSaturationWrite;
+        /// <summary>The write takes, but read-back reports a different value.</summary>
+        internal bool MismatchSaturationReadBack;
+        internal bool FailCleanupRestore;
+        internal bool IgnoreHueWrite;
         public NvidiaDisplayState GetState(DisplayDescriptor display) => display.Adapter.Vendor == "nvidia" ? Current : new(Unsupported, Unsupported);
-        public int SetSaturation(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected apply");
-        public int SetHue(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected apply");
+        public int SetSaturation(DisplayDescriptor display, double value)
+        {
+            calls.Add("nvidia:setSaturation");
+            if (FailSaturationWrite) throw new InvalidOperationException("NVAPI saturation write failed");
+            var target = (int)Math.Round(value);
+            if (!IgnoreSaturationWrite) Current = Current with { Saturation = Current.Saturation with { Current = target } };
+            calls.Add("nvidia:readSaturation");
+            if (Current.Saturation.Current != target || MismatchSaturationReadBack)
+                throw new DisplayOperationException("NVIDIA_VERIFY_FAILED", "saturation read-back mismatch");
+            return target;
+        }
+        public int SetHue(DisplayDescriptor display, double value)
+        {
+            calls.Add("nvidia:setHue");
+            var target = (int)Math.Round(value / 100 * 359);
+            if (!IgnoreHueWrite) Current = Current with { Hue = Current.Hue with { Current = target } };
+            calls.Add("nvidia:readHue");
+            if (Current.Hue.Current != target)
+                throw new DisplayOperationException("NVIDIA_VERIFY_FAILED", "hue read-back mismatch");
+            return target;
+        }
         public void Restore(DisplayDescriptor display, NvidiaDisplayState baseline)
         {
             calls.Add("nvidia:restore");
+            if (FailCleanupRestore && calls.Any(call => call.StartsWith("nvidia:set", StringComparison.Ordinal)))
+            {
+                // The cleanup write does not take; the profile value stays on screen.
+                calls.Add("nvidia:read");
+                throw new DisplayOperationException("NVIDIA_RESTORE_FAILED", "cleanup read-back mismatch");
+            }
             Current = baseline;
             calls.Add("nvidia:read");
             if (FailVerify) throw new DisplayOperationException("NVIDIA_RESTORE_FAILED", "read-back mismatch");
@@ -321,7 +723,7 @@ public sealed class HdrDisplaySafetyTests
         }
     }
 
-    private static DisplayDescriptor Display(bool hdr) =>
+    internal static DisplayDescriptor Display(bool hdr, string vendor = "nvidia") =>
         new(
             "display:test",
             "display:test",
@@ -331,7 +733,7 @@ public sealed class HdrDisplaySafetyTests
             "TST",
             "0001",
             "serial",
-            new DisplayAdapterDescriptor("adapter", "Test adapter", "nvidia", "PCI\\VEN_10DE"),
+            new DisplayAdapterDescriptor("adapter", "Test adapter", vendor, "PCI\\VEN_10DE"),
             "DisplayPort",
             true,
             hdr,
