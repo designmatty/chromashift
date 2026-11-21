@@ -311,7 +311,9 @@ it('starts fresh learned limits when a panel moves to another GPU with the same 
   const directory = await mkdtemp(join(tmpdir(), 'chromashift-physical-move-'))
   try {
     const panel = 'display:physical'
-    const onNvidia = { ...testDisplay('display:one'), physicalId: panel }
+    // Windows can report an empty device ID; the vendor still separates the keys.
+    const nvidia = testDisplay('display:one')
+    const onNvidia = { ...nvidia, physicalId: panel, adapter: { ...nvidia.adapter, deviceId: '' } }
     const native = new FakeNativeDisplayPort(0, [onNvidia])
     const capabilities = testCapabilityReport(onNvidia.id)
     capabilities.capabilities.gamma = { supported: true, provider: 'windows', min: 0.3, max: 2.8 }
@@ -348,7 +350,7 @@ it('starts fresh learned limits when a panel moves to another GPU with the same 
           id: 'adapter:amd',
           name: 'AMD Radeon(TM) Graphics',
           vendor: 'amd',
-          deviceId: 'PCI\\VEN_1002'
+          deviceId: ''
         }
       }
     ]
@@ -409,7 +411,10 @@ describe('HDR fan-out across endpoints (#89)', () => {
   })
 
   it('restores every endpoint and writes nothing when an AMD endpoint turns HDR', async () => {
-    const native = new FakeNativeDisplayPort(0, [endpoint(dp, 'DisplayPort'), endpoint(hdmi, 'HDMI')])
+    const native = new FakeNativeDisplayPort(0, [
+      endpoint(dp, 'DisplayPort'),
+      endpoint(hdmi, 'HDMI')
+    ])
     native.amdDisplayIds.add(hdmi)
     const coordinator = coordinatorFor(native)
     await coordinator.activate(null)

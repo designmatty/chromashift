@@ -951,7 +951,9 @@ describe('unconfirmed preview restoration', () => {
         h.client.hdrDisplayIds.clear()
         h.displayEvent('displayMetricsChanged')
         await vi.advanceTimersByTimeAsync(750)
-        expect(h.client.currentSettings.get(id)?.brightness).toBe(30)
+        // The display now reports an AMD adapter, so the reapply starts fresh
+        // learned gamma limits for it, a real file write the fake timers don't flush.
+        await vi.waitFor(() => expect(h.client.currentSettings.get(id)?.brightness).toBe(30))
         const changed = { ...draft, name: 'Editable after recovery' }
         await product.updatePreview(changed.id, changed.displays, changed)
         expect(h.runtime.previewController!.unsavedDraft).toEqual(changed)
