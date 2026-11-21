@@ -515,8 +515,10 @@
             <h2 id="features-title" class="section-title features__title">What it does</h2>
             <ul class="features__grid">
               <li class="feature">
-                <h3 class="feature__title">Five color controls</h3>
-                <p class="feature__body">Brightness, contrast, gamma, saturation, and hue.</p>
+                <h3 class="feature__title">Color controls</h3>
+                <p class="feature__body">
+                  Brightness, contrast, gamma, saturation, and hue, plus color temperature on AMD.
+                </p>
               </li>
               <li class="feature">
                 <h3 class="feature__title">Auto switching color profiles</h3>
@@ -549,7 +551,9 @@
               </li>
               <li class="feature">
                 <h3 class="feature__title">Nothing leaves your PC</h3>
-                <p class="feature__body">No account, no telemetry, no network requests.</p>
+                <p class="feature__body">
+                  No account, no telemetry. The only network request is checking for updates.
+                </p>
               </li>
             </ul>
           </div>
@@ -611,9 +615,23 @@
                     on an AMD-driven display yet. Intel and other GPUs are recognized, but
                     ChromaShift has no vendor-specific color support for them.
                   </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Does ChromaShift work with HDR?<span class="faq__marker" aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
                   <p>
-                    With HDR on, gamma-based adjustments are turned off because they only work in
-                    SDR.
+                    Partially. With HDR on, NVIDIA displays keep their saturation and hue settings.
+                    Brightness, contrast, and gamma are turned off, because Windows only supports
+                    them in SDR. AMD and other displays stay at their original settings while HDR is
+                    on.
+                  </p>
+                  <p>
+                    Your profiles are unchanged, and everything comes back when HDR is turned off.
                   </p>
                 </div>
               </details>
@@ -645,13 +663,28 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    No. ChromaShift needs no account and has no telemetry, analytics, or network
-                    requests. Your profiles and preferences stay on your PC.
+                    No. ChromaShift needs no account and has no telemetry or analytics. The only
+                    network request it makes is checking for updates, and only when you choose to.
+                    Your profiles and preferences stay on your PC.
                   </p>
                   <p>
                     This website is separate. <span class="mono">chromashift.io</span> uses
                     Cloudflare Web Analytics for aggregate, cookie-free visitor statistics, and the
                     download button asks GitHub for the newest release.
+                  </p>
+                </div>
+              </details>
+              <details class="faq__item">
+                <summary class="faq__question">
+                  Was AI used to develop ChromaShift?<span class="faq__marker" aria-hidden="true"
+                    >+</span
+                  >
+                </summary>
+                <div class="faq__answer">
+                  <p>
+                    Yes. Most of ChromaShift’s logic was written with AI. The interface was designed
+                    and built by a human, and the underlying functionality was developed and refined
+                    over many months of trial, error, and testing.
                   </p>
                 </div>
               </details>
