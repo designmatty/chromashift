@@ -246,7 +246,7 @@ ramp hashes and vendor values, logs, and any visual difference between read-back
 and output. The owner's 2026-11-08 retest of #90, recorded on #88, covered steps
 1 to 4 for HDR-on during an edit, HDR-off, Discard, a profile switch and tray
 Exit on NVIDIA. The watchdog kill path, the mini-panel notice, a real restore
-failure, and all AMD writes remain hardware-unverified. HDR profile support is
+failure, and AMD restore under HDR remain hardware-unverified. HDR profile support is
 #89, below.
 
 ### Owner HDR retest for #89
@@ -332,6 +332,10 @@ starts a fresh helper and compares the restored gamma-ramp hash.
 `npm run smoke:desktop` builds and launches the actual Electron application. It
 checks the sandboxed preload bridge and drives the visible app and mini panel
 through Chromium debugging plus Windows interaction.
+
+The restoration guard owns the first SDR display with brightness support. Pass
+`-- --display-vendor=amd` (or another adapter vendor) to guard only a display on
+that vendor, for example an AMD-driven display beside NVIDIA ones.
 
 The close-retry presentation fixture uses the production close controller and
 native dialog adapter with a fake restore error. It starts no DisplayService and
@@ -545,8 +549,8 @@ Phase-4 desktop smoke changes:
 Outstanding human hardware matrix: apply each gamma/brightness corner on real
 displays and record the display model, GPU, driver version, accepted/rejected
 values, and exact restoration. Include driver-rejected ramps inside the envelope.
-AMD writes remain hardware-unverified. Neither fixtures nor desktop smoke replace
-this matrix.
+AMD writes are verified only on the integrated RDNA 2 record below. Neither
+fixtures nor desktop smoke replace this matrix.
 
 In-app download and installation run only in packaged Windows builds. Before a
 release, validate a signed installed build against a newer signed release using
@@ -659,11 +663,13 @@ checks the production controls and Reset action. It causes no GDI rejections or
 display writes. Theme changes call production `applyColorScheme`, wait for a
 computed-color change, and assert different dark and light colors before capture.
 Smoke remains an owner-run gate; automated verification does
-not establish hardware acceptance. AMD remains hardware-unverified.
+not establish hardware acceptance. AMD is verified only on the integrated RDNA 2
+record below.
 
-The current reference host is Windows 11 with an NVIDIA RTX 5090 driving two
-display endpoints. An AMD integrated GPU and ADLX runtime are present, but no
-display is attached to the AMD adapter.
+The current reference host is Windows 11 with an NVIDIA RTX 5090 driving the
+Odyssey G60SD. For the #119 record, the ASUS VG278 moved to the motherboard HDMI
+output of the Ryzen 9 9950X3D integrated AMD Radeon Graphics (RDNA 2, ADLX 1.4).
+The exact values are in `display-research.md`.
 
 Verified on this host:
 
@@ -683,6 +689,11 @@ Verified on this host:
 - HDMI disconnect and reconnect with stable identity and exact restoration
 - packaged install, upgrade, restore-safe exit,
   uninstall, retained profiles, and performance budgets
+- #119 on the integrated AMD display beside the NVIDIA display: ADLX
+  brightness, contrast, saturation, hue, and color temperature, with product
+  neutral writing AMD neutral; gamma through the Windows ramp; exact read-back;
+  exact restoration on explicit restore, helper stop, and heartbeat watchdog;
+  and `smoke:desktop -- --display-vendor=amd`
 
 The exact initial hardware values, hashes, provider limits, and identifiers live
 in `display-research.md`. Package and runtime measurements live in
@@ -690,7 +701,7 @@ in `display-research.md`. Package and runtime measurements live in
 
 Not hardware-verified:
 
-- AMD display writes and AMD-driven multi-monitor behavior
+- AMD writes on a discrete Radeon card, and AMD-driven multi-monitor behavior
 - Restore-only writes while HDR is active on AMD, and the NVIDIA watchdog and
   real restore-failure paths under HDR
 - NVIDIA saturation and hue applied while HDR is active (#89), and baseline

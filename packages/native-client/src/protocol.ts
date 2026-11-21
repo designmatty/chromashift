@@ -212,9 +212,7 @@ export const nativeDisplayStateSchema = z.object({
     contrast: providerControlStateSchema,
     saturation: providerControlStateSchema,
     hue: providerControlStateSchema,
-    colorTemperature: providerControlStateSchema,
-    gammaRampHash: z.string().nullable().optional(),
-    gammaReason: z.string().nullable().optional()
+    colorTemperature: providerControlStateSchema
   })
 })
 
@@ -280,8 +278,7 @@ export const baselineCaptureResultSchema = z.object({
   amdContrast: z.number().int().optional(),
   amdSaturation: z.number().int().optional(),
   amdHue: z.number().int().optional(),
-  amdColorTemperature: z.number().int().optional(),
-  amdGammaRampHash: z.string().min(1).optional()
+  amdColorTemperature: z.number().int().optional()
 })
 
 export const displayApplyResultSchema = z

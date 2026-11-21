@@ -307,6 +307,60 @@ it('keeps endpoint baselines and learned limits through repeated physical captur
   }
 })
 
+it('starts fresh learned limits when a panel moves to another GPU with the same original ramp (#119)', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'chromashift-physical-move-'))
+  try {
+    const panel = 'display:physical'
+    // Windows can report an empty device ID; the vendor still separates the keys.
+    const nvidia = testDisplay('display:one')
+    const onNvidia = { ...nvidia, physicalId: panel, adapter: { ...nvidia.adapter, deviceId: '' } }
+    const native = new FakeNativeDisplayPort(0, [onNvidia])
+    const capabilities = testCapabilityReport(onNvidia.id)
+    capabilities.capabilities.gamma = { supported: true, provider: 'windows', min: 0.3, max: 2.8 }
+    native.reports.set(onNvidia.id, capabilities)
+    native.baselineHashes.set(onNvidia.id, 'identity-ramp')
+    const limits = new LearnedGammaLimits(join(directory, 'limits.json'), {
+      write: () => undefined
+    })
+    await limits.load()
+    const physical = new PhysicalDisplayClient(
+      {
+        getDisplays: () => native.getDisplays(),
+        getDisplayCapabilityReport: (id) => native.getDisplayCapabilityReport(id),
+        getForegroundApplication: async () => null,
+        getVisibleApplications: async () => [],
+        captureBaseline: (id) => native.captureBaseline(id),
+        applyDisplaySettings: (id, settings) => native.applyDisplaySettings(id, settings),
+        restoreDisplay: (id) => native.restoreDisplay(id),
+        restoreAllBaselines: () => native.restoreAllBaselines()
+      },
+      limits
+    )
+    await physical.captureBaseline(panel)
+    native.gammaRanges.set(onNvidia.id, { min: 0.3, max: 1.5 })
+    await physical.applyDisplaySettings(panel, { ...createNeutralColorSettings(), gamma: 1.8 })
+    expect(limits.applicable.displays[panel]?.sdr?.brightness['50']?.max).toBe(1.5)
+    await physical.restoreDisplay(panel)
+
+    // The same panel, with the same identity ramp, now on an AMD output.
+    native.displays = [
+      {
+        ...onNvidia,
+        adapter: {
+          id: 'adapter:amd',
+          name: 'AMD Radeon(TM) Graphics',
+          vendor: 'amd',
+          deviceId: ''
+        }
+      }
+    ]
+    await physical.captureBaseline(panel)
+    expect(limits.applicable.displays[panel]?.sdr?.brightness['50']).toBeUndefined()
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 describe('HDR fan-out across endpoints (#89)', () => {
   const dp = 'display:dp'
   const hdmi = 'display:hdmi'
@@ -357,7 +411,10 @@ describe('HDR fan-out across endpoints (#89)', () => {
   })
 
   it('restores every endpoint and writes nothing when an AMD endpoint turns HDR', async () => {
-    const native = new FakeNativeDisplayPort(0, [endpoint(dp, 'DisplayPort'), endpoint(hdmi, 'HDMI')])
+    const native = new FakeNativeDisplayPort(0, [
+      endpoint(dp, 'DisplayPort'),
+      endpoint(hdmi, 'HDMI')
+    ])
     native.amdDisplayIds.add(hdmi)
     const coordinator = coordinatorFor(native)
     await coordinator.activate(null)

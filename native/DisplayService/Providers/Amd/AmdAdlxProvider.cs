@@ -11,7 +11,6 @@ internal interface IAmdColorProvider
     int SetSaturation(DisplayDescriptor display, double value);
     int SetHue(DisplayDescriptor display, double value);
     int SetColorTemperature(DisplayDescriptor display, double value);
-    string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value);
     void Restore(DisplayDescriptor display, AmdDisplayState baseline);
 }
 
@@ -80,14 +79,12 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         {
             try
             {
-                return WithDisplay(display, (nativeDisplay, customColor, gamma) => new AmdDisplayState(
+                return WithDisplay(display, customColor => new AmdDisplayState(
                     ReadControl(customColor, 11, 12, 13, "brightness"),
                     ReadControl(customColor, 15, 16, 17, "contrast"),
                     ReadControl(customColor, 7, 8, 9, "saturation"),
                     ReadControl(customColor, 3, 4, 5, "hue"),
-                    ReadControl(customColor, 19, 20, 21, "color temperature"),
-                    ReadGamma(gamma, out var gammaReason),
-                    gammaReason));
+                    ReadControl(customColor, 19, 20, 21, "color temperature")));
             }
             catch (Exception exception)
             {
@@ -96,55 +93,32 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         }
     }
 
-    public int SetBrightness(DisplayDescriptor display, double value) => SetControl(display, value, 11, 12, 13, 14, "brightness");
-    public int SetContrast(DisplayDescriptor display, double value) => SetControl(display, value, 15, 16, 17, 18, "contrast");
-    public int SetSaturation(DisplayDescriptor display, double value) => SetControl(display, value, 7, 8, 9, 10, "saturation");
-    public int SetHue(DisplayDescriptor display, double value) => SetControl(display, value, 3, 4, 5, 6, "hue");
-    public int SetColorTemperature(DisplayDescriptor display, double value) => SetControl(display, value, 19, 20, 21, 22, "color temperature");
+    public int SetBrightness(DisplayDescriptor display, double value) =>
+        SetControl(display, value, 11, 12, 13, 14, "brightness", Centered(AmdControlMapping.NeutralBrightness));
+    public int SetContrast(DisplayDescriptor display, double value) =>
+        SetControl(display, value, 15, 16, 17, 18, "contrast", Centered(AmdControlMapping.NeutralContrast));
+    public int SetSaturation(DisplayDescriptor display, double value) =>
+        SetControl(display, value, 7, 8, 9, 10, "saturation", Centered(AmdControlMapping.NeutralSaturation));
+    public int SetHue(DisplayDescriptor display, double value) =>
+        SetControl(display, value, 3, 4, 5, 6, "hue",
+            (normalized, range) => AmdControlMapping.MapHue(normalized, range.Minimum, range.Maximum, range.Step));
+    public int SetColorTemperature(DisplayDescriptor display, double value) =>
+        SetControl(display, value, 19, 20, 21, 22, "color temperature", Centered(AmdControlMapping.NeutralColorTemperature));
 
-    public string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value)
-    {
-        var requested = GammaRampTransform.Apply(baseline, new GammaSettings(null, null, value));
-        lock (_sync)
-        {
-            return WithDisplay(display, (_, _, gamma) =>
-            {
-                if (gamma == IntPtr.Zero)
-                {
-                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "ADLX gamma is unavailable for this display.");
-                }
-                WriteGamma(gamma, requested);
-                var actual = ReadGamma(gamma, out var reason);
-                if (actual is null || !actual.ToInterleavedBuffer().SequenceEqual(requested.ToInterleavedBuffer()))
-                {
-                    throw new DisplayOperationException("AMD_VERIFY_FAILED", reason ?? "ADLX gamma read-back did not match the requested ramp.");
-                }
-                return actual.GetHash();
-            });
-        }
-    }
+    private static Func<double, AdlxIntRange, int> Centered(int neutral) =>
+        (normalized, range) => AmdControlMapping.MapCentered(normalized, range.Minimum, range.Maximum, range.Step, neutral);
 
     public void Restore(DisplayDescriptor display, AmdDisplayState baseline)
     {
         lock (_sync)
         {
-            WithDisplay(display, (nativeDisplay, customColor, gamma) =>
+            WithDisplay(display, customColor =>
             {
                 RestoreControl(customColor, baseline.Brightness, 14, 13, "brightness");
                 RestoreControl(customColor, baseline.Contrast, 18, 17, "contrast");
                 RestoreControl(customColor, baseline.Saturation, 10, 9, "saturation");
                 RestoreControl(customColor, baseline.Hue, 6, 5, "hue");
                 RestoreControl(customColor, baseline.ColorTemperature, 22, 21, "color temperature");
-                if (baseline.GammaRamp is not null)
-                {
-                    if (gamma == IntPtr.Zero) throw new DisplayOperationException("AMD_RESTORE_FAILED", "ADLX gamma interface disappeared.");
-                    WriteGamma(gamma, baseline.GammaRamp);
-                    var actual = ReadGamma(gamma, out var gammaReadReason);
-                    if (actual is null || !actual.ToInterleavedBuffer().SequenceEqual(baseline.GammaRamp.ToInterleavedBuffer()))
-                    {
-                        throw new DisplayOperationException("AMD_RESTORE_FAILED", "ADLX gamma baseline verification failed.");
-                    }
-                }
                 return 0;
             });
         }
@@ -155,12 +129,20 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         lock (_sync) DisposeNative();
     }
 
-    private int SetControl(DisplayDescriptor display, double normalizedValue, int supportSlot, int rangeSlot, int getSlot, int setSlot, string name)
+    private int SetControl(
+        DisplayDescriptor display,
+        double normalizedValue,
+        int supportSlot,
+        int rangeSlot,
+        int getSlot,
+        int setSlot,
+        string name,
+        Func<double, AdlxIntRange, int> map)
     {
         ValidateNormalized(normalizedValue, name);
         lock (_sync)
         {
-            return WithDisplay(display, (_, customColor, _) =>
+            return WithDisplay(display, customColor =>
             {
                 var state = ReadControl(customColor, supportSlot, rangeSlot, getSlot, name);
                 if (!state.Supported || state.Min is null || state.Max is null)
@@ -168,7 +150,7 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
                     throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", state.Reason ?? $"AMD {name} is unavailable.");
                 }
                 var range = GetRange(customColor, rangeSlot, name);
-                var target = MapNormalized(normalizedValue, range);
+                var target = map(normalizedValue, range);
                 Check(GetMethod<SetInteger>(customColor, setSlot)(customColor, target), $"ADLX Set{name}");
                 var actual = GetIntegerValue(customColor, getSlot, name);
                 if (actual != target)
@@ -180,7 +162,7 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         }
     }
 
-    private T WithDisplay<T>(DisplayDescriptor display, Func<IntPtr, IntPtr, IntPtr, T> action)
+    private T WithDisplay<T>(DisplayDescriptor display, Func<IntPtr, T> action)
     {
         if (!_initialized) throw new DisplayOperationException("AMD_NOT_AVAILABLE", _initializationError ?? "ADLX is not initialized.");
         Check(GetMethod<GetInterface>(_displayServices, 4)(_displayServices, out var list), "IADLXDisplayServices.GetDisplays");
@@ -195,15 +177,12 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
                     if (!Matches(display, nativeDisplay)) continue;
                     var customResult = GetMethod<GetDisplayInterface>(_displayServices, 16)(_displayServices, nativeDisplay, out var customColor);
                     if (!Succeeded(customResult)) customColor = IntPtr.Zero;
-                    var gammaResult = GetMethod<GetDisplayInterface>(_displayServices, 7)(_displayServices, nativeDisplay, out var gamma);
-                    if (!Succeeded(gammaResult)) gamma = IntPtr.Zero;
                     try
                     {
-                        return action(nativeDisplay, customColor, gamma);
+                        return action(customColor);
                     }
                     finally
                     {
-                        Release(gamma);
                         Release(customColor);
                     }
                 }
@@ -283,48 +262,6 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         }
     }
 
-    private static GammaRamp? ReadGamma(IntPtr gamma, out string? reason)
-    {
-        if (gamma == IntPtr.Zero)
-        {
-            reason = "ADLX gamma is unavailable for this display.";
-            return null;
-        }
-        try
-        {
-            Check(GetMethod<GetGammaRamp>(gamma, 6)(gamma, out var native), "IADLXDisplayGamma.GetGammaRamp");
-            var red = new ushort[GammaRamp.ChannelLength];
-            var green = new ushort[GammaRamp.ChannelLength];
-            var blue = new ushort[GammaRamp.ChannelLength];
-            for (var index = 0; index < GammaRamp.ChannelLength; index++)
-            {
-                red[index] = native.Values[index * 3];
-                green[index] = native.Values[(index * 3) + 1];
-                blue[index] = native.Values[(index * 3) + 2];
-            }
-            reason = null;
-            return new GammaRamp(red, green, blue);
-        }
-        catch (Exception exception)
-        {
-            reason = exception.Message;
-            return null;
-        }
-    }
-
-    private static void WriteGamma(IntPtr gamma, GammaRamp ramp)
-    {
-        ramp.Validate();
-        var values = new ushort[GammaRamp.ChannelLength * 3];
-        for (var index = 0; index < GammaRamp.ChannelLength; index++)
-        {
-            values[index * 3] = ramp.Red[index];
-            values[(index * 3) + 1] = ramp.Green[index];
-            values[(index * 3) + 2] = ramp.Blue[index];
-        }
-        Check(GetMethod<SetGammaRamp>(gamma, 26)(gamma, new AdlxGammaRamp { Values = values }), "IADLXDisplayGamma.SetReGammaRamp");
-    }
-
     private string? QueryVersion()
     {
         var query = GetExport<AdlxQueryVersion>("ADLXQueryVersion");
@@ -390,13 +327,6 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         if (instance != IntPtr.Zero) _ = GetMethod<ReleaseInterface>(instance, 1)(instance);
     }
 
-    private static int MapNormalized(double value, AdlxIntRange range)
-    {
-        var raw = range.Minimum + ((value / 100) * (range.Maximum - range.Minimum));
-        var step = Math.Max(range.Step, 1);
-        return Math.Clamp(range.Minimum + checked((int)Math.Round((raw - range.Minimum) / step)) * step, range.Minimum, range.Maximum);
-    }
-
     private static void ValidateNormalized(double value, string name)
     {
         if (double.IsNaN(value) || value is < 0 or > 100)
@@ -416,7 +346,7 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
 
     private static AmdDisplayState UnsupportedState(string reason) => new(
         UnsupportedControl(reason), UnsupportedControl(reason), UnsupportedControl(reason),
-        UnsupportedControl(reason), UnsupportedControl(reason), null, reason);
+        UnsupportedControl(reason), UnsupportedControl(reason));
 
     [StructLayout(LayoutKind.Sequential)]
     private struct AdlxIntRange
@@ -424,13 +354,6 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
         internal int Minimum;
         internal int Maximum;
         internal int Step;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct AdlxGammaRamp
-    {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = GammaRamp.ChannelLength * 3)]
-        internal ushort[] Values;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AdlxInitialize(ulong version, out IntPtr system);
@@ -447,7 +370,5 @@ internal sealed class AmdAdlxProvider : IAmdColorProvider, IDisposable
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetIntegerRange(IntPtr self, out AdlxIntRange range);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetInteger(IntPtr self, out int value);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int SetInteger(IntPtr self, int value);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetGammaRamp(IntPtr self, out AdlxGammaRamp ramp);
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int SetGammaRamp(IntPtr self, AdlxGammaRamp ramp);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate long ReleaseInterface(IntPtr self);
 }

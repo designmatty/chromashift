@@ -215,13 +215,12 @@ public sealed class GammaRejectionTests
 
     private sealed class FakeAmd : IAmdColorProvider
     {
-        public AmdDisplayState GetState(DisplayDescriptor display) => new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported, null, "unsupported");
+        public AmdDisplayState GetState(DisplayDescriptor display) => new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported);
         public int SetBrightness(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected write");
         public int SetContrast(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected write");
         public int SetSaturation(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected write");
         public int SetHue(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected write");
         public int SetColorTemperature(DisplayDescriptor display, double value) => throw new InvalidOperationException("Unexpected write");
-        public string SetGamma(DisplayDescriptor display, GammaRamp baseline, double value) => throw new InvalidOperationException("Unexpected write");
         public void Restore(DisplayDescriptor display, AmdDisplayState baseline) => throw new InvalidOperationException("Unexpected restore");
     }
 }

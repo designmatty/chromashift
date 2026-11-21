@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- On AMD displays, neutral hue and color temperature now leave the display at
+  AMD's neutral settings. Before, a profile on an AMD display applied the
+  strongest hue shift even with hue left at 0°.
+- Gamma now works on AMD displays in SDR. It uses the same Windows gamma ramp as
+  other displays, with the same read-back and exact restore. Like brightness and
+  contrast, it stays disabled while HDR is on. AMD support is verified on an
+  integrated Radeon GPU; see the
+  [display research](docs/display-research.md#amd-hardware-record-119).
+
 ## [0.1.0-preview.17] - 2026-11-20
 
 ### Added

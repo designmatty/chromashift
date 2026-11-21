@@ -14,8 +14,9 @@ NVIDIA behavior has been verified on real hardware. The tested path covers
 Windows gamma controls, NVIDIA saturation and hue, HDR deferral, display
 reconnects, helper recovery, and exact restoration.
 
-AMD support is implemented against AMD's official ADLX API but remains
-hardware-unverified because no test display is connected to the AMD adapter.
+AMD support uses AMD's official ADLX API. It is verified on an integrated Radeon
+GPU display in SDR; discrete Radeon cards, HDR, and several AMD-driven displays
+remain hardware-unverified.
 Intel and unknown adapters are detected but do not have vendor color providers.
 See [display research](docs/display-research.md) for the tested hardware and
 known limits.

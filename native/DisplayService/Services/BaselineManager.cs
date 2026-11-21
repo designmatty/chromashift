@@ -37,9 +37,8 @@ internal sealed class BaselineManager(
                 return Describe(existing, "alreadyCaptured");
             }
 
-            var ramp = display.Adapter.Vendor != "amd" && gamma.IsSupported(display.WindowsDisplayName)
-                ? ReadGamma(display)
-                : null;
+            // Every adapter's gamma uses the Windows ramp. AMD capture under HDR was refused above.
+            var ramp = gamma.IsSupported(display.WindowsDisplayName) ? ReadGamma(display) : null;
             var nvidiaState = nvidia.GetState(display);
             var amdState = amd.GetState(display);
             if (ramp is null && !nvidiaState.Saturation.Supported && !nvidiaState.Hue.Supported && !HasAmdCapability(amdState))
@@ -67,11 +66,12 @@ internal sealed class BaselineManager(
             if (display.Adapter.Vendor == "amd")
             {
                 var state = amd.GetState(display);
+                var windowsRamp = !display.Hdr && gamma.IsSupported(display.WindowsDisplayName) ? ReadGamma(display) : null;
                 return new JsonObject
                 {
                     ["displayId"] = displayId,
                     ["provider"] = "amd",
-                    ["gammaRampHash"] = state.GammaRamp?.GetHash(),
+                    ["gammaRampHash"] = windowsRamp?.GetHash(),
                     ["brightness"] = state.Brightness.Current,
                     ["contrast"] = state.Contrast.Current,
                     ["saturation"] = state.Saturation.Current,
@@ -195,17 +195,29 @@ internal sealed class BaselineManager(
             int? colorTemperature = null;
             double? appliedGamma = settings.Gamma;
             JsonObject? learnedGammaLimit = null;
+            int? saturation = null;
+            int? hue = null;
+            // AMD brightness and contrast use ADLX custom color; elsewhere they
+            // shape the Windows ramp. Gamma always uses the Windows ramp. Every
+            // ADLX write runs before the ramp write, so the fresh HDR check before
+            // that last write covers the whole AMD apply.
+            var rampBrightness = settings.Brightness;
+            var rampContrast = settings.Contrast;
             if (display.Adapter.Vendor == "amd")
             {
+                EnsureAmdOriginalsCaptured(baseline.Amd, settings);
+                // The baseline restore above can take time; re-read HDR and ownership
+                // before the first ADLX profile write, as before a transformed ramp.
+                EnsureStillSdrBeforeTransformedRampWrite(display.Id, baseline);
                 if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
                 if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
-                if (settings.Gamma is not null)
-                {
-                    if (baseline.Amd.GammaRamp is null) throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", baseline.Amd.GammaReason ?? "AMD gamma is unavailable.");
-                    gammaHash = amd.SetGamma(display, baseline.Amd.GammaRamp, settings.Gamma.Value);
-                }
+                if (settings.Saturation is not null) saturation = amd.SetSaturation(display, settings.Saturation.Value);
+                if (settings.Hue is not null) hue = amd.SetHue(display, settings.Hue.Value);
+                if (settings.ColorTemperature is not null) colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
+                rampBrightness = null;
+                rampContrast = null;
             }
-            else if (settings.Brightness is not null || settings.Contrast is not null || settings.Gamma is not null)
+            if (rampBrightness is not null || rampContrast is not null || settings.Gamma is not null)
             {
                 EnsureGammaSafe(display);
                 if (baseline.GammaRamp is null)
@@ -220,7 +232,7 @@ internal sealed class BaselineManager(
                     {
                         var requested = GammaRampTransform.Apply(
                             baseline.GammaRamp,
-                            new GammaSettings(settings.Brightness, settings.Contrast, candidate));
+                            new GammaSettings(rampBrightness, rampContrast, candidate));
                         // The path was chosen from an earlier snapshot. Re-read HDR and
                         // ownership right before every transformed ramp write, including
                         // rejection retries; HDR_UNSAFE then restores the whole display.
@@ -307,38 +319,30 @@ internal sealed class BaselineManager(
                 }
             }
 
-            int? saturation = null;
-            if (settings.Saturation is not null)
+            if (display.Adapter.Vendor != "amd")
             {
-                if (display.Adapter.Vendor == "amd")
+                if (settings.Saturation is not null)
                 {
-                    saturation = amd.SetSaturation(display, settings.Saturation.Value);
+                    if (!baseline.Nvidia.Saturation.Supported)
+                    {
+                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+                    }
+                    saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
                 }
-                else if (!baseline.Nvidia.Saturation.Supported)
-                {
-                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
-                }
-                else saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
-            }
 
-            int? hue = null;
-            if (settings.Hue is not null)
-            {
-                if (display.Adapter.Vendor == "amd")
+                if (settings.Hue is not null)
                 {
-                    hue = amd.SetHue(display, settings.Hue.Value);
+                    if (!baseline.Nvidia.Hue.Supported)
+                    {
+                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+                    }
+                    hue = nvidia.SetHue(display, settings.Hue.Value);
                 }
-                else if (!baseline.Nvidia.Hue.Supported)
-                {
-                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
-                }
-                else hue = nvidia.SetHue(display, settings.Hue.Value);
-            }
 
-            if (settings.ColorTemperature is not null)
-            {
-                if (display.Adapter.Vendor != "amd") throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
-                colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
+                if (settings.ColorTemperature is not null)
+                {
+                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
+                }
             }
 
             Log("DisplaySettingApplied", display, gammaHash, "sdr");
@@ -704,8 +708,8 @@ internal sealed class BaselineManager(
 
     /// <summary>
     /// A fresh enumeration immediately before a transformed GDI ramp write on the
-    /// SDR path. HDR or an ownership change refuses the write; baseline restore
-    /// writes do not use this check.
+    /// SDR path, and before the first AMD ADLX profile write. HDR or an ownership
+    /// change refuses the write; baseline restore writes do not use this check.
     /// </summary>
     private void EnsureStillSdrBeforeTransformedRampWrite(string displayId, BaselineEntry baseline)
     {
@@ -809,8 +813,7 @@ internal sealed class BaselineManager(
         ["amdContrast"] = entry.Amd.Contrast.Current,
         ["amdSaturation"] = entry.Amd.Saturation.Current,
         ["amdHue"] = entry.Amd.Hue.Current,
-        ["amdColorTemperature"] = entry.Amd.ColorTemperature.Current,
-        ["amdGammaRampHash"] = entry.Amd.GammaRamp?.GetHash()
+        ["amdColorTemperature"] = entry.Amd.ColorTemperature.Current
     };
 
     private static void Log(
@@ -856,7 +859,30 @@ internal sealed class BaselineManager(
         // "sdr" or "hdr": the color mode when this baseline was captured.
         string ColorMode);
 
+    /// <summary>
+    /// Every requested ADLX control must have a captured original, so Restore can
+    /// return it. A control that was unreadable at capture stays unwritable for
+    /// this baseline, even if ADLX reads recover later.
+    /// </summary>
+    internal static void EnsureAmdOriginalsCaptured(AmdDisplayState baseline, DisplaySettings settings)
+    {
+        foreach (var (requested, captured, name) in new[]
+        {
+            (settings.Brightness, baseline.Brightness, "brightness"),
+            (settings.Contrast, baseline.Contrast, "contrast"),
+            (settings.Saturation, baseline.Saturation, "saturation"),
+            (settings.Hue, baseline.Hue, "hue"),
+            (settings.ColorTemperature, baseline.ColorTemperature, "color temperature")
+        })
+        {
+            if (requested is null || (captured.Supported && captured.Current is not null)) continue;
+            throw new DisplayOperationException(
+                "CAPABILITY_UNSUPPORTED",
+                $"AMD {name} has no captured original value for this display.");
+        }
+    }
+
     private static bool HasAmdCapability(AmdDisplayState state) =>
         state.Brightness.Supported || state.Contrast.Supported || state.Saturation.Supported ||
-        state.Hue.Supported || state.ColorTemperature.Supported || state.GammaRamp is not null;
+        state.Hue.Supported || state.ColorTemperature.Supported;
 }

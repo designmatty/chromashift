@@ -11,7 +11,7 @@ public sealed class CapabilityResolverTests
         new ProviderControlState(true, 0, 0, 359, 0, null));
 
     private static readonly AmdDisplayState Amd = new(
-        Control(), Control(), Control(), Control(), Control(), null, "No re-gamma LUT.");
+        Control(), Control(), Control(), Control(), Control());
 
     [Fact]
     public void NvidiaUnderHdrKeepsSaturationAndHueAndMakesTheRampControlsSdrOnly()
@@ -67,6 +67,25 @@ public sealed class CapabilityResolverTests
             Assert.Equal(CapabilityResolver.AmdHdrReason, control.Reason);
         }
         Assert.True(CapabilityResolver.Resolve(Display(hdr: false, "amd"), false, null, Amd).Saturation.Supported);
+    }
+
+    [Fact]
+    public void AmdInSdrUsesAdlxForBrightnessAndContrastAndTheWindowsRampForGamma()
+    {
+        var capabilities = CapabilityResolver.Resolve(Display(hdr: false, "amd"), true, null, Amd);
+
+        Assert.Equal("amd", capabilities.Brightness.Provider);
+        Assert.Equal("amd", capabilities.Contrast.Provider);
+        Assert.Equal(new CapabilityDescriptor(true, "windows", 0.3, 2.8, 1, null), capabilities.Gamma);
+        Assert.Equal("amd", capabilities.Saturation.Provider);
+        Assert.Equal("amd", capabilities.Hue.Provider);
+        Assert.Equal("amd", capabilities.ColorTemperature.Provider);
+
+        var unreadable = CapabilityResolver.Resolve(Display(hdr: false, "amd"), false, null, Amd).Gamma;
+        Assert.False(unreadable.Supported);
+        Assert.Equal("unknown", unreadable.Provider);
+        Assert.Equal("The display driver did not expose a readable gamma ramp.", unreadable.Reason);
+        Assert.Equal("amd", CapabilityResolver.Resolve(Display(hdr: false, "amd"), false, null, Amd).Brightness.Provider);
     }
 
     [Fact]

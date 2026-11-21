@@ -1104,9 +1104,18 @@ $processId`
 const compareOnly = globalThis.process.argv.includes('--compare-only')
 const capabilityLogOnly = globalThis.process.argv.includes('--capability-log-only')
 const hdrOnly = globalThis.process.argv.includes('--hdr-only')
+// `--display-vendor=amd` guards only a display on that adapter vendor, so the
+// owner can run the smoke against an AMD-driven display beside NVIDIA ones.
+// Parsed before any phase that writes displays.
+const guardedVendor = globalThis.process.argv
+  .find((argument) => argument.startsWith('--display-vendor='))
+  ?.slice('--display-vendor='.length)
+  .toLowerCase()
 // #89: NVIDIA HDR saturation/hue with read-back and exact restore. Runs only when a
 // display already reports HDR, and never toggles HDR or writes a non-baseline ramp.
-if (!compareOnly && !capabilityLogOnly) await verifyHdrSaturationHue({ displayServicePath })
+// A run scoped to another vendor skips it, so it writes no NVIDIA display.
+if (!compareOnly && !capabilityLogOnly && (guardedVendor === undefined || guardedVendor === 'nvidia'))
+  await verifyHdrSaturationHue({ displayServicePath })
 if (hdrOnly) globalThis.process.exit(0)
 if (!compareOnly && !capabilityLogOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,
@@ -1150,6 +1159,8 @@ for (const display of guardDisplays) {
 }
 let guardedDisplays
 for (const group of [...guardGroups.values()].sort((left, right) => right.length - left.length)) {
+  if (guardedVendor !== undefined && !group.every((display) => display.adapter.vendor === guardedVendor))
+    continue
   const reports = await Promise.all(
     group.map((display) => restorationGuard.getDisplayCapabilityReport(display.id))
   )
@@ -1163,7 +1174,11 @@ for (const group of [...guardGroups.values()].sort((left, right) => right.length
 }
 if (guardedDisplays === undefined) {
   await restorationGuard.stop()
-  throw new Error('The restoration guard found no SDR display with brightness support.')
+  throw new Error(
+    guardedVendor === undefined
+      ? 'The restoration guard found no SDR display with brightness support.'
+      : `The restoration guard found no SDR ${guardedVendor} display with brightness support.`
+  )
 }
 const guardedDisplay = guardedDisplays[0]
 const guardedBaselines = new Map()
@@ -4422,7 +4437,8 @@ async function runSmoke() {
       const display = state.value.displays.find(
         (candidate) => candidate.id === ${JSON.stringify(guardedProductDisplayId)}
       )
-      const secondDisplay = state.value.displays.find(
+      // A vendor-scoped run writes only the guarded display.
+      const secondDisplay = ${JSON.stringify(guardedVendor !== undefined)} ? undefined : state.value.displays.find(
         (candidate) => candidate.id !== display?.id &&
           state.value.capabilityReports[candidate.id]?.capabilities.brightness.supported === true
       )
@@ -4646,7 +4662,7 @@ async function runSmoke() {
         (display) =>
           state.value.capabilityReports[display.id]?.capabilities.brightness.supported === true
       )
-      if (writableDisplays.length < 2) return { skipped: true }
+      if (writableDisplays.length < 2 || ${JSON.stringify(guardedVendor !== undefined)}) return { skipped: true }
       return {
         skipped: false,
         targets: profile?.displays.map((target) => [target.displayId, target.color])
