@@ -547,6 +547,28 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Fact]
+    public void AmdSdrApplyWritesEveryAdlxControlBeforeTheRampSoNoneFollowsTheLastHdrCheck()
+    {
+        var fixture = new Fixture("amd");
+        var transformed = GammaRampTransform.Apply(Ramp(250), new GammaSettings(null, null, 1.2)).GetHash();
+        fixture.Gamma.BeforeWrite = ramp =>
+        {
+            // HDR turns on while the transformed ramp is being written.
+            if (ramp.GetHash() == transformed)
+                fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        };
+
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(60, 55, 1.2, 55, 10, 60));
+
+        var transformedWrite = fixture.Calls.LastIndexOf("gamma:write");
+        Assert.True(transformedWrite > 0);
+        Assert.DoesNotContain(
+            fixture.Calls.Skip(transformedWrite),
+            call => call.StartsWith("amd:set", StringComparison.Ordinal));
+        Assert.Equal(5, fixture.Calls.Count(call => call.StartsWith("amd:set", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void AmdSdrApplyWithoutGammaWritesOnlyTheBaselineRamp()
     {
         var fixture = new Fixture("amd");

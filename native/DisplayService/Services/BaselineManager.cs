@@ -195,15 +195,25 @@ internal sealed class BaselineManager(
             int? colorTemperature = null;
             double? appliedGamma = settings.Gamma;
             JsonObject? learnedGammaLimit = null;
+            int? saturation = null;
+            int? hue = null;
             // AMD brightness and contrast use ADLX custom color; elsewhere they
-            // shape the Windows ramp. Gamma always uses the Windows ramp.
+            // shape the Windows ramp. Gamma always uses the Windows ramp. Every
+            // ADLX write runs before the ramp write, so the fresh HDR check before
+            // that last write covers the whole AMD apply.
             var rampBrightness = settings.Brightness;
             var rampContrast = settings.Contrast;
             if (display.Adapter.Vendor == "amd")
             {
                 EnsureAmdOriginalsCaptured(baseline.Amd, settings);
+                // The baseline restore above can take time; re-read HDR and ownership
+                // before the first ADLX profile write, as before a transformed ramp.
+                EnsureStillSdrBeforeTransformedRampWrite(display.Id, baseline);
                 if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
                 if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
+                if (settings.Saturation is not null) saturation = amd.SetSaturation(display, settings.Saturation.Value);
+                if (settings.Hue is not null) hue = amd.SetHue(display, settings.Hue.Value);
+                if (settings.ColorTemperature is not null) colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
                 rampBrightness = null;
                 rampContrast = null;
             }
@@ -309,38 +319,30 @@ internal sealed class BaselineManager(
                 }
             }
 
-            int? saturation = null;
-            if (settings.Saturation is not null)
+            if (display.Adapter.Vendor != "amd")
             {
-                if (display.Adapter.Vendor == "amd")
+                if (settings.Saturation is not null)
                 {
-                    saturation = amd.SetSaturation(display, settings.Saturation.Value);
+                    if (!baseline.Nvidia.Saturation.Supported)
+                    {
+                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+                    }
+                    saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
                 }
-                else if (!baseline.Nvidia.Saturation.Supported)
-                {
-                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
-                }
-                else saturation = nvidia.SetSaturation(display, settings.Saturation.Value);
-            }
 
-            int? hue = null;
-            if (settings.Hue is not null)
-            {
-                if (display.Adapter.Vendor == "amd")
+                if (settings.Hue is not null)
                 {
-                    hue = amd.SetHue(display, settings.Hue.Value);
+                    if (!baseline.Nvidia.Hue.Supported)
+                    {
+                        throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+                    }
+                    hue = nvidia.SetHue(display, settings.Hue.Value);
                 }
-                else if (!baseline.Nvidia.Hue.Supported)
-                {
-                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
-                }
-                else hue = nvidia.SetHue(display, settings.Hue.Value);
-            }
 
-            if (settings.ColorTemperature is not null)
-            {
-                if (display.Adapter.Vendor != "amd") throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
-                colorTemperature = amd.SetColorTemperature(display, settings.ColorTemperature.Value);
+                if (settings.ColorTemperature is not null)
+                {
+                    throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "Color temperature has no verified provider for this display.");
+                }
             }
 
             Log("DisplaySettingApplied", display, gammaHash, "sdr");
@@ -706,8 +708,8 @@ internal sealed class BaselineManager(
 
     /// <summary>
     /// A fresh enumeration immediately before a transformed GDI ramp write on the
-    /// SDR path. HDR or an ownership change refuses the write; baseline restore
-    /// writes do not use this check.
+    /// SDR path, and before the first AMD ADLX profile write. HDR or an ownership
+    /// change refuses the write; baseline restore writes do not use this check.
     /// </summary>
     private void EnsureStillSdrBeforeTransformedRampWrite(string displayId, BaselineEntry baseline)
     {
