@@ -42,50 +42,15 @@ jobs:
       - name: Show .NET SDK
         run: dotnet --version
 
-      # The archive also captures the workspace links (node_modules/@chromashift).
-      # They may restore as stale copies, so Link workspaces replaces them.
-      - name: Restore node_modules
-        id: node-modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            apps/*/node_modules
-            packages/*/node_modules
-          # Manifests are part of the key so a manifest change still runs npm ci, which
-          # rejects a lockfile that is out of sync.
-          key: node-modules-${{ runner.os }}-node-24.11.1-${{ hashFiles('package-lock.json', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
-
-      - name: Link workspaces
-        if: steps.node-modules.outputs.cache-hit == 'true'
-        shell: pwsh
-        run: |
-          foreach ($workspace in Get-ChildItem apps, packages -Directory) {
-            $manifest = Join-Path $workspace.FullName 'package.json'
-            if (-not (Test-Path $manifest)) { continue }
-            $name = (Get-Content $manifest -Raw | ConvertFrom-Json).name
-            $link = Join-Path 'node_modules' $name
-            New-Item -ItemType Directory -Force (Split-Path $link) | Out-Null
-            $restored = Get-Item $link -Force -ErrorAction SilentlyContinue
-            if ($restored.LinkType) {
-              # Delete only the link itself, never the workspace it points at.
-              [System.IO.Directory]::Delete($restored.FullName)
-            } elseif ($restored) {
-              Remove-Item $restored.FullName -Recurse -Force
-            }
-            New-Item -ItemType Junction -Path $link -Target $workspace.FullName | Out-Null
-          }
-
       - name: Locate npm cache
         id: npm-cache
-        if: steps.node-modules.outputs.cache-hit != 'true'
         shell: pwsh
         run: '"dir=$(npm config get cache)" >> $env:GITHUB_OUTPUT'
 
-      # Only on a node_modules miss. The prefix restore key keeps most package
-      # tarballs when the lockfile changes, such as on a version bump.
+      # npm ci always runs, so it still validates the lockfile against every
+      # manifest. The prefix restore key keeps most package tarballs when the
+      # lockfile changes, such as on a version bump.
       - name: Restore npm cache
-        if: steps.node-modules.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
@@ -93,7 +58,6 @@ jobs:
           restore-keys: npm-${{ runner.os }}-
 
       - name: Install dependencies
-        if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Run canonical verification

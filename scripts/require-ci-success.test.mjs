@@ -84,8 +84,9 @@ test('CI runs canonical verification and never cancels or replaces a main run', 
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)
 })
 
-test('CI replaces restored workspace links without following them', async () => {
+test('CI always installs with npm ci and caches only npm downloads', async () => {
   const workflow = await readFile('.github/workflows/ci.yml', 'utf8')
-  assert.match(workflow, /if \(\$restored\.LinkType\) \{[^}]*\[System\.IO\.Directory\]::Delete/)
-  assert.match(workflow, /New-Item -ItemType Junction/)
+  assert.match(workflow, /- name: Install dependencies\s+run: npm ci/)
+  assert.doesNotMatch(workflow, /node_modules/)
+  assert.doesNotMatch(workflow, /setup-dotnet/)
 })

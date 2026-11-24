@@ -21,10 +21,10 @@ GitHub CI. It does not claim native hardware, visible desktop, installation, or
 restoration behavior. Run the relevant real command when changing those paths.
 A change confined to `apps/website` skips the Windows CI and runs the faster
 Website CI instead: website formatting, lint, typecheck, tests, and build.
-Windows CI uses the runner image's .NET SDK through `global.json`, restores
-`node_modules` from a cache and replaces its workspace links, and runs `npm ci` only on
-a cache miss. A NuGet cache was measured and dropped: restoring its 224 MB took
-about as long as the restore it saved.
+Windows CI uses the runner image's .NET SDK through `global.json` and always
+runs `npm ci` from a restored npm download cache. Caches of `node_modules` and
+NuGet packages were measured and dropped: each saved about 10s or less, and a
+cached `node_modules` skipped `npm ci`'s lockfile validation.
 
 The desktop test command installs Electron's binary once before starting Vitest
 workers. This prevents concurrent first-import extraction after a clean `npm ci`.
