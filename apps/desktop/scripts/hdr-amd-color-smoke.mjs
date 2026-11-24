@@ -1,4 +1,4 @@
-import { NativeClient, NativeServiceError } from '@chromashift/native-client'
+import { NativeClient } from '@chromashift/native-client'
 
 const adlxControls = ['brightness', 'contrast', 'saturation', 'hue', 'colorTemperature']
 
@@ -62,17 +62,9 @@ async function verifyDisplay(native, display, report) {
       `${display.name}: the baseline did not record HDR (colorMode ${capture.colorMode}).`
     )
 
-  // The helper refuses gamma under HDR before any write.
-  try {
-    await native.applyDisplaySettings(display.id, { brightness: 55, gamma: 1.1 })
-    throw new Error(`${display.name}: an HDR gamma request was accepted.`)
-  } catch (error) {
-    if (!(error instanceof NativeServiceError) || error.code !== 'HDR_UNSAFE') throw error
-  }
-  const unchanged = amdValues(await native.getDisplayCapabilityReport(display.id))
-  if (JSON.stringify(unchanged) !== JSON.stringify(original))
-    throw new Error(`${display.name}: a refused HDR request changed AMD values.`)
-
+  // Send only ADLX values. A gamma probe here could reach the SDR path, and
+  // write a transformed ramp, if HDR turned off after capture; the native
+  // allowlist tests cover the gamma refusal instead.
   const settings = Object.fromEntries(
     adlxControls
       .filter((name) => capabilities[name].supported)
