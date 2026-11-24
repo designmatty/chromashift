@@ -59,7 +59,6 @@
 
 .faq__table {
   width: 100%;
-  max-width: 440px;
   border-collapse: collapse;
   font-size: 15px;
 }
@@ -73,6 +72,13 @@
 
 .faq__table th:first-child {
   padding-left: 0;
+}
+
+/* The AMD and NVIDIA columns. */
+.faq__table thead th + th,
+.faq__table td {
+  width: 25%;
+  text-align: center;
 }
 
 .faq__table thead th {
@@ -90,6 +96,20 @@
 .faq__table td {
   color: var(--color-muted);
   white-space: nowrap;
+}
+
+.faq__icon {
+  display: inline-block;
+  font-size: 16px;
+  vertical-align: -3px;
+}
+
+.faq__icon--yes {
+  color: var(--color-foreground);
+}
+
+.faq__icon--no {
+  color: var(--color-subtle);
 }
 
 @media (prefers-reduced-motion: reduce) {

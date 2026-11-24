@@ -111,6 +111,7 @@
         <path d="M18 6 6 18" />
         <path d="m6 6 12 12" />
       </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24">
         <path d="M5 12h14" />
         <path d="M12 5v14" />
@@ -637,38 +638,82 @@
                     <tbody>
                       <tr>
                         <th scope="row">Brightness</th>
-                        <td>Works</td>
-                        <td>Off</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
                       </tr>
                       <tr>
                         <th scope="row">Contrast</th>
-                        <td>Works</td>
-                        <td>Off</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
                       </tr>
                       <tr>
                         <th scope="row">Gamma</th>
-                        <td>Off</td>
-                        <td>Off</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
                       </tr>
                       <tr>
                         <th scope="row">Saturation</th>
-                        <td>Works</td>
-                        <td>Works</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
                       </tr>
                       <tr>
                         <th scope="row">Hue</th>
-                        <td>Works</td>
-                        <td>Works</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
                       </tr>
                       <tr>
                         <th scope="row">Color temperature</th>
-                        <td>Works</td>
-                        <td>Not supported</td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>AMD only</td>
                       </tr>
                     </tbody>
                   </table>
                   <p>
-                    Controls marked Off use a Windows feature that only works in SDR. Intel and
+                    Controls that are off use a Windows feature that only works in SDR. Intel and
                     other displays stay at their original settings while HDR is on.
                   </p>
                   <p>
