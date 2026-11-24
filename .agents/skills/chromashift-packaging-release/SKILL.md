@@ -17,3 +17,5 @@ description: Use for Electron Builder, DisplayService sidecar packaging, shutdow
    from a hosted CI build.
 5. Release automation must verify package/tag version agreement, serialize
    releases, preserve user data, and expose signing hooks without storing secrets.
+   The release workflow requires passing CI on `main` for the tagged commit
+   instead of repeating `npm run verify`. It never restores a dependency cache.

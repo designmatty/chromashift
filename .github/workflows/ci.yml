@@ -12,9 +12,11 @@ on:
     paths-ignore:
       - 'apps/website/**'
 
+# A newer push cancels an older pull request run. Main runs always finish,
+# because the release workflow requires a passing main run for the tagged commit.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -33,15 +35,67 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.11.1
-          cache: npm
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      # The .NET SDK comes from the runner image. global.json rolls the pinned
+      # 10.0.302 forward to the newest installed 10.0.3xx patch.
+      - name: Show .NET SDK
+        run: dotnet --version
+
+      # Workspace links are excluded: a cached link would restore as a stale copy
+      # of the workspace. They are recreated after a cache hit.
+      - name: Restore node_modules
+        id: node-modules
+        uses: actions/cache@v4
         with:
-          dotnet-version: 10.0.302
+          path: |
+            node_modules
+            !node_modules/@chromashift
+            apps/*/node_modules
+            packages/*/node_modules
+          # Manifests are part of the key so a manifest change still runs npm ci, which
+          # rejects a lockfile that is out of sync.
+          key: node-modules-${{ runner.os }}-node-24.11.1-${{ hashFiles('package-lock.json', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
+
+      - name: Link workspaces
+        if: steps.node-modules.outputs.cache-hit == 'true'
+        shell: pwsh
+        run: |
+          foreach ($workspace in Get-ChildItem apps, packages -Directory) {
+            $manifest = Join-Path $workspace.FullName 'package.json'
+            if (-not (Test-Path $manifest)) { continue }
+            $name = (Get-Content $manifest -Raw | ConvertFrom-Json).name
+            $link = Join-Path 'node_modules' $name
+            New-Item -ItemType Directory -Force (Split-Path $link) | Out-Null
+            if (Test-Path $link) { Remove-Item $link -Recurse -Force }
+            New-Item -ItemType Junction -Path $link -Target $workspace.FullName | Out-Null
+          }
+
+      - name: Locate npm cache
+        id: npm-cache
+        if: steps.node-modules.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: '"dir=$(npm config get cache)" >> $env:GITHUB_OUTPUT'
+
+      # Only on a node_modules miss. The prefix restore key keeps most package
+      # tarballs when the lockfile changes, such as on a version bump.
+      - name: Restore npm cache
+        if: steps.node-modules.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
 
       - name: Install dependencies
+        if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
+
+      - name: Restore NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'native/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Run canonical verification
         run: npm run verify
