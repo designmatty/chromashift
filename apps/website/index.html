@@ -611,9 +611,10 @@
                 <div class="faq__answer">
                   <p>
                     ChromaShift runs on 64-bit (x64) Windows 11. NVIDIA GPUs are tested on real
-                    hardware. AMD GPUs are supported through AMD’s ADLX API but haven’t been tested
-                    on an AMD-driven display yet. Intel and other GPUs are recognized, but
-                    ChromaShift has no vendor-specific color support for them.
+                    hardware. AMD support uses AMD’s ADLX API and is tested on a display connected
+                    to Ryzen integrated graphics. Radeon graphics cards and setups with more than
+                    one AMD-driven display haven’t been tested yet. Intel and other GPUs are
+                    recognized, but ChromaShift has no vendor-specific color support for them.
                   </p>
                 </div>
               </details>
@@ -625,10 +626,11 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    Partially. With HDR on, NVIDIA displays keep their saturation and hue settings.
-                    Brightness, contrast, and gamma are turned off, because Windows only supports
-                    them in SDR. AMD and other displays stay at their original settings while HDR is
-                    on.
+                    Partially. With HDR on, AMD displays keep brightness, contrast, saturation, hue,
+                    and color temperature, and NVIDIA displays keep saturation and hue. The other
+                    controls are turned off, because they use a Windows feature that only works in
+                    SDR: gamma on AMD, and brightness, contrast, and gamma on NVIDIA. Intel and
+                    other displays stay at their original settings while HDR is on.
                   </p>
                   <p>
                     Your profiles are unchanged, and everything comes back when HDR is turned off.
