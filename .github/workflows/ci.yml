@@ -12,10 +12,11 @@ on:
     paths-ignore:
       - 'apps/website/**'
 
-# A newer push cancels an older pull request run. Main runs always finish,
-# because the release workflow requires a passing main run for the tagged commit.
+# A newer push cancels an older pull request run. Each main push gets its own
+# group, so a later merge can neither cancel nor replace a queued main run: the
+# release workflow requires a passing main run for the exact tagged commit.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -41,15 +42,14 @@ jobs:
       - name: Show .NET SDK
         run: dotnet --version
 
-      # Workspace links are excluded: a cached link would restore as a stale copy
-      # of the workspace. They are recreated after a cache hit.
+      # The archive also captures the workspace links (node_modules/@chromashift).
+      # They may restore as stale copies, so Link workspaces replaces them.
       - name: Restore node_modules
         id: node-modules
         uses: actions/cache@v4
         with:
           path: |
             node_modules
-            !node_modules/@chromashift
             apps/*/node_modules
             packages/*/node_modules
           # Manifests are part of the key so a manifest change still runs npm ci, which
@@ -66,7 +66,13 @@ jobs:
             $name = (Get-Content $manifest -Raw | ConvertFrom-Json).name
             $link = Join-Path 'node_modules' $name
             New-Item -ItemType Directory -Force (Split-Path $link) | Out-Null
-            if (Test-Path $link) { Remove-Item $link -Recurse -Force }
+            $restored = Get-Item $link -Force -ErrorAction SilentlyContinue
+            if ($restored.LinkType) {
+              # Delete only the link itself, never the workspace it points at.
+              [System.IO.Directory]::Delete($restored.FullName)
+            } elseif ($restored) {
+              Remove-Item $restored.FullName -Recurse -Force
+            }
             New-Item -ItemType Junction -Path $link -Target $workspace.FullName | Out-Null
           }
 

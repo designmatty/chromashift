@@ -61,17 +61,31 @@ test('rejects invalid inputs before reading runs', async () => {
   assert.equal(calls.length, 0)
 })
 
-test('the release requires passing main CI before packaging instead of repeating verify', async () => {
+test('the release requires passing main CI and a fresh audit before packaging', async () => {
   const workflow = await readFile('.github/workflows/release.yml', 'utf8')
   assert.doesNotMatch(workflow, /run: npm run verify/)
   assert.match(workflow, /permissions:\s+contents: write\s+id-token: write\s+actions: read/)
   const ciCheck = workflow.indexOf('node scripts/require-ci-success.mjs')
   assert.ok(ciCheck > workflow.indexOf('npm ci'))
   assert.ok(ciCheck < workflow.indexOf('npm run package:release:prepare'))
+  const audit = workflow.indexOf('run: npm run audit:dependencies')
+  assert.ok(audit > workflow.indexOf('npm ci'))
+  assert.ok(audit < workflow.indexOf('npm run package:release:prepare'))
 })
 
-test('CI runs canonical verification and never cancels a main run', async () => {
+test('CI runs canonical verification and never cancels or replaces a main run', async () => {
   const workflow = await readFile('.github/workflows/ci.yml', 'utf8')
   assert.match(workflow, /run: npm run verify/)
+  assert.ok(
+    workflow.includes(
+      "group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}"
+    )
+  )
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)
+})
+
+test('CI replaces restored workspace links without following them', async () => {
+  const workflow = await readFile('.github/workflows/ci.yml', 'utf8')
+  assert.match(workflow, /if \(\$restored\.LinkType\) \{[^}]*\[System\.IO\.Directory\]::Delete/)
+  assert.match(workflow, /New-Item -ItemType Junction/)
 })
