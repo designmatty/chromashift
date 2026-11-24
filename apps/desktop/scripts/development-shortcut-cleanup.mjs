@@ -16,7 +16,9 @@ export function cleanupDevelopmentShortcut(electronExecutablePath) {
       '-ElectronExecutablePath',
       electronExecutablePath
     ],
-    { encoding: 'utf8', windowsHide: true, timeout: 10_000 }
+    // PowerShell start-up, the shell COM objects and the CIM process query can
+    // exceed 10 seconds on a cold hosted Windows runner.
+    { encoding: 'utf8', windowsHide: true, timeout: 30_000 }
   ).trim()
   if (output !== '') globalThis.console.log(output)
 }
