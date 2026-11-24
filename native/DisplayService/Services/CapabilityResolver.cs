@@ -15,8 +15,7 @@ internal sealed class CapabilityResolver(
 
     private const string NoReadableRampReason = "The display driver did not expose a readable gamma ramp.";
 
-    internal const string AmdHdrReason =
-        "AMD display controls are disabled until ADLX behavior is verified under HDR.";
+    internal const string AmdUnavailableReason = "AMD ADLX display state is unavailable.";
 
     internal DisplayCapabilities Get(DisplayDescriptor display)
     {
@@ -31,10 +30,11 @@ internal sealed class CapabilityResolver(
     }
 
     /// <summary>
-    /// Pure capability resolution. Under HDR, NVIDIA saturation and hue keep their
-    /// normal provider capability; the Windows ramp controls stay SDR-only, and
-    /// every AMD control stays unsupported. AMD brightness and contrast use ADLX
-    /// custom color, and AMD gamma uses the Windows ramp, as on other adapters.
+    /// Pure capability resolution. AMD brightness, contrast, saturation, hue and
+    /// color temperature use ADLX custom color in SDR and under HDR (#122). Gamma
+    /// uses the Windows ramp on every adapter and, with the other Windows ramp
+    /// controls, stays SDR-only. Under HDR, NVIDIA saturation and hue keep their
+    /// normal provider capability.
     /// </summary>
     internal static DisplayCapabilities Resolve(
         DisplayDescriptor display,
@@ -44,15 +44,19 @@ internal sealed class CapabilityResolver(
     {
         if (display.Adapter.Vendor == "amd")
         {
-            if (display.Hdr || amdState is null)
+            if (amdState is null)
             {
-                var unsupported = new CapabilityDescriptor(false, "unknown", null, null, null, AmdHdrReason);
+                var unsupported = new CapabilityDescriptor(false, "unknown", null, null, null, AmdUnavailableReason);
                 return new DisplayCapabilities(unsupported, unsupported, unsupported, unsupported, unsupported, unsupported);
             }
+            var amdGammaSupported = !display.Hdr && windowsGammaSupported;
+            var amdGammaReason = display.Hdr
+                ? WindowsGammaHdrReason
+                : amdGammaSupported ? null : NoReadableRampReason;
             return new DisplayCapabilities(
                 ProviderCapability("amd", amdState.Brightness),
                 ProviderCapability("amd", amdState.Contrast),
-                WindowsCapability(windowsGammaSupported, 0.3, 2.8, 1, windowsGammaSupported ? null : NoReadableRampReason),
+                WindowsCapability(amdGammaSupported, 0.3, 2.8, 1, amdGammaReason),
                 ProviderCapability("amd", amdState.Saturation),
                 ProviderCapability("amd", amdState.Hue),
                 ProviderCapability("amd", amdState.ColorTemperature));

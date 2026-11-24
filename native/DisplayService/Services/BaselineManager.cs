@@ -20,24 +20,23 @@ internal sealed class BaselineManager(
     internal JsonObject Capture(string displayId) => Capture(displayId, allowHdr: true);
 
     /// <summary>
-    /// Captures once and never recaptures. Under HDR only non-AMD displays may
-    /// capture; the entry records the color mode at capture. The SDR apply path
-    /// passes <paramref name="allowHdr"/> false so a display that turned HDR
-    /// after its first enumeration still fails closed before any write.
+    /// Captures once and never recaptures. Capture is a read and is allowed under
+    /// HDR on every adapter; the entry records the color mode at capture. The SDR
+    /// apply path passes <paramref name="allowHdr"/> false so a display that
+    /// turned HDR after its first enumeration still fails closed before any write.
     /// </summary>
     private JsonObject Capture(string displayId, bool allowHdr)
     {
         lock (_sync)
         {
             var display = FindDisplay(displayId);
-            if (allowHdr) EnsureCaptureSafe(display);
-            else EnsureSdrWritesSafe(display);
+            if (!allowHdr) EnsureSdrWritesSafe(display);
             if (_baselines.TryGetValue(displayId, out var existing))
             {
                 return Describe(existing, "alreadyCaptured");
             }
 
-            // Every adapter's gamma uses the Windows ramp. AMD capture under HDR was refused above.
+            // Every adapter's gamma uses the Windows ramp.
             var ramp = gamma.IsSupported(display.WindowsDisplayName) ? ReadGamma(display) : null;
             var nvidiaState = nvidia.GetState(display);
             var amdState = amd.GetState(display);
@@ -103,10 +102,11 @@ internal sealed class BaselineManager(
     }
 
     /// <summary>
-    /// The only profile write allowed while HDR is on: NVIDIA saturation and hue.
-    /// The whole request is validated before capture or any write, so no partial
-    /// apply can happen. The GDI ramp is written only by <see cref="RestoreEntry"/>,
-    /// which restores the captured baseline with read-back.
+    /// The profile writes allowed while HDR is on: NVIDIA saturation and hue
+    /// (#89), and AMD ADLX brightness, contrast, saturation, hue and color
+    /// temperature (#122). The whole request is validated before capture or any
+    /// write, so no partial apply can happen. The GDI ramp is written only by
+    /// <see cref="RestoreEntry"/>, which restores the captured baseline with read-back.
     /// </summary>
     private JsonObject ApplyUnderHdr(DisplayDescriptor display, DisplaySettings settings)
     {
@@ -117,46 +117,78 @@ internal sealed class BaselineManager(
             baseline = _baselines[display.Id];
         }
         EnsureBaselineOwnership(display, baseline);
-        if (settings.Saturation is not null && !baseline.Nvidia.Saturation.Supported)
+        var amdDisplay = display.Adapter.Vendor == "amd";
+        if (amdDisplay)
         {
-            throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+            EnsureAmdOriginalsCaptured(baseline.Amd, settings);
         }
-        if (settings.Hue is not null && !baseline.Nvidia.Hue.Supported)
+        else
         {
-            throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+            if (settings.Saturation is not null && !baseline.Nvidia.Saturation.Supported)
+            {
+                throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA saturation is unavailable for this display.");
+            }
+            if (settings.Hue is not null && !baseline.Nvidia.Hue.Supported)
+            {
+                throw new DisplayOperationException("CAPABILITY_UNSUPPORTED", "NVIDIA hue is unavailable for this display.");
+            }
         }
 
         try
         {
-            // Restore-then-apply, as in SDR: the captured ramp and NVIDIA values
+            // Restore-then-apply, as in SDR: the captured ramp and provider values
             // come back first, so profiles never compound.
             RestoreEntry(display, baseline);
-            int? saturation = settings.Saturation is { } requestedSaturation
-                ? nvidia.SetSaturation(display, requestedSaturation)
-                : null;
-            int? hue = settings.Hue is { } requestedHue
-                ? nvidia.SetHue(display, requestedHue)
-                : null;
+            int? brightness = null;
+            int? contrast = null;
+            int? saturation = null;
+            int? hue = null;
+            int? colorTemperature = null;
+            if (amdDisplay)
+            {
+                // ADLX custom color applies in both color modes, so no SDR re-check
+                // is needed between these writes; each provider write reads back.
+                if (settings.Brightness is { } requestedBrightness) brightness = amd.SetBrightness(display, requestedBrightness);
+                if (settings.Contrast is { } requestedContrast) contrast = amd.SetContrast(display, requestedContrast);
+                if (settings.Saturation is { } amdSaturation) saturation = amd.SetSaturation(display, amdSaturation);
+                if (settings.Hue is { } amdHue) hue = amd.SetHue(display, amdHue);
+                if (settings.ColorTemperature is { } requestedTemperature) colorTemperature = amd.SetColorTemperature(display, requestedTemperature);
+            }
+            else
+            {
+                if (settings.Saturation is { } requestedSaturation) saturation = nvidia.SetSaturation(display, requestedSaturation);
+                if (settings.Hue is { } requestedHue) hue = nvidia.SetHue(display, requestedHue);
+            }
             NativeLog.Write(new JsonObject
             {
                 ["level"] = "information",
                 ["eventName"] = "DisplaySettingApplied",
                 ["displayId"] = display.Id,
                 ["displayName"] = display.Name,
-                ["provider"] = "nvidia",
+                ["provider"] = amdDisplay ? "amd" : "nvidia",
                 ["colorMode"] = "hdr",
+                ["brightness"] = brightness,
+                ["contrast"] = contrast,
+                ["saturation"] = saturation,
+                ["hue"] = hue,
+                ["colorTemperature"] = colorTemperature
+            });
+            var applied = new JsonObject
+            {
                 ["saturation"] = saturation,
                 ["hue"] = hue
-            });
+            };
+            if (amdDisplay)
+            {
+                applied["brightness"] = brightness;
+                applied["contrast"] = contrast;
+                applied["colorTemperature"] = colorTemperature;
+            }
             return new JsonObject
             {
                 ["displayId"] = display.Id,
                 ["settings"] = NativeJson.ToNode(settings),
-                ["applied"] = new JsonObject
-                {
-                    ["saturation"] = saturation,
-                    ["hue"] = hue
-                }
+                ["applied"] = applied
             };
         }
         catch (ArgumentOutOfRangeException exception)
@@ -207,7 +239,9 @@ internal sealed class BaselineManager(
             {
                 EnsureAmdOriginalsCaptured(baseline.Amd, settings);
                 // The baseline restore above can take time; re-read HDR and ownership
-                // before the first ADLX profile write, as before a transformed ramp.
+                // before the first ADLX profile write. This request was validated
+                // for SDR and may carry gamma, so an HDR-on change routes it back
+                // through Electron's HDR projection instead.
                 EnsureStillSdrBeforeTransformedRampWrite(display.Id, baseline);
                 if (settings.Brightness is not null) brightness = amd.SetBrightness(display, settings.Brightness.Value);
                 if (settings.Contrast is not null) contrast = amd.SetContrast(display, settings.Contrast.Value);
@@ -522,8 +556,8 @@ internal sealed class BaselineManager(
     private void RestoreEntry(DisplayDescriptor display, BaselineEntry baseline)
     {
         // Restore accepts only immutable captured state, including under HDR.
-        // This is the only GDI ramp write allowed under HDR. Capture and Apply keep
-        // their separate HDR guards (EnsureCaptureSafe, EnsureHdrApplyRequest).
+        // This is the only GDI ramp write allowed under HDR. Apply keeps its
+        // separate HDR guards (EnsureHdrApplyRequest, EnsureSdrWritesSafe).
         var failures = new List<string>();
         if (baseline.GammaRamp is not null)
         {
@@ -751,51 +785,48 @@ internal sealed class BaselineManager(
         throw new DisplayOperationException(
             "HDR_UNSAFE",
             $"SDR profile application is disabled while HDR is active on {display.Name}; " +
-            "only NVIDIA saturation and hue, or a restore of captured original settings, are allowed.");
+            "only NVIDIA saturation and hue, AMD display color, or a restore of captured original settings, are allowed.");
     }
 
     /// <summary>
-    /// Capture is a read. Under HDR it stays refused for AMD, whose ADLX behavior
-    /// under HDR is unverified. Other displays may capture; the entry records HDR.
-    /// </summary>
-    internal static void EnsureCaptureSafe(DisplayDescriptor display)
-    {
-        if (!display.Hdr || display.Adapter.Vendor != "amd") return;
-        throw new DisplayOperationException(
-            "HDR_UNSAFE",
-            $"AMD baseline capture and profile application are disabled while HDR is active on {display.Name}; " +
-            "only captured original settings may be restored.");
-    }
-
-    /// <summary>
-    /// Validates a whole HDR apply request before capture or any write. Only NVIDIA
-    /// saturation and hue are accepted. Brightness, contrast and gamma use the GDI
-    /// ramp and stay SDR-only; color temperature has no NVIDIA provider. An empty
+    /// Validates a whole HDR apply request before capture or any write. NVIDIA
+    /// accepts saturation and hue (#89). AMD accepts its ADLX controls:
+    /// brightness, contrast, saturation, hue and color temperature (#122). Gamma
+    /// uses the Windows ramp on every adapter and stays SDR-only, as do NVIDIA
+    /// brightness and contrast. Other adapters have no HDR provider. An empty
     /// request is refused: Original settings come back only through restore.
     /// </summary>
     internal static void EnsureHdrApplyRequest(DisplayDescriptor display, DisplaySettings settings)
     {
         if (!display.Hdr) return;
-        if (display.Adapter.Vendor != "nvidia")
+        var vendor = display.Adapter.Vendor;
+        if (vendor is not ("nvidia" or "amd"))
         {
             throw new DisplayOperationException(
                 "HDR_UNSAFE",
                 $"Profile application is disabled while HDR is active on {display.Name}; " +
-                "only NVIDIA saturation and hue may be applied under HDR.");
+                "only NVIDIA and AMD display providers may apply under HDR.");
         }
-        if (settings.Brightness is not null || settings.Contrast is not null ||
-            settings.Gamma is not null || settings.ColorTemperature is not null)
+        if (settings.Gamma is not null)
+        {
+            throw new DisplayOperationException(
+                "HDR_UNSAFE",
+                $"Gamma uses the Windows ramp and stays disabled while HDR is active on {display.Name}.");
+        }
+        if (vendor == "nvidia" &&
+            (settings.Brightness is not null || settings.Contrast is not null || settings.ColorTemperature is not null))
         {
             throw new DisplayOperationException(
                 "HDR_UNSAFE",
                 $"Brightness, contrast, gamma and color temperature stay disabled while HDR is active on {display.Name}; " +
                 "only NVIDIA saturation and hue may be applied under HDR.");
         }
-        if (settings.Saturation is null && settings.Hue is null)
+        if (settings.Brightness is null && settings.Contrast is null && settings.Saturation is null &&
+            settings.Hue is null && settings.ColorTemperature is null)
         {
             throw new DisplayOperationException(
                 "HDR_UNSAFE",
-                $"An HDR apply for {display.Name} must set saturation or hue; restore original settings instead.");
+                $"An HDR apply for {display.Name} must set at least one HDR-applicable control; restore original settings instead.");
         }
     }
 

@@ -52,21 +52,43 @@ public sealed class CapabilityResolverTests
         Assert.True(capabilities.Hue.Supported);
     }
 
-    [Fact]
-    public void AmdUnderHdrKeepsEveryControlUnsupported()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AmdUnderHdrUsesAdlxForEveryControlExceptTheSdrOnlyGamma(bool windowsGammaSupported)
     {
-        var capabilities = CapabilityResolver.Resolve(Display(hdr: true, "amd"), false, null, Amd);
+        // A stale "supported" ramp probe must not enable gamma under HDR.
+        var capabilities = CapabilityResolver.Resolve(Display(hdr: true, "amd"), windowsGammaSupported, null, Amd);
 
         foreach (var control in new[]
         {
-            capabilities.Brightness, capabilities.Contrast, capabilities.Gamma,
+            capabilities.Brightness, capabilities.Contrast,
             capabilities.Saturation, capabilities.Hue, capabilities.ColorTemperature
         })
         {
-            Assert.False(control.Supported);
-            Assert.Equal(CapabilityResolver.AmdHdrReason, control.Reason);
+            Assert.True(control.Supported);
+            Assert.Equal("amd", control.Provider);
         }
-        Assert.True(CapabilityResolver.Resolve(Display(hdr: false, "amd"), false, null, Amd).Saturation.Supported);
+        Assert.Equal(
+            new CapabilityDescriptor(false, "unknown", null, null, null, CapabilityResolver.WindowsGammaHdrReason),
+            capabilities.Gamma);
+    }
+
+    [Fact]
+    public void AmdWithoutAdlxStateHasNoSupportedControl()
+    {
+        var capabilities = CapabilityResolver.Resolve(Display(hdr: true, "amd"), true, null, null);
+        Assert.All(
+            new[]
+            {
+                capabilities.Brightness, capabilities.Contrast, capabilities.Gamma,
+                capabilities.Saturation, capabilities.Hue, capabilities.ColorTemperature
+            },
+            control =>
+            {
+                Assert.False(control.Supported);
+                Assert.Equal(CapabilityResolver.AmdUnavailableReason, control.Reason);
+            });
     }
 
     [Fact]
