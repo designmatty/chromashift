@@ -6,13 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0-preview.18] - 2026-11-23
+
 ### Added
 
 - On AMD displays, brightness, contrast, saturation, hue and color temperature
   now apply while Windows HDR is on, in profiles, previews and overrides. Gamma
   stays SDR-only: it keeps its value and applies when HDR turns off. Verified on
   an integrated Radeon GPU; see the
-  [display research](docs/display-research.md#amd-hdr-hardware-record-122).
+  [display research](https://github.com/designmatty/chromashift/blob/v0.1.0-preview.18/docs/display-research.md#amd-hdr-hardware-record-122).
 
 ### Fixed
 
@@ -23,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   other displays, with the same read-back and exact restore. It stays disabled
   while HDR is on. AMD support is verified on an
   integrated Radeon GPU; see the
-  [display research](docs/display-research.md#amd-hardware-record-119).
+  [display research](https://github.com/designmatty/chromashift/blob/v0.1.0-preview.18/docs/display-research.md#amd-hardware-record-119).
 
 ## [0.1.0-preview.17] - 2026-11-20
 
@@ -324,7 +326,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Restored the complete display baseline when a gamma write or verification is
   rejected, with a clear user-facing failure message and diagnostic color tuple.
 
-[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.17...HEAD
+[Unreleased]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.18...HEAD
+[0.1.0-preview.18]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.17...v0.1.0-preview.18
 [0.1.0-preview.17]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.16...v0.1.0-preview.17
 [0.1.0-preview.16]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.15...v0.1.0-preview.16
 [0.1.0-preview.15]: https://github.com/designmatty/chromashift/compare/v0.1.0-preview.14...v0.1.0-preview.15
