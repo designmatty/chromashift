@@ -81,6 +81,11 @@
   text-align: center;
 }
 
+/* The FAQ item's own border closes the table. */
+.faq__table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
 .faq__table thead th {
   font-size: 13px;
   font-weight: 500;
