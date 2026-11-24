@@ -105,11 +105,11 @@
 }
 
 .faq__icon--yes {
-  color: var(--color-foreground);
+  color: var(--color-positive);
 }
 
 .faq__icon--no {
-  color: var(--color-subtle);
+  color: var(--color-negative);
 }
 
 @media (prefers-reduced-motion: reduce) {
