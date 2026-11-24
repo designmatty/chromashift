@@ -205,9 +205,10 @@ in-memory preview recovery reason survives failed retries, so a successful
 End preview completes recovery without an extra Retry. It still persists as
 schema-v1 `resume`.
 Both panels show a short Chakra warning alert for an HDR display, driven by the
-capability report. When saturation or hue still applies, it says ChromaShift
-isn't fully compatible with HDR and only brightness, contrast, and gamma are
-disabled ("Disabled while HDR is on."). When nothing applies, it says HDR isn't
+capability report. When any control still applies, it says ChromaShift isn't
+fully compatible with HDR and only the Windows ramp controls are disabled
+("Disabled while HDR is on."): brightness, contrast, and gamma on NVIDIA, and
+gamma only on AMD. When nothing applies, it says HDR isn't
 supported on that display and every control is disabled above its target
 value. An outlined orange "HDR" badge marks HDR displays in the app panel's
 display tabs and the mini panel's display select. Target values apply when HDR turns off through the
@@ -300,8 +301,8 @@ targets, foreground-app triggers, and an Electron `.exe` picker. Triggers sit
 above color controls as compact executable chips, with add actions at the right
 of the section heading. The header shows an assigned hotkey at the start of its action group. Its
 controls derive support and provider explanations from each selected display's
-capability report; under HDR, brightness, contrast, and gamma stay disabled while
-supported saturation and hue stay editable. A separate
+capability report; under HDR, the Windows ramp controls stay disabled while
+supported NVIDIA saturation and hue and AMD ADLX controls stay editable. A separate
 display view retains the hardware diagnostics needed for provider support.
 Profile deletion, unsaved changes, and shortcut removal use Chakra's renderer-modal `Dialog` so closing an overflow
 menu and removing its trigger cannot strand Windows keyboard focus outside the

@@ -2,19 +2,19 @@
 
 ## Test commands
 
-| Command                                 | Scope                                                                                                                                                                      | Environment                    |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget                                               | Any supported Windows checkout |
-| `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                                                                             | Interactive Windows hardware   |
-| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                                                                       | Interactive Windows desktop    |
-| `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration                                                        | Interactive Windows desktop    |
-| `npm run smoke:capability-log`          | Manual/Automatic switches with state refreshes write the display without repeated `DisplayCapabilityResolved` entries                                                      | Interactive Windows desktop    |
-| `npm run smoke:hdr`                     | NVIDIA saturation and hue, and AMD ADLX controls, on a display already in HDR: capture records HDR, SDR-only fields refused, read-back, exact restore; skipped without HDR | Interactive Windows desktop    |
-| `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                                                                | Interactive Windows desktop    |
-| `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                                                                      | Interactive Windows desktop    |
-| `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                                                                | Windows                        |
-| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, and retained data                                                                                                      | Interactive Windows desktop    |
-| `npm run measure:performance`           | Packaged latency, memory, CPU, renderer release, and footprint budgets                                                                                                     | Reference Windows host         |
+| Command                                 | Scope                                                                                                                                                                               | Environment                    |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `npm run verify`                        | Formatting, lint, typechecking, deterministic tests, dependency and source audits, release preflight, build, renderer budget                                                        | Any supported Windows checkout |
+| `npm run native:test:integration`       | Real helper lifecycle, display discovery, capabilities, topology refresh, watchdog restoration                                                                                      | Interactive Windows hardware   |
+| `npm run smoke:desktop`                 | Real Electron windows, renderer IPC, profiles, preview, tray, shortcuts, display writes, restoration                                                                                | Interactive Windows desktop    |
+| `npm run smoke:compare`                 | Hold to compare in app and mini, both themes, sticky header, rename focus, exact saved/draft output and restoration                                                                 | Interactive Windows desktop    |
+| `npm run smoke:capability-log`          | Manual/Automatic switches with state refreshes write the display without repeated `DisplayCapabilityResolved` entries                                                               | Interactive Windows desktop    |
+| `npm run smoke:hdr`                     | NVIDIA saturation and hue, and AMD ADLX controls, on a display already in HDR: capture records HDR, SDR-only fields refused (NVIDIA), read-back, exact restore; skipped without HDR | Interactive Windows desktop    |
+| `npm run smoke:desktop:crash`           | Forced Electron exit and helper restoration                                                                                                                                         | Interactive Windows desktop    |
+| `npm run smoke:desktop:native-recovery` | Baseline-free helper termination and bounded recovery                                                                                                                               | Interactive Windows desktop    |
+| `npm run package:win`                   | Windows x64 unpacked app and NSIS installer                                                                                                                                         | Windows                        |
+| `npm run smoke:package`                 | Packaged helper, install, upgrade, exit, uninstall, and retained data                                                                                                               | Interactive Windows desktop    |
+| `npm run measure:performance`           | Packaged latency, memory, CPU, renderer release, and footprint budgets                                                                                                              | Reference Windows host         |
 
 `npm run verify` is the canonical non-interactive gate and the command used by
 GitHub CI. It does not claim native hardware, visible desktop, installation, or
@@ -472,16 +472,27 @@ resolution of each display, then not again while capabilities stay unchanged,
 while the switches still write the display. The same check runs early in the full
 suite. HDR or topology changes during the run log new entries and fail it.
 
-`mise.exe exec -- npm run smoke:hdr` builds and runs only the #89 check
-(`--hdr-only`). It starts its own DisplayService, which is also its restoration
-guard, and runs only when an NVIDIA display already reports HDR with saturation
-or hue support; otherwise it logs a skip. It confirms the Windows ramp controls
+`mise.exe exec -- npm run smoke:hdr` builds and runs only the HDR checks
+(`--hdr-only`): #89 for NVIDIA, then #122 for AMD. `-- --display-vendor=nvidia`
+or `-- --display-vendor=amd` runs only one. Each check starts its own
+DisplayService, which is also its restoration guard.
+
+The #89 check runs only when an NVIDIA display already reports HDR with
+saturation or hue support; otherwise it logs a skip. It confirms the Windows ramp controls
 are unsupported, captures with `colorMode: "hdr"`, and checks that a brightness
 request is refused with `HDR_UNSAFE` and no change. It then applies mild
 saturation and hue (±5 vibrance, ±4 hue degrees), reads both back through
 the capability report, restores, and confirms the original values. Shutdown
 restores anything left. It never toggles HDR or writes a non-baseline ramp.
-The full suite runs the same check before its other steps.
+
+The #122 check runs only when an AMD display already reports HDR with an ADLX
+control; otherwise it logs a skip. It confirms gamma is unsupported and every
+ADLX control uses the AMD provider, captures with `colorMode: "hdr"`, applies
+mild ADLX values near neutral, reads them back through the capability report,
+restores, and confirms the original values. It sends only ADLX values, so a
+mode change mid-run cannot route a gamma request through the SDR path; the
+native allowlist tests cover the gamma refusal. The full suite runs both
+checks before its other steps.
 
 ### Owner checks for panel close and handoff
 

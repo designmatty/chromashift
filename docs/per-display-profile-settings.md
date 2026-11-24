@@ -337,17 +337,19 @@ during an override unless its output may still carry SDR ramp values; then it
 is restored. The session and full draft stay intact, SDR displays keep the
 draft, and HDR-off reapplies the full current draft or target. Both panels show
 a short warning alert above the controls, driven by the capability report. With
-saturation or hue available it reads "ChromaShift isn't fully compatible with
-HDR. Some controls are disabled while HDR is on.", and brightness, contrast, and
-gamma are disabled at their target values with the tooltip "Disabled while HDR
-is on." Without any HDR control it reads "ChromaShift doesn't support HDR on
+any HDR-applicable control it reads "ChromaShift isn't fully compatible with
+HDR. Some controls are disabled while HDR is on." The Windows ramp controls are
+disabled at their target values with the tooltip "Disabled while HDR is on.":
+brightness, contrast, and gamma on NVIDIA, and gamma only on AMD. Without any
+HDR control it reads "ChromaShift doesn't support HDR on
 this display yet. It stays at its original settings while HDR is on.", above
 disabled target values. While Safety blocked, the same alert ends with
 "Restoration needs confirmation. Use Retry to restore original settings." An
 outlined orange "HDR" badge marks HDR displays before their names in the app
 panel's display tabs and in the mini panel's display select. Restoration never implicitly
 discards changes. NVIDIA HDR saturation and hue await owner hardware
-verification; AMD remains unverified.
+verification. AMD under HDR is verified only on an integrated RDNA 2 display
+(#122).
 If restoration fails during the session, the full draft remains available in
 main and both panels, with SDR draft output unchanged. Safety blocked disables
 color writes. Retry validates ownership, confirms the affected restoration, and
