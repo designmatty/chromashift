@@ -264,7 +264,7 @@ Required before merge on the owner's NVIDIA-driven HDR display (G60SD) with a
 second display in SDR. No smoke, native integration, desktop driving, process
 stops, or real-display writes were run to implement #89. Unit and fake-native
 results do not establish hardware behavior. NVIDIA saturation and hue under HDR
-are implemented and pending this verification. AMD under HDR is #122. Use an independent restoration guard. Before starting,
+are owner-confirmed on the G60SD with HDR on (reported 2026-11-23). AMD under HDR is #122. Use an independent restoration guard. Before starting,
 record the SDR baseline: ramp hash (the G60SD's known neutral hash is
 `3432e90b96d6a0ac86e6989ffcf60cfd73415e57666fff3253d187eba5601edf`) and NVIDIA
 vibrance/hue (expected 50/0). `npm run smoke:hdr` runs the native-only HDR
@@ -720,6 +720,7 @@ Verified on this host:
   saturation, hue, and color temperature applied, visible, read back, and
   restored exactly; values and restores held across HDR off and on; gamma stays
   SDR-only; and `smoke:hdr -- --display-vendor=amd`
+- #89 NVIDIA saturation and hue while HDR is on, owner-confirmed on the G60SD with HDR on (reported 2026-11-23)
 
 The exact initial hardware values, hashes, provider limits, and identifiers live
 in `display-research.md`. Package and runtime measurements live in
@@ -729,8 +730,6 @@ Not hardware-verified:
 
 - AMD writes on a discrete Radeon card, and AMD-driven multi-monitor behavior
 - The NVIDIA watchdog and real restore-failure paths under HDR
-- NVIDIA saturation and hue applied while HDR is active (#89), and baseline
-  capture under HDR
 - mixed-GPU display control
 - suspend and resume, lock and unlock, refresh-rate and primary-display changes
 - NVIDIA driver reset

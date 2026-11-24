@@ -217,8 +217,8 @@ scrolls the controls pane if needed. Windows gamma restore verifies the exact
 captured ramp, NVIDIA restore verifies vibrance/hue, and AMD restore writes the
 captured custom-color values with read-back. Under HDR only the NVIDIA
 saturation and hue setters and the AMD ADLX setters run. NVIDIA HDR saturation
-and hue are implemented and await owner hardware verification; AMD under HDR is
-verified on an integrated RDNA 2 display (#122).
+and hue are owner-confirmed on the G60SD with HDR on (reported 2026-11-23); AMD under HDR is verified on an integrated RDNA 2
+display (#122).
 
 Display and power transitions use a second coordinator around that same activation
 queue. Electron lock/suspend events pause new writes immediately; unlock,

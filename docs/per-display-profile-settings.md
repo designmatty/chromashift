@@ -347,8 +347,8 @@ disabled target values. While Safety blocked, the same alert ends with
 "Restoration needs confirmation. Use Retry to restore original settings." An
 outlined orange "HDR" badge marks HDR displays before their names in the app
 panel's display tabs and in the mini panel's display select. Restoration never implicitly
-discards changes. NVIDIA HDR saturation and hue await owner hardware
-verification. AMD under HDR is verified only on an integrated RDNA 2 display
+discards changes. NVIDIA HDR saturation and hue are
+owner-confirmed on the G60SD with HDR on (reported 2026-11-23). AMD under HDR is verified only on an integrated RDNA 2 display
 (#122).
 If restoration fails during the session, the full draft remains available in
 main and both panels, with SDR draft output unchanged. Safety blocked disables

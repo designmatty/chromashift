@@ -75,7 +75,7 @@ not the Default profile.
   under HDR, and the baseline records the color mode. A display with no
   HDR-applicable control restores immediately on an HDR-on transition. Preserve
   the draft and SDR output until the user discards or HDR turns off. NVIDIA HDR
-  saturation and hue await owner hardware verification.
+  saturation and hue are owner-confirmed on the G60SD with HDR on (reported 2026-11-23).
 - An unconfirmed restoration stops subsequent profile writes in the current
   transition and in queued work. Retry confirms tracked restoration before
   applying targets. In-session recovery preserves the full draft and session;

@@ -43,22 +43,22 @@ installed matching Node/npm/.NET versions work identically. Root scripts expose
 mapping, read-back, and restoration paths exist, but matching hardware was not
 available for a write test.
 
-| Capability                 | Windows                                    | NVIDIA                               | AMD                                                 |
-| -------------------------- | ------------------------------------------ | ------------------------------------ | --------------------------------------------------- |
-| Adapter detection          | Verified                                   | Verified                             | Verified                                            |
-| Display enumeration        | Verified                                   | Verified                             | Verified on integrated RDNA 2                       |
-| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources | Verified on integrated RDNA 2                       |
-| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                  | Verified on integrated RDNA 2 (#122)                |
-| Brightness                 | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2                       |
-| Contrast                   | Verified gamma transform                   | Verified through Windows ramp        | Verified on integrated RDNA 2                       |
-| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp        | Verified on integrated RDNA 2 (Windows ramp)        |
-| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                 | Verified on integrated RDNA 2                       |
-| Hue                        | Unsupported                                | Verified (private NVAPI)             | Verified on integrated RDNA 2                       |
-| Provider controls in HDR   | N/A                                        | Saturation and hue, unverified (#89) | All but gamma, verified on integrated RDNA 2 (#122) |
-| Color temperature          | Unsupported                                | Unsupported                          | Verified on integrated RDNA 2                       |
-| Capability/range reporting | Verified                                   | Verified                             | Verified on integrated RDNA 2                       |
-| State read                 | Verified                                   | Verified                             | Verified on integrated RDNA 2                       |
-| Exact restoration          | Verified                                   | Verified                             | Verified on integrated RDNA 2                       |
+| Capability                 | Windows                                    | NVIDIA                                    | AMD                                                 |
+| -------------------------- | ------------------------------------------ | ----------------------------------------- | --------------------------------------------------- |
+| Adapter detection          | Verified                                   | Verified                                  | Verified                                            |
+| Display enumeration        | Verified                                   | Verified                                  | Verified on integrated RDNA 2                       |
+| Stable display identity    | Verified across repeated enumeration       | Verified mapping to both GDI sources      | Verified on integrated RDNA 2                       |
+| HDR detection              | Verified in SDR and HDR-on states on G60SD | N/A                                       | Verified on integrated RDNA 2 (#122)                |
+| Brightness                 | Verified gamma transform                   | Verified through Windows ramp             | Verified on integrated RDNA 2                       |
+| Contrast                   | Verified gamma transform                   | Verified through Windows ramp             | Verified on integrated RDNA 2                       |
+| Gamma                      | Verified exact ramp read/write/restore     | Verified through Windows ramp             | Verified on integrated RDNA 2 (Windows ramp)        |
+| Saturation                 | Unsupported                                | Verified (NVAPI DVC)                      | Verified on integrated RDNA 2                       |
+| Hue                        | Unsupported                                | Verified (private NVAPI)                  | Verified on integrated RDNA 2                       |
+| Provider controls in HDR   | N/A                                        | Saturation and hue, owner-confirmed (#89) | All but gamma, verified on integrated RDNA 2 (#122) |
+| Color temperature          | Unsupported                                | Unsupported                               | Verified on integrated RDNA 2                       |
+| Capability/range reporting | Verified                                   | Verified                                  | Verified on integrated RDNA 2                       |
+| State read                 | Verified                                   | Verified                                  | Verified on integrated RDNA 2                       |
+| Exact restoration          | Verified                                   | Verified                                  | Verified on integrated RDNA 2                       |
 
 ## Windows findings
 
@@ -146,10 +146,9 @@ under HDR was verified later in #122.
 
 NVIDIA saturation and hue now apply while HDR is on. Each apply restores the
 captured ramp and NVIDIA values, then writes Digital Vibrance and hue through
-the same private-NVAPI provider, with read-back. This is implemented and
-awaits owner hardware verification (`testing.md`, "Owner HDR retest for #89").
-The open hardware questions are whether the values take effect in HDR, read
-back correctly, survive HDR transitions, and restore exactly. AMD ADLX controls
+the same private-NVAPI provider, with read-back. The owner confirmed it
+working on the G60SD with HDR on (reported 2026-11-23; `testing.md`, "Owner HDR
+retest for #89"). AMD ADLX controls
 also apply under HDR (#122); see the AMD HDR hardware record.
 
 Windows ramp controls stay SDR-only: gamma on every adapter, and brightness and
@@ -323,8 +322,7 @@ post-release work.
 - HDR-on detection, capability shutdown, deferred profile application, SDR
   recovery, and exact exit restoration after HDR-off were hardware-validated on
   the G60SD. The #88 restore-only writes under HDR passed the owner's NVIDIA
-  retest of #90. Under HDR, NVIDIA saturation and hue apply (#89), pending
-  owner hardware verification, and AMD ADLX controls apply (#122). Windows ramp
+  retest of #90. Under HDR, NVIDIA saturation and hue apply (#89), owner-confirmed, and AMD ADLX controls apply (#122). Windows ramp
   controls stay SDR-only.
 - NVIDIA DVC and hue depend on undocumented/private interfaces and a replaceable
   LGPL-3.0 wrapper. The packaging contract is compliant, but driver compatibility
@@ -345,15 +343,15 @@ should continue owning profiles, matching, persistence, activation precedence,
 and user-facing errors. `DisplayService` should remain limited to enumeration,
 events, validated native reads/writes, and baseline restoration.
 
-| Product capability                                 | Recommended provider                                                                           |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                                                      |
-| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                                          |
-| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                                         |
-| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper; also under HDR (#89, unverified) |
-| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces; also under HDR (#122)                                   |
-| AMD gamma                                          | Guarded Windows gamma ramp in SDR only (#119)                                                  |
-| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op                               |
+| Product capability                                 | Recommended provider                                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Display/adapter/connection/HDR discovery           | Windows DisplayConfig + WMI EDID metadata                                                           |
+| Foreground application                             | Windows out-of-context `EVENT_SYSTEM_FOREGROUND` hook                                               |
+| NVIDIA brightness/contrast/gamma                   | Guarded Windows gamma ramp in SDR only                                                              |
+| NVIDIA saturation/hue                              | Narrow private-NVAPI adapter with a replaceable LGPL wrapper; also under HDR (#89, owner-confirmed) |
+| AMD brightness/contrast/saturation/hue/temperature | Official ADLX custom-color interfaces; also under HDR (#122)                                        |
+| AMD gamma                                          | Guarded Windows gamma ramp in SDR only (#119)                                                       |
+| Unsupported/unknown adapters                       | Report unsupported; never guess a vendor range or silently no-op                                    |
 
 These constraints still govern the shipped product:
 
