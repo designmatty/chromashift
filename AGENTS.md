@@ -66,15 +66,16 @@ not the Default profile.
   read-back; exhaustion through neutral or any other failure follows
   whole-display restoration.
 - Treat HDR as a capability change. While HDR is active, profile, preview, and
-  override apply may write only NVIDIA saturation and hue, after restoring the
-  captured baseline, with read-back. Brightness, contrast, and gamma stay
-  SDR-only: the GDI ramp is written under HDR only to restore captured original
-  settings, and every transformed ramp write re-checks HDR first. AMD capture
-  and apply stay blocked under HDR; other displays may capture, and the
-  baseline records the color mode. A display with no HDR-applicable control
-  restores immediately on an HDR-on transition. Preserve the draft and SDR
-  output until the user discards or HDR turns off. NVIDIA HDR saturation and
-  hue await owner hardware verification.
+  override apply may write only NVIDIA saturation and hue and the AMD ADLX
+  controls (brightness, contrast, saturation, hue, color temperature), after
+  restoring the captured baseline, with read-back. Windows ramp controls stay
+  SDR-only: gamma on every adapter, and brightness and contrast outside AMD. The
+  GDI ramp is written under HDR only to restore captured original settings, and
+  every transformed ramp write re-checks HDR first. Every display may capture
+  under HDR, and the baseline records the color mode. A display with no
+  HDR-applicable control restores immediately on an HDR-on transition. Preserve
+  the draft and SDR output until the user discards or HDR turns off. NVIDIA HDR
+  saturation and hue await owner hardware verification.
 - An unconfirmed restoration stops subsequent profile writes in the current
   transition and in queued work. Retry confirms tracked restoration before
   applying targets. In-session recovery preserves the full draft and session;
@@ -89,8 +90,8 @@ not the Default profile.
   records; saved profile targets remain.
 - The fixed global emergency shortcut must work without a renderer.
 
-AMD writes are hardware-verified only on an integrated RDNA 2 display in SDR
-(#119). Describe discrete Radeon cards, AMD under HDR, and AMD-driven
+AMD writes are hardware-verified only on an integrated RDNA 2 display, in SDR
+(#119) and under HDR (#122). Describe discrete Radeon cards and AMD-driven
 multi-display behavior as unverified.
 
 ## Profiles and activation

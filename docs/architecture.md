@@ -135,22 +135,26 @@ errors returned by native Apply also keep control blocked. Failed transitions
 reset deduplication so confirmed recovery can retry.
 External restoration and native-service exit also reset activation state.
 
-Under HDR (#89), the helper has a separate, narrow apply path. It accepts only
-NVIDIA saturation and hue and refuses every other field, an empty request, and
-any non-NVIDIA display with `HDR_UNSAFE` before capture or any write. It
-restores the captured ramp and NVIDIA values, then writes saturation and hue
-with read-back. Brightness, contrast, and gamma stay SDR-only, and the GDI ramp
-is written under HDR only to restore the captured baseline. Capture under HDR
-is allowed except on AMD and records `colorMode: "hdr"`; an existing baseline
-is never recaptured. The capability report under HDR keeps NVIDIA saturation and
-hue at their provider capability and marks the Windows ramp controls
-unsupported; AMD reports nothing supported.
+Under HDR (#89, #122), the helper has a separate, narrow apply path. It accepts
+NVIDIA saturation and hue, and the AMD ADLX controls: brightness, contrast,
+saturation, hue, and color temperature. It refuses gamma, NVIDIA brightness,
+contrast, and color temperature, an empty request, and any display without an
+HDR provider with `HDR_UNSAFE` before capture or any write. It restores the
+captured ramp and provider values, then writes the requested controls with
+read-back. Windows ramp controls stay SDR-only, and the GDI ramp is written
+under HDR only to restore the captured baseline. Capture under HDR is allowed on
+every adapter and records `colorMode: "hdr"`; an existing baseline is never
+recaptured. The capability report under HDR keeps NVIDIA saturation and hue and
+the AMD ADLX controls at their provider capability and marks the Windows ramp
+controls, including AMD gamma, unsupported.
 
 Electron projects each HDR target through one function,
-`projectDisplaySettings`, which keeps only capability-supported settings and
-always withholds brightness, contrast, and gamma under HDR. A non-empty request
-is captured and applied through the normal restore-then-apply path. A display
-whose request is empty, such as AMD, Intel, or NVIDIA without vibrance, is
+`projectDisplaySettings`, which keeps only capability-supported settings and,
+under HDR, only controls of a GPU provider (`appliesUnderHdr` in
+`shared/hdr-controls.ts`, shared with the renderer). Gamma and the other Windows
+ramp controls are always withheld under HDR. A non-empty request is captured and
+applied through the normal restore-then-apply path. A display whose request is
+empty, such as Intel, or NVIDIA without vibrance, is
 restored and held at Original settings, as #88 did. If native refuses a
 non-empty HDR request before writing, the display may still show earlier SDR
 output. One example is `CAPABILITY_UNSUPPORTED` when a transient NVIDIA read at
@@ -167,10 +171,11 @@ keeps the session and draft, and logs `HdrProjectionHeld`; the panels show no
 separate warning.
 For a physical display
 with several endpoints, any HDR endpoint makes the whole target HDR, and the
-intersection of endpoint capabilities decides the rest, so an AMD endpoint in
-HDR restores every endpoint. HDR on and off reuse the existing topology
-transition and activation queue: HDR-on restores and applies saturation and
-hue; HDR-off applies the full vector. Discard, End preview, profile switches,
+intersection of endpoint capabilities decides the rest, so an Intel endpoint in
+HDR restores every endpoint, and a control whose endpoints use different
+providers is withheld. HDR on and off reuse the existing topology transition
+and activation queue: HDR-on restores and applies the HDR-applicable controls;
+HDR-off applies the full vector. Discard, End preview, profile switches,
 shutdown, watchdog, parent exit, and stdin EOF still restore HDR displays. Only
 confirmed restoration releases ownership; an unconfirmed restore enters
 Safety blocked in the running app and remains retryable. Activation restore
@@ -208,10 +213,11 @@ value. An outlined orange "HDR" badge marks HDR displays in the app panel's
 display tabs and the mini panel's display select. Target values apply when HDR turns off through the
 existing topology transition. The mini panel keeps its fixed window sizing and
 scrolls the controls pane if needed. Windows gamma restore verifies the exact
-captured ramp, NVIDIA restore verifies vibrance/hue, and AMD's existing restore
-writes captured custom-color values and LUT directly with read-back. Only NVIDIA
-saturation and hue setters run under HDR. NVIDIA HDR saturation and hue are
-implemented and await owner hardware verification; AMD remains unverified.
+captured ramp, NVIDIA restore verifies vibrance/hue, and AMD restore writes the
+captured custom-color values with read-back. Under HDR only the NVIDIA
+saturation and hue setters and the AMD ADLX setters run. NVIDIA HDR saturation
+and hue are implemented and await owner hardware verification; AMD under HDR is
+verified on an integrated RDNA 2 display (#122).
 
 Display and power transitions use a second coordinator around that same activation
 queue. Electron lock/suspend events pause new writes immediately; unlock,

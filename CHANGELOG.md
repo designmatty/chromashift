@@ -6,14 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- On AMD displays, brightness, contrast, saturation, hue and color temperature
+  now apply while Windows HDR is on, in profiles, previews and overrides. Gamma
+  stays SDR-only: it keeps its value and applies when HDR turns off. Verified on
+  an integrated Radeon GPU; see the
+  [display research](docs/display-research.md#amd-hdr-hardware-record-122).
+
 ### Fixed
 
 - On AMD displays, neutral hue and color temperature now leave the display at
   AMD's neutral settings. Before, a profile on an AMD display applied the
   strongest hue shift even with hue left at 0°.
 - Gamma now works on AMD displays in SDR. It uses the same Windows gamma ramp as
-  other displays, with the same read-back and exact restore. Like brightness and
-  contrast, it stays disabled while HDR is on. AMD support is verified on an
+  other displays, with the same read-back and exact restore. It stays disabled
+  while HDR is on. AMD support is verified on an
   integrated Radeon GPU; see the
   [display research](docs/display-research.md#amd-hardware-record-119).
 

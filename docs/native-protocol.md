@@ -66,12 +66,12 @@ version change.
 | `service.health`           | none                    | Protocol/service identity, baseline-owner identity/count, process ID, and watchdog state                                                                                         |
 | `service.heartbeat`        | none                    | Arms or resets the ten-second restoration watchdog                                                                                                                               |
 | `displays.list`            | none                    | Active endpoint displays with unique `id`, profile-facing `physicalId`, EDID data, adapter, connection, HDR, and refresh                                                         |
-| `display.capabilities`     | `displayId`             | Per-control support/provider/range/default/reason and diagnostic native state; under HDR only NVIDIA saturation and hue can be supported                                         |
+| `display.capabilities`     | `displayId`             | Per-control support/provider/range/default/reason and diagnostic native state; under HDR only NVIDIA saturation and hue and AMD ADLX controls can be supported                   |
 | `display.state`            | `displayId`             | Current provider state and gamma-ramp hash; full Windows ramp where applicable                                                                                                   |
-| `display.apply`            | `displayId`, `settings` | Captures baseline if needed, validates, applies, reads back, rolls back on failure; under HDR accepts only NVIDIA saturation and hue                                             |
+| `display.apply`            | `displayId`, `settings` | Captures baseline if needed, validates, applies, reads back, rolls back on failure; under HDR accepts only NVIDIA saturation and hue and AMD ADLX controls                       |
 | `display.topology.refresh` | none                    | Atomically re-enumerates displays, re-resolves capability/HDR reports, and validates retained baseline ownership                                                                 |
 | `display.restore`          | `displayId`             | Restores and releases that display's captured baseline, including under HDR, with read-back verification                                                                         |
-| `baseline.capture`         | `displayId`             | Idempotently captures all controllable provider state and reports `colorMode`; refuses AMD capture while HDR is active                                                           |
+| `baseline.capture`         | `displayId`             | Idempotently captures all controllable provider state and reports `colorMode`, including under HDR                                                                               |
 | `baseline.restore`         | `displayId`             | Alias of `display.restore`                                                                                                                                                       |
 | `baseline.restoreAll`      | none                    | Attempts every captured display, including HDR displays, and returns per-display results; failed restores retain their captured baseline for retry                               |
 | `foreground.current`       | none                    | Current PID, executable/path, title, optional window class, and transient monitor source                                                                                         |
@@ -114,22 +114,25 @@ existing rejection diagnostics. Read-back and other failures do not retry.
 TypeScript owns persistence and effective envelope clamping; no native
 persistence or new request fields are introduced.
 
-### HDR (#89, additive in protocol v2)
+### HDR (#89, #122, additive in protocol v2)
 
 - `baseline.capture` results include `colorMode: "sdr" | "hdr"`, the mode when
   that baseline was captured. Clients that predate the field ignore it. Capture
-  under HDR is refused with `HDR_UNSAFE` only for AMD displays. It reads and stores
-  the GDI ramp as usual, and an existing baseline is never recaptured.
-- `display.apply` on a display in HDR accepts only NVIDIA `saturation` and
-  `hue`. Brightness, contrast, gamma, color temperature, a request with neither
-  saturation nor hue, and any AMD, Intel, or unknown display get `HDR_UNSAFE`
-  before capture or any write. An accepted request restores the captured ramp and
-  NVIDIA values with read-back, then writes saturation and hue with read-back.
-  The GDI ramp is written under HDR only to restore the captured baseline.
-  Original settings come back under HDR only through `display.restore`.
-- `display.capabilities` under HDR reports NVIDIA saturation and hue with their
-  provider capability, the Windows ramp controls as unsupported with an
-  SDR-only reason, and every AMD control as unsupported.
+  is allowed under HDR on every adapter (AMD since #122). It reads and stores the
+  GDI ramp as usual, and an existing baseline is never recaptured.
+- `display.apply` on a display in HDR accepts NVIDIA `saturation` and `hue`,
+  and on AMD `brightness`, `contrast`, `saturation`, `hue`, and
+  `colorTemperature` through ADLX (#122). Gamma on every adapter, NVIDIA
+  brightness, contrast, and color temperature, an empty request, and any Intel or
+  unknown display get `HDR_UNSAFE` before capture or any write. An accepted
+  request restores the captured ramp and provider values with read-back, then
+  writes the requested controls with read-back. An AMD result also reports
+  `applied.brightness`, `contrast`, and `colorTemperature`. The GDI ramp is
+  written under HDR only to restore the captured baseline. Original settings
+  come back under HDR only through `display.restore`.
+- `display.capabilities` under HDR reports NVIDIA saturation and hue and the
+  AMD ADLX controls with their provider capability, and the Windows ramp
+  controls, including AMD gamma, as unsupported with an SDR-only reason.
 - On the SDR path, every transformed ramp write, including each rejection
   retry, first re-reads the display. HDR gives `HDR_UNSAFE`, and the
   whole-display cleanup runs. An ownership change gives
