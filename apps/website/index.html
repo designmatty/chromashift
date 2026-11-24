@@ -625,11 +625,50 @@
                   >
                 </summary>
                 <div class="faq__answer">
+                  <p>Partially. Here’s what still works while HDR is on:</p>
+                  <table class="faq__table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Control</th>
+                        <th scope="col">AMD</th>
+                        <th scope="col">NVIDIA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">Brightness</th>
+                        <td>Works</td>
+                        <td>Off</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Contrast</th>
+                        <td>Works</td>
+                        <td>Off</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Gamma</th>
+                        <td>Off</td>
+                        <td>Off</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Saturation</th>
+                        <td>Works</td>
+                        <td>Works</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Hue</th>
+                        <td>Works</td>
+                        <td>Works</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Color temperature</th>
+                        <td>Works</td>
+                        <td>Not supported</td>
+                      </tr>
+                    </tbody>
+                  </table>
                   <p>
-                    Partially. With HDR on, AMD displays keep brightness, contrast, saturation, hue,
-                    and color temperature, and NVIDIA displays keep saturation and hue. The other
-                    controls are turned off, because they use a Windows feature that only works in
-                    SDR: gamma on AMD, and brightness, contrast, and gamma on NVIDIA. Intel and
+                    Controls marked Off use a Windows feature that only works in SDR. Intel and
                     other displays stay at their original settings while HDR is on.
                   </p>
                   <p>
