@@ -10,6 +10,7 @@ import {
 import type { Display, DisplayCapabilityReport } from '@chromashift/native-client/protocol'
 import { Slider } from '@/components/ui/slider'
 import { Tooltip } from '@/components/ui/tooltip'
+import { appliesUnderHdr } from '@shared/hdr-controls'
 import type { ProductState } from '@shared/product-api.js'
 
 import { ControlValue } from '@/features/profiles/control-value'
@@ -126,19 +127,20 @@ export interface ControlSupport {
   reason: string
 }
 
-/** Windows gamma-ramp controls. They stay SDR-only while HDR is on (#89). */
+/**
+ * Controls that use the Windows gamma ramp on NVIDIA and other adapters. They
+ * stay SDR-only while HDR is on (#89); AMD brightness and contrast use ADLX and
+ * still apply (#122).
+ */
 const sdrOnlyControls: ReadonlySet<ColorControlKey> = new Set(['brightness', 'contrast', 'gamma'])
 const disabledWhileHdrIsOn = 'Disabled while HDR is on.'
 
-/** Controls the capability report still supports while HDR is on, in display order. */
+/** Controls that still apply while HDR is on, in display order. */
 export function hdrApplicableControls(
   report: DisplayCapabilityReport | undefined
 ): ColorControlKey[] {
   return controls
-    .filter(
-      (control) =>
-        !sdrOnlyControls.has(control.key) && report?.capabilities[control.key]?.supported === true
-    )
+    .filter((control) => appliesUnderHdr(control.key, report?.capabilities[control.key]))
     .map((control) => control.key)
 }
 
@@ -157,11 +159,11 @@ export function controlSupport(
 
   const capability = report?.capabilities[key]
   if (display.hdr) {
-    // Brightness, contrast and gamma keep their values and apply when HDR is off.
+    if (appliesUnderHdr(key, capability)) return { available: true, status: '', reason: '' }
+    // Windows ramp controls keep their values and apply when HDR is off.
     if (sdrOnlyControls.has(key)) {
       return { available: false, status: 'unavailable', reason: disabledWhileHdrIsOn }
     }
-    if (capability?.supported === true) return { available: true, status: '', reason: '' }
     return {
       available: false,
       status: 'unavailable',

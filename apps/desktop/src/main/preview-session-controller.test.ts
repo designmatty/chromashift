@@ -620,10 +620,10 @@ describe('PreviewSessionController', () => {
   )
 
   it.each(['edit', 'override'] as const)(
-    'restores AMD HDR immediately and preserves the %s draft and SDR output',
+    'restores Intel HDR immediately and preserves the %s draft and SDR output',
     async (kind) => {
       const native = new FakeNative()
-      native.amdDisplayIds.add(display.id)
+      native.intelDisplayIds.add(display.id)
       const original = { brightness: 48, saturation: 42 }
       native.currentSettings.set(display.id, original)
       const saved = profile(
@@ -764,6 +764,39 @@ describe('PreviewSessionController', () => {
     }
   )
 
+  it('edits AMD ADLX controls under HDR and applies the withheld gamma when HDR turns off (#122)', async () => {
+    const native = new FakeNative()
+    native.amdDisplayIds.add(display.id)
+    native.currentSettings.set(display.id, { gamma: 1 })
+    native.hdrDisplayIds.add(display.id)
+    const draft = profile(
+      targets([display.id, { brightness: 30, gamma: 1.4, colorTemperature: 40 }])
+    )
+    const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
+    await controller.start(draft, 'edit')
+    expect(native.applied.at(-1)).toEqual({
+      displayId: display.id,
+      settings: { brightness: 30, contrast: 50, saturation: 50, hue: 0, colorTemperature: 40 }
+    })
+
+    const edited = {
+      ...draft,
+      displays: targets([display.id, { brightness: 20, gamma: 1.4, colorTemperature: 40 }])
+    }
+    await controller.update(edited.id, edited.displays, edited)
+    expect(native.applied.at(-1)?.settings).toMatchObject({ brightness: 20 })
+    expect(native.applied.at(-1)?.settings).not.toHaveProperty('gamma')
+    expect(native.currentSettings.get(display.id)?.gamma).toBe(1)
+    expect(controller.unsavedDraft).toEqual(edited)
+
+    native.hdrDisplayIds.clear()
+    await controller.reapplyAfterDisplayTransition()
+    expect(native.currentSettings.get(display.id)).toEqual(edited.displays[0]!.color)
+    expect(native.baselineCaptures.filter((capture) => capture.displayId === display.id)).toEqual([
+      { displayId: display.id, settings: { gamma: 1 } }
+    ])
+  })
+
   it('keeps the draft and enters recovery when an HDR write fails and cleanup cannot restore', async () => {
     const native = new FakeNative()
     native.reports.set(display.id, nvidiaCapabilityReport(display.id))
@@ -799,9 +832,9 @@ describe('PreviewSessionController', () => {
     expect(controller.state).toMatchObject({ state: 'active', draft })
   })
 
-  it('discards to saved targets while AMD HDR stays original, then applies saved values on HDR off', async () => {
+  it('discards to saved targets while Intel HDR stays original, then applies saved values on HDR off', async () => {
     const native = new FakeNative()
-    native.amdDisplayIds.add(display.id)
+    native.intelDisplayIds.add(display.id)
     const saved = profile()
     const draft = profile(targets([display.id, { brightness: 30, saturation: 85 }]))
     const controller = new PreviewSessionController(native, new FakeActivation(), () => undefined)
@@ -1426,12 +1459,12 @@ describe('replacing a preview in place (#78)', () => {
     )
   })
 
-  it('restores an AMD HDR display A touched and defers an AMD HDR display B targets', async () => {
+  it('restores an Intel HDR display A touched and defers an Intel HDR display B targets', async () => {
     const { native, activation, controller, reset } = setup()
     await controller.start(alpha, 'preview')
     reset()
-    native.amdDisplayIds.add(secondDisplay.id)
-    native.amdDisplayIds.add(third.id)
+    native.intelDisplayIds.add(secondDisplay.id)
+    native.intelDisplayIds.add(third.id)
     native.hdrDisplayIds.add(secondDisplay.id)
     native.hdrDisplayIds.add(third.id)
 

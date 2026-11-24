@@ -1,18 +1,13 @@
 import { colorSettingNames, type ColorSettingName } from '@chromashift/core'
 import type { DisplayCapabilities, DisplaySettings } from '@chromashift/native-client'
-
-/** Windows gamma-ramp controls. They stay SDR-only while HDR is on (#89). */
-export const sdrOnlySettingNames: ReadonlySet<ColorSettingName> = new Set([
-  'brightness',
-  'contrast',
-  'gamma'
-])
+import { appliesUnderHdr } from '@shared/hdr-controls.js'
 
 /**
  * The native request for one display: only the settings its capabilities
- * support. While HDR is on, brightness, contrast and gamma are withheld even if
- * a stale report lists them; they apply again when HDR turns off. The saved
- * profile target keeps every value.
+ * support. While HDR is on, only GPU-provider controls apply: NVIDIA saturation
+ * and hue, and AMD ADLX color. Windows ramp controls, including gamma, are
+ * withheld even if a stale report lists them; they apply again when HDR turns
+ * off. The saved profile target keeps every value.
  */
 export function projectDisplaySettings(
   settings: DisplaySettings,
@@ -23,7 +18,7 @@ export function projectDisplaySettings(
   for (const name of colorSettingNames) {
     const value = settings[name]
     if (value === undefined || !capabilities[name].supported) continue
-    if (hdr && sdrOnlySettingNames.has(name)) continue
+    if (hdr && !appliesUnderHdr(name, capabilities[name])) continue
     projected[name] = value
   }
   return projected

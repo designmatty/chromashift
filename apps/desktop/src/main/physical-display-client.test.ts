@@ -410,12 +410,12 @@ describe('HDR fan-out across endpoints (#89)', () => {
     ])
   })
 
-  it('restores every endpoint and writes nothing when an AMD endpoint turns HDR', async () => {
+  it('restores every endpoint and writes nothing when an Intel endpoint turns HDR', async () => {
     const native = new FakeNativeDisplayPort(0, [
       endpoint(dp, 'DisplayPort'),
       endpoint(hdmi, 'HDMI')
     ])
-    native.amdDisplayIds.add(hdmi)
+    native.intelDisplayIds.add(hdmi)
     const coordinator = coordinatorFor(native)
     await coordinator.activate(null)
     expect(native.applied.map((entry) => entry.displayId)).toEqual([dp, hdmi])
