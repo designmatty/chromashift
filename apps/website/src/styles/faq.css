@@ -77,7 +77,7 @@
 /* The AMD and NVIDIA columns. */
 .faq__table thead th + th,
 .faq__table td {
-  width: 25%;
+  width: 20%;
   text-align: center;
 }
 
