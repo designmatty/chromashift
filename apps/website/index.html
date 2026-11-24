@@ -6,7 +6,7 @@
     <title>ChromaShift · Automatic display color profiles for Windows 11</title>
     <meta
       name="description"
-      content="ChromaShift automatically applies monitor color settings as you move between games and Windows apps. Open source, no telemetry, Windows 11 x64."
+      content="ChromaShift automatically applies monitor color settings as you move between games and Windows apps. Open source, no telemetry, Windows 11."
     />
     <link rel="canonical" href="https://chromashift.io/" />
     <meta name="color-scheme" content="dark" />
@@ -111,6 +111,7 @@
         <path d="M18 6 6 18" />
         <path d="m6 6 12 12" />
       </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24">
         <path d="M5 12h14" />
         <path d="M12 5v14" />
@@ -295,7 +296,7 @@
                 >View on GitHub</a
               >
             </div>
-            <p class="hero__meta">Windows 11 x64 · Free and Open Source</p>
+            <p class="hero__meta">Windows 11 · Free and Open Source</p>
           </div>
 
           <figure class="hero-media">
@@ -531,6 +532,10 @@
                 <p class="feature__body">Each monitor gets its own color profile values.</p>
               </li>
               <li class="feature">
+                <h3 class="feature__title">HDR-aware</h3>
+                <p class="feature__body">Supported controls keep applying while HDR is on.</p>
+              </li>
+              <li class="feature">
                 <h3 class="feature__title">Manually switch profiles</h3>
                 <p class="feature__body">
                   Switch profiles from the app, the tray, or a keyboard shortcut.
@@ -543,10 +548,15 @@
                 </p>
               </li>
               <li class="feature">
+                <h3 class="feature__title">Preview before you save</h3>
+                <p class="feature__body">
+                  Try changes live, then hold to compare with the saved profile.
+                </p>
+              </li>
+              <li class="feature">
                 <h3 class="feature__title">Safe restoration</h3>
                 <p class="feature__body">
-                  Original display settings are saved and restored on pause, quit, or keyboard
-                  shortcut.
+                  Original display settings are restored when paused or quit.
                 </p>
               </li>
               <li class="feature">
@@ -594,27 +604,31 @@
                   </p>
                   <p>
                     It only checks which program is in the foreground, using limited access that
-                    can’t read the program’s memory. Color changes go through the same Windows and
-                    NVIDIA or AMD driver settings that GPU control panels use.
+                    can’t read the program’s memory. Color changes go through standard Windows
+                    display settings and the NVIDIA or AMD driver.
                   </p>
                   <p>No anti-cheat vendor has certified or endorsed ChromaShift.</p>
                 </div>
               </details>
               <details class="faq__item">
                 <summary class="faq__question">
-                  Which Windows versions and GPUs are supported?<span
-                    class="faq__marker"
-                    aria-hidden="true"
+                  What are the system requirements?<span class="faq__marker" aria-hidden="true"
                     >+</span
                   >
                 </summary>
                 <div class="faq__answer">
-                  <p>
-                    ChromaShift runs on 64-bit (x64) Windows 11. NVIDIA GPUs are tested on real
-                    hardware. AMD GPUs are supported through AMD’s ADLX API but haven’t been tested
-                    on an AMD-driven display yet. Intel and other GPUs are recognized, but
-                    ChromaShift has no vendor-specific color support for them.
-                  </p>
+                  <p>ChromaShift requires Windows 11.</p>
+                  <ul class="faq__bullets">
+                    <li><strong>NVIDIA:</strong> Supported and hardware-tested.</li>
+                    <li>
+                      <strong>AMD:</strong> Supported and tested on Ryzen integrated graphics.
+                      Dedicated Radeon GPUs and AMD multi-display setups are not yet validated.
+                    </li>
+                    <li>
+                      <strong>Intel &amp; other GPUs:</strong> Detected, but vendor-specific color
+                      adjustments are not currently supported.
+                    </li>
+                  </ul>
                 </div>
               </details>
               <details class="faq__item">
@@ -624,15 +638,119 @@
                   >
                 </summary>
                 <div class="faq__answer">
-                  <p>
-                    Partially. With HDR on, NVIDIA displays keep their saturation and hue settings.
-                    Brightness, contrast, and gamma are turned off, because Windows only supports
-                    them in SDR. AMD and other displays stay at their original settings while HDR is
-                    on.
-                  </p>
-                  <p>
-                    Your profiles are unchanged, and everything comes back when HDR is turned off.
-                  </p>
+                  <p>Partially. Here’s what still works while HDR is on:</p>
+                  <table class="faq__table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Control</th>
+                        <th scope="col">AMD</th>
+                        <th scope="col">NVIDIA</th>
+                        <th scope="col">Intel/Others</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">Brightness</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Contrast</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Gamma</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Saturation</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Hue</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>
+                          <svg class="i faq__icon faq__icon--no" role="img" aria-label="Off">
+                            <use href="#i-x" />
+                          </svg>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Color temperature</th>
+                        <td>
+                          <svg class="i faq__icon faq__icon--yes" role="img" aria-label="Works">
+                            <use href="#i-check" />
+                          </svg>
+                        </td>
+                        <td>AMD only</td>
+                        <td>AMD only</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </details>
               <details class="faq__item">
@@ -645,11 +763,11 @@
                 </summary>
                 <div class="faq__answer">
                   <p>
-                    Both return your displays to how they were before ChromaShift changed them.
-                    Pausing restores your original settings, then stops switching profiles until you
-                    resume. Closing restores every connected display before the app exits. If a
-                    display can't be restored, ChromaShift stays open instead of leaving that
-                    display changed, so the restore can be retried.
+                    Your displays return to how they were before ChromaShift changed them. Pausing
+                    restores your original settings, then stops switching profiles until you resume.
+                    Closing restores every connected display before the app exits. If a display
+                    can't be restored, ChromaShift stays open instead of leaving that display
+                    changed, so the restore can be retried.
                   </p>
                 </div>
               </details>
@@ -695,14 +813,14 @@
         <section class="closing" aria-labelledby="closing-title">
           <div class="section-inner section-inner--narrow">
             <h2 id="closing-title" class="section-title closing__title">
-              Set up a profile once. ChromaShift handles the rest.
+              Stop changing display settings by hand.
             </h2>
             <div class="closing__actions">
               <a
                 class="button button--primary"
                 href="https://github.com/designmatty/chromashift/releases"
                 data-download-link
-                >Download for Windows</a
+                >Download ChromaShift</a
               >
             </div>
             <p class="closing__meta" data-installer-line>

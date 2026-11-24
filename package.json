@@ -29,7 +29,7 @@
     "smoke:desktop": "npm run build && node apps/desktop/scripts/smoke.mjs",
     "smoke:compare": "npm run build && npm run smoke:compare --workspace @chromashift/desktop",
     "smoke:capability-log": "npm run build && npm run smoke:capability-log --workspace @chromashift/desktop",
-    "smoke:hdr": "npm run build && npm run smoke:hdr --workspace @chromashift/desktop",
+    "smoke:hdr": "npm run build && node apps/desktop/scripts/smoke.mjs --hdr-only",
     "smoke:desktop:crash": "npm run build && node apps/desktop/scripts/smoke.mjs --force-exit",
     "smoke:desktop:native-recovery": "npm run build && node apps/desktop/scripts/smoke.mjs --native-recovery",
     "measure:memory": "npm run build && npm run measure:memory --workspace @chromashift/desktop",

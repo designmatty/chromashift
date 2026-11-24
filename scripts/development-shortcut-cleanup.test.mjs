@@ -9,6 +9,26 @@ import electronPath from 'electron'
 import { cleanupDevelopmentShortcut } from '../apps/desktop/scripts/development-shortcut-cleanup.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+// STATUS_ACCESS_VIOLATION. Electron occasionally crashes at startup on hosted
+// Windows runners before the fixture runs; the cleanup under test never starts.
+const startupCrashStatus = 0xc0000005
+
+/** Runs the Electron fixture that writes the shortcut, retrying a startup crash. */
+function writeShortcutFixture(fixturePath, environment) {
+  let result
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    result = spawnSync(electronPath, [fixturePath], {
+      cwd: repositoryRoot,
+      env: environment,
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10_000
+    })
+    if (result.status !== startupCrashStatus) return result
+  }
+  return result
+}
 const fixtures = [
   { name: 'current development shortcut', appUserModelId: 'com.chromashift.desktop.development' },
   { name: 'legacy development shortcut', appUserModelId: 'com.chromashift.desktop' },
@@ -46,13 +66,7 @@ app.whenReady().then(() => {
         )
         const environment = { ...globalThis.process.env }
         delete environment.ELECTRON_RUN_AS_NODE
-        const result = spawnSync(electronPath, [fixturePath], {
-          cwd: repositoryRoot,
-          env: environment,
-          encoding: 'utf8',
-          windowsHide: true,
-          timeout: 10_000
-        })
+        const result = writeShortcutFixture(fixturePath, environment)
         assert.equal(result.status, 0, result.stderr)
         await access(shortcutPath)
         globalThis.process.env.APPDATA = directory

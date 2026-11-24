@@ -330,8 +330,8 @@ describe('true baseline preview with activation rollback', () => {
     async (state) => {
       const { native, preview, activation, coordinator } = await fixture()
       const deferred = state === 'hdr' ? native.hdrDisplayIds : native.disconnectedDisplayIds
-      // AMD keeps #88's HDR path: nothing applies, so the display holds Original settings.
-      if (state === 'hdr') native.amdDisplayIds.add(two)
+      // Intel has no HDR provider and keeps #88's path: nothing applies, so the display holds Original settings.
+      if (state === 'hdr') native.intelDisplayIds.add(two)
       deferred.add(two)
       await preview.start(empty, 'preview')
       expect(native.calls).toEqual(
@@ -578,10 +578,10 @@ describe('true baseline preview with activation rollback', () => {
     expectOriginalCaptures(native)
   })
 
-  it('restores AMD HDR assigned and missing targets without capture or profile writes', async () => {
+  it('restores Intel HDR assigned and missing targets without capture or profile writes', async () => {
     const { native, preview } = await fixture()
-    native.amdDisplayIds.add(one)
-    native.amdDisplayIds.add(two)
+    native.intelDisplayIds.add(one)
+    native.intelDisplayIds.add(two)
     native.hdrDisplayIds.add(one)
     native.hdrDisplayIds.add(two)
     await preview.start(partial, 'preview')

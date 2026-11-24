@@ -396,9 +396,9 @@ describe('ActivationCoordinator', () => {
     )
   })
 
-  it('defers an AMD HDR target without capture or writes and reapplies after HDR turns off', async () => {
+  it('defers an Intel HDR target without capture or writes and reapplies after HDR turns off', async () => {
     const native = new FakeNativeActivationPort()
-    native.amdDisplayIds.add('display:one')
+    native.intelDisplayIds.add('display:one')
     native.hdrDisplayIds.add('display:one')
     const logger = new RecordingLogger()
     const coordinator = new ActivationCoordinator(
@@ -604,10 +604,10 @@ describe('ActivationCoordinator', () => {
   })
 
   it.each(['game-a', 'default', 'game-b'])(
-    'restores an AMD HDR display before switching to %s',
+    'restores an Intel HDR display before switching to %s',
     async (next) => {
       const native = new FakeNativeActivationPort()
-      native.amdDisplayIds.add('display:one')
+      native.intelDisplayIds.add('display:one')
       native.currentSettings.set('display:one', { brightness: 47, saturation: 43 })
       const coordinator = new ActivationCoordinator(
         repository(configuration([defaultProfile, gameAProfile, gameBProfile], 'default')),
@@ -685,6 +685,60 @@ describe('ActivationCoordinator', () => {
     expect(coordinator.hdrProjectedDisplayIds).toEqual([])
   })
 
+  it('applies every AMD ADLX control but gamma under HDR and the full vector after HDR turns off (#122)', async () => {
+    const native = new FakeNativeActivationPort()
+    native.amdDisplayIds.add('display:one')
+    native.currentSettings.set('display:one', { brightness: 47, gamma: 1, saturation: 43 })
+    const logger = new RecordingLogger()
+    const color = {
+      brightness: 30,
+      contrast: 60,
+      gamma: 1.4,
+      saturation: 75,
+      hue: 10,
+      colorTemperature: 40
+    }
+    const profileOnOne = profile('game-a', color, ['display:one'])
+    const coordinator = new ActivationCoordinator(
+      repository(configuration([profileOnOne], 'game-a')),
+      native,
+      logger
+    )
+    native.hdrDisplayIds.add('display:one')
+
+    await expect(coordinator.activate(null)).resolves.toMatchObject({
+      status: 'activated',
+      deferredDisplayIds: [],
+      failures: []
+    })
+    expect(native.calls).toEqual([
+      { operation: 'capture', displayId: 'display:one' },
+      {
+        operation: 'apply',
+        displayId: 'display:one',
+        settings: { brightness: 30, contrast: 60, saturation: 75, hue: 10, colorTemperature: 40 }
+      }
+    ])
+    // Gamma uses the Windows ramp and stays at its captured value under HDR.
+    expect(native.currentSettings.get('display:one')?.gamma).toBe(1)
+    expect(coordinator.hdrProjectedDisplayIds).toEqual(['display:one'])
+    expect(logger.events).toContainEqual(
+      expect.objectContaining({
+        eventName: 'HdrSettingsWithheld',
+        displayId: 'display:one',
+        settings: ['gamma']
+      })
+    )
+
+    native.hdrDisplayIds.clear()
+    await coordinator.resetForDisplayTransition()
+    await coordinator.activate(null)
+    expect(native.calls.slice(2).map((call) => call.operation)).toEqual(['capture', 'apply'])
+    expect(native.calls[3]?.settings).toEqual(profileOnOne.displays[0]!.color)
+    expect(native.currentSettings.get('display:one')?.gamma).toBe(1.4)
+    expect(coordinator.hdrProjectedDisplayIds).toEqual([])
+  })
+
   it('restores an NVIDIA HDR display whose only supported controls are SDR-only', async () => {
     const native = new FakeNativeActivationPort()
     // No vibrance or hue interface: brightness is the only control, and it is SDR-only.
@@ -731,7 +785,10 @@ describe('ActivationCoordinator', () => {
       if (expected === undefined) {
         // A profile without a target on the HDR display restores it.
         expect(calls).toEqual([{ operation: 'restore', displayId: 'display:one' }])
-        expect(native.currentSettings.get('display:one')).toEqual({ brightness: 47, saturation: 43 })
+        expect(native.currentSettings.get('display:one')).toEqual({
+          brightness: 47,
+          saturation: 43
+        })
       } else {
         expect(calls).toEqual([
           { operation: 'capture', displayId: 'display:one' },
@@ -775,7 +832,11 @@ describe('ActivationCoordinator', () => {
       const queued = coordinator.activate(null, manualActivationMode('next'))
       const outcome = await failing
       expect(outcome.failures).toContainEqual(
-        expect.objectContaining({ operation: 'apply', displayId: one, code: 'CAPABILITY_UNSUPPORTED' })
+        expect.objectContaining({
+          operation: 'apply',
+          displayId: one,
+          code: 'CAPABILITY_UNSUPPORTED'
+        })
       )
       expect(logger.events).toContainEqual(
         expect.objectContaining({
@@ -820,7 +881,9 @@ describe('ActivationCoordinator', () => {
       await coordinator.activate(null, manualActivationMode('default'))
       expect(native.currentSettings.get(one)).toEqual({ brightness: 48, saturation: 85, hue: 0 })
       expect(
-        native.baselineCaptures.filter((capture) => capture.displayId === one).map((c) => c.settings)
+        native.baselineCaptures
+          .filter((capture) => capture.displayId === one)
+          .map((c) => c.settings)
       ).toEqual([{ brightness: 48 }, { brightness: 48 }])
     }
   )
@@ -855,7 +918,12 @@ describe('ActivationCoordinator', () => {
     const native = new FakeNativeActivationPort()
     native.hdrDisplayIds.add('display:one')
     const ownershipChanged = (command: string) =>
-      new NativeServiceError('BASELINE_OWNERSHIP_CHANGED', 'Adapter owner changed.', command, 'test')
+      new NativeServiceError(
+        'BASELINE_OWNERSHIP_CHANGED',
+        'Adapter owner changed.',
+        command,
+        'test'
+      )
     // Native refuses both the cleanup and the explicit restore without writing.
     vi.spyOn(native, 'applyDisplaySettings').mockRejectedValue(ownershipChanged('display.apply'))
     vi.spyOn(native, 'restoreDisplay').mockRejectedValue(ownershipChanged('display.restore'))
@@ -927,9 +995,10 @@ describe('ActivationCoordinator', () => {
 
     native.failApplyWriteDisplayIds.clear()
     native.failRestoreDisplayIds.clear()
-    await expect(
-      coordinator.activate(null, undefined, { recovery: true })
-    ).resolves.toMatchObject({ status: 'activated', failures: [] })
+    await expect(coordinator.activate(null, undefined, { recovery: true })).resolves.toMatchObject({
+      status: 'activated',
+      failures: []
+    })
     expect(coordinator.restorationBlocked).toBe(false)
     expect(native.currentSettings.get('display:two')?.saturation).toBe(75)
   })

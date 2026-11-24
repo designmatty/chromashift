@@ -10,6 +10,9 @@
   --color-border: #26262d;
   --color-border-strong: #32323a;
   --color-divider: #1e1e24;
+  /* Chakra green.300 and red.300, as in the desktop app. */
+  --color-positive: #86efac;
+  --color-negative: #fca5a5;
 
   --font-sans: 'Geist Variable', 'Segoe UI Variable', 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'Cascadia Mono', monospace;

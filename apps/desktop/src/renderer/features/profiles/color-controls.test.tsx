@@ -24,19 +24,31 @@ const noProvider = {
   provider: 'unknown',
   reason: 'No verified provider is available.'
 }
-const amdUnderHdr = {
+const amd = { supported: true, provider: 'amd' }
+const noNvidia = {
   supported: false,
   provider: 'unknown',
-  reason: 'AMD display controls are disabled until ADLX behavior is verified under HDR.'
+  reason: 'Display is not connected to an NVIDIA adapter.'
 }
 
+/** An Intel display under HDR: no HDR provider, so nothing applies. */
+const intelHdr = {
+  brightness: sdrOnly,
+  contrast: sdrOnly,
+  gamma: sdrOnly,
+  saturation: noNvidia,
+  hue: noNvidia,
+  colorTemperature: noProvider
+}
+
+/** An AMD display under HDR: every ADLX control applies; gamma stays SDR-only (#122). */
 const amdHdr = {
-  brightness: amdUnderHdr,
-  contrast: amdUnderHdr,
-  gamma: amdUnderHdr,
-  saturation: amdUnderHdr,
-  hue: amdUnderHdr,
-  colorTemperature: amdUnderHdr
+  brightness: amd,
+  contrast: amd,
+  gamma: sdrOnly,
+  saturation: amd,
+  hue: amd,
+  colorTemperature: amd
 }
 
 /**
@@ -107,9 +119,27 @@ describe('control support under HDR', () => {
   })
 
   it('uses the same reason for every control when nothing applies under HDR', () => {
-    const report = reportFor(amdHdr)
+    const report = reportFor(intelHdr)
     for (const key of ['saturation', 'hue', 'colorTemperature'] as const)
       expect(controlSupport(key, display, report).reason).toBe('Disabled while HDR is on.')
+  })
+
+  it('keeps AMD ADLX controls, including brightness and contrast, available and disables only gamma', () => {
+    const report = reportFor(amdHdr)
+    for (const key of ['brightness', 'contrast', 'saturation', 'hue', 'colorTemperature'] as const)
+      expect(controlSupport(key, display, report).available).toBe(true)
+    expect(controlSupport('gamma', display, report)).toEqual({
+      available: false,
+      status: 'unavailable',
+      reason: 'Disabled while HDR is on.'
+    })
+  })
+
+  it('withholds a stale Windows ramp report and a gamma report from any provider under HDR', () => {
+    const report = reportFor({ ...amdHdr, brightness: windows, gamma: amd })
+    expect(controlSupport('brightness', display, report).available).toBe(false)
+    expect(controlSupport('gamma', display, report).available).toBe(false)
+    expect(controlSupport('contrast', display, report).available).toBe(true)
   })
 })
 
@@ -185,8 +215,8 @@ describe('color controls in both panels', () => {
       expect(sliderStates(html)).toMatchObject({ brightness: true, contrast: true, gamma: true })
     })
 
-    it(`warns that HDR is unsupported and disables every control on an AMD display, compact=${compact}`, () => {
-      const html = render(true, amdHdr)
+    it(`warns that HDR is unsupported and disables every control on an Intel display, compact=${compact}`, () => {
+      const html = render(true, intelHdr)
       expect(hdrAlert(html)).toBe(
         "ChromaShift doesn't support HDR on this display yet. It stays at its original settings while HDR is on."
       )
@@ -195,9 +225,23 @@ describe('color controls in both panels', () => {
       // Neutral color temperature stays hidden when unsupported.
       expect(Object.values(states)).toHaveLength(5)
       expect(Object.values(states).every(Boolean)).toBe(true)
-      expect(hdrAlert(render(true, amdHdr, 'safetyBlocked'))).toBe(
+      expect(hdrAlert(render(true, intelHdr, 'safetyBlocked'))).toBe(
         "ChromaShift doesn't support HDR on this display yet. Restoration needs confirmation. Use Retry to restore original settings."
       )
+    })
+
+    it(`disables only gamma on an AMD display under HDR, compact=${compact}`, () => {
+      const html = render(true, amdHdr)
+      expect(hdrAlert(html)).toBe(
+        "ChromaShift isn't fully compatible with HDR. Some controls are disabled while HDR is on."
+      )
+      expect(sliderStates(html)).toMatchObject({
+        brightness: false,
+        contrast: false,
+        gamma: true,
+        saturation: false,
+        hue: false
+      })
     })
 
     it(`shows no HDR warning and enables supported controls in SDR, compact=${compact}`, () => {

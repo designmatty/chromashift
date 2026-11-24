@@ -12,6 +12,7 @@ import { focusNativeApp, verifyProfileReorder } from './profile-reorder-smoke.mj
 import { verifyShortcuts } from './shortcuts-smoke.mjs'
 import { verifyCloseRetryGuidance } from './close-retry-smoke.mjs'
 import { verifyLearnedGammaLimits } from './learned-gamma-limits-smoke.mjs'
+import { verifyHdrAmdColor } from './hdr-amd-color-smoke.mjs'
 import { verifyHdrSaturationHue } from './hdr-saturation-hue-smoke.mjs'
 import { cleanupDevelopmentShortcut } from './development-shortcut-cleanup.mjs'
 import { clickAppButton as clickReadyAppButton } from './smoke-app-actions.mjs'
@@ -1116,6 +1117,11 @@ const guardedVendor = globalThis.process.argv
 // A run scoped to another vendor skips it, so it writes no NVIDIA display.
 if (!compareOnly && !capabilityLogOnly && (guardedVendor === undefined || guardedVendor === 'nvidia'))
   await verifyHdrSaturationHue({ displayServicePath })
+// #122: AMD ADLX controls under HDR, with read-back and exact restore. Runs only
+// when an AMD display already reports HDR; never toggles HDR or writes a
+// transformed ramp. A run scoped to another vendor skips it.
+if (!compareOnly && !capabilityLogOnly && (guardedVendor === undefined || guardedVendor === 'amd'))
+  await verifyHdrAmdColor({ displayServicePath })
 if (hdrOnly) globalThis.process.exit(0)
 if (!compareOnly && !capabilityLogOnly) await verifyLearnedGammaLimits({
   desktopDirectory, screenshotDirectory, electronPath,

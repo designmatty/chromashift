@@ -318,13 +318,15 @@ baseline without capturing modified output. A display without a captured baselin
 needs no write. Adding a target uses normal capture-before-apply; removing it
 restores Original settings. Disconnected baselines remain retained and deferred.
 While HDR is on, a target keeps its complete color vector, and only the
-capability-supported controls outside brightness, contrast, and gamma reach the
-display (#89). On an NVIDIA display that means saturation and hue: an HDR-on
+capability-supported controls of a GPU provider reach the display (#89, #122).
+Windows ramp controls, including gamma on every adapter, stay SDR-only. On an
+AMD display that means brightness, contrast, saturation, hue, and color
+temperature through ADLX. On an NVIDIA display it means saturation and hue: an HDR-on
 transition, including during an Edit or Temporary override, restores the
 captured baseline and applies the target's saturation and hue, and every edit,
 Discard, compare, and profile switch does the same from the same baseline. A
-display with nothing applicable under HDR, such as AMD, Intel, or NVIDIA
-without vibrance, restores its captured Original settings immediately, as in
+display with nothing applicable under HDR, such as Intel, or NVIDIA without
+vibrance, restores its captured Original settings immediately, as in
 #88. So does an NVIDIA display whose HDR request native refuses before
 writing; the failure is recorded, the draft stays, and an unconfirmed restore
 enters Safety blocked. Every later edit, and the next transition, retries
@@ -335,17 +337,19 @@ during an override unless its output may still carry SDR ramp values; then it
 is restored. The session and full draft stay intact, SDR displays keep the
 draft, and HDR-off reapplies the full current draft or target. Both panels show
 a short warning alert above the controls, driven by the capability report. With
-saturation or hue available it reads "ChromaShift isn't fully compatible with
-HDR. Some controls are disabled while HDR is on.", and brightness, contrast, and
-gamma are disabled at their target values with the tooltip "Disabled while HDR
-is on." Without any HDR control it reads "ChromaShift doesn't support HDR on
+any HDR-applicable control it reads "ChromaShift isn't fully compatible with
+HDR. Some controls are disabled while HDR is on." The Windows ramp controls are
+disabled at their target values with the tooltip "Disabled while HDR is on.":
+brightness, contrast, and gamma on NVIDIA, and gamma only on AMD. Without any
+HDR control it reads "ChromaShift doesn't support HDR on
 this display yet. It stays at its original settings while HDR is on.", above
 disabled target values. While Safety blocked, the same alert ends with
 "Restoration needs confirmation. Use Retry to restore original settings." An
 outlined orange "HDR" badge marks HDR displays before their names in the app
 panel's display tabs and in the mini panel's display select. Restoration never implicitly
-discards changes. NVIDIA HDR saturation and hue await owner hardware
-verification; AMD remains unverified.
+discards changes. NVIDIA HDR saturation and hue are
+owner-confirmed on the G60SD with HDR on (reported 2026-11-23). AMD under HDR is verified only on an integrated RDNA 2 display
+(#122).
 If restoration fails during the session, the full draft remains available in
 main and both panels, with SDR draft output unchanged. Safety blocked disables
 color writes. Retry validates ownership, confirms the affected restoration, and

@@ -761,7 +761,7 @@ describe('preview replacement recovery', () => {
     const { h, product, beta, swapping, open, liveWrites, restoreApply } = await deferredSwap()
     try {
       vi.useFakeTimers()
-      h.client.amdDisplayIds.add('display:one')
+      h.client.intelDisplayIds.add('display:one')
       h.client.hdrDisplayIds.add('display:one')
       h.displayEvent('displayMetricsChanged')
       await vi.advanceTimersByTimeAsync(750)
@@ -905,7 +905,7 @@ describe('unconfirmed preview restoration', () => {
       const product = h.runtime.productController!
       try {
         await product.startPreview(draft, kind)
-        h.client.amdDisplayIds.add(id)
+        h.client.intelDisplayIds.add(id)
         h.client.hdrDisplayIds.add(id)
         h.client.failRestoreDisplayIds.add(id)
         vi.useFakeTimers()
@@ -951,7 +951,7 @@ describe('unconfirmed preview restoration', () => {
         h.client.hdrDisplayIds.clear()
         h.displayEvent('displayMetricsChanged')
         await vi.advanceTimersByTimeAsync(750)
-        // The display now reports an AMD adapter, so the reapply starts fresh
+        // The display now reports an Intel adapter, so the reapply starts fresh
         // learned gamma limits for it, a real file write the fake timers don't flush.
         await vi.waitFor(() => expect(h.client.currentSettings.get(id)?.brightness).toBe(30))
         const changed = { ...draft, name: 'Editable after recovery' }
@@ -975,7 +975,7 @@ describe('unconfirmed preview restoration', () => {
     const product = h.runtime.productController!
     try {
       await product.startPreview(draft, 'edit')
-      h.client.amdDisplayIds.add(id)
+      h.client.intelDisplayIds.add(id)
       h.client.hdrDisplayIds.add(id)
       h.client.failRestoreDisplayIds.add(id)
       await expect(
@@ -1034,7 +1034,7 @@ describe('unconfirmed preview restoration', () => {
   it('keeps an unconfirmed HDR transition restore Safety blocked until Retry succeeds', async () => {
     const h = await previewHarness('manual', 'edit')
     try {
-      h.client.amdDisplayIds.add(id)
+      h.client.intelDisplayIds.add(id)
       h.client.hdrDisplayIds.add(id)
       h.client.failRestoreDisplayIds.add(id)
       vi.useFakeTimers()
@@ -1068,7 +1068,7 @@ describe('unconfirmed preview restoration', () => {
     await h.runtime.start()
     const product = h.runtime.productController!
     try {
-      h.client.amdDisplayIds.add(id)
+      h.client.intelDisplayIds.add(id)
       h.client.hdrDisplayIds.add(id)
       h.client.failRestoreDisplayIds.add(id)
       h.client.failRestoreAllDisplayIds.add(id)
@@ -1285,7 +1285,7 @@ describe('unconfirmed preview restoration', () => {
       return restore(displayId)
     })
     try {
-      h.client.amdDisplayIds.add(id)
+      h.client.intelDisplayIds.add(id)
       h.client.hdrDisplayIds.add(id)
       if (fail) h.client.failRestoreDisplayIds.add(id)
       vi.useFakeTimers()
@@ -1796,7 +1796,7 @@ describe('unconfirmed preview restoration', () => {
       const h = await previewHarness()
       try {
         if (reason === 'hdr') {
-          h.client.amdDisplayIds.add(id)
+          h.client.intelDisplayIds.add(id)
           h.client.hdrDisplayIds.add(id)
         }
         else h.client.disconnectedDisplayIds.add(id)
@@ -2607,7 +2607,7 @@ it('rereview90: Retry must restore a teardown failure after interrupted HDR cont
   const product = h.runtime.productController!
   try {
     await product.startPreview(draft, 'edit')
-    h.client.amdDisplayIds.add(one)
+    h.client.intelDisplayIds.add(one)
     h.client.hdrDisplayIds.add(one)
     h.client.failRestoreDisplayIds.add(one)
     await expect(
@@ -2656,7 +2656,7 @@ it('rereview90: End preview must recover after a failed continuation Retry', asy
   const product = h.runtime.productController!
   try {
     await product.startPreview(draft, 'edit')
-    h.client.amdDisplayIds.add(id)
+    h.client.intelDisplayIds.add(id)
     h.client.hdrDisplayIds.add(id)
     h.client.failRestoreDisplayIds.add(id)
     await expect(

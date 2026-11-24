@@ -12,28 +12,31 @@ namespace ChromaShift.DisplayService.Tests.Services;
 public sealed class HdrDisplaySafetyTests
 {
     [Fact]
-    public void RejectsAmdBaselineCaptureAndSdrWritesWhileHdrIsActive()
+    public void RejectsSdrWritesWhileHdrIsActiveOnEveryAdapter()
     {
-        var amd = Display(hdr: true, vendor: "amd");
-        Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
-            () => BaselineManager.EnsureCaptureSafe(amd)).Code);
         foreach (var vendor in new[] { "nvidia", "amd", "intel", "unknown" })
         {
             Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
                 () => BaselineManager.EnsureSdrWritesSafe(Display(hdr: true, vendor: vendor))).Code);
+            BaselineManager.EnsureSdrWritesSafe(Display(hdr: false, vendor: vendor));
         }
     }
 
     [Theory]
     [InlineData("nvidia", true)]
+    [InlineData("amd", true)]
     [InlineData("intel", true)]
     [InlineData("unknown", true)]
     [InlineData("nvidia", false)]
     [InlineData("amd", false)]
-    public void AllowsNonAmdCaptureUnderHdrAndEveryCaptureInSdr(string vendor, bool hdr)
+    public void CaptureIsAllowedOnEveryAdapterAndRecordsTheColorMode(string vendor, bool hdr)
     {
-        BaselineManager.EnsureCaptureSafe(Display(hdr, vendor));
-        if (!hdr) BaselineManager.EnsureSdrWritesSafe(Display(hdr, vendor));
+        var fixture = new Fixture(vendor);
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = hdr };
+        var captured = fixture.Manager.Capture(fixture.Displays.Current.Id);
+        Assert.Equal("captured", captured["state"]!.GetValue<string>());
+        Assert.Equal(hdr ? "hdr" : "sdr", captured["colorMode"]!.GetValue<string>());
+        Assert.Empty(fixture.Calls);
     }
 
     [Fact]
@@ -135,10 +138,9 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Theory]
-    [InlineData("amd")]
     [InlineData("intel")]
     [InlineData("unknown")]
-    public void HdrApplyOfSaturationAndHueStaysBlockedForNonNvidiaDisplays(string vendor)
+    public void HdrApplyStaysBlockedForDisplaysWithoutAnHdrProvider(string vendor)
     {
         foreach (var captured in new[] { false, true })
         {
@@ -153,18 +155,136 @@ public sealed class HdrDisplaySafetyTests
     }
 
     [Fact]
-    public void AmdCaptureUnderHdrStaysBlockedEvenWithAnExistingBaseline()
+    public void AmdHdrApplyRestoresTheBaselineThenWritesEveryAdlxControlWithoutATransformedRamp()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        var result = fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(60, 55, null, 40, 10, 70));
+        Assert.Equal(new[]
+        {
+            "gamma:write", "gamma:read", "amd:restore", "amd:read",
+            "amd:set:brightness", "amd:set:contrast", "amd:set:saturation", "amd:set:hue", "amd:set:colorTemperature"
+        }, fixture.Calls);
+        // The captured ramp is the only ramp write; ADLX carries every profile value.
+        Assert.Equal([Ramp(250).GetHash()], fixture.Gamma.Writes);
+        Assert.Null(result["applied"]!["gammaRampHash"]);
+        Assert.Equal(60, result["applied"]!["brightness"]!.GetValue<int>());
+        Assert.Equal(55, result["applied"]!["contrast"]!.GetValue<int>());
+        Assert.Equal(40, result["applied"]!["saturation"]!.GetValue<int>());
+        Assert.Equal(10, result["applied"]!["hue"]!.GetValue<int>());
+        Assert.Equal(70, result["applied"]!["colorTemperature"]!.GetValue<int>());
+        Assert.DoesNotContain(fixture.Calls, call => call.StartsWith("nvidia:set", StringComparison.Ordinal));
+
+        fixture.Manager.Restore(fixture.Displays.Current.Id);
+        Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(0, fixture.Manager.Count);
+    }
+
+    public static TheoryData<double?, double?, double?, double?, double?, double?> RejectedAmdHdrRequests => new()
+    {
+        { null, null, 1, null, null, null },
+        { 60, null, 1.2, null, null, null },
+        { 60, 55, 0.8, 40, 10, 70 },
+        { null, null, null, null, null, null }
+    };
+
+    [Theory]
+    [MemberData(nameof(RejectedAmdHdrRequests))]
+    public void AmdHdrApplyRejectsGammaAndEmptyRequestsBeforeCaptureOrAnyWrite(
+        double? brightness, double? contrast, double? gamma, double? saturation, double? hue, double? colorTemperature)
     {
         foreach (var captured in new[] { false, true })
         {
             var fixture = new Fixture("amd");
             if (captured) fixture.Manager.Capture(fixture.Displays.Current.Id);
             fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+            var settings = new DisplaySettings(brightness, contrast, gamma, saturation, hue, colorTemperature);
             Assert.Equal("HDR_UNSAFE", Assert.Throws<DisplayOperationException>(
-                () => fixture.Manager.Capture(fixture.Displays.Current.Id)).Code);
+                () => fixture.Manager.Apply(fixture.Displays.Current.Id, settings)).Code);
             Assert.Empty(fixture.Calls);
+            Assert.Empty(fixture.Gamma.Writes);
             Assert.Equal(captured ? 1 : 0, fixture.Manager.Count);
         }
+    }
+
+    [Fact]
+    public void AmdHdrApplyAfterAnSdrEditRestoresTheSdrRampAndAdlxValuesFirst()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(30, 50, 1.2, 85, null, null));
+        Assert.NotEqual(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Calls.Clear();
+        fixture.Gamma.Writes.Clear();
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(30, null, null, null, null, null));
+        Assert.Equal([Ramp(250).GetHash()], fixture.Gamma.Writes);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.True(fixture.Calls.IndexOf("amd:restore") < fixture.Calls.IndexOf("amd:set:brightness"));
+        Assert.Equal(30, fixture.Amd.Current.Brightness.Current);
+        // Saturation was not requested under HDR, so it is back at its captured value.
+        Assert.Equal(fixture.Amd.Baseline.Saturation, fixture.Amd.Current.Saturation);
+    }
+
+    [Fact]
+    public void AmdCaptureUnderHdrRecordsHdrModeAndTheAdlxOriginals()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        var captured = fixture.Manager.Capture(fixture.Displays.Current.Id);
+        Assert.Equal("hdr", captured["colorMode"]!.GetValue<string>());
+        Assert.Equal(47, captured["amdBrightness"]!.GetValue<int>());
+        Assert.Equal(51, captured["amdColorTemperature"]!.GetValue<int>());
+        fixture.Amd.Current = fixture.Amd.Baseline with { Brightness = Control(10) };
+        Assert.Equal("alreadyCaptured", fixture.Manager.Capture(fixture.Displays.Current.Id)["state"]!.GetValue<string>());
+        Assert.Equal(1, fixture.Manager.Count);
+        Assert.Empty(fixture.Calls);
+    }
+
+    [Fact]
+    public void AmdControlUnreadableAtCaptureStaysUnwritableUnderHdr()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Amd.Current = fixture.Amd.Baseline with { Contrast = Unsupported };
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Amd.Current = fixture.Amd.Baseline;
+        Assert.Equal("CAPABILITY_UNSUPPORTED", Assert.Throws<DisplayOperationException>(() =>
+            fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(60, 55, null, null, null, null))).Code);
+        Assert.Empty(fixture.Calls);
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Theory]
+    [InlineData("brightness")]
+    [InlineData("colorTemperature")]
+    public void FailedAdlxWriteUnderHdrRestoresTheWholeDisplay(string failing)
+    {
+        var fixture = new Fixture("amd");
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Capture(fixture.Displays.Current.Id);
+        fixture.Amd.FailSet = failing;
+        Assert.Equal("AMD_VERIFY_FAILED", Assert.Throws<DisplayOperationException>(() => fixture.Manager.Apply(
+            fixture.Displays.Current.Id, new DisplaySettings(60, 55, null, 40, 10, 70))).Code);
+        // Baseline-first restore, the failed write, then whole-display restoration.
+        Assert.Equal(2, fixture.Calls.Count(call => call == "amd:restore"));
+        Assert.Equal("amd:read", fixture.Calls[^1]);
+        Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
+        Assert.Equal(1, fixture.Manager.Count);
+    }
+
+    [Fact]
+    public void RestoreAllAfterAnAmdHdrApplyReturnsTheCapturedValues()
+    {
+        var fixture = new Fixture("amd");
+        fixture.Displays.Current = fixture.Displays.Current with { Hdr = true };
+        fixture.Manager.Apply(fixture.Displays.Current.Id, new DisplaySettings(60, null, null, 40, null, null));
+        fixture.Manager.RestoreAll(failOnError: true, discardDisconnected: true);
+        Assert.Equal(0, fixture.Manager.Count);
+        Assert.Equal(fixture.Amd.Baseline, fixture.Amd.Current);
+        Assert.Equal(Ramp(250).GetHash(), fixture.Gamma.Current.GetHash());
     }
 
     [Theory]
@@ -797,6 +917,8 @@ public sealed class HdrDisplaySafetyTests
         internal AmdDisplayState? Restored;
         internal bool FailWrite;
         internal bool IgnoreColorWrite;
+        /// <summary>The named setter writes, then its read-back fails, as AmdAdlxProvider reports.</summary>
+        internal string? FailSet;
         public AmdDisplayState GetState(DisplayDescriptor display) => display.Adapter.Vendor == "amd" ? Current : new(Unsupported, Unsupported, Unsupported, Unsupported, Unsupported);
         public int SetBrightness(DisplayDescriptor display, double value) =>
             Set("brightness", value, target => Current = Current with { Brightness = Control(target) });
@@ -813,6 +935,7 @@ public sealed class HdrDisplaySafetyTests
             calls.Add($"amd:set:{name}");
             var target = (int)Math.Round(value);
             write(target);
+            if (FailSet == name) throw new DisplayOperationException("AMD_VERIFY_FAILED", $"{name} read-back mismatch");
             return target;
         }
         public void Restore(DisplayDescriptor display, AmdDisplayState baseline)
