@@ -52,9 +52,10 @@ Requirements:
 
 - Windows 11
 - Node.js 24.11.1 and npm 11.6.2
-- .NET SDK 10.0.302
+- .NET SDK 10.0.302 or a later 10.0.3xx patch
 
-The versions are pinned in `mise.toml`, but mise is optional.
+The versions are pinned in `mise.toml`, but mise is optional. `global.json`
+accepts later 10.0.3xx SDK patches.
 
 ```powershell
 mise install

@@ -12,9 +12,12 @@ on:
     paths-ignore:
       - 'apps/website/**'
 
+# A newer push cancels an older pull request run. Each main push gets its own
+# group, so a later merge can neither cancel nor replace a queued main run: the
+# release workflow requires a passing main run for the exact tagged commit.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -33,12 +36,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.11.1
-          cache: npm
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      # The .NET SDK comes from the runner image. global.json rolls the pinned
+      # 10.0.302 forward to the newest installed 10.0.3xx patch.
+      - name: Show .NET SDK
+        run: dotnet --version
+
+      - name: Locate npm cache
+        id: npm-cache
+        shell: pwsh
+        run: '"dir=$(npm config get cache)" >> $env:GITHUB_OUTPUT'
+
+      # npm ci always runs, so it still validates the lockfile against every
+      # manifest. The prefix restore key keeps most package tarballs when the
+      # lockfile changes, such as on a version bump.
+      - name: Restore npm cache
+        uses: actions/cache@v4
         with:
-          dotnet-version: 10.0.302
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm ci

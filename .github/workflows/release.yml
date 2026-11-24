@@ -12,6 +12,7 @@ concurrency:
 permissions:
   contents: write
   id-token: write
+  actions: read
 
 jobs:
   windows-release:
@@ -28,21 +29,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.11.1
-          cache: npm
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.302
+      # The .NET SDK comes from the runner image. global.json rolls the pinned
+      # 10.0.302 forward to the newest installed 10.0.3xx patch.
+      - name: Show .NET SDK
+        run: dotnet --version
 
+      # Release builds always install from scratch; they never restore a cache.
       - name: Install dependencies
         run: npm ci
 
       - name: Verify tag and package metadata
         run: npm run release:preflight -- --tag $env:GITHUB_REF_NAME
 
-      - name: Run canonical verification
-        run: npm run verify
+      # CI already ran `npm run verify` on main for this commit. Waiting here
+      # overlaps the setup above with a CI run that may still be going.
+      - name: Require passing CI on main for the tagged commit
+        shell: pwsh
+        run: |
+          $env:RELEASE_COMMIT = git rev-parse HEAD
+          node scripts/require-ci-success.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Advisories published after CI passed still block the release.
+      - name: Audit dependencies
+        run: npm run audit:dependencies
 
       - name: Build unpacked Windows application
         run: npm run package:release:prepare

@@ -193,8 +193,17 @@ the tag must be exactly `v<version>` and development version `0.0.0` is rejected
 With `--artifacts`, the installer, block map, and `latest.yml` must agree on
 version, filename, architecture, size, and SHA-512 metadata.
 
-The serialized tag workflow in `.github/workflows/release.yml` repeats canonical
-verification, validates generated artifacts, uploads them, and creates a draft
+The serialized tag workflow in `.github/workflows/release.yml` installs from
+scratch without restoring a cache, then waits for CI to pass on `main` for the
+exact tagged commit (`scripts/require-ci-success.mjs`) instead of repeating
+canonical verification. It also repeats the dependency audit, so an advisory
+published after CI passed still blocks the release. Tag the release PR's merge
+commit. A later website-only merge skips Windows CI, so tagging it stops the
+release after three minutes with no CI run; re-tag the release merge commit,
+which starts a new release run. If the tagged commit's CI failed or was canceled, re-run CI
+for that commit, then re-run the release. Each `main` push runs CI in its own
+concurrency group, so a later merge cannot cancel or replace it. The workflow
+then packages, validates generated artifacts, uploads them, and creates a draft
 GitHub release. Every tag now requires Azure Artifact Signing. The final preflight
 rejects missing, invalid, untimestamped, or publisher-mismatched signatures before
 artifact upload or draft creation. Publication is never canceled by a newer run.
