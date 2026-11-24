@@ -22,8 +22,9 @@ restoration behavior. Run the relevant real command when changing those paths.
 A change confined to `apps/website` skips the Windows CI and runs the faster
 Website CI instead: website formatting, lint, typecheck, tests, and build.
 Windows CI uses the runner image's .NET SDK through `global.json`, restores
-`node_modules` (without workspace links) and NuGet packages from caches, and
-runs `npm ci` only on a `node_modules` cache miss.
+`node_modules` (without workspace links) from a cache, and runs `npm ci` only on
+a cache miss. A NuGet cache was measured and dropped: restoring its 224 MB took
+about as long as the restore it saved.
 
 The desktop test command installs Electron's binary once before starting Vitest
 workers. This prevents concurrent first-import extraction after a clean `npm ci`.

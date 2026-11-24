@@ -90,12 +90,5 @@ jobs:
         if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Restore NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'native/**/*.csproj') }}
-          restore-keys: nuget-${{ runner.os }}-
-
       - name: Run canonical verification
         run: npm run verify
