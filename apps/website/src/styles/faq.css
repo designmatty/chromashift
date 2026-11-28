@@ -1,5 +1,5 @@
 .faq {
-  padding: var(--section-space) var(--page-gutter) 0;
+  padding: var(--section-space) var(--page-gutter);
   scroll-margin-top: 32px;
 }
 
