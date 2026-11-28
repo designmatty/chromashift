@@ -811,6 +811,9 @@
         </section>
 
         <section class="closing" aria-labelledby="closing-title">
+          <div class="closing__art" aria-hidden="true">
+            <canvas class="closing__gradient"></canvas>
+          </div>
           <div class="section-inner section-inner--narrow">
             <h2 id="closing-title" class="section-title closing__title">
               Stop changing display settings by hand.
@@ -827,10 +830,18 @@
               Latest signed installer on GitHub releases
             </p>
           </div>
+          <button
+            class="closing__motion"
+            type="button"
+            aria-label="Pause background animation"
+            hidden
+          >
+            <span class="closing__motion-icon" aria-hidden="true"></span>
+          </button>
         </section>
       </main>
 
-      <footer class="site-footer">
+      <footer class="site-footer site-footer--after-closing">
         <div class="site-footer__inner">
           <span class="site-footer__legal">ChromaShift · MIT License</span>
           <nav class="site-footer__nav" aria-label="Footer">

@@ -4,6 +4,10 @@
   border-top: 1px solid var(--color-divider);
 }
 
+.site-footer--after-closing {
+  margin-top: 0;
+}
+
 .site-footer__inner {
   display: flex;
   flex-wrap: wrap;

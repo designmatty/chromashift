@@ -1,8 +1,10 @@
 import '@/styles/index.css'
+import { initClosingGradient } from '@/closing-gradient'
 import { initColorDemo } from '@/color-demo'
 import { fetchLatestInstaller, installerLine } from '@/release'
 
 initColorDemo()
+initClosingGradient()
 
 // The static links already point at GitHub releases. Point them at the newest
 // installer when the lookup succeeds; otherwise leave the fallback in place.
